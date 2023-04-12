@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classic Cars Gallery</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="inventory.html">Inventory</a></li>
+                <li><a href="about.html">About Us</a></li>
+                <li><a href="contact.html">Contact</a></li>
+                <li><a href="gallery.html" class="active">Gallery</a></li>
+            </ul>
+        </nav>
+    </header>
+<main>
+    <section class="gallery">
+        <h1>Classic Cars Gallery</h1>
+        <p>Check out our user-submitted gallery of classic cars! Have a classic car you want to share? Upload your photo below!</p>
+
+        <div class="grid">
+            <img src="images/user1.jpg" alt="User 1's Car">
+            <img src="images/user2.jpg" alt="User 2's Car">
+            <img src="images/user3.jpg" alt="User 3's Car">
+            <img src="images/user4.jpg" alt="User 4's Car">
+            <img src="images/user5.jpg" alt="User 5's Car">
+            <img src="images/user6.jpg" alt="User 6's Car">
+        </div>
+    </section>
+
+    <section class="upload">
+        <h2>Upload Your Classic Car Photo</h2>
+        <form action="upload.php" method="post" enctype="multipart/form-data">
+            <label for="username">Your Name:</label>
+            <input type="text" id="username" name="username" required>
+
+            <label for="car-description">Car Description:</label>
+            <textarea id="car-description" name="car_description" rows="4" required></textarea>
+
+            <label for="car-image">Select Image:</label>
+            <input type="file" id="car-image" name="car_image" accept="image/*" required>
+
+            <input type="submit" value="Upload Image" name="submit">
+        </form>
+    </section>
+</main>
+
+<footer>
+    <p>&copy; 2023 Classic Cars Store. All rights reserved.</p>
+    <ul>
+        <li><a href="privacy.html">Privacy Policy</a></li>
+        <li><a href="terms.html">Terms & Conditions</a></li>
+    </ul>
+</footer>
+
+</body>
+</html>
