@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact Us - Classic Car Collector</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="about.html">About Us</a></li>
+                <li><a href="contact.html">Contact Us</a></li>
+            </ul>
+        </nav>
+    </header>
+<main>
+    <section class="contact-us">
+        <h1>Contact Us</h1>
+        <p>If you have any questions or comments about classic cars, feel free to reach out to us. We'd love to hear from you!</p>
+
+        <form action="submit_contact.php" method="post" class="contact-form">
+            <label for="name">Name:</label>
+            <input type="text" id="name" name="name" required>
+
+            <label for="email">Email:</label>
+            <input type="email" id="email" name="email" required>
+
+            <label for="phone">Phone:</label>
+            <input type="tel" id="phone" name="phone" pattern="[0-9]{3}-[0-9]{3}-[0-9]{4}" placeholder="123-456-7890">
+
+            <label for="message">Message:</label>
+            <textarea id="message" name="message" rows="4" cols="50" required></textarea>
+
+            <button type="submit" class="submit-btn">Submit</button>
+        </form>
+    </section>
+</main>
+
+<footer>
+    <p>&copy; 2023 Classic Car Collector. All Rights Reserved.</p>
+    <ul>
+        <li><a href="privacy_policy.html">Privacy Policy</a></li>
+        <li><a href="terms_of_service.html">Terms of Service</a></li>
+    </ul>
+</footer>
+
+</body>
+</html>
