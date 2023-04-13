@@ -4,49 +4,218 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Classic Cars Store</title>
-    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            text-align: center; /* centers text at the top of the body */
+            background-image: url("car.jpg"); /* adds background picture for the body */
+            background-size: cover;
+            background-attachment: fixed;
+        }
+
+        header {
+            background-image: url("bafi.jpg"); /* adds background picture for the header */
+            background-size: cover;
+            background-position: center;
+            height: 300px; /* adjusts height of header to fit picture */
+        }
+
+        nav {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+        }
+
+        ul {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            width: 80%;
+        }
+
+        li {
+            font-size: 1.2rem;
+        }
+
+        main {
+            background-color: white;
+            padding: 50px;
+            background-image: url("car.jpg"); /* adds background picture for the body */
+            background-size: cover;
+            background-attachment: fixed;
+        }
+
+        .hero {
+            height: 500px; /* adjusts height of hero section to fit picture */
+            background-image: url("hero-background.jpg"); /* adds background picture for the hero section */
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .featured {
+         display: flex;
+         justify-content: center;
+         align-items: center;
+         flex-wrap: wrap;
+        }
+
+        .car {
+            width: 500px;
+            margin-bottom: 50px;
+            background-color: white;
+            box-shadow: 0px 5px 10px rgba(0,0,0,0.1);
+            transition: box-shadow 0.3s ease;
+        }
+
+        .car:hover {
+            box-shadow: 0px 5px 20px rgba(0,0,0,0.3);
+        }
+
+        .car img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+
+        .car h3, .car p {
+            margin: 10px;
+        }
+
+        .back-to-top {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: black;
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.2rem;
+            cursor: pointer;
+            opacity: 0.5;
+            transition: opacity 0.3s ease;
+        }
+
+        .back-to-top:hover {
+            opacity: 1;
+        }
+
+        .picture {
+            width: 100%;
+            height: 500px;
+            background-size: cover;
+            background-position: center;
+            margin-bottom: 50px;
+        }
+    </style>
 </head>
 <body>
     <header>
         <nav>
-            <ul>
-                <li><a href="index.html">Home</a></li>
-                <li><a href="cargallery.html">Gallery</a></li>
-                <li><a href="car.html">About Us</a></li>
-                <li><a href="contactcar.html">Contact</a></li>
-            </ul>
-        </nav>
-    </header>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="inventory.html">Inventory</a></li>
+            <li><a href="about.html">About Us</a></li>
+            <li><a href="contact.html">Contact</a></li>
+        </ul>
+    </nav>
+    <div class="picture" style="background-image: url('header-picture.jpg');"></div> <!-- adds a picture to the header -->
+</header>
 <main>
     <section class="hero">
-        <h1>Welcome to Classic Cars Store</h1>
+        <div class="picture" style="background-image: url('hero-picture.jpg');"></div> <!-- adds a picture to the hero section -->
+        <h1>Welcome to Classic Cars Collectors Hub</h1>
         <p>Your one-stop shop for buying and selling classic cars!</p>
     </section>
 
     <section class="featured">
+
         <h2>Featured Cars</h2>
         <div class="car-grid">
             <div class="car">
-                <img src="kellyscar.jpg" alt="Car 1">
-                <h3>kellys car</h3>
-                <p>getting painted</p>
+                <div class="picture" style="background-image: url('66ford.jpg');"></div> <!-- adds a picture for car 1 -->
+                <h3>1966 Ford Mustang</h3>
+                <p>Price: $25,000</p>
                 <a href="car1.html">View Details</a>
             </div>
             <div class="car">
-                <img src="images/car2.jpg" alt="Car 2">
+                <div class="picture" style="background-image: url('blar.jpg');"></div> <!-- adds a picture for car 2 -->
                 <h3>1957 Chevrolet Bel Air</h3>
                 <p>Price: $45,000</p>
                 <a href="car2.html">View Details</a>
             </div>
             <div class="car">
-                <img src="images/car3.jpg" alt="Car 3">
+                <div class="picture" style="background-image: url('car3-picture.jpg');"></div> <!-- adds a picture for car 3 -->
                 <h3>1963 Corvette Stingray</h3>
                 <p>Price: $60,000</p>
                 <a href="car3.html">View Details</a>
             </div>
+            <div class="car">
+                <div class="picture" style="background-image: url('car4-picture.jpg');"></div> <!-- adds a picture for car 4 -->
+                <h3>1970 Dodge Charger</h3>
+                <p>Price: $55,000</p>
+                <a href="car4.html">View Details</a>
+            </div>
+            <div class="car">
+                <div class="picture" style="background-image: url('car5-picture.jpg');"></div> <!-- adds a picture for car 5 -->
+                <h3>1967 Shelby GT500</h3>
+                <p>Price: $70,000</p>
+                <a href="car5.html">View Details</a>
+            </div>
+            <div class="car">
+                <div class="picture" style="background-image: url('car6-picture.jpg');"></div> <!-- adds a picture for car 6 -->
+                <h3>1959 Cadillac Eldorado Biarritz</h3>
+                <p>Price: $100,000</p>
+                <a href="car6.html">View Details</a>
+            </div>
         </div>
     </section>
 </main>
+<button class="back-to-top" onclick="scrollToTop()">↑</button>
+
+<script>
+  // Back to top button functionality
+  const backToTopButton = document.querySelector(".back-to-top");
+  window.addEventListener("scroll", () => {
+    if (window.scrollY > 300) {
+      backToTopButton.style.display = "block";
+    } else {
+      backToTopButton.style.display = "none";
+    }
+  });
+
+  function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+</script>
+
+<section>
+    <div class="picture" style="background-image: url('additional-picture-1.jpg');"></div> <!-- adds an additional picture -->
+    <h2>Our Classic Car Collection</h2>
+    <p>Take a look at some of the classic cars we have in our collection.</p>
+</section>
+
+<section>
+    <div class="picture" style="background-image: url('additional-picture-2.jpg');"></div> <!-- adds an additional picture -->
+    <h2>Featured Events</h2>
+    <p>Check out some of the classic car events we are participating in.</p>
+</section>
+
+<section>
+    <div class="picture" style="background-image: url('additional-picture-3.jpg');"></div> <!-- adds an additional picture -->
+    <h2>Our Restoration Process</h2>
+    <p>Learn more about our restoration process and see some before-and-after photos.</p>
+</section>
 
 <footer>
     <p>&copy; 2023 Classic Cars Store. All rights reserved.</p>
@@ -58,3 +227,6 @@
 
 </body>
 </html>
+
+
+
