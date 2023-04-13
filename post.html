@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classic Car Collectors Hub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+    <nav>
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="browse.html">Browse Cars</a></li>
+            <li><a href="sell.html">Sell Your Car</a></li>
+            <li><a href="about.html">About</a></li>
+            <li><a href="contact.html">Contact</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <section class="sell-form">
+        <h1>Sell Your Classic Car</h1>
+        <p>Reach a community of passionate classic car collectors and enthusiasts. Fill out the form below to post your car for sale.</p>
+
+        <form action="submit-car.php" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="make">Make:</label>
+                <input type="text" name="make" id="make" required>
+            </div>
+            <div class="form-group">
+                <label for="model">Model:</label>
+                <input type="text" name="model" id="model" required>
+            </div>
+            <div class="form-group">
+                <label for="year">Year:</label>
+                <input type="number" name="year" id="year" min="1900" max="2021" required>
+            </div>
+            <div class="form-group">
+                <label for="price">Price:</label>
+                <input type="number" name="price" id="price" min="0" step="100" required>
+            </div>
+            <div class="form-group">
+                <label for="description">Description:</label>
+                <textarea name="description" id="description" rows="5" required></textarea>
+            </div>
+            <div class="form-group">
+                <label for="image">Upload Car Image:</label>
+                <input type="file" name="image" id="image" accept="image/*" required>
+            </div>
+            <div class="form-group">
+                <label for="contact">Contact Information:</label>
+                <input type="text" name="contact" id="contact" required>
+            </div>
+            <button type="submit">Submit Your Car</button>
+        </form>
+    </section>
+</main>
+
+<footer>
+    <p>&copy; 2023 Classic Car Collectors Hub. All rights reserved.</p>
+</footer>
+
+</body>
+</html>
