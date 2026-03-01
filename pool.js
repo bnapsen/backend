@@ -22,6 +22,7 @@ const table = {
 };
 
 let pockets = [];
+let feltBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 
 const state = {
   balls: [],
@@ -63,6 +64,13 @@ function updateTableGeometry() {
   const pocketFeltW = table.w - table.rail * 2;
   const pocketFeltH = table.h - table.rail * 2;
 
+  feltBounds = {
+    minX: pocketFeltX,
+    maxX: pocketFeltX + pocketFeltW,
+    minY: pocketFeltY,
+    maxY: pocketFeltY + pocketFeltH,
+  };
+
   pockets = [
     { x: pocketFeltX, y: pocketFeltY },
     { x: pocketFeltX + pocketFeltW / 2, y: pocketFeltY },
@@ -103,7 +111,6 @@ function setHudVisible(visible) {
   hudEl.classList.toggle("is-hidden", !visible);
   hudToggleBtn.setAttribute("aria-expanded", String(visible));
   hudToggleBtn.textContent = visible ? "Hide menu" : "Show menu";
-  hudToggleBtn.classList.toggle("is-hidden", visible);
 }
 
 function updateHud() {
@@ -310,11 +317,17 @@ function resolvePocket(ball) {
 }
 
 function applyPhysics() {
-  const railInset = table.rail;
-  const minX = table.x + railInset;
-  const maxX = table.x + table.w - railInset;
-  const minY = table.y + railInset;
-  const maxY = table.y + table.h - railInset;
+  const { minX, maxX, minY, maxY } = feltBounds;
+  const pocketCaptureR = table.pocketR + 4;
+  const pocketSinkR = Math.max(7, table.pocketR - 4);
+  const mouthClearance = table.pocketR * 1.45;
+
+  const hasPocketClearanceOnTopBottom = (x, boundaryY) => pockets.some(
+    (p) => Math.abs(p.y - boundaryY) < 1 && Math.abs(x - p.x) < mouthClearance,
+  );
+  const hasPocketClearanceOnLeftRight = (y, boundaryX) => pockets.some(
+    (p) => Math.abs(p.x - boundaryX) < 1 && Math.abs(y - p.y) < mouthClearance,
+  );
 
   state.balls.forEach((b) => {
     if (b.sunk) return;
@@ -330,28 +343,36 @@ function applyPhysics() {
     pockets.forEach((p) => {
       const dx = b.x - p.x;
       const dy = b.y - p.y;
-      if (Math.hypot(dx, dy) < table.pocketR - 3) {
+      const dist = Math.hypot(dx, dy);
+
+      if (dist < pocketCaptureR && dist > 0.001) {
+        const pull = ((pocketCaptureR - dist) / pocketCaptureR) * 0.45;
+        b.vx -= (dx / dist) * pull;
+        b.vy -= (dy / dist) * pull;
+      }
+
+      if (dist < pocketSinkR) {
         resolvePocket(b);
       }
     });
 
     if (b.sunk) return;
 
-    if (b.x - b.r < minX) {
+    if (b.x - b.r < minX && !hasPocketClearanceOnLeftRight(b.y, minX)) {
       b.x = minX + b.r;
       b.vx *= -table.cushionBounce;
       b.vy *= table.ballBounce;
-    } else if (b.x + b.r > maxX) {
+    } else if (b.x + b.r > maxX && !hasPocketClearanceOnLeftRight(b.y, maxX)) {
       b.x = maxX - b.r;
       b.vx *= -table.cushionBounce;
       b.vy *= table.ballBounce;
     }
 
-    if (b.y - b.r < minY) {
+    if (b.y - b.r < minY && !hasPocketClearanceOnTopBottom(b.x, minY)) {
       b.y = minY + b.r;
       b.vy *= -table.cushionBounce;
       b.vx *= table.ballBounce;
-    } else if (b.y + b.r > maxY) {
+    } else if (b.y + b.r > maxY && !hasPocketClearanceOnTopBottom(b.x, maxY)) {
       b.y = maxY - b.r;
       b.vy *= -table.cushionBounce;
       b.vx *= table.ballBounce;
@@ -606,5 +627,5 @@ resetBtn.addEventListener("click", () => {
 
 resizeCanvas();
 setupLevel();
-setHudVisible(true);
+setHudVisible(false);
 animate();
