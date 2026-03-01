@@ -249,13 +249,11 @@
 
   const LEVELS = Array.from({length:20}, (_,i)=>{
     const L=i+1;
-    const boss = (L%5===0);
     return {
       id:L,
-      name: boss ? `BOSS ${L}` : `Sector ${L}`,
-      boss,
-      quota: boss ? 1 : Math.floor(24 + L*7.5),
-      spawnInterval: boss ? 999 : clamp(0.92 - L*0.035, 0.20, 0.92),
+      name: `Sector ${L}`,
+      quota: Math.floor(24 + L*7.5),
+      spawnInterval: clamp(0.92 - L*0.035, 0.20, 0.92),
       speedMul: 1 + L*0.05,
       shooterChance: clamp(0.12 + L*0.04, 0.12, 0.78),
       tankChance: clamp(0.10 + L*0.03, 0.10, 0.60),
@@ -281,6 +279,7 @@
   let levelQuota=0;
   let spawned=0, killed=0;
   let spawnTimer=0;
+  let bossSpawned=false;
   let levelDone=false;
 
   const bullets=[];
@@ -348,6 +347,7 @@
     levelDone=false;
     spawned=0; killed=0;
     spawnTimer=0;
+    bossSpawned=false;
     levelQuota = cfg.quota;
 
     bullets.length=0; eBullets.length=0; beams.length=0;
@@ -358,12 +358,6 @@
     player.invuln = 0.8;
     player.shield = Math.max(player.shield, 1.0);
 
-    if (cfg.boss){
-      enemies.push(makeBoss(cfg));
-      spawned=1;
-      beep(120,0.16,"sawtooth",0.24);
-      noise(0.12,0.14);
-    }
   }
 
   function startSelectedLevel(L){ resetRun(); startLevel(L); state="playing"; }
@@ -423,7 +417,6 @@
   }
 
   function spawnEnemy(cfg){
-    if (cfg.boss) return;
     const roll = Math.random();
     let type="grunt";
     const a = cfg.laserChance*0.55;
@@ -586,7 +579,7 @@
 
   function finishLevel(){
     const cfg = LEVELS[level-1];
-    const completion = Math.floor((cfg.boss?320:170) * cfg.creditMul);
+    const completion = Math.floor(320 * cfg.creditMul);
     save.credits += creditsRun + completion;
     creditsRun = 0;
     save.unlocked = Math.max(save.unlocked, level+1);
@@ -624,13 +617,17 @@
     player.y = clamp(player.y + dy*player.speed*dt, player.r+12, innerHeight-player.r-12);
     if (keys.has(" ") || mouseDown) shoot();
 
-    if (!cfg.boss){
-      spawnTimer += dt;
-      if (spawned < levelQuota && spawnTimer >= cfg.spawnInterval){
-        spawnTimer=0;
-        spawnEnemy(cfg);
-        if (cfg.id>=10 && Math.random()<0.18 && spawned < levelQuota) spawnEnemy(cfg);
-      }
+    spawnTimer += dt;
+    if (spawned < levelQuota && spawnTimer >= cfg.spawnInterval){
+      spawnTimer=0;
+      spawnEnemy(cfg);
+      if (cfg.id>=10 && Math.random()<0.18 && spawned < levelQuota) spawnEnemy(cfg);
+    }
+    if (!bossSpawned && spawned >= levelQuota && enemies.length===0){
+      bossSpawned = true;
+      enemies.push(makeBoss(cfg));
+      beep(120,0.16,"sawtooth",0.24);
+      noise(0.12,0.14);
     }
 
     for (let i=bullets.length-1;i>=0;i--){ const b=bullets[i]; b.x += (b.vx||0)*dt; b.y += b.vy*dt; if (b.y<-60 || b.x<-60 || b.x>innerWidth+60) bullets.splice(i,1); }
@@ -712,11 +709,7 @@
       }
     }
 
-    if (!levelDone){
-      if (!cfg.boss){
-        if (spawned >= levelQuota && enemies.length===0){ levelDone=true; levelBanner=1.15; beep(440,0.10,"triangle",0.20); }
-      }
-    } else if (levelBanner<=0) finishLevel();
+    if (levelDone && levelBanner<=0) finishLevel();
   }
 
   function nowSec(){ return performance.now()/1000; }
@@ -800,7 +793,8 @@
       ctx.font="900 34px system-ui,-apple-system,Segoe UI,Roboto,Arial";
       ctx.textAlign="center"; ctx.textBaseline="middle";
       const cfg = LEVELS[level-1];
-      ctx.fillText(cfg.boss?`BOSS LEVEL ${level}`:`LEVEL ${level}`, innerWidth/2, innerHeight*0.18);
+      const phaseLabel = bossSpawned ? `BOSS LEVEL ${level}` : `LEVEL ${level}`;
+      ctx.fillText(phaseLabel, innerWidth/2, innerHeight*0.18);
       ctx.globalAlpha=1;
     }
   }
@@ -861,7 +855,7 @@
     if (line.length) ctx.fillText(`Buffs: ${line.join("  ")}`, bx, by+34);
     else {
       const cfg=LEVELS[level-1];
-      ctx.fillText(!cfg.boss ? `Enemies left: ${Math.max(0, levelQuota-spawned) + enemies.length}` : "Boss fight", bx, by+34);
+      ctx.fillText(bossSpawned ? "Boss fight" : `Enemies left: ${Math.max(0, levelQuota-spawned) + enemies.length}`, bx, by+34);
     }
     ctx.textAlign="right";
     ctx.fillText(`Ship: ${shipById(save.shipId).name} • Weapon: ${player.weapon} • DMG: ${effectiveDamage()} • ROF: ${effectiveFireRate().toFixed(1)}/s`, innerWidth-14, 14);
@@ -898,7 +892,7 @@
     const w=innerWidth,h=innerHeight;
     ctx.textAlign="left"; ctx.textBaseline="top";
     ctx.fillStyle="rgba(255,255,255,0.92)"; ctx.font="900 26px system-ui,-apple-system,Segoe UI,Roboto,Arial"; ctx.fillText("Campaign Map (Longer)", 18, 18);
-    ctx.fillStyle="rgba(255,255,255,0.70)"; ctx.font="700 14px system-ui,-apple-system,Segoe UI,Roboto,Arial"; ctx.fillText("Levels are longer now. More enemies per sector. Boss every 5 levels.", 18, 52);
+    ctx.fillStyle="rgba(255,255,255,0.70)"; ctx.font="700 14px system-ui,-apple-system,Segoe UI,Roboto,Arial"; ctx.fillText("Levels are longer now. Each level ends with a boss fight.", 18, 52);
     const px = w*0.62, py = 88, pw = w*0.36-18, ph = h-106;
     panel(px,py,pw,ph);
     ctx.fillStyle="rgba(255,255,255,0.92)"; ctx.font="900 18px system-ui,-apple-system,Segoe UI,Roboto,Arial"; ctx.fillText("Ship Select", px+18, py+16);
@@ -916,7 +910,7 @@
       ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
     }
     for (let i=0;i<LEVELS.length;i++){
-      const L = LEVELS[i], p = levelNodePos(i), unlocked = (L.id <= save.unlocked), isBoss = L.boss;
+      const L = LEVELS[i], p = levelNodePos(i), unlocked = (L.id <= save.unlocked), isBoss = true;
       ctx.fillStyle = unlocked ? (isBoss ? "rgba(255,110,130,0.85)" : "rgba(120,220,255,0.85)") : "rgba(255,255,255,0.12)";
       ctx.beginPath(); ctx.arc(p.x,p.y, isBoss?16:13, 0, TAU); ctx.fill();
       ctx.strokeStyle = unlocked ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.10)";
