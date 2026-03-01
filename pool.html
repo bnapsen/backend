@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mini Pool Game</title>
+  <title>Pool Rush Challenge</title>
   <link rel="stylesheet" href="pool.css" />
 </head>
 <body>
@@ -11,14 +11,19 @@
     <canvas id="poolTable" aria-label="pool game canvas"></canvas>
 
     <section class="hud" aria-live="polite">
-      <h1>Mini Pool</h1>
-      <p>Drag from the cue ball to aim and set power, then release to shoot.</p>
+      <h1>Pool Rush</h1>
+      <p>Clear all neon targets before you run out of shots. Chain pockets to build combos.</p>
       <div class="stats">
         <span id="score">Score: 0</span>
-        <span id="shots">Shots: 0</span>
+        <span id="level">Level: 1</span>
+        <span id="shots">Shots Left: 10</span>
+        <span id="combo">Combo: x1</span>
       </div>
-      <button id="resetBtn" type="button">Reset Rack</button>
-      <a class="back-link" href="index.html">← Back to home</a>
+      <p class="status" id="status">Sink all target balls to start your run.</p>
+      <div class="controls">
+        <button id="resetBtn" type="button">Restart Run</button>
+        <a class="back-link" href="index.html">← Back to home</a>
+      </div>
     </section>
   </main>
 
