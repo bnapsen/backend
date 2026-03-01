@@ -161,11 +161,13 @@ const GAME_MODES = {
 
 function getRackSpots() {
   const radius = Math.max(10, Math.round(Math.min(table.w, table.h) * 0.019));
-  const spacing = radius * 2.05;
   const rackRows = 5;
+  const feltWidth = feltBounds.maxX - feltBounds.minX;
+  const maxUsableRackWidth = Math.max(0, feltWidth - radius * 2);
+  const spacing = Math.min(radius * 2.05, maxUsableRackWidth / (rackRows - 1));
   const rackWidth = (rackRows - 1) * spacing;
   const rackHalfHeight = ((rackRows - 1) * spacing) / 2;
-  const preferredX = table.x + table.w * 0.67;
+  const preferredX = feltBounds.minX + feltWidth * 0.67;
   const preferredY = table.y + table.h / 2;
 
   const minStartX = feltBounds.minX + radius;
