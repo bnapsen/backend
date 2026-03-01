@@ -99,7 +99,7 @@ function makeBall(x, y, color, type = "target") {
     y,
     vx: 0,
     vy: 0,
-    r: Math.max(9, Math.round(Math.min(table.w, table.h) * 0.017)),
+    r: Math.max(10, Math.round(Math.min(table.w, table.h) * 0.019)),
     color,
     type,
     sunk: false,
@@ -140,7 +140,7 @@ function isPositionClear(x, y, radius) {
 }
 
 function placeBallWithoutOverlap(type, color) {
-  const radius = Math.max(9, Math.round(Math.min(table.w, table.h) * 0.017));
+  const radius = Math.max(10, Math.round(Math.min(table.w, table.h) * 0.019));
   const minX = table.x + table.rail + radius + 10;
   const maxX = table.x + table.w - table.rail - radius - 10;
   const minY = table.y + table.rail + radius + 10;
@@ -168,10 +168,12 @@ function setupLevel() {
 
   for (let i = 0; i < targetCount; i += 1) {
     placeBallWithoutOverlap("target", targetPalette[i % targetPalette.length]);
+    state.balls[state.balls.length - 1].number = i + 1;
   }
 
   for (let i = 0; i < blockerCount; i += 1) {
     placeBallWithoutOverlap("blocker", "#5c6376");
+    state.balls[state.balls.length - 1].number = targetCount + i + 1;
   }
 
   state.shotsLeft = Math.max(7, 10 - Math.floor(state.level / 2));
@@ -276,6 +278,20 @@ function drawBall(ball) {
     ctx.moveTo(ball.x + ball.r * 0.55, ball.y - ball.r * 0.55);
     ctx.lineTo(ball.x - ball.r * 0.55, ball.y + ball.r * 0.55);
     ctx.stroke();
+  }
+
+  if (ball.type !== "cue" && ball.number) {
+    const labelR = ball.r * 0.42;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, labelR, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.fill();
+
+    ctx.fillStyle = "#151825";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `700 ${Math.max(10, Math.round(ball.r * 0.9))}px system-ui`;
+    ctx.fillText(String(ball.number), ball.x, ball.y + 0.5);
   }
 
   ctx.strokeStyle = "rgba(0,0,0,0.35)";
