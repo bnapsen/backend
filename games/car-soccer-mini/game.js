@@ -25,6 +25,13 @@
     fullscreenToggle: document.getElementById('fullscreenToggle'),
     resumeBtn: document.getElementById('resumeBtn'),
     restartBtn: document.getElementById('restartBtn'),
+    leftTeamLabel: document.getElementById('leftTeamLabel'),
+    rightTeamLabel: document.getElementById('rightTeamLabel'),
+    roomCodeInput: document.getElementById('roomCodeInput'),
+    serverUrlInput: document.getElementById('serverUrlInput'),
+    hostOnlineBtn: document.getElementById('hostOnlineBtn'),
+    joinOnlineBtn: document.getElementById('joinOnlineBtn'),
+    copyInviteBtn: document.getElementById('copyInviteBtn'),
     touchControls: document.getElementById('touchControls')
   };
 
@@ -49,7 +56,7 @@
       role: 'local',
       ws: null,
       roomCode: '',
-      serverUrl: 'ws://localhost:8080',
+      serverUrl: `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname || 'localhost'}:8080`,
       reconnectAttempt: 0,
       reconnectTimer: null,
       lastRemoteInput: null,
@@ -172,6 +179,30 @@
         color
       });
     }
+  }
+
+
+  function sanitizeRoomCode(raw) {
+    return String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 12) || 'PUBLIC';
+  }
+
+  function sanitizeServerUrl(raw) {
+    const value = String(raw || '').trim();
+    if (!value) return state.multiplayer.serverUrl;
+    if (/^wss?:\/\//i.test(value)) return value;
+    return `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${value}`;
+  }
+
+  function disconnectMultiplayer(forceLocal = false) {
+    const net = state.multiplayer;
+    resetMultiplayerConnection();
+    net.lastRemoteInput = null;
+    net.reconnectAttempt = 0;
+    if (forceLocal) {
+      net.enabled = false;
+      net.role = 'local';
+    }
+    bot.isBot = true;
   }
 
 
@@ -321,6 +352,7 @@
 
     ws.onopen = () => {
       net.reconnectAttempt = 0;
+      bot.isBot = net.role !== 'guest';
       sendNetworkMessage('join', { room: net.roomCode || 'public' });
       state.message = 'Connected to server';
       state.messageTime = 1;
@@ -340,6 +372,8 @@
 
     ws.onclose = () => {
       net.ws = null;
+      net.lastRemoteInput = null;
+      bot.isBot = true;
       if (net.enabled) scheduleReconnect();
     };
   }
@@ -595,7 +629,8 @@
     if (side === 'player') state.scoreA += 1;
     else state.scoreB += 1;
 
-    state.message = side === 'player' ? 'GOAL! You scored!' : 'Bot scores!';
+    const opponentName = bot.isBot ? 'Bot' : 'Opponent';
+    state.message = side === 'player' ? 'GOAL! You scored!' : `${opponentName} scores!`;
     state.messageTime = 1.6;
     state.shake = 0.35;
     spawnParticles(ball.pos.x, ball.pos.y, 45, side === 'player' ? '#4ec9ff' : '#ff8d87', 400);
@@ -628,7 +663,8 @@
   function endMatch() {
     state.gameOver = true;
     state.paused = true;
-    const label = state.scoreA === state.scoreB ? 'Draw Game!' : state.scoreA > state.scoreB ? 'You Win!' : 'Bot Wins!';
+    const opponentName = bot.isBot ? 'Bot' : 'Opponent';
+    const label = state.scoreA === state.scoreB ? 'Draw Game!' : state.scoreA > state.scoreB ? 'You Win!' : `${opponentName} Wins!`;
     ui.menuStatus.textContent = `${label} (${state.scoreA}-${state.scoreB})`;
     ui.pauseMenu.classList.remove('hidden');
   }
@@ -662,6 +698,8 @@
 
   function updateUI() {
     ui.networkStatus.textContent = getMultiplayerStatusLabel();
+    ui.leftTeamLabel.textContent = state.multiplayer.role === 'guest' ? 'Host' : 'You';
+    ui.rightTeamLabel.textContent = bot.isBot ? 'Bot' : (state.multiplayer.role === 'guest' ? 'You' : 'Opponent');
     ui.score.textContent = `${state.scoreA} - ${state.scoreB}`;
     const mins = Math.floor(state.countdown / 60).toString().padStart(2, '0');
     const secs = Math.floor(state.countdown % 60).toString().padStart(2, '0');
@@ -875,16 +913,57 @@
       }
     });
 
+    ui.hostOnlineBtn.addEventListener('click', () => {
+      const net = state.multiplayer;
+      net.roomCode = sanitizeRoomCode(ui.roomCodeInput.value || net.roomCode);
+      net.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value || net.serverUrl);
+      net.role = 'host';
+      net.enabled = true;
+      disconnectMultiplayer(false);
+      connectToMultiplayer();
+      state.message = `Hosting room ${net.roomCode}`;
+      state.messageTime = 1.2;
+    });
+
+    ui.joinOnlineBtn.addEventListener('click', () => {
+      const net = state.multiplayer;
+      net.roomCode = sanitizeRoomCode(ui.roomCodeInput.value || net.roomCode);
+      net.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value || net.serverUrl);
+      net.role = 'guest';
+      net.enabled = true;
+      disconnectMultiplayer(false);
+      connectToMultiplayer();
+      state.message = `Joining room ${net.roomCode}`;
+      state.messageTime = 1.2;
+    });
+
+    ui.copyInviteBtn.addEventListener('click', async () => {
+      const net = state.multiplayer;
+      const room = sanitizeRoomCode(ui.roomCodeInput.value || net.roomCode);
+      const server = sanitizeServerUrl(ui.serverUrlInput.value || net.serverUrl);
+      const invite = `${window.location.origin}${window.location.pathname}?mp=1&role=guest&room=${encodeURIComponent(room)}&server=${encodeURIComponent(server)}`;
+      try {
+        await navigator.clipboard.writeText(invite);
+        state.message = 'Invite copied';
+      } catch (_) {
+        state.message = 'Copy failed';
+      }
+      state.messageTime = 1.2;
+    });
+
     const params = new URLSearchParams(window.location.search);
     const net = state.multiplayer;
     if (params.get('mp') === '1') {
       net.enabled = true;
-      net.roomCode = (params.get('room') || '').trim().toUpperCase();
-      net.serverUrl = params.get('server') || net.serverUrl;
+      net.roomCode = sanitizeRoomCode(params.get('room') || net.roomCode);
+      net.serverUrl = sanitizeServerUrl(params.get('server') || net.serverUrl);
       const role = params.get('role');
       if (role === 'host' || role === 'guest') net.role = role;
       connectToMultiplayer();
     }
+
+    ui.roomCodeInput.value = net.roomCode || 'PUBLIC';
+    ui.serverUrlInput.value = net.serverUrl;
 
     if (isTouchDevice()) {
       ui.touchControls.classList.remove('hidden');
