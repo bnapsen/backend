@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini Pool Game</title>
+  <link rel="stylesheet" href="pool.css" />
+</head>
+<body>
+  <main class="layout">
+    <section class="hud">
+      <h1>Mini Pool</h1>
+      <p>Drag from the cue ball to aim and set power, then release to shoot.</p>
+      <div class="stats">
+        <span id="score">Score: 0</span>
+        <span id="shots">Shots: 0</span>
+      </div>
+      <button id="resetBtn" type="button">Reset Rack</button>
+      <a class="back-link" href="index.html">← Back to home</a>
+    </section>
+
+    <section class="table-shell">
+      <canvas id="poolTable" width="960" height="520" aria-label="pool game canvas"></canvas>
+    </section>
+  </main>
+
+  <script src="pool.js"></script>
+</body>
+</html>
