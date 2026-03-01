@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neon Stack Rush</title>
+  <style>
+    :root {
+      --bg-1: #05050f;
+      --bg-2: #120a2a;
+      --accent: #08f7fe;
+      --accent-2: #fe53bb;
+      --accent-3: #f5d300;
+      --panel: rgba(8, 10, 24, 0.75);
+      --text: #ecf8ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 20% 20%, #1a1040, var(--bg-1) 45%),
+        radial-gradient(circle at 80% 10%, #2a0f39, transparent 50%),
+        linear-gradient(135deg, var(--bg-1), var(--bg-2));
+      overflow: hidden;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: -25vmax;
+      background: conic-gradient(from 180deg, transparent, rgba(8, 247, 254, 0.18), transparent, rgba(254, 83, 187, 0.18), transparent);
+      animation: spin 18s linear infinite;
+      pointer-events: none;
+      filter: blur(40px);
+      z-index: -2;
+    }
+
+    body::after {
+      animation-duration: 30s;
+      animation-direction: reverse;
+      opacity: 0.6;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .game-shell {
+      width: min(95vw, 960px);
+      display: grid;
+      grid-template-columns: minmax(300px, 440px) minmax(220px, 1fr);
+      gap: 1.2rem;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(8, 247, 254, 0.35);
+      border-radius: 16px;
+      box-shadow: 0 0 24px rgba(8, 247, 254, 0.22), inset 0 0 24px rgba(254, 83, 187, 0.14);
+      backdrop-filter: blur(8px);
+      padding: 1rem;
+    }
+
+    h1 {
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: clamp(1.2rem, 2vw, 1.7rem);
+      text-shadow: 0 0 12px rgba(8, 247, 254, 0.8);
+    }
+
+    p.subtitle {
+      margin: 0.5rem 0 0;
+      opacity: 0.9;
+      font-size: 0.95rem;
+      line-height: 1.35;
+    }
+
+    canvas {
+      width: 100%;
+      max-width: 440px;
+      background: linear-gradient(180deg, rgba(2, 7, 20, 0.9), rgba(9, 4, 16, 0.95));
+      border: 1px solid rgba(245, 211, 0, 0.4);
+      border-radius: 10px;
+      box-shadow: 0 0 18px rgba(245, 211, 0, 0.2);
+      display: block;
+      margin: 1rem auto 0;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.8rem;
+      margin-top: 0.8rem;
+    }
+
+    .stat {
+      background: rgba(5, 10, 24, 0.6);
+      border: 1px solid rgba(8, 247, 254, 0.2);
+      border-radius: 10px;
+      padding: 0.6rem;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 0.8rem;
+      opacity: 0.7;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .stat span {
+      font-size: 1.2rem;
+      color: var(--accent-3);
+      text-shadow: 0 0 10px rgba(245, 211, 0, 0.6);
+    }
+
+    .controls {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    .controls kbd {
+      background: rgba(236, 248, 255, 0.1);
+      border: 1px solid rgba(236, 248, 255, 0.25);
+      border-bottom-width: 2px;
+      border-radius: 6px;
+      padding: 0.1rem 0.35rem;
+      font-size: 0.82rem;
+    }
+
+    .actions {
+      margin-top: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+    }
+
+    button,
+    .back-link {
+      border: none;
+      border-radius: 999px;
+      padding: 0.55rem 1rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.75rem;
+      cursor: pointer;
+      text-decoration: none;
+      color: #0a0a11;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      box-shadow: 0 0 12px rgba(8, 247, 254, 0.42);
+    }
+
+    button:hover,
+    .back-link:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 16px rgba(254, 83, 187, 0.5);
+    }
+
+    #status {
+      min-height: 1.4rem;
+      margin-top: 0.8rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-shadow: 0 0 8px rgba(8, 247, 254, 0.65);
+    }
+
+    @media (max-width: 860px) {
+      .game-shell {
+        grid-template-columns: 1fr;
+        width: min(96vw, 460px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="game-shell">
+    <section class="panel">
+      <h1>Neon Stack Rush</h1>
+      <p class="subtitle">Tetris-inspired chaos with a twist: every few clears, the gravity vector flips. Survive the flux and keep your stack under control.</p>
+      <canvas id="game" width="320" height="640" aria-label="Neon Stack Rush game board"></canvas>
+    </section>
+
+    <aside class="panel">
+      <div class="stats">
+        <div class="stat"><strong>Score</strong><span id="score">0</span></div>
+        <div class="stat"><strong>Lines</strong><span id="lines">0</span></div>
+        <div class="stat"><strong>Level</strong><span id="level">1</span></div>
+        <div class="stat"><strong>Gravity</strong><span id="gravity">Down</span></div>
+      </div>
+
+      <div class="controls">
+        <p><kbd>←</kbd> <kbd>→</kbd> Move&nbsp;&nbsp; <kbd>↑</kbd> Rotate&nbsp;&nbsp; <kbd>↓</kbd> Soft drop</p>
+        <p><kbd>Space</kbd> Hard drop &nbsp; <kbd>G</kbd> Manual gravity flip (2,000 pts cost)</p>
+      </div>
+
+      <div class="actions">
+        <button id="restart">Restart</button>
+        <a class="back-link" href="index.html">Back to Hub</a>
+      </div>
+
+      <p id="status"></p>
+    </aside>
+  </main>
+
+  <script>
+    const COLS = 10;
+    const ROWS = 20;
+    const BLOCK = 32;
+    const FLIP_EVERY_LINES = 5;
+
+    const colors = [
+      null,
+      '#08f7fe', '#fe53bb', '#f5d300', '#39ff14', '#ff7f50', '#ab47ff', '#ff2d55'
+    ];
+
+    const pieces = [
+      [],
+      [[1, 1, 1, 1]],
+      [[2, 0, 0], [2, 2, 2]],
+      [[0, 0, 3], [3, 3, 3]],
+      [[4, 4], [4, 4]],
+      [[0, 5, 5], [5, 5, 0]],
+      [[0, 6, 0], [6, 6, 6]],
+      [[7, 7, 0], [0, 7, 7]],
+    ];
+
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    const scoreEl = document.getElementById('score');
+    const linesEl = document.getElementById('lines');
+    const levelEl = document.getElementById('level');
+    const gravityEl = document.getElementById('gravity');
+    const statusEl = document.getElementById('status');
+
+    const state = {
+      board: createBoard(),
+      active: null,
+      score: 0,
+      lines: 0,
+      level: 1,
+      gravity: 1,
+      gameOver: false,
+      dropCounter: 0,
+      dropInterval: 700,
+      lastTime: 0,
+    };
+
+    function createBoard() {
+      return Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    }
+
+    function spawnPiece() {
+      const type = 1 + Math.floor(Math.random() * 7);
+      const shape = pieces[type].map(r => [...r]);
+      state.active = {
+        shape,
+        x: Math.floor((COLS - shape[0].length) / 2),
+        y: state.gravity === 1 ? 0 : ROWS - shape.length,
+      };
+      if (collides(state.active.x, state.active.y, shape)) {
+        state.gameOver = true;
+        statusEl.textContent = 'Game Over. The neon stack wins this round.';
+      }
+    }
+
+    function collides(nx, ny, shape) {
+      for (let y = 0; y < shape.length; y++) {
+        for (let x = 0; x < shape[y].length; x++) {
+          if (!shape[y][x]) continue;
+          const by = ny + y;
+          const bx = nx + x;
+          if (bx < 0 || bx >= COLS || by < 0 || by >= ROWS) return true;
+          if (state.board[by][bx]) return true;
+        }
+      }
+      return false;
+    }
+
+    function mergePiece() {
+      const { shape, x: ox, y: oy } = state.active;
+      shape.forEach((row, y) => row.forEach((cell, x) => {
+        if (cell) state.board[oy + y][ox + x] = cell;
+      }));
+    }
+
+    function clearLines() {
+      let cleared = 0;
+      outer: for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (state.board[y][x] === 0) continue outer;
+        }
+        state.board.splice(y, 1);
+        state.board.unshift(Array(COLS).fill(0));
+        cleared++;
+      }
+
+      if (cleared) {
+        state.lines += cleared;
+        state.score += [0, 120, 350, 800, 1400][cleared] * state.level;
+        state.level = 1 + Math.floor(state.lines / 10);
+        state.dropInterval = Math.max(110, 700 - (state.level - 1) * 55);
+
+        const shouldFlip = Math.floor((state.lines - cleared) / FLIP_EVERY_LINES) !== Math.floor(state.lines / FLIP_EVERY_LINES);
+        if (shouldFlip) flipGravity('Gravity flip! Adapt fast.');
+      }
+    }
+
+    function rotate(matrix) {
+      const rows = matrix.length;
+      const cols = matrix[0].length;
+      const rotated = Array.from({ length: cols }, () => Array(rows).fill(0));
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          rotated[x][rows - 1 - y] = matrix[y][x];
+        }
+      }
+      return rotated;
+    }
+
+    function move(dx) {
+      if (state.gameOver) return;
+      const nx = state.active.x + dx;
+      if (!collides(nx, state.active.y, state.active.shape)) state.active.x = nx;
+    }
+
+    function drop() {
+      if (state.gameOver) return;
+      const ny = state.active.y + state.gravity;
+      if (!collides(state.active.x, ny, state.active.shape)) {
+        state.active.y = ny;
+      } else {
+        mergePiece();
+        clearLines();
+        spawnPiece();
+      }
+      state.dropCounter = 0;
+    }
+
+    function hardDrop() {
+      if (state.gameOver) return;
+      while (!collides(state.active.x, state.active.y + state.gravity, state.active.shape)) {
+        state.active.y += state.gravity;
+        state.score += 2;
+      }
+      drop();
+    }
+
+    function tryRotate() {
+      if (state.gameOver) return;
+      const rotated = rotate(state.active.shape);
+      const offsets = [0, -1, 1, -2, 2];
+      for (const offset of offsets) {
+        if (!collides(state.active.x + offset, state.active.y, rotated)) {
+          state.active.shape = rotated;
+          state.active.x += offset;
+          return;
+        }
+      }
+    }
+
+    function drawCell(x, y, value, alpha = 1) {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = colors[value];
+      ctx.fillRect(x * BLOCK, y * BLOCK, BLOCK, BLOCK);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.strokeRect(x * BLOCK + 1, y * BLOCK + 1, BLOCK - 2, BLOCK - 2);
+      ctx.shadowColor = colors[value];
+      ctx.shadowBlur = 12;
+      ctx.fillRect(x * BLOCK + 3, y * BLOCK + 3, BLOCK - 6, BLOCK - 6);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (state.board[y][x]) drawCell(x, y, state.board[y][x]);
+        }
+      }
+
+      if (state.active) {
+        state.active.shape.forEach((row, y) => row.forEach((value, x) => {
+          if (value) drawCell(state.active.x + x, state.active.y + y, value);
+        }));
+      }
+
+      ctx.strokeStyle = 'rgba(8, 247, 254, 0.2)';
+      for (let x = 1; x < COLS; x++) {
+        ctx.beginPath();
+        ctx.moveTo(x * BLOCK, 0);
+        ctx.lineTo(x * BLOCK, ROWS * BLOCK);
+        ctx.stroke();
+      }
+      for (let y = 1; y < ROWS; y++) {
+        ctx.beginPath();
+        ctx.moveTo(0, y * BLOCK);
+        ctx.lineTo(COLS * BLOCK, y * BLOCK);
+        ctx.stroke();
+      }
+    }
+
+    function flipGravity(message = 'Gravity reversed!') {
+      state.gravity *= -1;
+      gravityEl.textContent = state.gravity === 1 ? 'Down' : 'Up';
+      statusEl.textContent = message;
+    }
+
+    function updateHUD() {
+      scoreEl.textContent = state.score;
+      linesEl.textContent = state.lines;
+      levelEl.textContent = state.level;
+    }
+
+    function gameLoop(time = 0) {
+      const delta = time - state.lastTime;
+      state.lastTime = time;
+      if (!state.gameOver) {
+        state.dropCounter += delta;
+        if (state.dropCounter > state.dropInterval) drop();
+      }
+      draw();
+      updateHUD();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function resetGame() {
+      state.board = createBoard();
+      state.score = 0;
+      state.lines = 0;
+      state.level = 1;
+      state.gravity = 1;
+      state.gameOver = false;
+      state.dropCounter = 0;
+      state.lastTime = 0;
+      state.dropInterval = 700;
+      gravityEl.textContent = 'Down';
+      statusEl.textContent = 'Neon stack online. Good luck.';
+      spawnPiece();
+      updateHUD();
+      draw();
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (!state.active) return;
+      if (event.key === 'ArrowLeft') move(-1);
+      if (event.key === 'ArrowRight') move(1);
+      if (event.key === 'ArrowUp') tryRotate();
+      if (event.key === 'ArrowDown') {
+        state.score += 1;
+        drop();
+      }
+      if (event.code === 'Space') {
+        event.preventDefault();
+        hardDrop();
+      }
+      if (event.key.toLowerCase() === 'g') {
+        if (state.score >= 2000) {
+          state.score -= 2000;
+          flipGravity('Manual gravity hack activated.');
+        } else {
+          statusEl.textContent = 'Need 2,000 points for a manual flip.';
+        }
+      }
+    });
+
+    document.getElementById('restart').addEventListener('click', resetGame);
+
+    resetGame();
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
