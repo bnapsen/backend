@@ -108,3 +108,39 @@ body {
   background: rgba(255, 255, 255, 0.15);
   color: #f2f5ff;
 }
+
+
+.hud.is-hidden {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.98);
+  pointer-events: none;
+}
+
+.hud-toggle {
+  position: absolute;
+  top: clamp(0.8rem, 2vw, 1.4rem);
+  left: clamp(0.8rem, 2vw, 1.4rem);
+  z-index: 2;
+  border: 1px solid rgba(157, 193, 255, 0.38);
+  border-radius: 999px;
+  padding: 0.55rem 0.85rem;
+  background: rgba(11, 15, 32, 0.85);
+  color: #eef3ff;
+  font-size: 0.9rem;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+}
+
+.hud-toggle:hover {
+  filter: brightness(1.08);
+}
+
+.hud-toggle.is-hidden {
+  display: none;
+}
+
+.hud {
+  transition: opacity 170ms ease, transform 170ms ease;
+  z-index: 1;
+}
