@@ -339,7 +339,7 @@ function applyPhysics() {
   const { minX, maxX, minY, maxY } = feltBounds;
   const pocketCaptureR = table.pocketR + 4;
   const pocketSinkR = Math.max(7, table.pocketR - 4);
-  const mouthClearance = table.pocketR * 1.45;
+  const mouthClearance = pocketCaptureR;
 
   const hasPocketClearanceOnTopBottom = (x, boundaryY) => pockets.some(
     (p) => Math.abs(p.y - boundaryY) < 1 && Math.abs(x - p.x) < mouthClearance,
