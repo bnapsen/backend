@@ -552,14 +552,13 @@ canvas.addEventListener("pointerup", (event) => {
   const dy = cue.y - state.pointer.y;
   const distance = Math.min(Math.hypot(dx, dy), 180);
 
+  if (distance <= 2) return;
+
   cue.vx = (dx / 180) * 13;
   cue.vy = (dy / 180) * 13;
-
-  if (distance > 2) {
-    state.shotsLeft -= 1;
-    state.wasMoving = true;
-    updateHud();
-  }
+  state.shotsLeft -= 1;
+  state.wasMoving = true;
+  updateHud();
 });
 
 window.addEventListener("resize", resizeCanvas);
