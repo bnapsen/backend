@@ -15,8 +15,8 @@ body {
 body {
   margin: 0;
   overflow: hidden;
-  font-family: "Inter", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  background: radial-gradient(circle at 50% 15%, #222840 0%, #0a0c15 60%, #05060d 100%);
+  font-family: Inter, "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: radial-gradient(circle at 50% 20%, #1a2038 0%, #090b12 58%, #04050a 100%);
   color: #f2f4ff;
 }
 
@@ -35,35 +35,35 @@ body {
 
 .hud {
   position: absolute;
-  top: clamp(0.8rem, 2vw, 1.5rem);
-  left: clamp(0.8rem, 2vw, 1.5rem);
-  width: min(330px, calc(100vw - 1.6rem));
-  background: rgba(11, 15, 26, 0.68);
-  border: 1px solid rgba(180, 217, 255, 0.3);
-  border-radius: 16px;
-  padding: 1rem;
+  top: 0.9rem;
+  left: 0.9rem;
+  width: min(360px, calc(100vw - 1.8rem));
+  background: rgba(8, 12, 22, 0.72);
+  border: 1px solid rgba(164, 200, 255, 0.38);
+  border-radius: 14px;
+  padding: 0.95rem;
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: 0.65rem;
   backdrop-filter: blur(8px);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
   z-index: 2;
 }
 
-.hud h1 {
+.hud h1,
+.hud p {
   margin: 0;
-  letter-spacing: 0.02em;
 }
 
 .hud p {
-  margin: 0;
-  color: rgba(242, 244, 255, 0.9);
+  font-size: 0.95rem;
+  color: rgba(239, 242, 255, 0.9);
 }
 
 .stats {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem 0.8rem;
   font-weight: 650;
 }
 
@@ -71,10 +71,10 @@ body {
 .back-link {
   border: none;
   border-radius: 10px;
-  padding: 0.68rem 0.95rem;
+  padding: 0.65rem 0.9rem;
   font-size: 1rem;
   cursor: pointer;
-  transition: transform 150ms ease, filter 150ms ease;
+  transition: transform 130ms ease, filter 130ms ease;
 }
 
 #resetBtn:hover,
@@ -84,14 +84,14 @@ body {
 }
 
 #resetBtn {
-  background: linear-gradient(180deg, #57a9ff, #3f7df4);
+  background: linear-gradient(180deg, #61b2ff, #3d7ef4);
   color: #fff;
 }
 
 .back-link {
   text-align: center;
   text-decoration: none;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.15);
   color: #f2f4ff;
 }
 
@@ -99,12 +99,5 @@ body {
   .hud {
     top: auto;
     bottom: 0.8rem;
-    left: 0.8rem;
-    width: min(420px, calc(100vw - 1.6rem));
-    background: rgba(11, 15, 26, 0.76);
-  }
-
-  .hud p {
-    font-size: 0.95rem;
   }
 }

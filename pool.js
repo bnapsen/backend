@@ -1,67 +1,128 @@
 const canvas = document.getElementById("poolTable");
 const ctx = canvas.getContext("2d");
+
 const scoreEl = document.getElementById("score");
 const shotsEl = document.getElementById("shots");
+const comboEl = document.getElementById("combo");
+const timeEl = document.getElementById("time");
+const remainingEl = document.getElementById("remaining");
 const resetBtn = document.getElementById("resetBtn");
 
 const table = {
   x: 60,
   y: 60,
   w: 960,
-  h: 520,
-  pocketR: 24,
+  h: 540,
+  rail: 32,
+  pocketR: 22,
   friction: 0.992,
-  lineX: 0,
 };
-
-let pockets = [];
 
 const state = {
   balls: [],
   score: 0,
   shots: 0,
+  combo: 1,
+  maxCombo: 1,
+  streakSinks: 0,
+  timeLeft: 60,
+  playing: true,
+  lastTick: performance.now(),
   aiming: false,
   pointer: { x: 0, y: 0 },
 };
 
+let pockets = [];
+
+function clamp(v, min, max) {
+  return Math.min(max, Math.max(min, v));
+}
+
 function updateTableGeometry() {
-  const pad = Math.max(12, Math.min(window.innerWidth, window.innerHeight) * 0.035);
-  const hudReserve = window.innerWidth > 1080 ? 320 : 0;
-  const maxW = Math.max(360, window.innerWidth - pad * 2 - hudReserve);
-  const maxH = window.innerHeight - pad * 2;
+  const pad = Math.max(12, Math.min(window.innerWidth, window.innerHeight) * 0.03);
+  const reserve = window.innerWidth > 1180 ? 340 : 0;
+  const maxW = Math.max(420, window.innerWidth - pad * 2 - reserve);
+  const maxH = Math.max(300, window.innerHeight - pad * 2);
   const aspect = 16 / 9;
 
-  let feltW = maxW;
-  let feltH = feltW / aspect;
+  let w = maxW;
+  let h = w / aspect;
 
-  if (feltH > maxH) {
-    feltH = maxH;
-    feltW = feltH * aspect;
+  if (h > maxH) {
+    h = maxH;
+    w = h * aspect;
   }
 
-  const rail = Math.max(28, Math.round(Math.min(feltW, feltH) * 0.05));
+  table.x = Math.round((window.innerWidth - w) / 2);
+  table.y = Math.round((window.innerHeight - h) / 2);
+  table.w = Math.round(w);
+  table.h = Math.round(h);
+  table.rail = Math.max(22, Math.round(Math.min(w, h) * 0.05));
+  table.pocketR = Math.max(14, Math.round(Math.min(w, h) * 0.03));
 
-  table.x = Math.round((window.innerWidth - feltW) / 2);
-  table.y = Math.round((window.innerHeight - feltH) / 2);
-  table.w = Math.round(feltW);
-  table.h = Math.round(feltH);
-  table.pocketR = Math.max(15, Math.round(Math.min(table.w, table.h) * 0.03));
-  table.rail = rail;
-  table.lineX = table.x + table.w * 0.28;
-
-  const feltX = table.x + table.rail;
-  const feltY = table.y + table.rail;
-  const innerW = table.w - table.rail * 2;
-  const innerH = table.h - table.rail * 2;
+  const fx = table.x + table.rail;
+  const fy = table.y + table.rail;
+  const fw = table.w - table.rail * 2;
+  const fh = table.h - table.rail * 2;
 
   pockets = [
-    { x: feltX, y: feltY },
-    { x: feltX + innerW / 2, y: feltY },
-    { x: feltX + innerW, y: feltY },
-    { x: feltX, y: feltY + innerH },
-    { x: feltX + innerW / 2, y: feltY + innerH },
-    { x: feltX + innerW, y: feltY + innerH },
+    { x: fx, y: fy },
+    { x: fx + fw / 2, y: fy },
+    { x: fx + fw, y: fy },
+    { x: fx, y: fy + fh },
+    { x: fx + fw / 2, y: fy + fh },
+    { x: fx + fw, y: fy + fh },
   ];
+}
+
+function makeBall(x, y, color, cue = false) {
+  const r = Math.max(8, Math.round(Math.min(table.w, table.h) * 0.016));
+  return { x, y, vx: 0, vy: 0, r, color, cue, sunk: false };
+}
+
+function setupRun() {
+  state.score = 0;
+  state.shots = 0;
+  state.combo = 1;
+  state.maxCombo = 1;
+  state.streakSinks = 0;
+  state.timeLeft = 60;
+  state.playing = true;
+  state.aiming = false;
+
+  state.balls = [];
+  const cue = makeBall(table.x + table.w * 0.24, table.y + table.h / 2, "#ffffff", true);
+  state.balls.push(cue);
+
+  const colors = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93", "#ff9f1c", "#00c2a8"];
+  const startX = table.x + table.w * 0.72;
+  const startY = table.y + table.h / 2;
+  const spacing = cue.r * 2.08;
+  let i = 0;
+
+  for (let row = 0; row < 5; row += 1) {
+    for (let col = 0; col <= row; col += 1) {
+      const x = startX + row * spacing;
+      const y = startY - (row * spacing) / 2 + col * spacing;
+      state.balls.push(makeBall(x, y, colors[i % colors.length]));
+      i += 1;
+    }
+  }
+
+  updateHud();
+}
+
+function updateHud() {
+  const remaining = state.balls.filter((b) => !b.cue && !b.sunk).length;
+  scoreEl.textContent = `Score: ${state.score}`;
+  shotsEl.textContent = `Shots: ${state.shots}`;
+  comboEl.textContent = `Combo: x${state.combo}`;
+  timeEl.textContent = `Time: ${Math.ceil(state.timeLeft)}`;
+  remainingEl.textContent = `Targets: ${remaining}`;
+}
+
+function isMoving() {
+  return state.balls.some((b) => !b.sunk && (Math.abs(b.vx) > 0.03 || Math.abs(b.vy) > 0.03));
 }
 
 function resizeCanvas() {
@@ -72,158 +133,103 @@ function resizeCanvas() {
   canvas.style.height = `${window.innerHeight}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   updateTableGeometry();
-
-  if (!isMoving()) {
-    rackBalls();
-  }
+  if (!isMoving()) setupRun();
 }
 
-function makeBall(x, y, color, cue = false) {
-  return { x, y, vx: 0, vy: 0, r: Math.max(9, Math.round(Math.min(table.w, table.h) * 0.017)), color, cue, sunk: false };
-}
-
-function rackBalls() {
-  state.balls = [];
-  state.score = 0;
-  state.shots = 0;
-
-  const cueBall = makeBall(table.x + table.w * 0.23, table.y + table.h / 2, "#ffffff", true);
-  state.balls.push(cueBall);
-
-  const startX = table.x + table.w * 0.72;
-  const startY = table.y + table.h / 2;
-  const colors = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93", "#ff9f1c"];
-  let index = 0;
-  const spacing = cueBall.r * 2.1;
-
-  for (let row = 0; row < 3; row += 1) {
-    for (let col = 0; col <= row; col += 1) {
-      const x = startX + row * spacing;
-      const y = startY - (row * spacing) / 2 + col * spacing;
-      state.balls.push(makeBall(x, y, colors[index % colors.length]));
-      index += 1;
-    }
-  }
-  updateHud();
-}
-
-function updateHud() {
-  scoreEl.textContent = `Score: ${state.score}`;
-  shotsEl.textContent = `Shots: ${state.shots}`;
-}
-
-function drawTable() {
-  const railInset = table.rail;
-  const feltX = table.x + railInset;
-  const feltY = table.y + railInset;
-  const feltW = table.w - railInset * 2;
-  const feltH = table.h - railInset * 2;
-
-  const roomGradient = ctx.createRadialGradient(
+function drawBackground() {
+  const room = ctx.createRadialGradient(
     window.innerWidth / 2,
     window.innerHeight / 2,
-    50,
+    40,
     window.innerWidth / 2,
     window.innerHeight / 2,
     window.innerWidth * 0.7,
   );
-  roomGradient.addColorStop(0, "#141b2e");
-  roomGradient.addColorStop(1, "#06070c");
-  ctx.fillStyle = roomGradient;
+  room.addColorStop(0, "#18223a");
+  room.addColorStop(1, "#05070d");
+  ctx.fillStyle = room;
   ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+}
 
-  ctx.fillStyle = "#4c2a14";
+function drawTable() {
+  drawBackground();
+
+  const fx = table.x + table.rail;
+  const fy = table.y + table.rail;
+  const fw = table.w - table.rail * 2;
+  const fh = table.h - table.rail * 2;
+
+  ctx.fillStyle = "#4a2915";
   ctx.fillRect(table.x, table.y, table.w, table.h);
-  ctx.strokeStyle = "rgba(255, 206, 150, 0.3)";
+
+  ctx.strokeStyle = "rgba(255,218,170,0.3)";
   ctx.lineWidth = 4;
   ctx.strokeRect(table.x + 2, table.y + 2, table.w - 4, table.h - 4);
 
-  const feltGradient = ctx.createLinearGradient(feltX, feltY, feltX, feltY + feltH);
-  feltGradient.addColorStop(0, "#17885d");
-  feltGradient.addColorStop(0.45, "#0f6f4d");
-  feltGradient.addColorStop(1, "#0a5c3f");
-  ctx.fillStyle = feltGradient;
-  ctx.fillRect(feltX, feltY, feltW, feltH);
+  const felt = ctx.createLinearGradient(fx, fy, fx, fy + fh);
+  felt.addColorStop(0, "#169064");
+  felt.addColorStop(0.5, "#0d7653");
+  felt.addColorStop(1, "#0a6244");
+  ctx.fillStyle = felt;
+  ctx.fillRect(fx, fy, fw, fh);
 
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
+  const lineX = fx + fw * 0.28;
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(table.lineX, feltY + 8);
-  ctx.lineTo(table.lineX, feltY + feltH - 8);
+  ctx.moveTo(lineX, fy + 10);
+  ctx.lineTo(lineX, fy + fh - 10);
   ctx.stroke();
-
-  const spotX = table.lineX + (feltW * 0.22);
-  const spotY = feltY + feltH / 2;
-  ctx.beginPath();
-  ctx.arc(spotX, spotY, Math.max(2.5, table.w * 0.003), 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(250,250,250,0.85)";
-  ctx.fill();
 
   pockets.forEach((p) => {
     ctx.beginPath();
     ctx.arc(p.x, p.y, table.pocketR, 0, Math.PI * 2);
-    const pocketGradient = ctx.createRadialGradient(p.x - 4, p.y - 4, 2, p.x, p.y, table.pocketR);
-    pocketGradient.addColorStop(0, "#3b3b3b");
-    pocketGradient.addColorStop(1, "#060606");
-    ctx.fillStyle = pocketGradient;
+    const pg = ctx.createRadialGradient(p.x - 4, p.y - 4, 2, p.x, p.y, table.pocketR);
+    pg.addColorStop(0, "#444");
+    pg.addColorStop(1, "#050505");
+    ctx.fillStyle = pg;
     ctx.fill();
   });
 }
 
-function drawBall(b) {
+function shade(hex, pct) {
+  const n = Number.parseInt(hex.replace("#", ""), 16);
+  const amt = Math.round(2.55 * pct);
+  const r = clamp((n >> 16) + amt, 0, 255);
+  const g = clamp(((n >> 8) & 255) + amt, 0, 255);
+  const b = clamp((n & 255) + amt, 0, 255);
+  return `#${(0x1000000 + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+
+function drawBall(ball) {
   ctx.beginPath();
-  ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-  const ballGradient = ctx.createRadialGradient(b.x - b.r * 0.35, b.y - b.r * 0.4, 1, b.x, b.y, b.r * 1.2);
-  ballGradient.addColorStop(0, "#ffffff");
-  ballGradient.addColorStop(0.14, b.cue ? "#ffffff" : b.color);
-  ballGradient.addColorStop(1, b.cue ? "#d6d6d6" : shade(b.color, -26));
-  ctx.fillStyle = ballGradient;
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  const g = ctx.createRadialGradient(ball.x - ball.r * 0.4, ball.y - ball.r * 0.4, 1, ball.x, ball.y, ball.r * 1.25);
+  g.addColorStop(0, "#fff");
+  g.addColorStop(0.2, ball.cue ? "#fff" : ball.color);
+  g.addColorStop(1, ball.cue ? "#d0d0d0" : shade(ball.color, -24));
+  ctx.fillStyle = g;
   ctx.fill();
 
-  ctx.strokeStyle = "rgba(0,0,0,0.35)";
   ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "rgba(0,0,0,0.35)";
   ctx.stroke();
 
-  if (!b.cue) {
+  if (!ball.cue) {
     ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r * 0.36, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,255,255,0.82)";
+    ctx.arc(ball.x, ball.y, ball.r * 0.36, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
     ctx.fill();
   }
-
-  ctx.beginPath();
-  ctx.arc(b.x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.21, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.fill();
-}
-
-function drawBalls() {
-  state.balls.forEach((b) => {
-    if (b.sunk) return;
-    drawBall(b);
-  });
-}
-
-function shade(hex, percent) {
-  const value = hex.replace("#", "");
-  const num = Number.parseInt(value, 16);
-  const amt = Math.round(2.55 * percent);
-  const r = (num >> 16) + amt;
-  const g = ((num >> 8) & 0x00ff) + amt;
-  const b = (num & 0x0000ff) + amt;
-  return `#${(0x1000000 + (Math.min(255, Math.max(0, r)) << 16) + (Math.min(255, Math.max(0, g)) << 8) + Math.min(255, Math.max(0, b))).toString(16).slice(1)}`;
-}
-
-function isMoving() {
-  return state.balls.some((b) => !b.sunk && (Math.abs(b.vx) > 0.03 || Math.abs(b.vy) > 0.03));
 }
 
 function applyPhysics() {
-  const railInset = table.rail;
-  const minX = table.x + railInset;
-  const maxX = table.x + table.w - railInset;
-  const minY = table.y + railInset;
-  const maxY = table.y + table.h - railInset;
+  const minX = table.x + table.rail;
+  const maxX = table.x + table.w - table.rail;
+  const minY = table.y + table.rail;
+  const maxY = table.y + table.h - table.rail;
+
+  let sunkThisFrame = 0;
 
   state.balls.forEach((b) => {
     if (b.sunk) return;
@@ -253,20 +259,21 @@ function applyPhysics() {
     }
 
     pockets.forEach((p) => {
-      const dx = b.x - p.x;
-      const dy = b.y - p.y;
-      if (Math.hypot(dx, dy) < table.pocketR - b.r * 0.35) {
+      if (b.sunk) return;
+      const d = Math.hypot(b.x - p.x, b.y - p.y);
+      if (d < table.pocketR - b.r * 0.35) {
         if (b.cue) {
-          b.x = table.x + table.w * 0.23;
+          b.x = table.x + table.w * 0.24;
           b.y = table.y + table.h / 2;
           b.vx = 0;
           b.vy = 0;
+          state.combo = 1;
+          state.streakSinks = 0;
         } else {
           b.sunk = true;
           b.vx = 0;
           b.vy = 0;
-          state.score += 1;
-          updateHud();
+          sunkThisFrame += 1;
         }
       }
     });
@@ -293,125 +300,154 @@ function applyPhysics() {
 
         const tx = -ny;
         const ty = nx;
+        const aTan = a.vx * tx + a.vy * ty;
+        const bTan = b.vx * tx + b.vy * ty;
+        const aNorm = a.vx * nx + a.vy * ny;
+        const bNorm = b.vx * nx + b.vy * ny;
 
-        const dpTanA = a.vx * tx + a.vy * ty;
-        const dpTanB = b.vx * tx + b.vy * ty;
-        const dpNormA = a.vx * nx + a.vy * ny;
-        const dpNormB = b.vx * nx + b.vy * ny;
-
-        a.vx = tx * dpTanA + nx * dpNormB;
-        a.vy = ty * dpTanA + ny * dpNormB;
-        b.vx = tx * dpTanB + nx * dpNormA;
-        b.vy = ty * dpTanB + ny * dpNormA;
+        a.vx = tx * aTan + nx * bNorm;
+        a.vy = ty * aTan + ny * bNorm;
+        b.vx = tx * bTan + nx * aNorm;
+        b.vy = ty * bTan + ny * aNorm;
       }
     }
   }
+
+  if (sunkThisFrame > 0) {
+    state.streakSinks += sunkThisFrame;
+    state.combo = Math.min(6, 1 + Math.floor(state.streakSinks / 2));
+    state.maxCombo = Math.max(state.maxCombo, state.combo);
+    state.score += sunkThisFrame * 100 * state.combo;
+    state.timeLeft += sunkThisFrame * 1.5;
+    updateHud();
+  }
+
+  if (!isMoving() && state.streakSinks > 0) {
+    state.streakSinks = 0;
+    state.combo = 1;
+    updateHud();
+  }
 }
 
-function drawAimLine() {
-  if (!state.aiming || isMoving()) return;
-  const cueBall = state.balls.find((b) => b.cue);
-  const dx = state.pointer.x - cueBall.x;
-  const dy = state.pointer.y - cueBall.y;
-  const distance = Math.min(Math.hypot(dx, dy), 170);
+function drawAimAssist() {
+  if (!state.aiming || isMoving() || !state.playing) return;
+
+  const cue = state.balls.find((b) => b.cue && !b.sunk);
+  if (!cue) return;
+
+  const dx = state.pointer.x - cue.x;
+  const dy = state.pointer.y - cue.y;
+  const dist = Math.hypot(dx, dy);
+  const power = clamp(dist / 180, 0, 1);
 
   ctx.beginPath();
-  ctx.moveTo(cueBall.x, cueBall.y);
-  ctx.lineTo(cueBall.x - dx, cueBall.y - dy);
-  ctx.strokeStyle = "rgba(255,255,255,0.75)";
-  ctx.lineWidth = 2.5;
-  ctx.setLineDash([8, 7]);
+  ctx.moveTo(cue.x, cue.y);
+  ctx.lineTo(cue.x - dx, cue.y - dy);
+  ctx.setLineDash([8, 8]);
+  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = "rgba(255,255,255,0.78)";
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const ux = dx / (Math.hypot(dx, dy) || 1);
-  const uy = dy / (Math.hypot(dx, dy) || 1);
-  const cueLength = Math.max(130, table.w * 0.16);
-  const cueStartX = cueBall.x + ux * (20 + distance * 0.18);
-  const cueStartY = cueBall.y + uy * (20 + distance * 0.18);
-  const cueEndX = cueStartX + ux * cueLength;
-  const cueEndY = cueStartY + uy * cueLength;
+  const ux = dx / (dist || 1);
+  const uy = dy / (dist || 1);
+  const cueLen = Math.max(120, table.w * 0.16);
+
+  const sx = cue.x + ux * (20 + power * 35);
+  const sy = cue.y + uy * (20 + power * 35);
+  const ex = sx + ux * cueLen;
+  const ey = sy + uy * cueLen;
 
   ctx.beginPath();
-  ctx.moveTo(cueStartX, cueStartY);
-  ctx.lineTo(cueEndX, cueEndY);
-  ctx.strokeStyle = "#c89d67";
-  ctx.lineWidth = Math.max(4, table.w * 0.006);
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(ex, ey);
   ctx.lineCap = "round";
+  ctx.lineWidth = Math.max(4, table.w * 0.0058);
+  ctx.strokeStyle = "#cc9f66";
   ctx.stroke();
 
-  const meterW = Math.min(190, table.w * 0.18);
-  const meterH = 10;
-  const meterX = cueBall.x - meterW / 2;
-  const meterY = cueBall.y + 28;
-  const power = distance / 170;
-
-  ctx.fillStyle = "rgba(0,0,0,0.45)";
-  ctx.fillRect(meterX, meterY, meterW, meterH);
-  ctx.fillStyle = "#ffcc57";
-  ctx.fillRect(meterX, meterY, meterW * power, meterH);
+  const mx = cue.x - 90;
+  const my = cue.y + 28;
+  const mw = 180;
+  const mh = 10;
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  ctx.fillRect(mx, my, mw, mh);
+  ctx.fillStyle = "#ffd466";
+  ctx.fillRect(mx, my, mw * power, mh);
 }
 
-function animate() {
-  drawTable();
-  applyPhysics();
-  drawBalls();
-  drawAimLine();
-
-  if (state.balls.filter((b) => !b.cue && !b.sunk).length === 0) {
-    const boxW = Math.min(420, table.w * 0.5);
-    const boxH = Math.min(130, table.h * 0.25);
-    const boxX = window.innerWidth / 2 - boxW / 2;
-    const boxY = window.innerHeight / 2 - boxH / 2;
-
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fillRect(boxX, boxY, boxW, boxH);
-    ctx.strokeStyle = "rgba(255,255,255,0.35)";
-    ctx.strokeRect(boxX, boxY, boxW, boxH);
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.font = "bold 34px system-ui";
-    ctx.fillText("Rack cleared!", window.innerWidth / 2, window.innerHeight / 2 + 12);
-  }
-
-  requestAnimationFrame(animate);
+function drawBalls() {
+  state.balls.forEach((b) => {
+    if (!b.sunk) drawBall(b);
+  });
 }
 
-function setPointer(event) {
+function drawEndOverlay() {
+  if (state.playing) return;
+
+  const targetsLeft = state.balls.filter((b) => !b.cue && !b.sunk).length;
+  const won = targetsLeft === 0;
+
+  const w = Math.min(460, table.w * 0.56);
+  const h = 180;
+  const x = window.innerWidth / 2 - w / 2;
+  const y = window.innerHeight / 2 - h / 2;
+
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "rgba(255,255,255,0.28)";
+  ctx.strokeRect(x, y, w, h);
+
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.font = "700 32px system-ui";
+  ctx.fillText(won ? "You cleared the table!" : "Time up!", window.innerWidth / 2, y + 52);
+
+  ctx.font = "600 20px system-ui";
+  ctx.fillText(`Final Score: ${state.score}`, window.innerWidth / 2, y + 92);
+  ctx.fillText(`Best Combo: x${state.maxCombo}`, window.innerWidth / 2, y + 124);
+  ctx.font = "500 16px system-ui";
+  ctx.fillText("Press New Run to play again", window.innerWidth / 2, y + 152);
+}
+
+function setPointer(ev) {
   const rect = canvas.getBoundingClientRect();
-  const scaleX = window.innerWidth / rect.width;
-  const scaleY = window.innerHeight / rect.height;
-
-  state.pointer.x = (event.clientX - rect.left) * scaleX;
-  state.pointer.y = (event.clientY - rect.top) * scaleY;
+  const sx = window.innerWidth / rect.width;
+  const sy = window.innerHeight / rect.height;
+  state.pointer.x = (ev.clientX - rect.left) * sx;
+  state.pointer.y = (ev.clientY - rect.top) * sy;
 }
 
-canvas.addEventListener("pointerdown", (event) => {
-  if (isMoving()) return;
-  setPointer(event);
+canvas.addEventListener("pointerdown", (ev) => {
+  if (isMoving() || !state.playing) return;
+  setPointer(ev);
   state.aiming = true;
 });
 
-canvas.addEventListener("pointermove", (event) => {
+canvas.addEventListener("pointermove", (ev) => {
   if (!state.aiming) return;
-  setPointer(event);
+  setPointer(ev);
 });
 
-canvas.addEventListener("pointerup", (event) => {
-  if (!state.aiming || isMoving()) return;
-  setPointer(event);
+canvas.addEventListener("pointerup", (ev) => {
+  if (!state.aiming || isMoving() || !state.playing) return;
+  setPointer(ev);
   state.aiming = false;
 
-  const cueBall = state.balls.find((b) => b.cue);
-  const dx = cueBall.x - state.pointer.x;
-  const dy = cueBall.y - state.pointer.y;
-  const distance = Math.min(Math.hypot(dx, dy), 170);
+  const cue = state.balls.find((b) => b.cue && !b.sunk);
+  if (!cue) return;
 
-  cueBall.vx = (dx / 170) * 12;
-  cueBall.vy = (dy / 170) * 12;
+  const dx = cue.x - state.pointer.x;
+  const dy = cue.y - state.pointer.y;
+  const dist = clamp(Math.hypot(dx, dy), 0, 180);
 
-  if (distance > 2) {
+  cue.vx = (dx / 180) * 13;
+  cue.vy = (dy / 180) * 13;
+
+  if (dist > 2) {
     state.shots += 1;
+    state.combo = 1;
+    state.streakSinks = 0;
     updateHud();
   }
 });
@@ -421,15 +457,42 @@ canvas.addEventListener("pointercancel", () => {
 });
 
 canvas.addEventListener("pointerleave", () => {
-  if (isMoving()) return;
   state.aiming = false;
 });
 
-window.addEventListener("resize", () => {
-  resizeCanvas();
-});
+function stepTimer(now) {
+  const dt = Math.min((now - state.lastTick) / 1000, 0.05);
+  state.lastTick = now;
+  if (!state.playing) return;
 
-resetBtn.addEventListener("click", rackBalls);
+  const left = state.balls.filter((b) => !b.cue && !b.sunk).length;
+  if (left === 0) {
+    state.playing = false;
+    updateHud();
+    return;
+  }
+
+  state.timeLeft -= dt;
+  if (state.timeLeft <= 0) {
+    state.timeLeft = 0;
+    state.playing = false;
+  }
+  updateHud();
+}
+
+function animate(now = performance.now()) {
+  stepTimer(now);
+  drawTable();
+  applyPhysics();
+  drawBalls();
+  drawAimAssist();
+  drawEndOverlay();
+  requestAnimationFrame(animate);
+}
+
+window.addEventListener("resize", resizeCanvas);
+resetBtn.addEventListener("click", setupRun);
 
 resizeCanvas();
+state.lastTick = performance.now();
 animate();
