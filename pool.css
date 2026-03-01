@@ -60,6 +60,24 @@ body {
   color: rgba(238, 243, 255, 0.9);
 }
 
+
+.mode-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.mode-picker select {
+  border: 1px solid rgba(157, 193, 255, 0.38);
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+  background: rgba(11, 15, 32, 0.8);
+  color: #eef3ff;
+  font: inherit;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
