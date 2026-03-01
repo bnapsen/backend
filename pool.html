@@ -10,7 +10,9 @@
   <main class="game-wrap">
     <canvas id="poolTable" aria-label="pool game canvas"></canvas>
 
-    <section class="hud" aria-live="polite">
+    <button id="hudToggle" class="hud-toggle" type="button" aria-expanded="true" aria-controls="gameHud">Hide menu</button>
+
+    <section id="gameHud" class="hud" aria-live="polite">
       <h1>Pool Rush</h1>
       <p>Clear all neon targets before you run out of shots. Chain pockets to build combos.</p>
       <div class="stats">

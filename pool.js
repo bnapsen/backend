@@ -6,6 +6,8 @@ const levelEl = document.getElementById("level");
 const comboEl = document.getElementById("combo");
 const statusEl = document.getElementById("status");
 const resetBtn = document.getElementById("resetBtn");
+const hudEl = document.getElementById("gameHud");
+const hudToggleBtn = document.getElementById("hudToggle");
 
 const table = {
   x: 60,
@@ -87,6 +89,14 @@ function makeBall(x, y, color, type = "target") {
     type,
     sunk: false,
   };
+}
+
+
+function setHudVisible(visible) {
+  hudEl.classList.toggle("is-hidden", !visible);
+  hudToggleBtn.setAttribute("aria-expanded", String(visible));
+  hudToggleBtn.textContent = visible ? "Hide menu" : "Show menu";
+  hudToggleBtn.classList.toggle("is-hidden", visible);
 }
 
 function updateHud() {
@@ -559,10 +569,16 @@ canvas.addEventListener("pointerup", (event) => {
     state.shotsLeft -= 1;
     state.wasMoving = true;
     updateHud();
+    setHudVisible(false);
   }
 });
 
 window.addEventListener("resize", resizeCanvas);
+
+hudToggleBtn.addEventListener("click", () => {
+  const isVisible = !hudEl.classList.contains("is-hidden");
+  setHudVisible(!isVisible);
+});
 
 resetBtn.addEventListener("click", () => {
   state.score = 0;
@@ -572,8 +588,10 @@ resetBtn.addEventListener("click", () => {
   state.gameOver = false;
   updateHud();
   setupLevel();
+  setHudVisible(true);
 });
 
 resizeCanvas();
 setupLevel();
+setHudVisible(true);
 animate();
