@@ -2,6 +2,9 @@ const canvas = document.getElementById("poolTable");
 const ctx = canvas.getContext("2d");
 const scoreEl = document.getElementById("score");
 const shotsEl = document.getElementById("shots");
+const levelEl = document.getElementById("level");
+const comboEl = document.getElementById("combo");
+const statusEl = document.getElementById("status");
 const resetBtn = document.getElementById("resetBtn");
 
 const table = {
@@ -11,7 +14,7 @@ const table = {
   h: 520,
   pocketR: 24,
   friction: 0.992,
-  lineX: 0,
+  rail: 34,
 };
 
 let pockets = [];
@@ -19,9 +22,15 @@ let pockets = [];
 const state = {
   balls: [],
   score: 0,
-  shots: 0,
+  level: 1,
+  shotsLeft: 10,
+  combo: 1,
   aiming: false,
   pointer: { x: 0, y: 0 },
+  sunkThisTurn: 0,
+  scratchedThisTurn: false,
+  wasMoving: false,
+  gameOver: false,
 };
 
 function updateTableGeometry() {
@@ -38,15 +47,12 @@ function updateTableGeometry() {
     feltW = feltH * aspect;
   }
 
-  const rail = Math.max(28, Math.round(Math.min(feltW, feltH) * 0.05));
-
+  table.rail = Math.max(28, Math.round(Math.min(feltW, feltH) * 0.05));
   table.x = Math.round((window.innerWidth - feltW) / 2);
   table.y = Math.round((window.innerHeight - feltH) / 2);
   table.w = Math.round(feltW);
   table.h = Math.round(feltH);
   table.pocketR = Math.max(15, Math.round(Math.min(table.w, table.h) * 0.03));
-  table.rail = rail;
-  table.lineX = table.x + table.w * 0.28;
 
   pockets = [
     { x: table.x, y: table.y },
@@ -65,139 +71,101 @@ function resizeCanvas() {
   canvas.style.width = `${window.innerWidth}px`;
   canvas.style.height = `${window.innerHeight}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
   updateTableGeometry();
-
-  const cueBall = state.balls.find((b) => b.cue && !b.sunk);
-  if (cueBall && !isMoving()) {
-    cueBall.x = table.x + table.w * 0.23;
-    cueBall.y = table.y + table.h / 2;
-  }
+  repositionBallsAfterResize();
 }
 
-function makeBall(x, y, color, cue = false) {
-  return { x, y, vx: 0, vy: 0, r: Math.max(9, Math.round(Math.min(table.w, table.h) * 0.017)), color, cue, sunk: false };
-}
-
-function rackBalls() {
-  state.balls = [];
-  state.score = 0;
-  state.shots = 0;
-
-  const cueBall = makeBall(table.x + table.w * 0.23, table.y + table.h / 2, "#ffffff", true);
-  state.balls.push(cueBall);
-
-  const startX = table.x + table.w * 0.72;
-  const startY = table.y + table.h / 2;
-  const colors = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93", "#ff9f1c"];
-  let index = 0;
-  const spacing = cueBall.r * 2.1;
-
-  for (let row = 0; row < 3; row += 1) {
-    for (let col = 0; col <= row; col += 1) {
-      const x = startX + row * spacing;
-      const y = startY - (row * spacing) / 2 + col * spacing;
-      state.balls.push(makeBall(x, y, colors[index % colors.length]));
-      index += 1;
-    }
-  }
-  updateHud();
+function makeBall(x, y, color, type = "target") {
+  return {
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    r: Math.max(9, Math.round(Math.min(table.w, table.h) * 0.017)),
+    color,
+    type,
+    sunk: false,
+  };
 }
 
 function updateHud() {
   scoreEl.textContent = `Score: ${state.score}`;
-  shotsEl.textContent = `Shots: ${state.shots}`;
+  shotsEl.textContent = `Shots Left: ${state.shotsLeft}`;
+  levelEl.textContent = `Level: ${state.level}`;
+  comboEl.textContent = `Combo: x${state.combo}`;
 }
 
-function drawTable() {
-  const railInset = table.rail;
-  const feltX = table.x + railInset;
-  const feltY = table.y + railInset;
-  const feltW = table.w - railInset * 2;
-  const feltH = table.h - railInset * 2;
+function setStatus(message) {
+  statusEl.textContent = message;
+}
 
-  const roomGradient = ctx.createRadialGradient(
-    window.innerWidth / 2,
-    window.innerHeight / 2,
-    50,
-    window.innerWidth / 2,
-    window.innerHeight / 2,
-    window.innerWidth * 0.7,
-  );
-  roomGradient.addColorStop(0, "#141b2e");
-  roomGradient.addColorStop(1, "#06070c");
-  ctx.fillStyle = roomGradient;
-  ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+function targetBallsRemaining() {
+  return state.balls.filter((b) => b.type === "target" && !b.sunk).length;
+}
 
-  ctx.fillStyle = "#4c2a14";
-  ctx.fillRect(table.x, table.y, table.w, table.h);
-  ctx.strokeStyle = "rgba(255, 206, 150, 0.3)";
-  ctx.lineWidth = 4;
-  ctx.strokeRect(table.x + 2, table.y + 2, table.w - 4, table.h - 4);
+function randomRange(min, max) {
+  return min + Math.random() * (max - min);
+}
 
-  const feltGradient = ctx.createLinearGradient(feltX, feltY, feltX, feltY + feltH);
-  feltGradient.addColorStop(0, "#17885d");
-  feltGradient.addColorStop(0.45, "#0f6f4d");
-  feltGradient.addColorStop(1, "#0a5c3f");
-  ctx.fillStyle = feltGradient;
-  ctx.fillRect(feltX, feltY, feltW, feltH);
-
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(table.lineX, feltY + 8);
-  ctx.lineTo(table.lineX, feltY + feltH - 8);
-  ctx.stroke();
-
-  const spotX = table.lineX + (feltW * 0.22);
-  const spotY = feltY + feltH / 2;
-  ctx.beginPath();
-  ctx.arc(spotX, spotY, Math.max(2.5, table.w * 0.003), 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(250,250,250,0.85)";
-  ctx.fill();
-
-  pockets.forEach((p) => {
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, table.pocketR, 0, Math.PI * 2);
-    const pocketGradient = ctx.createRadialGradient(p.x - 4, p.y - 4, 2, p.x, p.y, table.pocketR);
-    pocketGradient.addColorStop(0, "#3b3b3b");
-    pocketGradient.addColorStop(1, "#060606");
-    ctx.fillStyle = pocketGradient;
-    ctx.fill();
+function isPositionClear(x, y, radius) {
+  return !state.balls.some((b) => {
+    if (b.sunk) return false;
+    return Math.hypot(b.x - x, b.y - y) < b.r + radius + 5;
   });
 }
 
-function drawBall(b) {
-  ctx.beginPath();
-  ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-  const ballGradient = ctx.createRadialGradient(b.x - b.r * 0.35, b.y - b.r * 0.4, 1, b.x, b.y, b.r * 1.2);
-  ballGradient.addColorStop(0, "#ffffff");
-  ballGradient.addColorStop(0.14, b.cue ? "#ffffff" : b.color);
-  ballGradient.addColorStop(1, b.cue ? "#d6d6d6" : shade(b.color, -26));
-  ctx.fillStyle = ballGradient;
-  ctx.fill();
+function placeBallWithoutOverlap(type, color) {
+  const radius = Math.max(9, Math.round(Math.min(table.w, table.h) * 0.017));
+  const minX = table.x + table.rail + radius + 10;
+  const maxX = table.x + table.w - table.rail - radius - 10;
+  const minY = table.y + table.rail + radius + 10;
+  const maxY = table.y + table.h - table.rail - radius - 10;
 
-  ctx.strokeStyle = "rgba(0,0,0,0.35)";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const x = randomRange(minX, maxX);
+    const y = randomRange(minY, maxY);
+    if (isPositionClear(x, y, radius)) {
+      state.balls.push(makeBall(x, y, color, type));
+      return;
+    }
+  }
+}
 
-  if (!b.cue) {
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r * 0.36, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,255,255,0.82)";
-    ctx.fill();
+function setupLevel() {
+  state.balls = [];
+  state.gameOver = false;
+
+  state.balls.push(makeBall(table.x + table.w * 0.23, table.y + table.h / 2, "#ffffff", "cue"));
+
+  const targetCount = Math.min(4 + state.level, 11);
+  const blockerCount = Math.min(1 + Math.floor(state.level / 2), 5);
+  const targetPalette = ["#ff4d8d", "#ffcb3d", "#53e2ff", "#8bff4f", "#be7bff", "#ff8f39"];
+
+  for (let i = 0; i < targetCount; i += 1) {
+    placeBallWithoutOverlap("target", targetPalette[i % targetPalette.length]);
   }
 
-  ctx.beginPath();
-  ctx.arc(b.x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.21, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.fill();
+  for (let i = 0; i < blockerCount; i += 1) {
+    placeBallWithoutOverlap("blocker", "#5c6376");
+  }
+
+  state.shotsLeft = Math.max(7, 10 - Math.floor(state.level / 2));
+  state.combo = 1;
+  state.sunkThisTurn = 0;
+  state.scratchedThisTurn = false;
+  updateHud();
+  setStatus(`Level ${state.level}: Sink ${targetCount} targets in ${state.shotsLeft} shots.`);
 }
 
-function drawBalls() {
-  state.balls.forEach((b) => {
-    if (b.sunk) return;
-    drawBall(b);
-  });
+function repositionBallsAfterResize() {
+  if (!state.balls.length || isMoving()) return;
+
+  const cue = state.balls.find((b) => b.type === "cue" && !b.sunk);
+  if (cue) {
+    cue.x = table.x + table.w * 0.23;
+    cue.y = table.y + table.h / 2;
+  }
 }
 
 function shade(hex, percent) {
@@ -210,8 +178,118 @@ function shade(hex, percent) {
   return `#${(0x1000000 + (Math.min(255, Math.max(0, r)) << 16) + (Math.min(255, Math.max(0, g)) << 8) + Math.min(255, Math.max(0, b))).toString(16).slice(1)}`;
 }
 
+function drawTable() {
+  const railInset = table.rail;
+  const feltX = table.x + railInset;
+  const feltY = table.y + railInset;
+  const feltW = table.w - railInset * 2;
+  const feltH = table.h - railInset * 2;
+
+  const roomGradient = ctx.createRadialGradient(
+    window.innerWidth * 0.5,
+    window.innerHeight * 0.4,
+    50,
+    window.innerWidth * 0.5,
+    window.innerHeight * 0.5,
+    window.innerWidth * 0.7,
+  );
+  roomGradient.addColorStop(0, "#2f1e54");
+  roomGradient.addColorStop(1, "#050711");
+  ctx.fillStyle = roomGradient;
+  ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+  ctx.fillStyle = "#3e2816";
+  ctx.fillRect(table.x, table.y, table.w, table.h);
+
+  const feltGradient = ctx.createLinearGradient(feltX, feltY, feltX, feltY + feltH);
+  feltGradient.addColorStop(0, "#116f7c");
+  feltGradient.addColorStop(0.5, "#0d5f6b");
+  feltGradient.addColorStop(1, "#094552");
+  ctx.fillStyle = feltGradient;
+  ctx.fillRect(feltX, feltY, feltW, feltH);
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(table.x + table.w * 0.27, feltY + 10);
+  ctx.lineTo(table.x + table.w * 0.27, feltY + feltH - 10);
+  ctx.stroke();
+
+  pockets.forEach((p) => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, table.pocketR, 0, Math.PI * 2);
+    const pocketGradient = ctx.createRadialGradient(p.x - 3, p.y - 3, 1, p.x, p.y, table.pocketR);
+    pocketGradient.addColorStop(0, "#4f4f4f");
+    pocketGradient.addColorStop(1, "#040404");
+    ctx.fillStyle = pocketGradient;
+    ctx.fill();
+  });
+}
+
+function drawBall(ball) {
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  const ballGradient = ctx.createRadialGradient(ball.x - ball.r * 0.35, ball.y - ball.r * 0.4, 1, ball.x, ball.y, ball.r * 1.3);
+  ballGradient.addColorStop(0, "#ffffff");
+  ballGradient.addColorStop(0.2, ball.type === "cue" ? "#f7f7f7" : ball.color);
+  ballGradient.addColorStop(1, ball.type === "cue" ? "#d9d9d9" : shade(ball.color, -30));
+  ctx.fillStyle = ballGradient;
+  ctx.fill();
+
+  if (ball.type === "target") {
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r * 0.45, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.82)";
+    ctx.fill();
+  }
+
+  if (ball.type === "blocker") {
+    ctx.strokeStyle = "rgba(255, 86, 86, 0.78)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ball.x - ball.r * 0.55, ball.y - ball.r * 0.55);
+    ctx.lineTo(ball.x + ball.r * 0.55, ball.y + ball.r * 0.55);
+    ctx.moveTo(ball.x + ball.r * 0.55, ball.y - ball.r * 0.55);
+    ctx.lineTo(ball.x - ball.r * 0.55, ball.y + ball.r * 0.55);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "rgba(0,0,0,0.35)";
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+}
+
+function drawBalls() {
+  state.balls.forEach((ball) => {
+    if (!ball.sunk) {
+      drawBall(ball);
+    }
+  });
+}
+
 function isMoving() {
   return state.balls.some((b) => !b.sunk && (Math.abs(b.vx) > 0.03 || Math.abs(b.vy) > 0.03));
+}
+
+function resolvePocket(ball) {
+  if (ball.type === "cue") {
+    ball.sunk = true;
+    ball.vx = 0;
+    ball.vy = 0;
+    state.scratchedThisTurn = true;
+    return;
+  }
+
+  ball.sunk = true;
+  ball.vx = 0;
+  ball.vy = 0;
+
+  if (ball.type === "target") {
+    state.sunkThisTurn += 1;
+  } else if (ball.type === "blocker") {
+    state.score = Math.max(0, state.score - 8);
+    setStatus("Blocker sunk! -8 penalty.");
+  }
 }
 
 function applyPhysics() {
@@ -252,18 +330,7 @@ function applyPhysics() {
       const dx = b.x - p.x;
       const dy = b.y - p.y;
       if (Math.hypot(dx, dy) < table.pocketR - 3) {
-        if (b.cue) {
-          b.x = table.x + table.w * 0.23;
-          b.y = table.y + table.h / 2;
-          b.vx = 0;
-          b.vy = 0;
-        } else {
-          b.sunk = true;
-          b.vx = 0;
-          b.vy = 0;
-          state.score += 1;
-          updateHud();
-        }
+        resolvePocket(b);
       }
     });
   });
@@ -304,48 +371,142 @@ function applyPhysics() {
   }
 }
 
+function respotCueBall() {
+  const cue = state.balls.find((b) => b.type === "cue");
+  if (!cue) return;
+
+  cue.sunk = false;
+  cue.vx = 0;
+  cue.vy = 0;
+
+  const startX = table.x + table.w * 0.23;
+  const startY = table.y + table.h / 2;
+  cue.x = startX;
+  cue.y = startY;
+
+  if (!isPositionClear(startX, startY, cue.r)) {
+    for (let offset = 25; offset < table.h * 0.3; offset += 14) {
+      if (isPositionClear(startX, startY - offset, cue.r)) {
+        cue.y = startY - offset;
+        return;
+      }
+      if (isPositionClear(startX, startY + offset, cue.r)) {
+        cue.y = startY + offset;
+        return;
+      }
+    }
+  }
+}
+
+function finishTurnIfNeeded() {
+  const moving = isMoving();
+  if (state.wasMoving && !moving) {
+    if (state.scratchedThisTurn) {
+      state.score = Math.max(0, state.score - 6);
+      respotCueBall();
+      setStatus("Scratch! Cue ball reset and -6 score.");
+    }
+
+    if (state.sunkThisTurn > 0) {
+      const points = state.sunkThisTurn * 10 * state.combo;
+      state.score += points;
+      setStatus(`Great shot! ${state.sunkThisTurn} target(s) sunk for ${points} points.`);
+      state.combo += 1;
+    } else if (!state.scratchedThisTurn) {
+      state.combo = 1;
+      setStatus("No target sunk. Combo reset.");
+    } else {
+      state.combo = 1;
+    }
+
+    state.sunkThisTurn = 0;
+    state.scratchedThisTurn = false;
+
+    if (targetBallsRemaining() === 0 && !state.gameOver) {
+      const levelBonus = 25 + state.level * 8;
+      state.score += levelBonus;
+      state.level += 1;
+      state.combo = 1;
+      updateHud();
+      setStatus(`Level cleared! +${levelBonus} bonus.`);
+      setupLevel();
+      return;
+    }
+
+    if (state.shotsLeft <= 0 && targetBallsRemaining() > 0) {
+      state.gameOver = true;
+      setStatus("Out of shots. Restart run to try again.");
+    }
+
+    updateHud();
+  }
+  state.wasMoving = moving;
+}
+
 function drawAimLine() {
-  if (!state.aiming || isMoving()) return;
-  const cueBall = state.balls.find((b) => b.cue);
-  const dx = state.pointer.x - cueBall.x;
-  const dy = state.pointer.y - cueBall.y;
-  const distance = Math.min(Math.hypot(dx, dy), 170);
+  if (!state.aiming || isMoving() || state.gameOver) return;
+  const cue = state.balls.find((b) => b.type === "cue" && !b.sunk);
+  if (!cue) return;
+
+  const dx = state.pointer.x - cue.x;
+  const dy = state.pointer.y - cue.y;
+  const distance = Math.min(Math.hypot(dx, dy), 180);
 
   ctx.beginPath();
-  ctx.moveTo(cueBall.x, cueBall.y);
-  ctx.lineTo(cueBall.x - dx, cueBall.y - dy);
-  ctx.strokeStyle = "rgba(255,255,255,0.75)";
-  ctx.lineWidth = 2.5;
-  ctx.setLineDash([8, 7]);
+  ctx.moveTo(cue.x, cue.y);
+  ctx.lineTo(cue.x - dx, cue.y - dy);
+  ctx.strokeStyle = "rgba(255,255,255,0.8)";
+  ctx.lineWidth = 2.4;
+  ctx.setLineDash([8, 6]);
   ctx.stroke();
   ctx.setLineDash([]);
 
   const ux = dx / (Math.hypot(dx, dy) || 1);
   const uy = dy / (Math.hypot(dx, dy) || 1);
-  const cueLength = Math.max(130, table.w * 0.16);
-  const cueStartX = cueBall.x + ux * (20 + distance * 0.18);
-  const cueStartY = cueBall.y + uy * (20 + distance * 0.18);
-  const cueEndX = cueStartX + ux * cueLength;
-  const cueEndY = cueStartY + uy * cueLength;
+  const cueLength = Math.max(120, table.w * 0.15);
+  const cueStartX = cue.x + ux * (22 + distance * 0.17);
+  const cueStartY = cue.y + uy * (22 + distance * 0.17);
 
   ctx.beginPath();
   ctx.moveTo(cueStartX, cueStartY);
-  ctx.lineTo(cueEndX, cueEndY);
-  ctx.strokeStyle = "#c89d67";
+  ctx.lineTo(cueStartX + ux * cueLength, cueStartY + uy * cueLength);
+  ctx.strokeStyle = "#f0b56f";
   ctx.lineWidth = Math.max(4, table.w * 0.006);
   ctx.lineCap = "round";
   ctx.stroke();
 
   const meterW = Math.min(190, table.w * 0.18);
-  const meterH = 10;
-  const meterX = cueBall.x - meterW / 2;
-  const meterY = cueBall.y + 28;
-  const power = distance / 170;
+  const meterX = cue.x - meterW / 2;
+  const meterY = cue.y + 30;
+  const power = distance / 180;
 
-  ctx.fillStyle = "rgba(0,0,0,0.45)";
-  ctx.fillRect(meterX, meterY, meterW, meterH);
-  ctx.fillStyle = "#ffcc57";
-  ctx.fillRect(meterX, meterY, meterW * power, meterH);
+  ctx.fillStyle = "rgba(0,0,0,0.43)";
+  ctx.fillRect(meterX, meterY, meterW, 10);
+  ctx.fillStyle = "#59ffb0";
+  ctx.fillRect(meterX, meterY, meterW * power, 10);
+}
+
+function drawOverlay() {
+  if (!state.gameOver) return;
+
+  const boxW = Math.min(460, table.w * 0.55);
+  const boxH = Math.min(190, table.h * 0.35);
+  const boxX = window.innerWidth / 2 - boxW / 2;
+  const boxY = window.innerHeight / 2 - boxH / 2;
+
+  ctx.fillStyle = "rgba(5,10,23,0.82)";
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.font = "700 34px system-ui";
+  ctx.fillText("Run Over", window.innerWidth / 2, boxY + 64);
+  ctx.font = "600 22px system-ui";
+  ctx.fillText(`Final Score: ${state.score}`, window.innerWidth / 2, boxY + 104);
+  ctx.font = "500 18px system-ui";
+  ctx.fillText("Press Restart Run to play again", window.innerWidth / 2, boxY + 140);
 }
 
 function animate() {
@@ -353,22 +514,8 @@ function animate() {
   applyPhysics();
   drawBalls();
   drawAimLine();
-
-  if (state.balls.filter((b) => !b.cue && !b.sunk).length === 0) {
-    const boxW = Math.min(420, table.w * 0.5);
-    const boxH = Math.min(130, table.h * 0.25);
-    const boxX = window.innerWidth / 2 - boxW / 2;
-    const boxY = window.innerHeight / 2 - boxH / 2;
-
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fillRect(boxX, boxY, boxW, boxH);
-    ctx.strokeStyle = "rgba(255,255,255,0.35)";
-    ctx.strokeRect(boxX, boxY, boxW, boxH);
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.font = "bold 34px system-ui";
-    ctx.fillText("Rack cleared!", window.innerWidth / 2, window.innerHeight / 2 + 12);
-  }
+  finishTurnIfNeeded();
+  drawOverlay();
 
   requestAnimationFrame(animate);
 }
@@ -383,7 +530,7 @@ function setPointer(event) {
 }
 
 canvas.addEventListener("pointerdown", (event) => {
-  if (isMoving()) return;
+  if (isMoving() || state.gameOver) return;
   setPointer(event);
   state.aiming = true;
 });
@@ -394,31 +541,39 @@ canvas.addEventListener("pointermove", (event) => {
 });
 
 canvas.addEventListener("pointerup", (event) => {
-  if (!state.aiming || isMoving()) return;
+  if (!state.aiming || isMoving() || state.gameOver) return;
   setPointer(event);
   state.aiming = false;
 
-  const cueBall = state.balls.find((b) => b.cue);
-  const dx = cueBall.x - state.pointer.x;
-  const dy = cueBall.y - state.pointer.y;
-  const distance = Math.min(Math.hypot(dx, dy), 170);
+  const cue = state.balls.find((b) => b.type === "cue" && !b.sunk);
+  if (!cue) return;
 
-  cueBall.vx = (dx / 170) * 12;
-  cueBall.vy = (dy / 170) * 12;
+  const dx = cue.x - state.pointer.x;
+  const dy = cue.y - state.pointer.y;
+  const distance = Math.min(Math.hypot(dx, dy), 180);
+
+  cue.vx = (dx / 180) * 13;
+  cue.vy = (dy / 180) * 13;
 
   if (distance > 2) {
-    state.shots += 1;
+    state.shotsLeft -= 1;
+    state.wasMoving = true;
     updateHud();
   }
 });
 
-window.addEventListener("resize", () => {
-  resizeCanvas();
-  if (!isMoving()) rackBalls();
+window.addEventListener("resize", resizeCanvas);
+
+resetBtn.addEventListener("click", () => {
+  state.score = 0;
+  state.level = 1;
+  state.shotsLeft = 10;
+  state.combo = 1;
+  state.gameOver = false;
+  updateHud();
+  setupLevel();
 });
 
-resetBtn.addEventListener("click", rackBalls);
-
 resizeCanvas();
-rackBalls();
+setupLevel();
 animate();
