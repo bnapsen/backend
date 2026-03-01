@@ -99,7 +99,7 @@ function makeBall(x, y, color, type = "target") {
     y,
     vx: 0,
     vy: 0,
-    r: Math.max(11, Math.round(Math.min(table.w, table.h) * 0.0205)),
+    r: Math.max(12, Math.round(Math.min(table.w, table.h) * 0.0215)),
     color,
     type,
     sunk: false,
@@ -140,7 +140,7 @@ function isPositionClear(x, y, radius) {
 }
 
 function placeBallWithoutOverlap(type, color) {
-  const radius = Math.max(11, Math.round(Math.min(table.w, table.h) * 0.0205));
+  const radius = Math.max(12, Math.round(Math.min(table.w, table.h) * 0.0215));
   const minX = table.x + table.rail + radius + 10;
   const maxX = table.x + table.w - table.rail - radius - 10;
   const minY = table.y + table.rail + radius + 10;
