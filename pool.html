@@ -15,10 +15,18 @@
     <section id="gameHud" class="hud" aria-live="polite">
       <h1>Pool Rush</h1>
       <p>Clear all neon targets before you run out of shots. Chain pockets to build combos.</p>
+      <label class="mode-picker" for="gameMode">
+        Game mode
+        <select id="gameMode" aria-label="Select pool game mode">
+          <option value="eightBall">8-Ball</option>
+          <option value="nineBall">9-Ball</option>
+          <option value="straightPool">Straight Pool</option>
+        </select>
+      </label>
       <div class="stats">
         <span id="score">Score: 0</span>
-        <span id="level">Level: 1</span>
-        <span id="shots">Shots Left: 10</span>
+        <span id="level">Mode: 8-Ball</span>
+        <span id="shots">Shots Taken: 0</span>
         <span id="combo">Combo: x1</span>
       </div>
       <p class="status" id="status">Sink all target balls to start your run.</p>

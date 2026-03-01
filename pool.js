@@ -8,6 +8,7 @@ const statusEl = document.getElementById("status");
 const resetBtn = document.getElementById("resetBtn");
 const hudEl = document.getElementById("gameHud");
 const hudToggleBtn = document.getElementById("hudToggle");
+const modeSelectEl = document.getElementById("gameMode");
 
 const table = {
   x: 60,
@@ -28,7 +29,6 @@ const state = {
   balls: [],
   score: 0,
   level: 1,
-  shotsLeft: 10,
   combo: 1,
   aiming: false,
   pointer: { x: 0, y: 0 },
@@ -36,6 +36,9 @@ const state = {
   scratchedThisTurn: false,
   wasMoving: false,
   gameOver: false,
+  mode: "eightBall",
+  shotsTaken: 0,
+  targetsGoal: 0,
 };
 
 function updateTableGeometry() {
@@ -115,8 +118,8 @@ function setHudVisible(visible) {
 
 function updateHud() {
   scoreEl.textContent = `Score: ${state.score}`;
-  shotsEl.textContent = `Shots Left: ${state.shotsLeft}`;
-  levelEl.textContent = `Level: ${state.level}`;
+  shotsEl.textContent = `Shots Taken: ${state.shotsTaken}`;
+  levelEl.textContent = `Mode: ${GAME_MODES[state.mode].label}`;
   comboEl.textContent = `Combo: x${state.combo}`;
 }
 
@@ -131,6 +134,56 @@ function targetBallsRemaining() {
 function randomRange(min, max) {
   return min + Math.random() * (max - min);
 }
+
+const GAME_MODES = {
+  eightBall: {
+    label: "8-Ball",
+    targetCount: 7,
+    blockerCount: 7,
+    scoreMultiplier: 1,
+    bonusLabel: "8-ball run complete!",
+  },
+  nineBall: {
+    label: "9-Ball",
+    targetCount: 9,
+    blockerCount: 0,
+    scoreMultiplier: 1.15,
+    bonusLabel: "9-ball rack complete!",
+  },
+  straightPool: {
+    label: "Straight Pool",
+    targetCount: 14,
+    blockerCount: 0,
+    scoreMultiplier: 0.95,
+    bonusLabel: "Straight pool rack complete!",
+  },
+};
+
+function getRackSpots() {
+  const radius = Math.max(10, Math.round(Math.min(table.w, table.h) * 0.019));
+  const spacing = radius * 2.05;
+  const startX = table.x + table.w * 0.67;
+  const startY = table.y + table.h / 2;
+  const spots = [];
+
+  for (let row = 0; row < 5; row += 1) {
+    const x = startX + row * spacing;
+    const count = row + 1;
+    const yTop = startY - ((count - 1) * spacing) / 2;
+    for (let i = 0; i < count; i += 1) {
+      spots.push({ x, y: yTop + i * spacing });
+    }
+  }
+
+  return spots;
+}
+
+function placeRackBall(spot, type, color, number) {
+  const ball = makeBall(spot.x, spot.y, color, type);
+  ball.number = number;
+  state.balls.push(ball);
+}
+
 
 function isPositionClear(x, y, radius) {
   return !state.balls.some((b) => {
@@ -162,26 +215,36 @@ function setupLevel() {
 
   state.balls.push(makeBall(table.x + table.w * 0.23, table.y + table.h / 2, "#ffffff", "cue"));
 
-  const targetCount = Math.min(4 + state.level, 11);
-  const blockerCount = Math.min(1 + Math.floor(state.level / 2), 5);
+  const modeConfig = GAME_MODES[state.mode];
+  const rackSpots = getRackSpots();
   const targetPalette = ["#ff4d8d", "#ffcb3d", "#53e2ff", "#8bff4f", "#be7bff", "#ff8f39"];
 
-  for (let i = 0; i < targetCount; i += 1) {
-    placeBallWithoutOverlap("target", targetPalette[i % targetPalette.length]);
-    state.balls[state.balls.length - 1].number = i + 1;
+  state.targetsGoal = modeConfig.targetCount;
+
+  let ballNum = 1;
+  for (let i = 0; i < modeConfig.targetCount; i += 1) {
+    placeRackBall(rackSpots[i], "target", targetPalette[i % targetPalette.length], ballNum);
+    ballNum += 1;
   }
 
-  for (let i = 0; i < blockerCount; i += 1) {
-    placeBallWithoutOverlap("blocker", "#5c6376");
-    state.balls[state.balls.length - 1].number = targetCount + i + 1;
+  for (let i = 0; i < modeConfig.blockerCount; i += 1) {
+    placeRackBall(rackSpots[modeConfig.targetCount + i], "blocker", "#5c6376", ballNum);
+    ballNum += 1;
   }
 
-  state.shotsLeft = Math.max(7, 10 - Math.floor(state.level / 2));
+  if (state.mode === "eightBall") {
+    const eightBall = state.balls.find((b) => b.number === 8);
+    if (eightBall) {
+      eightBall.type = "blocker";
+      eightBall.color = "#101010";
+    }
+  }
+
   state.combo = 1;
   state.sunkThisTurn = 0;
   state.scratchedThisTurn = false;
   updateHud();
-  setStatus(`Level ${state.level}: Sink ${targetCount} targets in ${state.shotsLeft} shots.`);
+  setStatus(`${modeConfig.label}: Break the rack and clear ${state.targetsGoal} balls.`);
 }
 
 function repositionBallsAfterResize() {
@@ -468,7 +531,7 @@ function finishTurnIfNeeded() {
     }
 
     if (state.sunkThisTurn > 0) {
-      const points = state.sunkThisTurn * 10 * state.combo;
+      const points = Math.round(state.sunkThisTurn * 10 * state.combo * GAME_MODES[state.mode].scoreMultiplier);
       state.score += points;
       setStatus(`Great shot! ${state.sunkThisTurn} target(s) sunk for ${points} points.`);
       state.combo += 1;
@@ -483,19 +546,13 @@ function finishTurnIfNeeded() {
     state.scratchedThisTurn = false;
 
     if (targetBallsRemaining() === 0 && !state.gameOver) {
-      const levelBonus = 25 + state.level * 8;
-      state.score += levelBonus;
-      state.level += 1;
+      const rackBonus = 40;
+      state.score += rackBonus;
       state.combo = 1;
       updateHud();
-      setStatus(`Level cleared! +${levelBonus} bonus.`);
+      setStatus(`${GAME_MODES[state.mode].bonusLabel} +${rackBonus} bonus.`);
       setupLevel();
       return;
-    }
-
-    if (state.shotsLeft <= 0 && targetBallsRemaining() > 0) {
-      state.gameOver = true;
-      setStatus("Out of shots. Restart run to try again.");
     }
 
     updateHud();
@@ -616,10 +673,14 @@ canvas.addEventListener("pointerup", (event) => {
   cue.vy = (dy / 180) * 13;
 
   if (distance > 2) {
-    state.shotsLeft -= 1;
+    state.shotsTaken += 1;
     state.wasMoving = true;
     updateHud();
     setHudVisible(false);
+
+    if (state.shotsTaken === 1) {
+      setStatus("Break shot taken. Keep clearing the rack.");
+    }
   }
 });
 
@@ -630,18 +691,31 @@ hudToggleBtn.addEventListener("click", () => {
   setHudVisible(!isVisible);
 });
 
-resetBtn.addEventListener("click", () => {
+function resetGame() {
   state.score = 0;
   state.level = 1;
-  state.shotsLeft = 10;
+  state.shotsTaken = 0;
   state.combo = 1;
   state.gameOver = false;
   updateHud();
   setupLevel();
   setHudVisible(true);
+}
+
+modeSelectEl.addEventListener("change", (event) => {
+  state.mode = event.target.value;
+  state.shotsTaken = 0;
+  state.combo = 1;
+  state.gameOver = false;
+  setupLevel();
+  setHudVisible(true);
+});
+
+resetBtn.addEventListener("click", () => {
+  resetGame();
 });
 
 resizeCanvas();
-setupLevel();
-setHudVisible(false);
+resetGame();
+setHudVisible(true);
 animate();
