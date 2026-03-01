@@ -38,3 +38,28 @@ http://localhost:8000/games/car-soccer-mini/
 - `index.html` – canvas container and UI
 - `style.css` – HUD/menu/touch controls styling
 - `game.js` – game loop, physics, AI, rendering, input, settings
+
+
+## Multiplayer backend (new)
+This project now includes a lightweight Node.js WebSocket backend that supports two players over the internet.
+
+### Server setup
+```bash
+cd games/car-soccer-mini
+npm install
+npm start
+```
+By default it listens on `ws://localhost:8080` (override with `PORT=9000 npm start`).
+
+### Connect clients
+Use URL query params when opening the game page:
+
+- Host:
+  - `http://localhost:8000/games/car-soccer-mini/?mp=1&role=host&room=ABC&server=ws://localhost:8080`
+- Guest:
+  - `http://localhost:8000/games/car-soccer-mini/?mp=1&role=guest&room=ABC&server=ws://localhost:8080`
+
+### Notes
+- Host runs the authoritative simulation (physics and score).
+- Guest sends controls only and renders host snapshots to avoid divergence.
+- If network drops, host falls back to local bot behavior until reconnection.

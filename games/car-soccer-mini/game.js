@@ -12,9 +12,12 @@
 
   const ui = {
     score: document.getElementById('score'),
+    teamAName: document.getElementById('teamAName'),
+    teamBName: document.getElementById('teamBName'),
     time: document.getElementById('time'),
     boost: document.getElementById('boost'),
     graphicsLabel: document.getElementById('graphicsLabel'),
+    networkStatus: document.getElementById('networkStatus'),
     pauseMenu: document.getElementById('pauseMenu'),
     menuStatus: document.getElementById('menuStatus'),
     graphicsToggle: document.getElementById('graphicsToggle'),
@@ -40,7 +43,19 @@
     particles: [],
     highGraphics: true,
     volume: 0.3,
-    fullscreenPreferred: false
+    fullscreenPreferred: false,
+    multiplayer: {
+      enabled: false,
+      role: 'local',
+      ws: null,
+      roomCode: '',
+      serverUrl: 'ws://localhost:8080',
+      reconnectAttempt: 0,
+      reconnectTimer: null,
+      lastRemoteInput: null,
+      localInputSeq: 0,
+      peerConnected: false
+    }
   };
 
   const keys = new Set();
@@ -160,6 +175,214 @@
     }
   }
 
+
+  function getMultiplayerStatusLabel() {
+    const net = state.multiplayer;
+    if (!net.enabled) return 'Local vs Bot';
+    if (net.ws && net.ws.readyState === WebSocket.OPEN) {
+      const room = net.roomCode ? ` room ${net.roomCode}` : '';
+      if (net.role === 'host' && !net.peerConnected) return `Online host${room} (waiting)`;
+      return `Online ${net.role}${room}`;
+    }
+    if (net.ws && net.ws.readyState === WebSocket.CONNECTING) return 'Connecting...';
+    return 'Offline (local fallback)';
+  }
+
+  function buildInputSnapshot() {
+    return {
+      up: keys.has('w'),
+      down: keys.has('s'),
+      left: keys.has('a'),
+      right: keys.has('d'),
+      boost: keys.has('shift'),
+      handbrake: keys.has(' ')
+    };
+  }
+
+  function consumeRemoteInput() {
+    const net = state.multiplayer;
+    if (!net.enabled || net.role !== 'host') return null;
+    const remote = net.lastRemoteInput;
+    if (!remote) return null;
+    return {
+      throttle: (remote.up ? 1 : 0) - (remote.down ? 1 : 0),
+      steer: (remote.right ? 1 : 0) - (remote.left ? 1 : 0),
+      boost: Boolean(remote.boost),
+      handbrake: Boolean(remote.handbrake)
+    };
+  }
+
+  function shouldSendInputFrame() {
+    const net = state.multiplayer;
+    return Boolean(net.enabled && net.role === 'guest' && net.ws && net.ws.readyState === WebSocket.OPEN);
+  }
+
+  function sendNetworkMessage(type, payload = {}) {
+    const ws = state.multiplayer.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type, ...payload }));
+  }
+
+  function resetMultiplayerConnection() {
+    const net = state.multiplayer;
+    if (net.reconnectTimer) {
+      clearTimeout(net.reconnectTimer);
+      net.reconnectTimer = null;
+    }
+    if (net.ws) {
+      net.ws.onopen = null;
+      net.ws.onmessage = null;
+      net.ws.onerror = null;
+      net.ws.onclose = null;
+      try { net.ws.close(); } catch (_) {}
+      net.ws = null;
+    }
+  }
+
+  function scheduleReconnect() {
+    const net = state.multiplayer;
+    if (!net.enabled || net.reconnectTimer) return;
+    const delay = Math.min(8000, 1000 * (2 ** net.reconnectAttempt));
+    net.reconnectAttempt += 1;
+    net.reconnectTimer = setTimeout(() => {
+      net.reconnectTimer = null;
+      connectToMultiplayer();
+    }, delay);
+  }
+
+  function handleServerMessage(msg) {
+    const net = state.multiplayer;
+    if (msg.type === 'welcome') {
+      net.roomCode = msg.room || net.roomCode;
+      net.role = msg.role || net.role;
+      state.message = msg.message || 'Connected!';
+      if (net.role === 'guest') net.peerConnected = true;
+      state.messageTime = 1.2;
+      return;
+    }
+
+    if (msg.type === 'peerJoined') {
+      state.message = 'Opponent connected';
+      state.messageTime = 1.2;
+      bot.isBot = false;
+      net.peerConnected = true;
+      return;
+    }
+
+    if (msg.type === 'peerLeft') {
+      state.message = 'Opponent disconnected';
+      state.messageTime = 1.2;
+      net.lastRemoteInput = null;
+      net.peerConnected = false;
+      bot.isBot = true;
+      return;
+    }
+
+
+    if (msg.type === 'error') {
+      state.message = msg.message || 'Server rejected connection';
+      state.messageTime = 1.4;
+      return;
+    }
+
+    if (msg.type === 'input' && net.role === 'host') {
+      net.lastRemoteInput = msg.input || null;
+      return;
+    }
+
+    if (msg.type === 'state' && net.role === 'guest' && msg.snapshot) {
+      const snap = msg.snapshot;
+      state.scoreA = snap.scoreA ?? state.scoreA;
+      state.scoreB = snap.scoreB ?? state.scoreB;
+      state.countdown = snap.countdown ?? state.countdown;
+      if (snap.player) {
+        player.pos = v(snap.player.pos.x, snap.player.pos.y);
+        player.vel = v(snap.player.vel.x, snap.player.vel.y);
+        player.angle = snap.player.angle;
+        player.boost = snap.player.boost;
+      }
+      if (snap.bot) {
+        bot.pos = v(snap.bot.pos.x, snap.bot.pos.y);
+        bot.vel = v(snap.bot.vel.x, snap.bot.vel.y);
+        bot.angle = snap.bot.angle;
+        bot.boost = snap.bot.boost;
+      }
+      if (snap.ball) {
+        ball.pos = v(snap.ball.pos.x, snap.ball.pos.y);
+        ball.vel = v(snap.ball.vel.x, snap.ball.vel.y);
+      }
+    }
+  }
+
+  function connectToMultiplayer() {
+    const net = state.multiplayer;
+    if (!net.enabled || net.ws) return;
+
+    let ws;
+    try {
+      ws = new WebSocket(net.serverUrl);
+    } catch (_) {
+      scheduleReconnect();
+      return;
+    }
+
+    net.ws = ws;
+
+    ws.onopen = () => {
+      net.reconnectAttempt = 0;
+      sendNetworkMessage('join', { room: net.roomCode || 'public' });
+      state.message = 'Connected to server';
+      state.messageTime = 1;
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        handleServerMessage(msg);
+      } catch (_) {}
+    };
+
+    ws.onerror = () => {
+      state.message = 'Network error';
+      state.messageTime = 1;
+    };
+
+    ws.onclose = () => {
+      net.ws = null;
+      net.peerConnected = false;
+      net.lastRemoteInput = null;
+      bot.isBot = true;
+      if (net.enabled) scheduleReconnect();
+    };
+  }
+
+  function publishHostSnapshot() {
+    if (!state.multiplayer.enabled || state.multiplayer.role !== 'host' || !state.multiplayer.peerConnected) return;
+    sendNetworkMessage('state', {
+      snapshot: {
+        scoreA: state.scoreA,
+        scoreB: state.scoreB,
+        countdown: state.countdown,
+        player: {
+          pos: player.pos,
+          vel: player.vel,
+          angle: player.angle,
+          boost: player.boost
+        },
+        bot: {
+          pos: bot.pos,
+          vel: bot.vel,
+          angle: bot.angle,
+          boost: bot.boost
+        },
+        ball: {
+          pos: ball.pos,
+          vel: ball.vel
+        }
+      }
+    });
+  }
+
   function handleInput() {
     if (keys.has('p')) {
       keys.delete('p');
@@ -172,6 +395,10 @@
   }
 
   function getControlsForCar(car) {
+    if (state.multiplayer.enabled && car === bot) {
+      const remote = consumeRemoteInput();
+      if (remote) return remote;
+    }
     if (car.isBot) return computeBotControls();
     const c = car.controls;
     return {
@@ -445,6 +672,10 @@
   }
 
   function updateUI() {
+    ui.networkStatus.textContent = getMultiplayerStatusLabel();
+    const isMp = state.multiplayer.enabled;
+    ui.teamAName.textContent = isMp ? 'Player 1' : 'You';
+    ui.teamBName.textContent = isMp ? 'Player 2' : 'Bot';
     ui.score.textContent = `${state.scoreA} - ${state.scoreB}`;
     const mins = Math.floor(state.countdown / 60).toString().padStart(2, '0');
     const secs = Math.floor(state.countdown % 60).toString().padStart(2, '0');
@@ -460,6 +691,20 @@
     handleInput();
 
     if (state.paused || state.gameOver) return;
+
+    if (shouldSendInputFrame()) {
+      state.multiplayer.localInputSeq += 1;
+      sendNetworkMessage('input', {
+        seq: state.multiplayer.localInputSeq,
+        input: buildInputSnapshot()
+      });
+    }
+
+    if (state.multiplayer.enabled && state.multiplayer.role === 'guest') {
+      if (state.messageTime > 0) state.messageTime -= dt;
+      state.shake = Math.max(0, state.shake - dt * 0.8);
+      return;
+    }
 
     updateCar(player, dt);
     updateCar(bot, dt);
@@ -603,6 +848,7 @@
 
     render();
     updateUI();
+    publishHostSnapshot();
 
     if (state.running) requestAnimationFrame(frame);
   }
@@ -647,6 +893,22 @@
       if (!state.fullscreenPreferred && document.fullscreenElement) {
         document.exitFullscreen?.();
       }
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const net = state.multiplayer;
+    if (params.get('mp') === '1') {
+      net.enabled = true;
+      net.roomCode = (params.get('room') || '').trim().toUpperCase();
+      net.serverUrl = params.get('server') || net.serverUrl;
+      const role = params.get('role');
+      if (role === 'host' || role === 'guest') net.role = role;
+      bot.isBot = net.role !== 'guest';
+      connectToMultiplayer();
+    }
+
+    window.addEventListener('beforeunload', () => {
+      resetMultiplayerConnection();
     });
 
     if (isTouchDevice()) {
