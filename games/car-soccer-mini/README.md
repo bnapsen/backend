@@ -52,12 +52,26 @@ npm start
 By default it listens on `ws://localhost:8080` (override with `PORT=9000 npm start`).
 
 ### Connect clients
-Use URL query params when opening the game page:
+You now have two ways to connect online players:
+
+1. **In-game menu (recommended):**
+   - Press `P`, open **Online Multiplayer**, enter a room code, and click **Host** (player 1) or **Join** (player 2).
+   - Use **Copy Invite** to share a ready-to-open guest URL.
+2. **Direct URL query params:**
 
 - Host:
   - `http://localhost:8000/games/car-soccer-mini/?mp=1&role=host&room=ABC&server=ws://localhost:8080`
 - Guest:
   - `http://localhost:8000/games/car-soccer-mini/?mp=1&role=guest&room=ABC&server=ws://localhost:8080`
+
+
+### Internet deployment tips
+- Use `wss://` in production (TLS-enabled reverse proxy) so browsers on HTTPS pages can connect.
+- Open/forward your multiplayer server port (default `8080`) or proxy `/ws` to the Node process.
+- A room now enforces roles strictly:
+  - **Host** must create the room first.
+  - **Guest** can only join when a host is already online.
+- Server includes heartbeat ping/pong to drop dead sockets faster and recover reconnects sooner.
 
 ### Notes
 - Host runs the authoritative simulation.

@@ -13,9 +13,9 @@
 
     <div class="hud" id="hud">
       <div class="score-line">
-        <span class="team">You</span>
+        <span class="team" id="leftTeamLabel">You</span>
         <span id="score">0 - 0</span>
-        <span class="team">Bot</span>
+        <span class="team" id="rightTeamLabel">Bot</span>
       </div>
       <div class="sub-line">
         <span>Time: <strong id="time">03:00</strong></span>
@@ -55,6 +55,23 @@
         <div class="menu-row">
           <button id="resumeBtn" class="btn primary">Resume</button>
           <button id="restartBtn" class="btn">Restart Match</button>
+        </div>
+
+        <div class="network-panel">
+          <h2>Online Multiplayer</h2>
+          <div class="menu-row">
+            <label for="roomCodeInput">Room</label>
+            <input id="roomCodeInput" type="text" maxlength="12" placeholder="PUBLIC" />
+          </div>
+          <div class="menu-row">
+            <label for="serverUrlInput">Server</label>
+            <input id="serverUrlInput" type="text" placeholder="ws://localhost:8080" />
+          </div>
+          <div class="menu-row">
+            <button id="hostOnlineBtn" class="btn">Host</button>
+            <button id="joinOnlineBtn" class="btn">Join</button>
+            <button id="copyInviteBtn" class="btn">Copy Invite</button>
+          </div>
         </div>
 
         <p class="help-text">First to 5 goals or leader at 3:00 wins.</p>
