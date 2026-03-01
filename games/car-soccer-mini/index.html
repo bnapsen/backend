@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Car Soccer Mini</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Ccircle cx=%2732%27 cy=%2732%27 r=%2730%27 fill=%27%230b1c2c%27/%3E%3Ccircle cx=%2732%27 cy=%2732%27 r=%2716%27 fill=%27%23ffffff%27/%3E%3C/svg%3E" />
+</head>
+<body>
+  <div class="game-shell">
+    <canvas id="gameCanvas" aria-label="Car Soccer Mini"></canvas>
+
+    <div class="hud" id="hud">
+      <div class="score-line">
+        <span class="team">You</span>
+        <span id="score">0 - 0</span>
+        <span class="team">Bot</span>
+      </div>
+      <div class="sub-line">
+        <span>Time: <strong id="time">03:00</strong></span>
+        <span>Boost: <strong id="boost">100</strong>%</span>
+        <span>Graphics: <strong id="graphicsLabel">High</strong></span>
+      </div>
+      <div class="controls-line">
+        <span>WASD drive</span>
+        <span>Shift boost</span>
+        <span>Space drift</span>
+        <span>R reset</span>
+        <span>P pause</span>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="pauseMenu">
+      <div class="panel">
+        <h1>Car Soccer Mini</h1>
+        <p id="menuStatus">Paused</p>
+
+        <div class="menu-row">
+          <label for="graphicsToggle">Graphics</label>
+          <button id="graphicsToggle" class="btn">High</button>
+        </div>
+
+        <div class="menu-row">
+          <label for="volumeSlider">Volume</label>
+          <input id="volumeSlider" type="range" min="0" max="1" step="0.05" value="0.3" />
+        </div>
+
+        <div class="menu-row">
+          <label for="fullscreenToggle">Fullscreen Preference</label>
+          <button id="fullscreenToggle" class="btn">Off</button>
+        </div>
+
+        <div class="menu-row">
+          <button id="resumeBtn" class="btn primary">Resume</button>
+          <button id="restartBtn" class="btn">Restart Match</button>
+        </div>
+
+        <p class="help-text">First to 5 goals or leader at 3:00 wins.</p>
+      </div>
+    </div>
+
+    <div id="touchControls" class="touch-controls hidden" aria-hidden="true">
+      <div class="left-pad">
+        <button data-key="w">▲</button>
+        <button data-key="a">◀</button>
+        <button data-key="s">▼</button>
+        <button data-key="d">▶</button>
+      </div>
+      <div class="right-pad">
+        <button data-key="shift">Boost</button>
+        <button data-key="space">Drift</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
