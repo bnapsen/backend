@@ -6,6 +6,8 @@
   const MATCH_SECONDS = 180;
   const WIN_GOALS = 5;
   const FIXED_DT = 1 / 120;
+  const CAR_TURN_POWER = 2.45;
+  const CAR_MAX_ANGULAR_SPEED = 0.095;
 
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
@@ -425,7 +427,7 @@
     const right = { x: -forward.y, y: forward.x };
 
     const accel = 720;
-    const turnPower = 3.6;
+    const turnPower = CAR_TURN_POWER;
     const maxSpeed = 560;
 
     car.vel.x += forward.x * input.throttle * accel * dt;
@@ -439,6 +441,7 @@
 
     car.angVel += input.steer * turnPower * (0.7 + Math.min(speed / maxSpeed, 1)) * dt;
     car.angVel *= input.handbrake ? 0.90 : 0.82;
+    car.angVel = clamp(car.angVel, -CAR_MAX_ANGULAR_SPEED, CAR_MAX_ANGULAR_SPEED);
     car.angle += car.angVel;
 
     if (input.boost && car.boost > 0) {
