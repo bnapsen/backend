@@ -111,7 +111,6 @@ function setHudVisible(visible) {
   hudEl.classList.toggle("is-hidden", !visible);
   hudToggleBtn.setAttribute("aria-expanded", String(visible));
   hudToggleBtn.textContent = visible ? "Hide menu" : "Show menu";
-  hudToggleBtn.classList.toggle("is-hidden", visible);
 }
 
 function updateHud() {
@@ -628,5 +627,5 @@ resetBtn.addEventListener("click", () => {
 
 resizeCanvas();
 setupLevel();
-setHudVisible(true);
+setHudVisible(false);
 animate();
