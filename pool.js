@@ -15,13 +15,14 @@ const table = {
   w: 960,
   h: 520,
   pocketR: 24,
-  friction: 0.992,
+  friction: 0.989,
   rail: 34,
   cushionBounce: 0.92,
   ballBounce: 0.985,
 };
 
 let pockets = [];
+let feltBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 
 const state = {
   balls: [],
@@ -63,6 +64,13 @@ function updateTableGeometry() {
   const pocketFeltW = table.w - table.rail * 2;
   const pocketFeltH = table.h - table.rail * 2;
 
+  feltBounds = {
+    minX: pocketFeltX,
+    maxX: pocketFeltX + pocketFeltW,
+    minY: pocketFeltY,
+    maxY: pocketFeltY + pocketFeltH,
+  };
+
   pockets = [
     { x: pocketFeltX, y: pocketFeltY },
     { x: pocketFeltX + pocketFeltW / 2, y: pocketFeltY },
@@ -91,7 +99,7 @@ function makeBall(x, y, color, type = "target") {
     y,
     vx: 0,
     vy: 0,
-    r: Math.max(9, Math.round(Math.min(table.w, table.h) * 0.017)),
+    r: Math.max(11, Math.round(Math.min(table.w, table.h) * 0.0205)),
     color,
     type,
     sunk: false,
@@ -103,7 +111,6 @@ function setHudVisible(visible) {
   hudEl.classList.toggle("is-hidden", !visible);
   hudToggleBtn.setAttribute("aria-expanded", String(visible));
   hudToggleBtn.textContent = visible ? "Hide menu" : "Show menu";
-  hudToggleBtn.classList.toggle("is-hidden", visible);
 }
 
 function updateHud() {
@@ -133,7 +140,7 @@ function isPositionClear(x, y, radius) {
 }
 
 function placeBallWithoutOverlap(type, color) {
-  const radius = Math.max(9, Math.round(Math.min(table.w, table.h) * 0.017));
+  const radius = Math.max(11, Math.round(Math.min(table.w, table.h) * 0.0205));
   const minX = table.x + table.rail + radius + 10;
   const maxX = table.x + table.w - table.rail - radius - 10;
   const minY = table.y + table.rail + radius + 10;
@@ -161,10 +168,12 @@ function setupLevel() {
 
   for (let i = 0; i < targetCount; i += 1) {
     placeBallWithoutOverlap("target", targetPalette[i % targetPalette.length]);
+    state.balls[state.balls.length - 1].number = i + 1;
   }
 
   for (let i = 0; i < blockerCount; i += 1) {
     placeBallWithoutOverlap("blocker", "#5c6376");
+    state.balls[state.balls.length - 1].number = targetCount + i + 1;
   }
 
   state.shotsLeft = Math.max(7, 10 - Math.floor(state.level / 2));
@@ -271,6 +280,20 @@ function drawBall(ball) {
     ctx.stroke();
   }
 
+  if (ball.type !== "cue" && ball.number) {
+    const labelR = ball.r * 0.42;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, labelR, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.fill();
+
+    ctx.fillStyle = "#151825";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `700 ${Math.max(10, Math.round(ball.r * 0.9))}px system-ui`;
+    ctx.fillText(String(ball.number), ball.x, ball.y + 0.5);
+  }
+
   ctx.strokeStyle = "rgba(0,0,0,0.35)";
   ctx.lineWidth = 1.3;
   ctx.stroke();
@@ -310,11 +333,17 @@ function resolvePocket(ball) {
 }
 
 function applyPhysics() {
-  const railInset = table.rail;
-  const minX = table.x + railInset;
-  const maxX = table.x + table.w - railInset;
-  const minY = table.y + railInset;
-  const maxY = table.y + table.h - railInset;
+  const { minX, maxX, minY, maxY } = feltBounds;
+  const pocketCaptureR = table.pocketR + 4;
+  const pocketSinkR = Math.max(7, table.pocketR - 4);
+  const mouthClearance = table.pocketR * 1.45;
+
+  const hasPocketClearanceOnTopBottom = (x, boundaryY) => pockets.some(
+    (p) => Math.abs(p.y - boundaryY) < 1 && Math.abs(x - p.x) < mouthClearance,
+  );
+  const hasPocketClearanceOnLeftRight = (y, boundaryX) => pockets.some(
+    (p) => Math.abs(p.x - boundaryX) < 1 && Math.abs(y - p.y) < mouthClearance,
+  );
 
   state.balls.forEach((b) => {
     if (b.sunk) return;
@@ -330,28 +359,36 @@ function applyPhysics() {
     pockets.forEach((p) => {
       const dx = b.x - p.x;
       const dy = b.y - p.y;
-      if (Math.hypot(dx, dy) < table.pocketR - 3) {
+      const dist = Math.hypot(dx, dy);
+
+      if (dist < pocketCaptureR && dist > 0.001) {
+        const pull = ((pocketCaptureR - dist) / pocketCaptureR) * 0.45;
+        b.vx -= (dx / dist) * pull;
+        b.vy -= (dy / dist) * pull;
+      }
+
+      if (dist < pocketSinkR) {
         resolvePocket(b);
       }
     });
 
     if (b.sunk) return;
 
-    if (b.x - b.r < minX) {
+    if (b.x - b.r < minX && !hasPocketClearanceOnLeftRight(b.y, minX)) {
       b.x = minX + b.r;
       b.vx *= -table.cushionBounce;
       b.vy *= table.ballBounce;
-    } else if (b.x + b.r > maxX) {
+    } else if (b.x + b.r > maxX && !hasPocketClearanceOnLeftRight(b.y, maxX)) {
       b.x = maxX - b.r;
       b.vx *= -table.cushionBounce;
       b.vy *= table.ballBounce;
     }
 
-    if (b.y - b.r < minY) {
+    if (b.y - b.r < minY && !hasPocketClearanceOnTopBottom(b.x, minY)) {
       b.y = minY + b.r;
       b.vy *= -table.cushionBounce;
       b.vx *= table.ballBounce;
-    } else if (b.y + b.r > maxY) {
+    } else if (b.y + b.r > maxY && !hasPocketClearanceOnTopBottom(b.x, maxY)) {
       b.y = maxY - b.r;
       b.vy *= -table.cushionBounce;
       b.vx *= table.ballBounce;
@@ -606,5 +643,5 @@ resetBtn.addEventListener("click", () => {
 
 resizeCanvas();
 setupLevel();
-setHudVisible(true);
+setHudVisible(false);
 animate();
