@@ -47,6 +47,7 @@ body {
   gap: 0.7rem;
   backdrop-filter: blur(8px);
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.35);
+  z-index: 2;
 }
 
 .hud h1 {
@@ -92,4 +93,18 @@ body {
   text-decoration: none;
   background: rgba(255, 255, 255, 0.14);
   color: #f2f4ff;
+}
+
+@media (max-width: 900px) {
+  .hud {
+    top: auto;
+    bottom: 0.8rem;
+    left: 0.8rem;
+    width: min(420px, calc(100vw - 1.6rem));
+    background: rgba(11, 15, 26, 0.76);
+  }
+
+  .hud p {
+    font-size: 0.95rem;
+  }
 }

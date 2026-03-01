@@ -25,9 +25,9 @@ const state = {
 };
 
 function updateTableGeometry() {
-  const pad = Math.min(window.innerWidth, window.innerHeight) * 0.045;
-  const hudReserve = window.innerWidth > 900 ? 320 : 0;
-  const maxW = window.innerWidth - pad * 2 - hudReserve;
+  const pad = Math.max(12, Math.min(window.innerWidth, window.innerHeight) * 0.035);
+  const hudReserve = window.innerWidth > 1080 ? 320 : 0;
+  const maxW = Math.max(360, window.innerWidth - pad * 2 - hudReserve);
   const maxH = window.innerHeight - pad * 2;
   const aspect = 16 / 9;
 
@@ -73,10 +73,8 @@ function resizeCanvas() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   updateTableGeometry();
 
-  const cueBall = state.balls.find((b) => b.cue && !b.sunk);
-  if (cueBall && !isMoving()) {
-    cueBall.x = table.x + table.w * 0.23;
-    cueBall.y = table.y + table.h / 2;
+  if (!isMoving()) {
+    rackBalls();
   }
 }
 
@@ -418,13 +416,20 @@ canvas.addEventListener("pointerup", (event) => {
   }
 });
 
+canvas.addEventListener("pointercancel", () => {
+  state.aiming = false;
+});
+
+canvas.addEventListener("pointerleave", () => {
+  if (isMoving()) return;
+  state.aiming = false;
+});
+
 window.addEventListener("resize", () => {
   resizeCanvas();
-  if (!isMoving()) rackBalls();
 });
 
 resetBtn.addEventListener("click", rackBalls);
 
 resizeCanvas();
-rackBalls();
 animate();
