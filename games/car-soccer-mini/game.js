@@ -616,12 +616,18 @@
       return key.toLowerCase();
     };
 
+    const unlockAudio = () => {
+      if (audio.unlocked) return;
+      audio.unlocked = true;
+      audio.init();
+      audio.ctx?.resume?.();
+    };
+
     window.addEventListener('keydown', (e) => {
       const k = toKey(e.key);
       keys.add(k);
       if (['w', 'a', 's', 'd', ' ', 'shift', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
-      audio.unlocked = true;
-      audio.init();
+      unlockAudio();
     });
     window.addEventListener('keyup', (e) => keys.delete(toKey(e.key)));
 
@@ -660,7 +666,7 @@
           if (down) keys.add(key);
           else keys.delete(key);
         };
-        btn.addEventListener('touchstart', (e) => { e.preventDefault(); press(true); }, { passive: false });
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); unlockAudio(); press(true); }, { passive: false });
         btn.addEventListener('touchend', (e) => { e.preventDefault(); press(false); }, { passive: false });
         btn.addEventListener('touchcancel', (e) => { e.preventDefault(); press(false); }, { passive: false });
       });
