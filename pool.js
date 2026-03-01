@@ -17,6 +17,8 @@ const table = {
   pocketR: 24,
   friction: 0.992,
   rail: 34,
+  cushionBounce: 0.92,
+  ballBounce: 0.985,
 };
 
 let pockets = [];
@@ -56,13 +58,18 @@ function updateTableGeometry() {
   table.h = Math.round(feltH);
   table.pocketR = Math.max(15, Math.round(Math.min(table.w, table.h) * 0.03));
 
+  const pocketFeltX = table.x + table.rail;
+  const pocketFeltY = table.y + table.rail;
+  const pocketFeltW = table.w - table.rail * 2;
+  const pocketFeltH = table.h - table.rail * 2;
+
   pockets = [
-    { x: table.x, y: table.y },
-    { x: table.x + table.w / 2, y: table.y },
-    { x: table.x + table.w, y: table.y },
-    { x: table.x, y: table.y + table.h },
-    { x: table.x + table.w / 2, y: table.y + table.h },
-    { x: table.x + table.w, y: table.y + table.h },
+    { x: pocketFeltX, y: pocketFeltY },
+    { x: pocketFeltX + pocketFeltW / 2, y: pocketFeltY },
+    { x: pocketFeltX + pocketFeltW, y: pocketFeltY },
+    { x: pocketFeltX, y: pocketFeltY + pocketFeltH },
+    { x: pocketFeltX + pocketFeltW / 2, y: pocketFeltY + pocketFeltH },
+    { x: pocketFeltX + pocketFeltW, y: pocketFeltY + pocketFeltH },
   ];
 }
 
@@ -320,22 +327,6 @@ function applyPhysics() {
     if (Math.abs(b.vx) < 0.01) b.vx = 0;
     if (Math.abs(b.vy) < 0.01) b.vy = 0;
 
-    if (b.x - b.r < minX) {
-      b.x = minX + b.r;
-      b.vx *= -1;
-    } else if (b.x + b.r > maxX) {
-      b.x = maxX - b.r;
-      b.vx *= -1;
-    }
-
-    if (b.y - b.r < minY) {
-      b.y = minY + b.r;
-      b.vy *= -1;
-    } else if (b.y + b.r > maxY) {
-      b.y = maxY - b.r;
-      b.vy *= -1;
-    }
-
     pockets.forEach((p) => {
       const dx = b.x - p.x;
       const dy = b.y - p.y;
@@ -343,6 +334,28 @@ function applyPhysics() {
         resolvePocket(b);
       }
     });
+
+    if (b.sunk) return;
+
+    if (b.x - b.r < minX) {
+      b.x = minX + b.r;
+      b.vx *= -table.cushionBounce;
+      b.vy *= table.ballBounce;
+    } else if (b.x + b.r > maxX) {
+      b.x = maxX - b.r;
+      b.vx *= -table.cushionBounce;
+      b.vy *= table.ballBounce;
+    }
+
+    if (b.y - b.r < minY) {
+      b.y = minY + b.r;
+      b.vy *= -table.cushionBounce;
+      b.vx *= table.ballBounce;
+    } else if (b.y + b.r > maxY) {
+      b.y = maxY - b.r;
+      b.vy *= -table.cushionBounce;
+      b.vx *= table.ballBounce;
+    }
   });
 
   for (let i = 0; i < state.balls.length; i += 1) {
@@ -372,10 +385,10 @@ function applyPhysics() {
         const dpNormA = a.vx * nx + a.vy * ny;
         const dpNormB = b.vx * nx + b.vy * ny;
 
-        a.vx = tx * dpTanA + nx * dpNormB;
-        a.vy = ty * dpTanA + ny * dpNormB;
-        b.vx = tx * dpTanB + nx * dpNormA;
-        b.vy = ty * dpTanB + ny * dpNormA;
+        a.vx = (tx * dpTanA + nx * dpNormB) * table.ballBounce;
+        a.vy = (ty * dpTanA + ny * dpNormB) * table.ballBounce;
+        b.vx = (tx * dpTanB + nx * dpNormA) * table.ballBounce;
+        b.vy = (ty * dpTanB + ny * dpNormA) * table.ballBounce;
       }
     }
   }
