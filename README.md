@@ -1,19 +1,130 @@
-# backend
+# Multiplayer Town Builder (MVP)
 
-This repo now includes a minimal multiplayer backend for `games/car-soccer-mini`.
+A small multiplayer, tile-based town builder that you can host as:
 
-## Car Soccer Mini backend quick start
+- **Frontend**: static files (GitHub Pages-friendly)
+- **Backend**: Node.js + Express + WebSocket (`ws`)
+
+## File tree
+
+```text
+client/
+  index.html
+  style.css
+  game.js
+server/
+  package.json
+  server.js
+  rooms.js
+  data/
+README.md
+```
+
+## Local run
+
+### 1) Start backend
+
 ```bash
-cd games/car-soccer-mini
+cd server
 npm install
 npm start
 ```
 
-Then run a static server from repo root:
+Backend runs by default at `http://localhost:3000` and WebSocket URL is:
+
+- `ws://localhost:3000`
+
+### 2) Start frontend (static)
+
+From repo root:
+
 ```bash
 python3 -m http.server 8000
 ```
 
-Open two clients with matching room codes:
-- Host: `http://localhost:8000/games/car-soccer-mini/?mp=1&role=host&room=ABC&server=ws://localhost:8080`
-- Guest: `http://localhost:8000/games/car-soccer-mini/?mp=1&role=guest&room=ABC&server=ws://localhost:8080`
+Open:
+
+- `http://localhost:8000/client/`
+
+Enter:
+
+- Name: anything
+- Room: `public` (or your own code)
+- Server WS URL: `ws://localhost:3000`
+
+Open two tabs to verify realtime sync.
+
+## How to point client to deployed server
+
+In the join popup there is a **Server WS URL** field.
+
+- Local: `ws://localhost:3000`
+- Production (TLS): `wss://your-backend-domain.com`
+
+The client stores this in `localStorage` as `town_ws_url`.
+
+## GitHub Pages for `/client`
+
+### Option A: publish whole repo root
+
+If your Pages site serves this repo root, visit:
+
+- `https://<user>.github.io/<repo>/client/`
+
+### Option B: publish just `client/`
+
+If using a separate Pages repo, copy `client/*` into that repo and publish from root.
+
+> Important: your backend must be deployed elsewhere and use `wss://`.
+
+## Backend deployment notes (Render/Fly/Railway/VPS)
+
+The backend is stateless except room save files under `server/data/*.json`.
+
+### Required settings
+
+- Start command: `npm start`
+- Working directory: `server`
+- Environment variable (optional): `PORT` (platform often injects this)
+
+### Render/Railway/Fly generic flow
+
+1. Create new web service from this repo.
+2. Set service root/working dir to `server`.
+3. Build/install: `npm install`
+4. Start: `npm start`
+5. Deploy and copy public URL.
+6. In client join popup, set WS URL to `wss://<your-url>`.
+
+### Persistence note
+
+Many platforms have ephemeral disks. If container filesystem resets, room files may be lost.
+For durable persistence, attach a volume (if supported) or swap to a database.
+
+## Message schema used
+
+- `join_room`: `{ type, name, room }`
+- `welcome`: `{ type, yourId, room, map, players, resources, gridSize }`
+- `place_building`: `{ type, x, y, buildingType }`
+- `tile_update`: `{ type, x, y, tile }`
+- `resources_update`: `{ type, resources }`
+- `player_list`: `{ type, players }`
+- `chat_send`: `{ type, text }`
+- `chat_broadcast`: `{ type, name, text, ts }`
+- `error`: `{ type, message }`
+
+## Gameplay defaults
+
+- Grid: `64x64`
+- Start resources: `50 wood, 20 food, 10 gold`
+- Buildings:
+  - House: cost 10 wood, +0.2 gold/sec, +2 population
+  - Farm: cost 10 wood, +1 food/sec
+  - Sawmill: cost 20 wood, +2 wood/sec
+  - Road: cost 1 wood
+
+## Persistence
+
+- Room state auto-saves every 10 seconds to `server/data/<room>.json`
+- Room state also saves on SIGINT/SIGTERM shutdown
+- Save/load errors are logged; server continues in-memory if disk fails
