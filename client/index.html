@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multiplayer Town Builder</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="joinOverlay" class="overlay">
+    <div class="card">
+      <h1>Multiplayer Town Builder</h1>
+      <p>Join a room and build together in real time.</p>
+      <label>Name <input id="nameInput" maxlength="24" placeholder="Player name" /></label>
+      <label>Room <input id="roomInput" maxlength="40" value="public" /></label>
+      <label>Server WS URL
+        <input id="wsInput" placeholder="ws://localhost:3000" />
+      </label>
+      <button id="joinBtn">Join</button>
+      <small>Tip: on GitHub Pages set your deployed backend URL here (wss://...).</small>
+    </div>
+  </div>
+
+  <header class="topbar">Room: <span id="roomLabel">-</span></header>
+  <main class="layout">
+    <aside class="panel left">
+      <h2>Build</h2>
+      <div id="buildButtons"></div>
+      <p>Selected: <strong id="selectedLabel">house</strong></p>
+      <h3>Resources</h3>
+      <ul>
+        <li>Wood: <span id="woodVal">0</span></li>
+        <li>Food: <span id="foodVal">0</span></li>
+        <li>Gold: <span id="goldVal">0</span></li>
+        <li>Population: <span id="popVal">0</span></li>
+      </ul>
+    </aside>
+
+    <section class="canvasWrap">
+      <canvas id="gameCanvas" width="900" height="700"></canvas>
+    </section>
+
+    <aside class="panel right">
+      <h2>Players</h2>
+      <ul id="playersList"></ul>
+      <h2>Chat</h2>
+      <div id="chatLog" class="chatLog"></div>
+      <form id="chatForm">
+        <input id="chatInput" maxlength="240" placeholder="Say hi..." />
+        <button type="submit">Send</button>
+      </form>
+    </aside>
+  </main>
+
+  <div id="toast"></div>
+  <script src="./game.js"></script>
+</body>
+</html>
