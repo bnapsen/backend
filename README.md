@@ -20,6 +20,30 @@ server/
 README.md
 ```
 
+## Fast deploy (so the game "just works")
+
+I added deployment config files in repo root:
+
+- `render.yaml` (Blueprint deploy on Render)
+- `railway.json` + `nixpacks.toml` (Railway deploy from repo root, runs `server/`)
+
+### Render (recommended quickest)
+
+1. Push this repo to GitHub.
+2. In Render, click **New +** -> **Blueprint**.
+3. Select your repo; Render reads `render.yaml` automatically.
+4. Deploy and copy URL, e.g. `https://town-builder-backend.onrender.com`.
+5. Open `.../client/` and set server URL to:
+   - `https://town-builder-backend.onrender.com` (client auto-converts to `wss://`)
+
+### Railway
+
+1. Create new project from GitHub repo.
+2. Railway reads `railway.json` / `nixpacks.toml` and starts with `cd server && npm start`.
+3. Copy public domain and paste it in client Server URL field.
+
+> Note: Free tiers may sleep; first connect can take a few seconds.
+
 ## Local run
 
 ### 1) Start backend

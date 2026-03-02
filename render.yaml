@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: town-builder-backend
+    env: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeploy: true
