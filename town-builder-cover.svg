@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-label="Multiplayer Town Builder cover">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#101a2b"/>
+      <stop offset="100%" stop-color="#193a4f"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#31566f" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect x="80" y="80" width="1040" height="515" rx="24" fill="#0d2235" stroke="#4cd2ff" stroke-opacity="0.35"/>
+  <rect x="120" y="120" width="960" height="435" fill="url(#grid)" opacity="0.75"/>
+
+  <rect x="220" y="220" width="70" height="70" rx="8" fill="#f2c078"/>
+  <rect x="360" y="300" width="70" height="70" rx="8" fill="#7ed957"/>
+  <rect x="500" y="220" width="70" height="70" rx="8" fill="#8a6f4d"/>
+  <rect x="640" y="300" width="70" height="70" rx="8" fill="#9da3b4"/>
+  <rect x="780" y="220" width="70" height="70" rx="8" fill="#f2c078"/>
+
+  <text x="120" y="630" fill="#8bc8e5" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="700">NEW MULTIPLAYER</text>
+  <text x="120" y="585" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="78" font-weight="800">TOWN BUILDER</text>
+</svg>
