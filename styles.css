@@ -1,52 +1,225 @@
+:root {
+    --bg: #070b16;
+    --panel: #111a2e;
+    --panel-2: #151f38;
+    --text: #f5f7ff;
+    --muted: #a9b4d0;
+    --accent: #5ee0ff;
+    --accent-2: #a75cff;
+}
+
+* {
+    box-sizing: border-box;
+}
+
 body {
-    font-family: Arial, sans-serif;
+    margin: 0;
+    font-family: 'Inter', Arial, sans-serif;
+    color: var(--text);
+    font-size: 18px;
+    background:
+        radial-gradient(circle at 20% 20%, rgba(94, 224, 255, 0.2), transparent 40%),
+        radial-gradient(circle at 80% 0%, rgba(167, 92, 255, 0.22), transparent 35%),
+        var(--bg);
+    min-height: 100vh;
+}
+
+.page-shell {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.2rem 1.4rem 2rem;
 }
 
 .hero {
-    background-image: url('15.JPG');
-    background-size: cover;
-    background-position: center;
-    height: 100vh;
+    background: linear-gradient(145deg, rgba(17, 26, 46, 0.95), rgba(8, 13, 24, 0.92)), url('15.JPG') center/cover;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 22px;
+    padding: 1rem 1.2rem 4rem;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+}
+
+.top-nav {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
-    color: white;
+    gap: 1rem;
+    margin-bottom: 3.2rem;
+    flex-wrap: wrap;
+}
+
+.brand {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    font-size: 1.05rem;
+}
+
+.nav-links {
+    display: flex;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.nav-links a {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 0.45rem 0.7rem;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.nav-links a:hover,
+.nav-links a:focus {
+    color: #001824;
+    background: var(--accent);
+}
+
+.hero-content {
+    max-width: 760px;
+}
+
+.eyebrow {
+    display: inline-block;
+    margin: 0;
+    padding: 0.4rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid rgba(94, 224, 255, 0.5);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 0.82rem;
+    letter-spacing: 0.07em;
 }
 
 .hero h1 {
-    font-size: 4rem;
-    text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
+    margin: 1rem 0 0.8rem;
+    font-size: clamp(2.3rem, 5.2vw, 3.9rem);
+    line-height: 1.1;
 }
 
-.content {
-    margin: 2rem 0;
+.hero-text {
+    margin: 0;
+    color: var(--muted);
+    font-size: 1.2rem;
 }
 
-.featured-cars {
+.cta-row {
+    margin-top: 1.6rem;
     display: flex;
+    gap: 0.8rem;
     flex-wrap: wrap;
-    justify-content: center;
-    gap: 2rem;
 }
 
-.featured-cars .card {
-    box-shadow: 0 10px 20px 0 rgba(0, 0, 0, 0.2);
-    transition: 0.3s;
+.btn {
+    display: inline-block;
+    padding: 0.8rem 1.2rem;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 1rem;
+}
+
+.btn-primary {
+    background: linear-gradient(120deg, var(--accent), var(--accent-2));
+    color: #020612;
+}
+
+.btn-secondary {
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: var(--text);
+}
+
+.games-section {
+    margin-top: 2.1rem;
+}
+
+.section-heading h2 {
+    margin: 0;
+    font-size: 2rem;
+}
+
+.section-heading p {
+    margin: 0.5rem 0 1.4rem;
+    color: var(--muted);
+    font-size: 1.12rem;
+}
+
+.games-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+}
+
+.game-card {
+    background: linear-gradient(160deg, var(--panel), var(--panel-2));
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+}
+
+.game-card img {
     width: 100%;
-    border: none;
+    height: 130px;
+    object-fit: cover;
+    display: block;
 }
 
-.featured-cars .card:hover {
-    box-shadow: 0 8px 16px 0 rgba(0, 0, 0, 0.2);
+.game-info {
+    padding: 1rem;
 }
 
-.featured-cars img {
-    width: 100%;
-    height: 100%;
+.game-info h3 {
+    margin: 0;
+    font-size: 1.35rem;
+}
+
+.game-info p {
+    margin: 0.7rem 0 1rem;
+    color: var(--muted);
+    min-height: 3.6rem;
+    font-size: 1.02rem;
+}
+
+.btn-card {
+    background: rgba(94, 224, 255, 0.14);
+    color: var(--accent);
+    border: 1px solid rgba(94, 224, 255, 0.35);
 }
 
 .footer {
-    background-color: #f8f9fa;
-    padding: 1rem;
+    margin-top: 2rem;
     text-align: center;
+    color: var(--muted);
+    font-size: 1rem;
+}
+
+@media (max-width: 720px) {
+    body {
+        font-size: 16px;
+    }
+
+    .page-shell {
+        padding: 1rem 0.9rem 1.7rem;
+    }
+
+    .hero {
+        padding: 1rem 1rem 2.7rem;
+    }
+
+    .top-nav {
+        margin-bottom: 2rem;
+    }
+
+    .game-card img {
+        height: 110px;
+    }
+
+    .hero-text {
+        font-size: 1.08rem;
+    }
 }
