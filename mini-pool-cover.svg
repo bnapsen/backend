@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1600" role="img" aria-labelledby="title desc">
+  <title id="title">Mini Pool cover art</title>
+  <desc id="desc">Colorful mini pool themed poster with a large 8-ball and title text.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#160c2a"/>
+      <stop offset="45%" stop-color="#2a8f2c"/>
+      <stop offset="100%" stop-color="#115e1a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.25" r="0.4">
+      <stop offset="0" stop-color="#fff8a8" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#fff8a8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="titleGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe659"/>
+      <stop offset="1" stop-color="#ff9f00"/>
+    </linearGradient>
+    <linearGradient id="poolGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8de7ff"/>
+      <stop offset="1" stop-color="#0077ff"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="900" height="1600" fill="url(#bg)"/>
+  <ellipse cx="450" cy="420" rx="340" ry="260" fill="url(#glow)"/>
+
+  <circle cx="450" cy="360" r="170" fill="#111"/>
+  <circle cx="450" cy="360" r="88" fill="#f5f5f5"/>
+  <text x="450" y="392" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="120" font-weight="800" fill="#111">8</text>
+
+  <text x="450" y="650" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="138" font-weight="800" fill="url(#titleGrad)" stroke="#5a1d00" stroke-width="12" paint-order="stroke">MINI</text>
+  <text x="450" y="800" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="170" font-weight="800" fill="url(#poolGrad)" stroke="#072264" stroke-width="14" paint-order="stroke">POOL</text>
+
+  <g opacity="0.95">
+    <circle cx="150" cy="980" r="72" fill="#f44336"/><circle cx="150" cy="980" r="34" fill="#fff"/>
+    <text x="150" y="998" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="44" font-weight="700" fill="#d22">3</text>
+
+    <circle cx="760" cy="930" r="70" fill="#ffca28"/><circle cx="760" cy="930" r="34" fill="#fff"/>
+    <text x="760" y="948" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="44" font-weight="700" fill="#d22">1</text>
+
+    <circle cx="740" cy="1140" r="66" fill="#ab47bc"/><circle cx="740" cy="1140" r="30" fill="#fff"/>
+    <text x="740" y="1158" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="40" font-weight="700" fill="#5e35b1">4</text>
+
+    <circle cx="220" cy="1120" r="62" fill="#29b6f6"/><circle cx="220" cy="1120" r="28" fill="#fff"/>
+    <text x="220" y="1138" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="700" fill="#1e3a8a">2</text>
+  </g>
+
+  <rect x="90" y="1310" width="720" height="120" rx="60" fill="#0f172a" opacity="0.25"/>
+</svg>
