@@ -1,0 +1,30 @@
+<svg width="1200" height="680" viewBox="0 0 1200 680" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Super Neon Bros cover</title>
+  <desc id="desc">Flashy retro platform game cover with neon blocks, coins, and portal.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#12082f"/>
+      <stop offset="55%" stop-color="#1c3372"/>
+      <stop offset="100%" stop-color="#2a0e54"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="680" fill="url(#bg)"/>
+  <rect x="0" y="570" width="1200" height="110" fill="#1a264f"/>
+  <rect x="120" y="500" width="230" height="24" rx="8" fill="#2c3458"/>
+  <rect x="120" y="500" width="230" height="4" fill="#17f2ff"/>
+  <rect x="430" y="430" width="200" height="24" rx="8" fill="#2c3458"/>
+  <rect x="430" y="430" width="200" height="4" fill="#ff4dc4"/>
+  <rect x="730" y="360" width="190" height="24" rx="8" fill="#2c3458"/>
+  <rect x="730" y="360" width="190" height="4" fill="#17f2ff"/>
+  <circle cx="210" cy="466" r="14" fill="#ffe35a"/>
+  <circle cx="500" cy="395" r="14" fill="#ffe35a"/>
+  <circle cx="790" cy="325" r="14" fill="#ffe35a"/>
+  <rect x="980" y="260" width="10" height="170" fill="#dfe9ff"/>
+  <rect x="990" y="275" width="72" height="34" fill="#17f2ff"/>
+  <rect x="1018" y="282" width="12" height="20" fill="#ff4dc4"/>
+  <rect x="180" y="446" width="62" height="74" fill="#10204b"/>
+  <rect x="191" y="456" width="40" height="18" fill="#ffe35a"/>
+  <rect x="198" y="484" width="26" height="30" fill="#ff4dc4"/>
+  <text x="70" y="120" fill="#eef6ff" font-size="70" font-family="'Trebuchet MS', sans-serif" font-weight="800" letter-spacing="2">SUPER NEON BROS</text>
+  <text x="70" y="172" fill="#b8d8ff" font-size="28" font-family="'Trebuchet MS', sans-serif">Dash. Jump. Stomp. Shine.</text>
+</svg>
