@@ -220,7 +220,7 @@
       </div>
 
       <div class="controls">
-        <p><kbd>←</kbd> <kbd>→</kbd> Move&nbsp;&nbsp; <kbd>↑</kbd> Rotate&nbsp;&nbsp; <kbd>↓</kbd> Soft drop</p>
+        <p><kbd>←</kbd>/<kbd>A</kbd> <kbd>→</kbd>/<kbd>D</kbd> Move&nbsp;&nbsp; <kbd>↑</kbd>/<kbd>W</kbd> Rotate&nbsp;&nbsp; <kbd>↓</kbd>/<kbd>S</kbd> Soft drop</p>
         <p><kbd>Space</kbd> Hard drop &nbsp; <kbd>G</kbd> Manual gravity flip (2,000 pts cost)</p>
       </div>
 
@@ -532,10 +532,13 @@
 
     document.addEventListener('keydown', (event) => {
       if (!state.active) return;
-      if (event.key === 'ArrowLeft') move(-1);
-      if (event.key === 'ArrowRight') move(1);
-      if (event.key === 'ArrowUp') tryRotate();
-      if (event.key === 'ArrowDown') {
+
+      const key = event.key.toLowerCase();
+
+      if (event.key === 'ArrowLeft' || key === 'a') move(-1);
+      if (event.key === 'ArrowRight' || key === 'd') move(1);
+      if (event.key === 'ArrowUp' || key === 'w') tryRotate();
+      if (event.key === 'ArrowDown' || key === 's') {
         state.score += 1;
         drop();
       }
@@ -543,7 +546,7 @@
         event.preventDefault();
         hardDrop();
       }
-      if (event.key.toLowerCase() === 'g') {
+      if (key === 'g') {
         if (state.score >= 2000) {
           state.score -= 2000;
           flipGravity('Manual gravity hack activated.');
