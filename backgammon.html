@@ -83,6 +83,11 @@
     .dice-visuals {
       display: flex;
       gap: 8px;
+      position: relative;
+      transition: transform .55s cubic-bezier(.2,.8,.25,1.15);
+    }
+    .dice-visuals.table-roll {
+      transform: translateX(var(--dice-travel, 0px));
     }
     .die {
       width: 34px;
@@ -146,6 +151,13 @@
       cursor: pointer;
     }
     button:hover { filter: brightness(1.18); }
+    #rollBtn {
+      font-size: 1.08rem;
+      padding: 13px 20px;
+      border-radius: 12px;
+      background: linear-gradient(130deg, rgba(87,236,255,.28), rgba(255,110,190,.2));
+      box-shadow: 0 0 22px rgba(87,236,255,.26), inset 0 0 18px rgba(255,255,255,.08);
+    }
     .status { color: #c6fffd; font-size: 14px; }
   </style>
 </head>
@@ -246,6 +258,9 @@
 
   function animateDiceRoll(finalA, finalB) {
     [ui.die1, ui.die2].forEach((die) => die.classList.add('rolling'));
+    const travel = Math.max(38, Math.min(140, canvas.getBoundingClientRect().width * 0.1));
+    ui.die1.parentElement.style.setProperty('--dice-travel', `${travel}px`);
+    ui.die1.parentElement.classList.add('table-roll');
     const scramble = setInterval(() => {
       setDieFace(ui.die1, 1 + Math.floor(Math.random() * 6));
       setDieFace(ui.die2, 1 + Math.floor(Math.random() * 6));
@@ -255,6 +270,7 @@
       [ui.die1, ui.die2].forEach((die) => die.classList.remove('rolling'));
       setDieFace(ui.die1, finalA);
       setDieFace(ui.die2, finalB);
+      ui.die1.parentElement.classList.remove('table-roll');
     }, 430);
   }
 
@@ -927,6 +943,20 @@
 
   document.getElementById('rollBtn').addEventListener('click', () => {
     if (isBotTurn()) return setStatus('Wait for the bot to finish its turn.');
+    rollDice();
+    maybeRunBotTurn();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space') return;
+    const tag = (document.activeElement?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable) return;
+    e.preventDefault();
+    if (state.winner || isBotTurn()) return;
+    if (state.dice.length) {
+      setStatus('Use your remaining dice first.');
+      return;
+    }
     rollDice();
     maybeRunBotTurn();
   });
