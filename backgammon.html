@@ -6,15 +6,16 @@
   <title>Neon Backgammon Blitz</title>
   <style>
     :root {
-      --bg: #070611;
-      --panel: rgba(20, 18, 41, 0.85);
-      --line: rgba(130, 227, 255, 0.45);
-      --cyan: #57ecff;
-      --pink: #ff6ebe;
-      --gold: #ffd269;
-      --wood-dark: #2f173f;
-      --wood-mid: #4a2466;
-      --wood-light: #6a3595;
+      --bg: #091421;
+      --panel: rgba(10, 26, 40, 0.9);
+      --line: rgba(159, 211, 255, 0.38);
+      --cyan: #87d6ff;
+      --pink: #ffad76;
+      --gold: #ffe08e;
+      --wood-dark: #3b2a1d;
+      --wood-mid: #755036;
+      --wood-light: #a26f47;
+      --felt: #17384f;
     }
     * { box-sizing: border-box; }
     body {
@@ -23,9 +24,9 @@
       font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       color: #f4f8ff;
       background:
-        radial-gradient(circle at 15% 20%, rgba(121, 46, 255, 0.32), transparent 42%),
-        radial-gradient(circle at 85% 10%, rgba(28, 191, 255, 0.34), transparent 36%),
-        radial-gradient(circle at 50% 100%, rgba(255, 99, 184, 0.2), transparent 48%),
+        radial-gradient(circle at 15% 20%, rgba(89, 145, 199, 0.25), transparent 42%),
+        radial-gradient(circle at 85% 10%, rgba(244, 177, 89, 0.2), transparent 36%),
+        radial-gradient(circle at 50% 100%, rgba(43, 98, 147, 0.25), transparent 48%),
         var(--bg);
       display: grid;
       place-items: center;
@@ -37,7 +38,7 @@
       border-radius: 20px;
       background: var(--panel);
       backdrop-filter: blur(7px);
-      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5), 0 0 35px rgba(87, 236, 255, 0.15);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45), 0 0 35px rgba(114, 194, 255, 0.16);
       overflow: hidden;
     }
     .top {
@@ -47,7 +48,7 @@
       gap: 16px;
       padding: 14px 16px;
       border-bottom: 1px solid var(--line);
-      background: linear-gradient(90deg, rgba(87, 236, 255, 0.08), rgba(255, 110, 190, 0.08));
+      background: linear-gradient(90deg, rgba(114, 194, 255, 0.11), rgba(255, 174, 118, 0.1));
     }
     .title { font-weight: 800; letter-spacing: 0.04em; }
     .link {
@@ -82,43 +83,58 @@
     }
     .dice-visuals {
       display: flex;
-      gap: 8px;
+      gap: 14px;
       position: relative;
-      transition: transform .55s cubic-bezier(.2,.8,.25,1.15);
+      transition: transform .75s cubic-bezier(.2,.8,.25,1.15), filter .45s ease;
+      transform-origin: center;
     }
     .dice-visuals.table-roll {
       transform: translateX(var(--dice-travel, 0px));
+      filter: drop-shadow(0 0 20px rgba(255, 205, 116, .45));
+    }
+    .dice-visuals.roll-burst {
+      animation: dice-burst .7s ease;
     }
     .die {
-      width: 34px;
-      height: 34px;
-      border-radius: 9px;
-      border: 1px solid rgba(255,255,255,.35);
-      background: linear-gradient(145deg, rgba(255,255,255,.28), rgba(87,236,255,.12));
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.45);
+      background: linear-gradient(145deg, rgba(255,255,255,.92), rgba(181, 213, 238,.58));
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       grid-template-rows: repeat(3, 1fr);
-      padding: 4px;
-      box-shadow: 0 6px 12px rgba(0,0,0,.32);
+      padding: 8px;
+      box-shadow: 0 14px 22px rgba(0,0,0,.38), inset 0 0 8px rgba(255,255,255,.45);
     }
     .die.rolling {
-      animation: die-shake .42s linear infinite;
+      animation: die-shake .38s linear infinite, die-spin .68s linear infinite;
     }
     .pip {
-      width: 6px;
-      height: 6px;
-      background: #fff;
+      width: 10px;
+      height: 10px;
+      background: #22384b;
       border-radius: 50%;
       opacity: 0;
       place-self: center;
-      box-shadow: 0 0 8px rgba(255,255,255,.75);
+      box-shadow: 0 0 8px rgba(114,194,255,.45);
     }
     @keyframes die-shake {
       0% { transform: rotate(0deg) translateY(0); }
-      25% { transform: rotate(-8deg) translateY(-1px); }
-      50% { transform: rotate(6deg) translateY(2px); }
-      75% { transform: rotate(-6deg) translateY(-1px); }
+      25% { transform: rotate(-11deg) translateY(-3px) scale(1.03); }
+      50% { transform: rotate(9deg) translateY(4px) scale(1.02); }
+      75% { transform: rotate(-8deg) translateY(-2px) scale(1.03); }
       100% { transform: rotate(0deg) translateY(0); }
+    }
+    @keyframes die-spin {
+      0% { filter: brightness(1.05); }
+      50% { filter: brightness(1.25); }
+      100% { filter: brightness(1.05); }
+    }
+    @keyframes dice-burst {
+      0% { transform: translateX(0) scale(.92); }
+      60% { transform: translateX(var(--dice-travel, 0px)) scale(1.08); }
+      100% { transform: translateX(0) scale(1); }
     }
     .board-wrap { padding: 16px; }
     canvas {
@@ -130,8 +146,8 @@
       background:
         radial-gradient(circle at 30% 22%, rgba(255,255,255,0.08), transparent 34%),
         radial-gradient(circle at 70% 80%, rgba(255,255,255,0.05), transparent 35%),
-        linear-gradient(130deg,#250d40,#130725 30%,#0f1638);
-      box-shadow: inset 0 0 50px rgba(0,0,0,.55), 0 0 35px rgba(255,110,190,.16);
+        linear-gradient(130deg,#17384f,#102838 30%,#1f3942);
+      box-shadow: inset 0 0 50px rgba(0,0,0,.55), 0 0 35px rgba(255,174,118,.18);
       cursor: pointer;
     }
     .controls {
@@ -143,7 +159,7 @@
     }
     button {
       border: 1px solid rgba(255,255,255,.3);
-      background: rgba(87,236,255,.12);
+      background: rgba(114,194,255,.16);
       color: #fff;
       font-weight: 700;
       border-radius: 10px;
@@ -155,8 +171,8 @@
       font-size: 1.08rem;
       padding: 13px 20px;
       border-radius: 12px;
-      background: linear-gradient(130deg, rgba(87,236,255,.28), rgba(255,110,190,.2));
-      box-shadow: 0 0 22px rgba(87,236,255,.26), inset 0 0 18px rgba(255,255,255,.08);
+      background: linear-gradient(130deg, rgba(114,194,255,.34), rgba(255,174,118,.26));
+      box-shadow: 0 0 22px rgba(114,194,255,.28), inset 0 0 18px rgba(255,255,255,.1);
     }
     .status { color: #c6fffd; font-size: 14px; }
   </style>
@@ -188,7 +204,7 @@
     <div class="controls">
       <button id="rollBtn">🎲 Roll Dice</button>
       <button id="newBtn">🔁 New Match</button>
-      <div class="status" id="status">Click roll, then click one of your checkers. Bright rings are legal destinations.</div>
+      <div class="status" id="status">Click roll, then click/drag a checker. Double-click auto-moves it to the nearest legal glowing ring.</div>
     </div>
   </main>
 
@@ -258,20 +274,22 @@
 
   function animateDiceRoll(finalA, finalB) {
     [ui.die1, ui.die2].forEach((die) => die.classList.add('rolling'));
-    const travel = Math.max(38, Math.min(140, canvas.getBoundingClientRect().width * 0.1));
-    ui.die1.parentElement.style.setProperty('--dice-travel', `${travel}px`);
-    ui.die1.parentElement.classList.add('table-roll');
+    const visuals = ui.die1.parentElement;
+    const travel = Math.max(70, Math.min(220, canvas.getBoundingClientRect().width * 0.18));
+    visuals.style.setProperty('--dice-travel', `${travel}px`);
+    visuals.classList.add('table-roll', 'roll-burst');
     const scramble = setInterval(() => {
       setDieFace(ui.die1, 1 + Math.floor(Math.random() * 6));
       setDieFace(ui.die2, 1 + Math.floor(Math.random() * 6));
-    }, 80);
+    }, 60);
     setTimeout(() => {
       clearInterval(scramble);
       [ui.die1, ui.die2].forEach((die) => die.classList.remove('rolling'));
       setDieFace(ui.die1, finalA);
       setDieFace(ui.die2, finalB);
-      ui.die1.parentElement.classList.remove('table-roll');
-    }, 430);
+      visuals.classList.remove('table-roll');
+      setTimeout(() => visuals.classList.remove('roll-burst'), 280);
+    }, 760);
   }
 
   function barCheckerPos(player, stackIndex) {
@@ -596,15 +614,15 @@
     const mid = boardX + boardW/2;
 
     const glow = ctx.createLinearGradient(boardX, boardY, boardX + boardW, boardY + boardH);
-    glow.addColorStop(0, 'rgba(255,110,190,0.12)');
-    glow.addColorStop(1, 'rgba(87,236,255,0.1)');
+    glow.addColorStop(0, 'rgba(255, 196, 130, 0.17)');
+    glow.addColorStop(1, 'rgba(118, 185, 226, 0.18)');
     ctx.fillStyle = glow;
     ctx.fillRect(boardX, boardY, boardW, boardH);
 
     const wood = ctx.createLinearGradient(boardX, boardY, boardX, boardY + boardH);
-    wood.addColorStop(0, '#6a3595');
-    wood.addColorStop(0.5, '#4a2466');
-    wood.addColorStop(1, '#2f173f');
+    wood.addColorStop(0, '#a26f47');
+    wood.addColorStop(0.5, '#755036');
+    wood.addColorStop(1, '#3b2a1d');
     ctx.fillStyle = wood;
     ctx.globalAlpha = 0.7;
     ctx.fillRect(boardX + 8, boardY + 8, boardW - 16, boardH - 16);
@@ -622,7 +640,7 @@
 
     ctx.fillStyle = 'rgba(0,0,0,.25)';
     ctx.fillRect(mid - 25, boardY, 50, boardH);
-    ctx.strokeStyle = 'rgba(135,245,255,.65)';
+    ctx.strokeStyle = 'rgba(179, 213, 236, .78)';
     ctx.lineWidth = 2;
     ctx.strokeRect(mid - 25, boardY, 50, boardH);
 
@@ -637,7 +655,7 @@
         ? (half===0 ? 12 + idxInHalf : 18 + idxInHalf)
         : (half===0 ? 11 - idxInHalf : 5 - idxInHalf);
       pointRects[pIdx] = { x:xBase, y:boardY, w:triangleW, h:boardH/2, top };
-      const color = (idxInHalf % 2 === 0) ? '#5ef0ff' : '#ff8bc8';
+      const color = (idxInHalf % 2 === 0) ? '#d9ac7a' : '#6ea8d1';
       ctx.fillStyle = color;
       ctx.beginPath();
       if (top) {
@@ -830,6 +848,29 @@
     return null;
   }
 
+
+  function nearestMove(mx, my, moves = state.legalForSelected) {
+    if (!moves.length) return null;
+    let best = null;
+    let bestDist = Infinity;
+    for (const m of moves) {
+      let x, y;
+      if (m.to === 'off') {
+        x = state.current === 1 ? W - 55 : 55;
+        y = H / 2;
+      } else {
+        const p = checkerPos(m.to, Math.min(4, Math.abs(state.points[m.to])));
+        x = p.x; y = p.y;
+      }
+      const dist = Math.hypot(mx - x, my - y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = m;
+      }
+    }
+    return best;
+  }
+
   function pickMove(mx,my) {
     for (const m of state.legalForSelected) {
       if (m.to === 'off') {
@@ -918,6 +959,36 @@
     setStatus(`Selected ${src === 'bar' ? 'BAR' : 'point ' + (src+1)}. Choose a glowing destination ring.`);
     playSound('select');
     draw();
+  });
+
+
+  canvas.addEventListener('dblclick', (e) => {
+    if (state.winner) return;
+    if (isBotTurn()) return setStatus('Bot is taking its turn...');
+    if (!state.dice.length) {
+      setStatus('Roll dice first.');
+      playSound('denied');
+      return;
+    }
+    const { mx, my } = getBoardPos(e);
+    const src = pickSource(mx, my);
+    if (src === null) {
+      setStatus('Double-click one of your checkers to auto-move.');
+      return;
+    }
+    const legal = legalMovesForSource(src);
+    if (!legal.length) {
+      setStatus('No legal move from that checker with current dice.');
+      playSound('denied');
+      return;
+    }
+    state.selected = src;
+    state.legalForSelected = legal;
+    const mv = nearestMove(mx, my, legal);
+    if (mv) {
+      setStatus('Auto-moving checker to nearest legal destination.');
+      applyMove(mv);
+    }
   });
 
   canvas.addEventListener('mousedown', (e) => {
