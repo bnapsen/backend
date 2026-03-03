@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Royal Neon Blackjack | Nova Arcade</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="blackjack.css">
+</head>
+<body>
+  <div class="casino-bg"></div>
+  <main class="table-shell">
+    <header class="table-header">
+      <a class="back-link" href="index.html">← Back to Nova Arcade</a>
+      <h1>Royal Neon Blackjack</h1>
+      <p>Beat the dealer. Stack your chips. Feel the casino vibe.</p>
+    </header>
+
+    <section class="score-strip" aria-live="polite">
+      <div class="stat"><span>Bankroll</span><strong id="bankroll">$1000</strong></div>
+      <div class="stat"><span>Current Bet</span><strong id="currentBet">$25</strong></div>
+      <div class="stat"><span>Streak</span><strong id="streak">0</strong></div>
+      <div class="stat"><span>Round</span><strong id="round">1</strong></div>
+    </section>
+
+    <section class="dealer-zone">
+      <div class="zone-title">
+        <h2>Dealer</h2>
+        <span id="dealerScore" class="score-pill">Score: ?</span>
+      </div>
+      <div class="cards-row" id="dealerCards"></div>
+    </section>
+
+    <section class="center-banner" id="message">Place your bet and deal a lucky hand.</section>
+
+    <section class="player-zone">
+      <div class="zone-title">
+        <h2>Player</h2>
+        <span id="playerScore" class="score-pill">Score: 0</span>
+      </div>
+      <div class="cards-row" id="playerCards"></div>
+    </section>
+
+    <section class="controls-panel">
+      <div class="chip-controls" aria-label="Bet controls">
+        <button class="chip" data-bet="5">+$5</button>
+        <button class="chip" data-bet="25">+$25</button>
+        <button class="chip" data-bet="100">+$100</button>
+        <button class="chip danger" id="clearBet">Clear Bet</button>
+      </div>
+
+      <div class="action-controls" aria-label="Blackjack actions">
+        <button id="dealBtn" class="action primary">Deal</button>
+        <button id="hitBtn" class="action">Hit</button>
+        <button id="standBtn" class="action">Stand</button>
+        <button id="doubleBtn" class="action">Double</button>
+        <button id="newHandBtn" class="action ghost">New Hand</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="blackjack.js"></script>
+</body>
+</html>
