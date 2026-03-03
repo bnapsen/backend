@@ -1,0 +1,30 @@
+<svg width="640" height="360" viewBox="0 0 640 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="640" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A1238"/>
+      <stop offset="1" stop-color="#130821"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="120" y1="70" x2="520" y2="290" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00E7FF"/>
+      <stop offset="1" stop-color="#FF4EDB"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" rx="26" fill="url(#bg)"/>
+  <rect x="100" y="40" width="440" height="280" rx="18" fill="#0A0E23" stroke="url(#glow)" stroke-width="4"/>
+  <g opacity="0.95">
+    <rect x="138" y="78" width="364" height="204" rx="10" fill="#152046"/>
+    <g>
+      <rect x="138" y="78" width="45.5" height="25.5" fill="#F0D9B5"/>
+      <rect x="183.5" y="78" width="45.5" height="25.5" fill="#B58863"/>
+      <rect x="229" y="78" width="45.5" height="25.5" fill="#F0D9B5"/>
+      <rect x="274.5" y="78" width="45.5" height="25.5" fill="#B58863"/>
+      <rect x="320" y="78" width="45.5" height="25.5" fill="#F0D9B5"/>
+      <rect x="365.5" y="78" width="45.5" height="25.5" fill="#B58863"/>
+      <rect x="411" y="78" width="45.5" height="25.5" fill="#F0D9B5"/>
+      <rect x="456.5" y="78" width="45.5" height="25.5" fill="#B58863"/>
+    </g>
+    <text x="238" y="205" fill="#00E7FF" font-size="88" font-family="Inter, Arial" font-weight="700">♔</text>
+    <text x="355" y="205" fill="#FF4EDB" font-size="88" font-family="Inter, Arial" font-weight="700">♛</text>
+  </g>
+  <text x="320" y="337" text-anchor="middle" fill="#EAF7FF" font-size="34" font-family="Inter, Arial" font-weight="700">NEON CHESS ARENA</text>
+</svg>
