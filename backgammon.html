@@ -252,6 +252,7 @@
 
     <div class="controls">
       <button id="rollBtn">🎲 Roll Dice</button>
+      <button id="undoBtn">↩️ Undo</button>
       <button id="newBtn">🔁 New Match</button>
       <div class="status" id="status">Click roll, then click/drag a checker. Double-click auto-moves it to the furthest legal glowing ring.</div>
     </div>
@@ -268,7 +269,8 @@
     barW: document.getElementById('barW'), barB: document.getElementById('barB'),
     offW: document.getElementById('offW'), offB: document.getElementById('offB'), status: document.getElementById('status'),
     mode: document.getElementById('mode'),
-    die1: document.getElementById('die1'), die2: document.getElementById('die2')
+    die1: document.getElementById('die1'), die2: document.getElementById('die2'),
+    undoBtn: document.getElementById('undoBtn')
   };
 
   const state = {
@@ -284,6 +286,7 @@
     winner: 0,
     bot: -1,
     anim: { move: null, pulses: [], trail: [] },
+    history: [],
   };
 
   const audio = {
@@ -406,9 +409,66 @@
     state.anim.move = null;
     state.anim.pulses = [];
     state.anim.trail = [];
+    state.history = [];
     ui.mode.textContent = 'White vs Bot (Black)';
     syncUi();
     draw();
+  }
+
+  function snapshot() {
+    return {
+      points: [...state.points],
+      current: state.current,
+      bar: { 1: state.bar[1], [-1]: state.bar[-1] },
+      borneOff: { 1: state.borneOff[1], [-1]: state.borneOff[-1] },
+      dice: [...state.dice],
+      selected: state.selected,
+      legalForSelected: state.legalForSelected.map((move) => ({ ...move })),
+      lastRoll: [...state.lastRoll],
+      winner: state.winner,
+      status: ui.status.textContent,
+    };
+  }
+
+  function pushHistory() {
+    state.history.push(snapshot());
+    if (state.history.length > 80) state.history.shift();
+    syncUi();
+  }
+
+  function restoreSnapshot(saved) {
+    state.points = [...saved.points];
+    state.current = saved.current;
+    state.bar[1] = saved.bar[1];
+    state.bar[-1] = saved.bar[-1];
+    state.borneOff[1] = saved.borneOff[1];
+    state.borneOff[-1] = saved.borneOff[-1];
+    state.dice = [...saved.dice];
+    state.selected = saved.selected;
+    state.legalForSelected = saved.legalForSelected.map((move) => ({ ...move }));
+    state.lastRoll = [...saved.lastRoll];
+    state.winner = saved.winner;
+    state.drag = null;
+    state.anim.move = null;
+    state.anim.pulses = [];
+    state.anim.trail = [];
+    setStatus(saved.status || 'Move undone.');
+    syncUi();
+    draw();
+  }
+
+  function undoLastAction() {
+    if (isBotTurn()) {
+      setStatus('Wait for the bot to finish before undoing.');
+      return;
+    }
+    if (!state.history.length) {
+      setStatus('Nothing to undo yet.');
+      return;
+    }
+    const previous = state.history.pop();
+    restoreSnapshot(previous);
+    setStatus('Undid last action.');
   }
 
   function ensureAudio() {
@@ -456,6 +516,7 @@
   function rollDice() {
     if (state.winner) return;
     if (state.dice.length) return setStatus('Use your remaining dice first.');
+    pushHistory();
     const a = 1 + Math.floor(Math.random() * 6);
     const b = 1 + Math.floor(Math.random() * 6);
     state.lastRoll = [a,b];
@@ -544,6 +605,7 @@
   }
 
   function applyMove(m) {
+    pushHistory();
     const p = state.current;
     let wasHit = false;
     startMoveAnimation(m, p);
@@ -668,6 +730,7 @@
     ui.dice.textContent = state.dice.length ? state.dice.join(', ') : `Last roll: ${state.lastRoll[0] || '-'} / ${state.lastRoll[1] || '-'}`;
     ui.barW.textContent = state.bar[1]; ui.barB.textContent = state.bar[-1];
     ui.offW.textContent = state.borneOff[1]; ui.offB.textContent = state.borneOff[-1];
+    ui.undoBtn.disabled = !state.history.length || isBotTurn();
   }
   function setStatus(s){ ui.status.textContent = s; }
 
@@ -1122,6 +1185,7 @@
     reset();
     setStatus('New match ready. White starts. Roll dice!');
   });
+  ui.undoBtn.addEventListener('click', undoLastAction);
 
   initDiceVisuals();
   reset();
