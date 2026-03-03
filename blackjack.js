@@ -72,11 +72,18 @@ function renderCard(card, hidden = false) {
     div.className = "card back";
     return div;
   }
+
   const isRed = card.suit === "♥" || card.suit === "♦";
-  div.className = `card ${isRed ? "red" : ""}`;
-  div.innerHTML = `<div class="top">${card.rank}${card.suit}</div>
-    <div class="center">${card.suit}</div>
-    <div class="bottom">${card.rank}${card.suit}</div>`;
+  const isFace = ["J", "Q", "K", "A"].includes(card.rank);
+  div.className = `card ${isRed ? "red" : ""} ${isFace ? "face" : ""}`.trim();
+
+  const centerContent = isFace ? `${card.rank}${card.suit}` : card.suit;
+  div.innerHTML = `
+    <div class="card-corner top"><span>${card.rank}</span><span class="suit-mini">${card.suit}</span></div>
+    <div class="card-center">${centerContent}</div>
+    <div class="card-corner bottom"><span>${card.rank}</span><span class="suit-mini">${card.suit}</span></div>
+  `;
+
   return div;
 }
 

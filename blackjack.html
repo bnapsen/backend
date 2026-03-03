@@ -18,29 +18,43 @@
       <p>Beat the dealer. Stack your chips. Feel the casino vibe.</p>
     </header>
 
-    <section class="score-strip" aria-live="polite">
-      <div class="stat"><span>Bankroll</span><strong id="bankroll">$1000</strong></div>
-      <div class="stat"><span>Current Bet</span><strong id="currentBet">$25</strong></div>
-      <div class="stat"><span>Streak</span><strong id="streak">0</strong></div>
-      <div class="stat"><span>Round</span><strong id="round">1</strong></div>
-    </section>
-
-    <section class="dealer-zone">
-      <div class="zone-title">
-        <h2>Dealer</h2>
-        <span id="dealerScore" class="score-pill">Score: ?</span>
+    <section class="blackjack-table" aria-label="Blackjack table layout">
+      <div class="table-inner-ring"></div>
+      <div class="table-markings" aria-hidden="true">
+        <span class="table-text">BLACKJACK PAYS 3 TO 2</span>
+        <span class="insurance-text">INSURANCE PAYS 2 TO 1</span>
       </div>
-      <div class="cards-row" id="dealerCards"></div>
-    </section>
 
-    <section class="center-banner" id="message">Place your bet and deal a lucky hand.</section>
+      <section class="score-strip" aria-live="polite">
+        <div class="stat"><span>Bankroll</span><strong id="bankroll">$1000</strong></div>
+        <div class="stat"><span>Current Bet</span><strong id="currentBet">$25</strong></div>
+        <div class="stat"><span>Streak</span><strong id="streak">0</strong></div>
+        <div class="stat"><span>Round</span><strong id="round">1</strong></div>
+      </section>
 
-    <section class="player-zone">
-      <div class="zone-title">
-        <h2>Player</h2>
-        <span id="playerScore" class="score-pill">Score: 0</span>
+      <section class="dealer-zone">
+        <div class="zone-title">
+          <h2>Dealer</h2>
+          <span id="dealerScore" class="score-pill">Score: ?</span>
+        </div>
+        <div class="cards-row" id="dealerCards"></div>
+      </section>
+
+      <section class="center-banner" id="message">Place your bet and deal a lucky hand.</section>
+
+      <section class="player-zone">
+        <div class="zone-title">
+          <h2>Player</h2>
+          <span id="playerScore" class="score-pill">Score: 0</span>
+        </div>
+        <div class="cards-row" id="playerCards"></div>
+      </section>
+
+      <div class="betting-arcs" aria-hidden="true">
+        <div class="bet-spot left">BET</div>
+        <div class="bet-spot center">BET</div>
+        <div class="bet-spot right">BET</div>
       </div>
-      <div class="cards-row" id="playerCards"></div>
     </section>
 
     <section class="controls-panel">
