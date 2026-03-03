@@ -73,6 +73,48 @@
       font-size: 14px;
     }
     .chip b { color: var(--cyan); }
+    .dice-chip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .dice-visuals {
+      display: flex;
+      gap: 8px;
+    }
+    .die {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      border: 1px solid rgba(255,255,255,.35);
+      background: linear-gradient(145deg, rgba(255,255,255,.28), rgba(87,236,255,.12));
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      padding: 4px;
+      box-shadow: 0 6px 12px rgba(0,0,0,.32);
+    }
+    .die.rolling {
+      animation: die-shake .42s linear infinite;
+    }
+    .pip {
+      width: 6px;
+      height: 6px;
+      background: #fff;
+      border-radius: 50%;
+      opacity: 0;
+      place-self: center;
+      box-shadow: 0 0 8px rgba(255,255,255,.75);
+    }
+    @keyframes die-shake {
+      0% { transform: rotate(0deg) translateY(0); }
+      25% { transform: rotate(-8deg) translateY(-1px); }
+      50% { transform: rotate(6deg) translateY(2px); }
+      75% { transform: rotate(-6deg) translateY(-1px); }
+      100% { transform: rotate(0deg) translateY(0); }
+    }
     .board-wrap { padding: 16px; }
     canvas {
       width: 100%;
@@ -104,6 +146,14 @@
       cursor: pointer;
     }
     button:hover { filter: brightness(1.18); }
+    #rollBtn {
+      font-size: 18px;
+      padding: 14px 22px;
+      border-radius: 14px;
+      border-color: rgba(255, 230, 150, 0.8);
+      background: linear-gradient(135deg, rgba(255, 210, 105, 0.28), rgba(87, 236, 255, 0.2));
+      box-shadow: 0 10px 24px rgba(0,0,0,.34), 0 0 20px rgba(255, 210, 105, .26);
+    }
     .status { color: #c6fffd; font-size: 14px; }
   </style>
 </head>
@@ -117,7 +167,12 @@
     <section class="hud">
       <div class="chip"><b id="turn">Turn: White</b></div>
       <div class="chip">Mode: <b id="mode">White vs Bot (Black)</b></div>
-      <div class="chip">Dice: <b id="dice">Roll to start</b></div>
+      <div class="chip dice-chip">Dice: <b id="dice">Roll to start</b>
+        <span class="dice-visuals" id="diceVisuals">
+          <span class="die" id="die1"></span>
+          <span class="die" id="die2"></span>
+        </span>
+      </div>
       <div class="chip">Bar ⚡ White <b id="barW">0</b> / Black <b id="barB">0</b></div>
       <div class="chip">Borne Off 🏁 White <b id="offW">0</b> / Black <b id="offB">0</b></div>
     </section>
@@ -143,7 +198,8 @@
     turn: document.getElementById('turn'), dice: document.getElementById('dice'),
     barW: document.getElementById('barW'), barB: document.getElementById('barB'),
     offW: document.getElementById('offW'), offB: document.getElementById('offB'), status: document.getElementById('status'),
-    mode: document.getElementById('mode')
+    mode: document.getElementById('mode'),
+    die1: document.getElementById('die1'), die2: document.getElementById('die2')
   };
 
   const state = {
@@ -158,6 +214,7 @@
     lastRoll: [0,0],
     winner: 0,
     bot: -1,
+    anim: { move: null, pulses: [], diceRoll: null },
   };
 
   const audio = {
@@ -166,6 +223,118 @@
   };
 
   const pointRects = [];
+
+  const pipLayouts = {
+    1: [4],
+    2: [0, 8],
+    3: [0, 4, 8],
+    4: [0, 2, 6, 8],
+    5: [0, 2, 4, 6, 8],
+    6: [0, 2, 3, 5, 6, 8],
+  };
+
+  function initDiceVisuals() {
+    [ui.die1, ui.die2].forEach((die) => {
+      die.innerHTML = '';
+      for (let i = 0; i < 9; i++) {
+        const pip = document.createElement('span');
+        pip.className = 'pip';
+        die.appendChild(pip);
+      }
+      setDieFace(die, 1);
+    });
+  }
+
+  function setDieFace(die, value) {
+    const pips = die.querySelectorAll('.pip');
+    pips.forEach((pip, idx) => {
+      pip.style.opacity = pipLayouts[value].includes(idx) ? 1 : 0;
+    });
+  }
+
+  function animateDiceRoll(finalA, finalB) {
+    [ui.die1, ui.die2].forEach((die) => die.classList.add('rolling'));
+    const scramble = setInterval(() => {
+      setDieFace(ui.die1, 1 + Math.floor(Math.random() * 6));
+      setDieFace(ui.die2, 1 + Math.floor(Math.random() * 6));
+    }, 80);
+    state.anim.diceRoll = {
+      startedAt: performance.now(),
+      duration: 900,
+      faces: [finalA, finalB],
+      seed: Math.random() * 1000,
+    };
+    setTimeout(() => {
+      clearInterval(scramble);
+      [ui.die1, ui.die2].forEach((die) => die.classList.remove('rolling'));
+      setDieFace(ui.die1, finalA);
+      setDieFace(ui.die2, finalB);
+    }, 430);
+  }
+
+  function drawCanvasDie(x, y, size, value, angle) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    const half = size / 2;
+    ctx.fillStyle = 'rgba(255,255,255,0.94)';
+    ctx.strokeStyle = 'rgba(87,236,255,0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-half, -half, size, size, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    const pipPos = [
+      [-0.28, -0.28], [0, -0.28], [0.28, -0.28],
+      [-0.28, 0], [0, 0], [0.28, 0],
+      [-0.28, 0.28], [0, 0.28], [0.28, 0.28],
+    ];
+    ctx.fillStyle = '#1b1637';
+    for (const idx of pipLayouts[value]) {
+      const [px, py] = pipPos[idx];
+      ctx.beginPath();
+      ctx.arc(px * size, py * size, size * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function barCheckerPos(player, stackIndex) {
+    return {
+      x: W / 2,
+      y: player === 1 ? H / 2 + 36 + stackIndex * 26 : H / 2 - 36 - stackIndex * 26,
+      r: 20,
+    };
+  }
+
+  function offTargetPos(player) {
+    return { x: player === 1 ? W - 55 : 55, y: H / 2, r: 22 };
+  }
+
+  function spawnPulse(x, y, color = 'rgba(255,210,105,0.9)') {
+    state.anim.pulses.push({ x, y, color, start: performance.now(), duration: 360 });
+  }
+
+  function startMoveAnimation(move, player) {
+    const from = move.from === 'bar'
+      ? barCheckerPos(player, Math.max(0, state.bar[player] - 1))
+      : checkerPos(move.from, Math.min(4, Math.max(0, Math.abs(state.points[move.from]) - 1)));
+    const to = move.to === 'off'
+      ? offTargetPos(player)
+      : checkerPos(move.to, Math.min(4, Math.abs(state.points[move.to])));
+    state.anim.move = {
+      owner: player,
+      startX: from.x,
+      startY: from.y,
+      endX: to.x,
+      endY: to.y,
+      r: from.r,
+      startedAt: performance.now(),
+      duration: 320,
+    };
+  }
+
   function reset() {
     state.points.fill(0);
     state.points[23] = 2; state.points[12] = 5; state.points[7] = 3; state.points[5] = 5;
@@ -179,6 +348,9 @@
     state.drag = null;
     state.lastRoll = [0,0];
     state.winner = 0;
+    state.anim.move = null;
+    state.anim.pulses = [];
+    state.anim.diceRoll = null;
     ui.mode.textContent = 'White vs Bot (Black)';
     syncUi();
     draw();
@@ -233,6 +405,7 @@
     const b = 1 + Math.floor(Math.random() * 6);
     state.lastRoll = [a,b];
     state.dice = a === b ? [a,a,a,a] : [a,b];
+    animateDiceRoll(a, b);
     state.selected = null;
     state.legalForSelected = [];
     setStatus(`Rolled ${a} and ${b}. Select a checker.`);
@@ -318,6 +491,7 @@
   function applyMove(m) {
     const p = state.current;
     let wasHit = false;
+    startMoveAnimation(m, p);
     if (m.from === 'bar') state.bar[p]--;
     else state.points[m.from] += p===1 ? -1 : 1;
 
@@ -333,6 +507,14 @@
     if (m.to === 'off') playSound('bearOff');
     else if (wasHit) playSound('hit');
     else playSound('move');
+
+    if (m.to === 'off') {
+      const t = offTargetPos(p);
+      spawnPulse(t.x, t.y, 'rgba(255, 214, 130, 0.95)');
+    } else {
+      const t = checkerPos(m.to, Math.min(4, Math.abs(state.points[m.to]) - 1));
+      spawnPulse(t.x, t.y, wasHit ? 'rgba(255, 120, 180, 0.95)' : 'rgba(125, 245, 255, 0.9)');
+    }
 
     state.dice.splice(m.di, 1);
     state.selected = null;
@@ -574,6 +756,69 @@
     ctx.fill();
   }
 
+
+  function drawPulses() {
+    if (!state.anim.pulses.length) return false;
+    const now = performance.now();
+    state.anim.pulses = state.anim.pulses.filter((pulse) => {
+      const t = (now - pulse.start) / pulse.duration;
+      if (t >= 1) return false;
+      const radius = 14 + t * 28;
+      ctx.beginPath();
+      ctx.arc(pulse.x, pulse.y, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = pulse.color.replace('0.9', String(Math.max(0.08, 0.9 - t * 0.9))).replace('0.95', String(Math.max(0.08, 0.95 - t * 0.9)));
+      ctx.lineWidth = 4 - t * 2.8;
+      ctx.stroke();
+      return true;
+    });
+    return state.anim.pulses.length > 0;
+  }
+
+
+  function drawDiceRollAnimation() {
+    if (!state.anim.diceRoll) return false;
+    const now = performance.now();
+    const anim = state.anim.diceRoll;
+    const t = (now - anim.startedAt) / anim.duration;
+    if (t >= 1) {
+      state.anim.diceRoll = null;
+      return false;
+    }
+
+    const travel = Math.min(1, t / 0.82);
+    const eased = 1 - Math.pow(1 - travel, 3);
+    const baseX = 90 + eased * (W - 230);
+    const baseY = H * 0.34;
+
+    for (let i = 0; i < 2; i++) {
+      const wobble = Math.sin((t * 16) + anim.seed + i * 1.1) * (12 - travel * 8);
+      const bounce = Math.abs(Math.sin((t * 11) + i)) * (28 * (1 - travel * 0.55));
+      const angle = Math.sin((t * 15) + i * 2.4) * (0.8 - travel * 0.5);
+      const x = baseX + i * 54 + wobble;
+      const y = baseY + i * 26 + bounce;
+      const face = t > 0.76 ? anim.faces[i] : 1 + Math.floor(((t * 1000) + anim.seed + i * 13) % 6);
+      drawCanvasDie(x, y, 42, face, angle);
+    }
+    return true;
+  }
+
+  function drawMoveAnimation() {
+    if (!state.anim.move) return false;
+    const now = performance.now();
+    const m = state.anim.move;
+    const tRaw = (now - m.startedAt) / m.duration;
+    if (tRaw >= 1) {
+      state.anim.move = null;
+      return false;
+    }
+    const ease = 1 - Math.pow(1 - Math.max(0, tRaw), 3);
+    const arc = Math.sin(ease * Math.PI) * 18;
+    const x = m.startX + (m.endX - m.startX) * ease;
+    const y = m.startY + (m.endY - m.startY) * ease - arc;
+    drawChecker(x, y, m.r, m.owner);
+    return true;
+  }
+
   function drawSelectionHints() {
     if (state.selected === 'bar') {
       ctx.strokeStyle = '#ffe78d';
@@ -610,8 +855,12 @@
   function draw() {
     drawBoardBase();
     drawCheckers();
+    const pulseActive = drawPulses();
     drawSelectionHints();
+    const moveActive = drawMoveAnimation();
+    const diceRollActive = drawDiceRollAnimation();
     if (state.drag) drawChecker(state.drag.mx, state.drag.my, state.drag.r, state.current);
+    if (pulseActive || moveActive || diceRollActive) requestAnimationFrame(draw);
   }
 
   function getBoardPos(e) {
@@ -748,16 +997,26 @@
     draw();
   });
 
-  document.getElementById('rollBtn').addEventListener('click', () => {
+  function handleRollRequest() {
     if (isBotTurn()) return setStatus('Wait for the bot to finish its turn.');
     rollDice();
     maybeRunBotTurn();
-  });
+  }
+
+  document.getElementById('rollBtn').addEventListener('click', handleRollRequest);
   document.getElementById('newBtn').addEventListener('click', () => {
     reset();
     setStatus('New match ready. White starts. Roll dice!');
   });
 
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space') return;
+    if (e.repeat) return;
+    e.preventDefault();
+    handleRollRequest();
+  });
+
+  initDiceVisuals();
   reset();
 })();
 </script>
