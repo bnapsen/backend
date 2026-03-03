@@ -12,6 +12,9 @@
       --cyan: #57ecff;
       --pink: #ff6ebe;
       --gold: #ffd269;
+      --wood-dark: #2f173f;
+      --wood-mid: #4a2466;
+      --wood-light: #6a3595;
     }
     * { box-sizing: border-box; }
     body {
@@ -77,7 +80,10 @@
       display: block;
       border-radius: 16px;
       border: 1px solid rgba(255,255,255,.2);
-      background: linear-gradient(130deg,#250d40,#130725 30%,#0f1638);
+      background:
+        radial-gradient(circle at 30% 22%, rgba(255,255,255,0.08), transparent 34%),
+        radial-gradient(circle at 70% 80%, rgba(255,255,255,0.05), transparent 35%),
+        linear-gradient(130deg,#250d40,#130725 30%,#0f1638);
       box-shadow: inset 0 0 50px rgba(0,0,0,.55), 0 0 35px rgba(255,110,190,.16);
       cursor: pointer;
     }
@@ -148,9 +154,15 @@
     dice: [],
     selected: null,
     legalForSelected: [],
+    drag: null,
     lastRoll: [0,0],
     winner: 0,
     bot: -1,
+  };
+
+  const audio = {
+    ctx: null,
+    enabled: false,
   };
 
   const pointRects = [];
@@ -164,11 +176,50 @@
     state.dice = [];
     state.selected = null;
     state.legalForSelected = [];
+    state.drag = null;
     state.lastRoll = [0,0];
     state.winner = 0;
     ui.mode.textContent = 'White vs Bot (Black)';
     syncUi();
     draw();
+  }
+
+  function ensureAudio() {
+    if (audio.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audio.ctx = new AC();
+  }
+
+  function playSound(type) {
+    ensureAudio();
+    if (!audio.ctx) return;
+    if (audio.ctx.state === 'suspended') audio.ctx.resume();
+    const now = audio.ctx.currentTime;
+    const presets = {
+      roll: [[240, 0.06], [310, 0.06]],
+      select: [[500, 0.05]],
+      move: [[320, 0.08], [470, 0.06]],
+      hit: [[180, 0.08], [120, 0.12]],
+      bearOff: [[620, 0.08], [760, 0.12]],
+      win: [[640, 0.11], [840, 0.13], [1080, 0.18]],
+      denied: [[140, 0.08]],
+    };
+    const tones = presets[type] || presets.move;
+    tones.forEach(([freq, dur], idx) => {
+      const osc = audio.ctx.createOscillator();
+      const gain = audio.ctx.createGain();
+      osc.type = type === 'hit' ? 'square' : 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = 0;
+      osc.connect(gain);
+      gain.connect(audio.ctx.destination);
+      const start = now + idx * 0.055;
+      gain.gain.linearRampToValueAtTime(0.08, start + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+      osc.start(start);
+      osc.stop(start + dur);
+    });
   }
 
   function isBotTurn() {
@@ -185,6 +236,7 @@
     state.selected = null;
     state.legalForSelected = [];
     setStatus(`Rolled ${a} and ${b}. Select a checker.`);
+    playSound('roll');
     if (!hasAnyLegalMove()) {
       setStatus(`No legal moves for ${playerName(state.current)}. Turn passes.`);
       endTurn();
@@ -265,6 +317,7 @@
 
   function applyMove(m) {
     const p = state.current;
+    let wasHit = false;
     if (m.from === 'bar') state.bar[p]--;
     else state.points[m.from] += p===1 ? -1 : 1;
 
@@ -272,10 +325,14 @@
       state.borneOff[p]++;
     } else {
       const destVal = state.points[m.to];
-      if (p===1 && destVal === -1) { state.points[m.to] = 0; state.bar[-1]++; }
-      if (p===-1 && destVal === 1) { state.points[m.to] = 0; state.bar[1]++; }
+      if (p===1 && destVal === -1) { state.points[m.to] = 0; state.bar[-1]++; wasHit = true; }
+      if (p===-1 && destVal === 1) { state.points[m.to] = 0; state.bar[1]++; wasHit = true; }
       state.points[m.to] += p;
     }
+
+    if (m.to === 'off') playSound('bearOff');
+    else if (wasHit) playSound('hit');
+    else playSound('move');
 
     state.dice.splice(m.di, 1);
     state.selected = null;
@@ -284,6 +341,7 @@
     if (state.borneOff[p] >= 15) {
       state.winner = p;
       setStatus(`🔥 ${playerName(p)} wins the blitz! Hit New Match for another round.`);
+      playSound('win');
       syncUi();
       draw();
       return;
@@ -383,10 +441,29 @@
     const mid = boardX + boardW/2;
 
     const glow = ctx.createLinearGradient(boardX, boardY, boardX + boardW, boardY + boardH);
-    glow.addColorStop(0, 'rgba(255,110,190,0.2)');
-    glow.addColorStop(1, 'rgba(87,236,255,0.18)');
+    glow.addColorStop(0, 'rgba(255,110,190,0.12)');
+    glow.addColorStop(1, 'rgba(87,236,255,0.1)');
     ctx.fillStyle = glow;
     ctx.fillRect(boardX, boardY, boardW, boardH);
+
+    const wood = ctx.createLinearGradient(boardX, boardY, boardX, boardY + boardH);
+    wood.addColorStop(0, '#6a3595');
+    wood.addColorStop(0.5, '#4a2466');
+    wood.addColorStop(1, '#2f173f');
+    ctx.fillStyle = wood;
+    ctx.globalAlpha = 0.7;
+    ctx.fillRect(boardX + 8, boardY + 8, boardW - 16, boardH - 16);
+    ctx.globalAlpha = 1;
+
+    for (let i = 0; i < 26; i++) {
+      const y = boardY + 10 + i * ((boardH - 20) / 26);
+      ctx.strokeStyle = `rgba(255,255,255,${i % 2 ? 0.03 : 0.015})`;
+      ctx.lineWidth = i % 2 ? 2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(boardX + 10, y);
+      ctx.lineTo(boardX + boardW - 10, y + (i % 3) * 2);
+      ctx.stroke();
+    }
 
     ctx.fillStyle = 'rgba(0,0,0,.25)';
     ctx.fillRect(mid - 25, boardY, 50, boardH);
@@ -405,7 +482,7 @@
         ? (half===0 ? 12 + idxInHalf : 18 + idxInHalf)
         : (half===0 ? 11 - idxInHalf : 5 - idxInHalf);
       pointRects[pIdx] = { x:xBase, y:boardY, w:triangleW, h:boardH/2, top };
-      const color = (idxInHalf % 2 === 0) ? '#54deff' : '#ff74ba';
+      const color = (idxInHalf % 2 === 0) ? '#5ef0ff' : '#ff8bc8';
       ctx.fillStyle = color;
       ctx.beginPath();
       if (top) {
@@ -418,9 +495,13 @@
         ctx.lineTo(xBase + triangleW/2, boardY + boardH/2 + 8);
       }
       ctx.closePath();
-      ctx.globalAlpha = 0.72;
+      ctx.globalAlpha = 0.78;
       ctx.fill();
       ctx.globalAlpha = 1;
+
+      ctx.strokeStyle = 'rgba(0,0,0,.28)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     };
 
     for (let i=0;i<6;i++) pointAt(0,i,true);
@@ -474,6 +555,11 @@
 
   function drawChecker(x,y,r,owner){
     ctx.beginPath();
+    ctx.ellipse(x + 3, y + r * 0.7, r * 0.86, r * 0.42, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,.28)';
+    ctx.fill();
+
+    ctx.beginPath();
     ctx.arc(x,y,r,0,Math.PI*2);
     const g = ctx.createRadialGradient(x-r*0.35,y-r*0.35,2,x,y,r);
     if (owner===1) { g.addColorStop(0,'#ffffff'); g.addColorStop(1,'#c8e5ff'); }
@@ -481,6 +567,11 @@
     ctx.fillStyle = g; ctx.fill();
     ctx.strokeStyle = owner===1 ? 'rgba(88,235,255,.9)' : 'rgba(255,116,186,.9)';
     ctx.lineWidth = 3; ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(x - r * 0.2, y - r * 0.2, r * 0.24, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,.22)';
+    ctx.fill();
   }
 
   function drawSelectionHints() {
@@ -520,6 +611,15 @@
     drawBoardBase();
     drawCheckers();
     drawSelectionHints();
+    if (state.drag) drawChecker(state.drag.mx, state.drag.my, state.drag.r, state.current);
+  }
+
+  function getBoardPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      mx: (e.clientX - rect.left) * (W / rect.width),
+      my: (e.clientY - rect.top) * (H / rect.height),
+    };
   }
 
   function pickSource(mx,my) {
@@ -551,13 +651,55 @@
     return null;
   }
 
+  function beginDrag(mx, my) {
+    if (state.winner || isBotTurn()) return false;
+    if (!state.dice.length) {
+      setStatus('Roll dice first.');
+      playSound('denied');
+      return false;
+    }
+    const src = pickSource(mx, my);
+    if (src === null) return false;
+    const legal = legalMovesForSource(src);
+    if (!legal.length) {
+      setStatus('No legal move from that source with current dice.');
+      playSound('denied');
+      return false;
+    }
+
+    state.selected = src;
+    state.legalForSelected = legal;
+    state.drag = { source: src, mx, my, r: 24 };
+    setStatus(`Dragging ${src === 'bar' ? 'BAR' : 'point ' + (src+1)} checker — drop onto a glowing ring.`);
+    playSound('select');
+    draw();
+    return true;
+  }
+
+  function updateDrag(mx, my) {
+    if (!state.drag) return;
+    state.drag.mx = mx;
+    state.drag.my = my;
+    draw();
+  }
+
+  function finishDrag(mx, my) {
+    if (!state.drag) return;
+    const mv = pickMove(mx, my);
+    state.drag = null;
+    if (mv) {
+      applyMove(mv);
+      return;
+    }
+    setStatus('Drop on a glowing destination to move the checker.');
+    draw();
+  }
+
   canvas.addEventListener('click', (e) => {
     if (state.winner) return;
     if (isBotTurn()) return setStatus('Bot is taking its turn...');
     if (!state.dice.length) return setStatus('Roll dice first.');
-    const rect = canvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) * (W / rect.width);
-    const my = (e.clientY - rect.top) * (H / rect.height);
+    const { mx, my } = getBoardPos(e);
 
     if (state.selected !== null) {
       const mv = pickMove(mx,my);
@@ -575,11 +717,34 @@
     const legal = legalMovesForSource(src);
     if (!legal.length) {
       setStatus('No legal move from that source with current dice.');
+      playSound('denied');
       return;
     }
     state.selected = src;
     state.legalForSelected = legal;
     setStatus(`Selected ${src === 'bar' ? 'BAR' : 'point ' + (src+1)}. Choose a glowing destination ring.`);
+    playSound('select');
+    draw();
+  });
+
+  canvas.addEventListener('mousedown', (e) => {
+    const { mx, my } = getBoardPos(e);
+    beginDrag(mx, my);
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    const { mx, my } = getBoardPos(e);
+    updateDrag(mx, my);
+  });
+
+  canvas.addEventListener('mouseup', (e) => {
+    const { mx, my } = getBoardPos(e);
+    finishDrag(mx, my);
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    if (!state.drag) return;
+    state.drag = null;
     draw();
   });
 
