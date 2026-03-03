@@ -376,10 +376,10 @@
   function startMoveAnimation(move, player) {
     const from = move.from === 'bar'
       ? barCheckerPos(player, Math.max(0, state.bar[player] - 1))
-      : checkerPos(move.from, Math.min(4, Math.max(0, Math.abs(state.points[move.from]) - 1)));
+      : checkerPos(move.from, Math.max(0, Math.abs(state.points[move.from]) - 1));
     const to = move.to === 'off'
       ? offTargetPos(player)
-      : checkerPos(move.to, Math.min(4, Math.abs(state.points[move.to])));
+      : checkerPos(move.to, Math.abs(state.points[move.to]) + 1);
     state.anim.move = {
       owner: player,
       startX: from.x,
@@ -629,7 +629,7 @@
       const t = offTargetPos(p);
       spawnPulse(t.x, t.y, 'rgba(255, 214, 130, 0.95)');
     } else {
-      const t = checkerPos(m.to, Math.min(4, Math.abs(state.points[m.to]) - 1));
+      const t = checkerPos(m.to, Math.abs(state.points[m.to]) - 1);
       spawnPulse(t.x, t.y, wasHit ? 'rgba(255, 120, 180, 0.95)' : 'rgba(125, 245, 255, 0.9)');
     }
 
@@ -818,13 +818,24 @@
     }
   }
 
-  function checkerPos(point, stackIndex) {
+  function stackMetrics(point, count) {
     const pr = pointRects[point];
     const r = Math.min(24, pr.w * 0.42);
-    const x = pr.x + pr.w/2;
-    const step = r * 0.92;
-    const y = pr.top ? (pr.y + 32 + stackIndex * step) : (pr.y + pr.h*2 - 32 - stackIndex * step);
-    return {x,y,r};
+    const available = pr.h - 64;
+    const idealStep = r * 2 + 2;
+    const step = count <= 1
+      ? 0
+      : ((count - 1) * idealStep <= available ? idealStep : available / (count - 1));
+    return { pr, r, step };
+  }
+
+  function checkerPos(point, stackIndex, count = Math.abs(state.points[point])) {
+    const { pr, r, step } = stackMetrics(point, Math.max(1, count));
+    const x = pr.x + pr.w / 2;
+    const y = pr.top
+      ? (pr.y + 32 + stackIndex * step)
+      : (pr.y + pr.h * 2 - 32 - stackIndex * step);
+    return { x, y, r };
   }
 
   function drawCheckers() {
@@ -832,15 +843,17 @@
       const n = Math.abs(state.points[i]);
       const owner = Math.sign(state.points[i]);
       if (!owner) continue;
-      for (let s=0;s<Math.min(n,5);s++) {
+      for (let s=0;s<n;s++) {
         const p = checkerPos(i,s);
         drawChecker(p.x,p.y,p.r,owner);
       }
-      if (n>5) {
-        const p = checkerPos(i,4);
+      const { step, r } = stackMetrics(i, n);
+      const noOverlapStep = r * 2 + 2;
+      if (n > 1 && step < noOverlapStep) {
+        const p = checkerPos(i, n - 1, n);
         ctx.fillStyle = owner===1 ? '#0f1120' : '#f0f5ff';
         ctx.font = 'bold 16px Inter';
-        ctx.fillText(`+${n-5}`, p.x-13, p.y+6);
+        ctx.fillText(`×${n}`, p.x-11, p.y+6);
       }
     }
 
@@ -940,7 +953,7 @@
       ctx.strokeRect(W/2 - 28, H/2 - 86, 56, 172);
     } else if (Number.isInteger(state.selected)) {
       const n = Math.abs(state.points[state.selected]);
-      const p = checkerPos(state.selected, Math.min(4, n-1));
+      const p = checkerPos(state.selected, n-1);
       ctx.beginPath(); ctx.arc(p.x,p.y,p.r+6,0,Math.PI*2);
       ctx.strokeStyle = '#ffe78d'; ctx.lineWidth = 4; ctx.stroke();
     }
@@ -951,7 +964,7 @@
         x = state.current===1 ? W - 55 : 55;
         y = H/2;
       } else {
-        const p = checkerPos(m.to, Math.min(4, Math.abs(state.points[m.to])));
+        const p = checkerPos(m.to, Math.abs(state.points[m.to]) + 1);
         x=p.x; y=p.y;
       }
       ctx.beginPath(); ctx.arc(x,y,18 + idx*2,0,Math.PI*2);
@@ -1028,7 +1041,7 @@
         const y = H/2;
         if (Math.hypot(mx-x,my-y) < 32) return m;
       } else {
-        const p = checkerPos(m.to, Math.min(4, Math.abs(state.points[m.to])));
+        const p = checkerPos(m.to, Math.abs(state.points[m.to]) + 1);
         if (Math.hypot(mx-p.x,my-p.y) < p.r + 20) return m;
       }
     }
