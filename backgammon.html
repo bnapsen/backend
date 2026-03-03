@@ -147,12 +147,14 @@
     }
     button:hover { filter: brightness(1.18); }
     #rollBtn {
-      font-size: 18px;
-      padding: 14px 22px;
-      border-radius: 14px;
-      border-color: rgba(255, 230, 150, 0.8);
-      background: linear-gradient(135deg, rgba(255, 210, 105, 0.28), rgba(87, 236, 255, 0.2));
-      box-shadow: 0 10px 24px rgba(0,0,0,.34), 0 0 20px rgba(255, 210, 105, .26);
+      font-size: 22px;
+      padding: 17px 28px;
+      border-radius: 16px;
+      border-width: 2px;
+      letter-spacing: 0.02em;
+      border-color: rgba(255, 230, 150, 0.9);
+      background: linear-gradient(135deg, rgba(255, 210, 105, 0.4), rgba(87, 236, 255, 0.28));
+      box-shadow: 0 12px 26px rgba(0,0,0,.4), 0 0 28px rgba(255, 210, 105, .32);
     }
     .status { color: #c6fffd; font-size: 14px; }
   </style>
@@ -260,8 +262,14 @@
     }, 80);
     state.anim.diceRoll = {
       startedAt: performance.now(),
-      duration: 900,
+      duration: 1100,
       faces: [finalA, finalB],
+      dice: [
+        { startX: W * 0.25, startY: H * 0.42, vx: 260 + Math.random() * 110, vy: -165 - Math.random() * 70, spin: 1.2 + Math.random() * 0.9 },
+        { startX: W * 0.38, startY: H * 0.36, vx: 230 + Math.random() * 120, vy: -150 - Math.random() * 70, spin: -1.1 - Math.random() * 0.9 },
+      ],
+      gravity: 540,
+      friction: 0.74,
       seed: Math.random() * 1000,
     };
     setTimeout(() => {
@@ -779,26 +787,40 @@
     if (!state.anim.diceRoll) return false;
     const now = performance.now();
     const anim = state.anim.diceRoll;
+    const elapsed = (now - anim.startedAt) / 1000;
     const t = (now - anim.startedAt) / anim.duration;
     if (t >= 1) {
       state.anim.diceRoll = null;
       return false;
     }
 
-    const travel = Math.min(1, t / 0.82);
-    const eased = 1 - Math.pow(1 - travel, 3);
-    const baseX = 90 + eased * (W - 230);
-    const baseY = H * 0.34;
+    const tableTop = H * 0.31;
+    const tableBottom = H * 0.68;
+    const leftWall = 70;
+    const rightWall = W - 70;
 
-    for (let i = 0; i < 2; i++) {
-      const wobble = Math.sin((t * 16) + anim.seed + i * 1.1) * (12 - travel * 8);
-      const bounce = Math.abs(Math.sin((t * 11) + i)) * (28 * (1 - travel * 0.55));
-      const angle = Math.sin((t * 15) + i * 2.4) * (0.8 - travel * 0.5);
-      const x = baseX + i * 54 + wobble;
-      const y = baseY + i * 26 + bounce;
-      const face = t > 0.76 ? anim.faces[i] : 1 + Math.floor(((t * 1000) + anim.seed + i * 13) % 6);
-      drawCanvasDie(x, y, 42, face, angle);
-    }
+    anim.dice.forEach((die, i) => {
+      const px = die.startX + die.vx * elapsed;
+      const pyRaw = die.startY + die.vy * elapsed + 0.5 * anim.gravity * elapsed * elapsed;
+      const squish = Math.max(0, pyRaw - tableBottom);
+      const py = pyRaw > tableBottom ? tableBottom - Math.min(14, squish * 0.25) : pyRaw;
+
+      const boundedX = Math.max(leftWall, Math.min(rightWall, px));
+      const wobble = Math.sin((elapsed * 9) + anim.seed + i) * 3.5;
+      const angle = die.spin * (1 - t * anim.friction) * 4.6 + Math.sin(elapsed * 13 + i) * 0.08;
+      const face = t > 0.8 ? anim.faces[i] : 1 + Math.floor(((elapsed * 120) + anim.seed + i * 17) % 6);
+
+      ctx.save();
+      ctx.globalAlpha = 0.14 + (1 - t) * 0.2;
+      ctx.fillStyle = 'rgba(10, 9, 24, 0.8)';
+      ctx.beginPath();
+      ctx.ellipse(boundedX, tableBottom + 11, 22, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      drawCanvasDie(boundedX + wobble, Math.max(tableTop, py), 44, face, angle);
+    });
+
     return true;
   }
 
