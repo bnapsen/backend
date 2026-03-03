@@ -166,6 +166,26 @@
     return { scale, offsetX, offsetY };
   }
 
+  function createProjection(transform) {
+    const { scale, offsetX, offsetY } = transform;
+    const centerX = offsetX + FIELD.width * 0.5 * scale;
+    const horizonY = offsetY - FIELD.height * scale * 0.04;
+    const nearY = offsetY + FIELD.height * scale * 1.02;
+
+    const project = (x, y) => {
+      const depth = clamp(y / FIELD.height, 0, 1);
+      const laneScale = 0.7 + depth * 0.3;
+      return {
+        x: centerX + (x - FIELD.width * 0.5) * scale * laneScale,
+        y: horizonY + depth * (nearY - horizonY),
+        depth,
+        laneScale
+      };
+    };
+
+    return { project, centerX, horizonY, nearY };
+  }
+
   function spawnParticles(x, y, count, color, speed = 220) {
     if (!state.highGraphics) return;
     for (let i = 0; i < count; i++) {
@@ -742,8 +762,9 @@
     state.shake = Math.max(0, state.shake - dt * 0.8);
   }
 
-  function drawField(transform) {
-    const { scale, offsetX, offsetY } = transform;
+  function drawField(transform, projection) {
+    const { scale } = transform;
+    const { project, centerX, horizonY, nearY } = projection;
 
     ctx.save();
     ctx.fillStyle = '#081222';
@@ -754,45 +775,137 @@
       ctx.translate((Math.random() - 0.5) * shakeAmount, (Math.random() - 0.5) * shakeAmount);
     }
 
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scale, scale);
+    const corners = [
+      project(0, 0),
+      project(FIELD.width, 0),
+      project(FIELD.width, FIELD.height),
+      project(0, FIELD.height)
+    ];
 
-    const grad = ctx.createLinearGradient(0, 0, FIELD.width, FIELD.height);
-    grad.addColorStop(0, '#11452d');
-    grad.addColorStop(1, '#0f3b27');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, FIELD.width, FIELD.height);
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, nearY);
+    skyGrad.addColorStop(0, '#071018');
+    skyGrad.addColorStop(1, '#081a2b');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, window.innerWidth, nearY + 200);
 
-    ctx.strokeStyle = 'rgba(236, 247, 255, 0.75)';
-    ctx.lineWidth = 6;
-    ctx.strokeRect(0, 0, FIELD.width, FIELD.height);
+    if (state.highGraphics) {
+      for (let i = 0; i < 12; i++) {
+        const y = horizonY + (i / 11) * (nearY - horizonY);
+        const alpha = 0.08 - i * 0.005;
+        ctx.strokeStyle = `rgba(135,180,255,${Math.max(0, alpha)})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(window.innerWidth, y);
+        ctx.stroke();
+      }
+    }
 
+    const turfGrad = ctx.createLinearGradient(0, horizonY, 0, nearY);
+    turfGrad.addColorStop(0, '#0f3222');
+    turfGrad.addColorStop(0.55, '#175536');
+    turfGrad.addColorStop(1, '#1e7248');
+    ctx.fillStyle = turfGrad;
     ctx.beginPath();
-    ctx.moveTo(FIELD.width * 0.5, 0);
-    ctx.lineTo(FIELD.width * 0.5, FIELD.height);
-    ctx.stroke();
+    ctx.moveTo(corners[0].x, corners[0].y);
+    ctx.lineTo(corners[1].x, corners[1].y);
+    ctx.lineTo(corners[2].x, corners[2].y);
+    ctx.lineTo(corners[3].x, corners[3].y);
+    ctx.closePath();
+    ctx.fill();
 
-    ctx.beginPath();
-    ctx.arc(FIELD.width * 0.5, FIELD.height * 0.5, 110, 0, Math.PI * 2);
+    for (let i = 0; i < 9; i++) {
+      const y0 = (i / 9) * FIELD.height;
+      const y1 = ((i + 1) / 9) * FIELD.height;
+      const a = project(0, y0);
+      const b = project(FIELD.width, y0);
+      const c = project(FIELD.width, y1);
+      const d = project(0, y1);
+      ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.08)';
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    const drawLine = (x1, y1, x2, y2, w = 5) => {
+      const p1 = project(x1, y1);
+      const p2 = project(x2, y2);
+      ctx.strokeStyle = 'rgba(236, 247, 255, 0.82)';
+      ctx.lineWidth = w * (0.72 + (p1.depth + p2.depth) * 0.35) * scale;
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    };
+
+    drawLine(0, 0, FIELD.width, 0, 6);
+    drawLine(FIELD.width, 0, FIELD.width, FIELD.height, 6);
+    drawLine(FIELD.width, FIELD.height, 0, FIELD.height, 6);
+    drawLine(0, FIELD.height, 0, 0, 6);
+    drawLine(FIELD.width * 0.5, 0, FIELD.width * 0.5, FIELD.height, 5);
+
+    ctx.strokeStyle = 'rgba(236, 247, 255, 0.74)';
+    for (let i = 0; i <= 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      const px = FIELD.width * 0.5 + Math.cos(a) * 110;
+      const py = FIELD.height * 0.5 + Math.sin(a) * 110;
+      const p = project(px, py);
+      if (i === 0) ctx.beginPath(), ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.lineWidth = 4.5 * scale;
     ctx.stroke();
 
     const gy = FIELD.height * 0.5 - FIELD.goalWidth * 0.5;
-    ctx.fillStyle = 'rgba(78, 201, 255, 0.28)';
-    ctx.fillRect(-FIELD.goalDepth, gy, FIELD.goalDepth, FIELD.goalWidth);
-    ctx.fillStyle = 'rgba(255, 111, 97, 0.28)';
-    ctx.fillRect(FIELD.width, gy, FIELD.goalDepth, FIELD.goalWidth);
+    const drawGoal = (left = true, color = 'rgba(78, 201, 255, 0.26)') => {
+      const x0 = left ? -FIELD.goalDepth : FIELD.width;
+      const x1 = left ? 0 : FIELD.width + FIELD.goalDepth;
+      const a = project(x0, gy);
+      const b = project(x1, gy);
+      const c = project(x1, gy + FIELD.goalWidth);
+      const d = project(x0, gy + FIELD.goalWidth);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 3 * scale;
+      ctx.stroke();
+    };
+    drawGoal(true);
+    drawGoal(false, 'rgba(255, 111, 97, 0.26)');
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.strokeRect(-FIELD.goalDepth, gy, FIELD.goalDepth, FIELD.goalWidth);
-    ctx.strokeRect(FIELD.width, gy, FIELD.goalDepth, FIELD.goalWidth);
+    if (state.highGraphics) {
+      const crowdGrad = ctx.createLinearGradient(0, 0, 0, horizonY + 80);
+      crowdGrad.addColorStop(0, 'rgba(26,50,74,0)');
+      crowdGrad.addColorStop(1, 'rgba(26,50,74,0.55)');
+      ctx.fillStyle = crowdGrad;
+      ctx.beginPath();
+      ctx.moveTo(corners[0].x, corners[0].y);
+      ctx.lineTo(corners[1].x, corners[1].y);
+      ctx.lineTo(centerX + FIELD.width * scale * 0.55, horizonY - 55);
+      ctx.lineTo(centerX - FIELD.width * scale * 0.55, horizonY - 55);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     ctx.restore();
   }
 
-  function drawCar(car, transform) {
-    const { scale, offsetX, offsetY } = transform;
-    const bodyW = car.w * scale;
-    const bodyH = car.h * scale;
+  function drawCar(car, transform, projection) {
+    const { scale } = transform;
+    const p = projection.project(car.pos.x, car.pos.y);
+    const carScale = scale * (0.76 + p.depth * 0.5);
+    const bodyW = car.w * carScale;
+    const bodyH = car.h * carScale;
     const noseX = bodyW * 0.5;
     const tailX = -bodyW * 0.5;
 
@@ -812,7 +925,7 @@
     };
 
     ctx.save();
-    ctx.translate(offsetX + car.pos.x * scale, offsetY + car.pos.y * scale);
+    ctx.translate(p.x, p.y);
     ctx.rotate(car.angle);
 
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
@@ -850,7 +963,7 @@
     ctx.fill();
 
     ctx.strokeStyle = 'rgba(255,255,255,0.28)';
-    ctx.lineWidth = Math.max(1.5, 2 * scale);
+    ctx.lineWidth = Math.max(1.5, 2 * carScale);
     roundedRectPath(tailX + bodyW * 0.06, -bodyH * 0.5 + bodyH * 0.07, bodyW * 0.88, bodyH * 0.86, bodyH * 0.22);
     ctx.stroke();
 
@@ -882,11 +995,13 @@
     ctx.restore();
   }
 
-  function drawBall(transform) {
-    const { scale, offsetX, offsetY } = transform;
+  function drawBall(transform, projection) {
+    const { scale } = transform;
+    const p = projection.project(ball.pos.x, ball.pos.y);
+    const ballScale = scale * (0.78 + p.depth * 0.42);
     ctx.save();
-    ctx.translate(offsetX + ball.pos.x * scale, offsetY + ball.pos.y * scale);
-    const r = ball.radius * scale;
+    ctx.translate(p.x, p.y);
+    const r = ball.radius * ballScale;
     const g = ctx.createRadialGradient(-r * 0.35, -r * 0.35, 2, 0, 0, r);
     g.addColorStop(0, '#ffffff');
     g.addColorStop(1, '#d0deea');
@@ -897,14 +1012,15 @@
     ctx.restore();
   }
 
-  function drawParticles(transform) {
-    const { scale, offsetX, offsetY } = transform;
+  function drawParticles(transform, projection) {
+    const { scale } = transform;
     for (const p of state.particles) {
       const alpha = p.life / p.maxLife;
+      const pp = projection.project(p.pos.x, p.pos.y);
       ctx.fillStyle = p.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
       if (!ctx.fillStyle.includes('rgba')) ctx.fillStyle = `rgba(180,220,255,${alpha})`;
       ctx.beginPath();
-      ctx.arc(offsetX + p.pos.x * scale, offsetY + p.pos.y * scale, Math.max(1.5, 3 * scale * alpha), 0, Math.PI * 2);
+      ctx.arc(pp.x, pp.y, Math.max(1.2, 3 * scale * alpha * (0.7 + pp.depth * 0.6)), 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -921,11 +1037,12 @@
 
   function render() {
     const transform = worldToScreen();
-    drawField(transform);
-    if (state.highGraphics) drawParticles(transform);
-    drawBall(transform);
-    drawCar(player, transform);
-    drawCar(bot, transform);
+    const projection = createProjection(transform);
+    drawField(transform, projection);
+    if (state.highGraphics) drawParticles(transform, projection);
+    drawBall(transform, projection);
+    drawCar(player, transform, projection);
+    drawCar(bot, transform, projection);
     drawMessage();
   }
 
