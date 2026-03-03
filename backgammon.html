@@ -110,6 +110,7 @@
 
     <section class="hud">
       <div class="chip"><b id="turn">Turn: White</b></div>
+      <div class="chip">Mode: <b id="mode">White vs Bot (Black)</b></div>
       <div class="chip">Dice: <b id="dice">Roll to start</b></div>
       <div class="chip">Bar ⚡ White <b id="barW">0</b> / Black <b id="barB">0</b></div>
       <div class="chip">Borne Off 🏁 White <b id="offW">0</b> / Black <b id="offB">0</b></div>
@@ -135,7 +136,8 @@
   const ui = {
     turn: document.getElementById('turn'), dice: document.getElementById('dice'),
     barW: document.getElementById('barW'), barB: document.getElementById('barB'),
-    offW: document.getElementById('offW'), offB: document.getElementById('offB'), status: document.getElementById('status')
+    offW: document.getElementById('offW'), offB: document.getElementById('offB'), status: document.getElementById('status'),
+    mode: document.getElementById('mode')
   };
 
   const state = {
@@ -148,6 +150,7 @@
     legalForSelected: [],
     lastRoll: [0,0],
     winner: 0,
+    bot: -1,
   };
 
   const pointRects = [];
@@ -163,8 +166,13 @@
     state.legalForSelected = [];
     state.lastRoll = [0,0];
     state.winner = 0;
+    ui.mode.textContent = 'White vs Bot (Black)';
     syncUi();
     draw();
+  }
+
+  function isBotTurn() {
+    return state.current === state.bot;
   }
 
   function rollDice() {
@@ -298,6 +306,66 @@
     state.legalForSelected = [];
     syncUi();
     draw();
+    maybeRunBotTurn();
+  }
+
+  function evaluateMove(m) {
+    let score = 0;
+    if (m.to === 'off') score += 120;
+    else {
+      const landing = state.points[m.to] + state.current;
+      if (Math.abs(landing) >= 2) score += 24;
+      if (state.current === -1) score += m.to;
+      else score += 23 - m.to;
+    }
+    if (m.to !== 'off') {
+      const destVal = state.points[m.to];
+      if (state.current===1 && destVal === -1) score += 70;
+      if (state.current===-1 && destVal === 1) score += 70;
+    }
+    if (m.from === 'bar') score += 40;
+    return score + Math.random() * 2;
+  }
+
+  function bestBotMove() {
+    const all = [];
+    for (const src of allSources()) {
+      for (const move of legalMovesForSource(src)) {
+        all.push(move);
+      }
+    }
+    if (!all.length) return null;
+    all.sort((a,b) => evaluateMove(b) - evaluateMove(a));
+    return all[0];
+  }
+
+  function runBotTurnStep() {
+    if (!isBotTurn() || state.winner) return;
+    if (!state.dice.length) {
+      rollDice();
+      if (!state.dice.length || !isBotTurn() || state.winner) return;
+    }
+
+    const move = bestBotMove();
+    if (!move) {
+      setStatus('Bot has no legal move. Turn passes.');
+      endTurn();
+      return;
+    }
+
+    state.selected = move.from;
+    state.legalForSelected = [move];
+    draw();
+    setTimeout(() => {
+      if (isBotTurn() && !state.winner) applyMove(move);
+      if (isBotTurn() && state.dice.length && !state.winner) setTimeout(runBotTurnStep, 420);
+    }, 400);
+  }
+
+  function maybeRunBotTurn() {
+    if (!isBotTurn() || state.winner) return;
+    setStatus('Bot is thinking...');
+    setTimeout(runBotTurnStep, 500);
   }
 
   function syncUi() {
@@ -485,6 +553,7 @@
 
   canvas.addEventListener('click', (e) => {
     if (state.winner) return;
+    if (isBotTurn()) return setStatus('Bot is taking its turn...');
     if (!state.dice.length) return setStatus('Roll dice first.');
     const rect = canvas.getBoundingClientRect();
     const mx = (e.clientX - rect.left) * (W / rect.width);
@@ -514,7 +583,11 @@
     draw();
   });
 
-  document.getElementById('rollBtn').addEventListener('click', rollDice);
+  document.getElementById('rollBtn').addEventListener('click', () => {
+    if (isBotTurn()) return setStatus('Wait for the bot to finish its turn.');
+    rollDice();
+    maybeRunBotTurn();
+  });
   document.getElementById('newBtn').addEventListener('click', () => {
     reset();
     setStatus('New match ready. White starts. Roll dice!');
