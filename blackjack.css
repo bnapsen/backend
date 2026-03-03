@@ -1,0 +1,194 @@
+:root {
+  --felt-green: #0f5f39;
+  --felt-shadow: #083922;
+  --gold: #ffd166;
+  --cream: #fff7e7;
+  --neon: #63f5cf;
+  --red: #ef476f;
+  --black: #101010;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, system-ui, sans-serif;
+  color: var(--cream);
+  background: radial-gradient(circle at 50% 10%, #2d3344, #0b0f19 65%);
+}
+
+.casino-bg {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 209, 102, 0.15), transparent 30%),
+    radial-gradient(circle at 80% 10%, rgba(99, 245, 207, 0.18), transparent 25%),
+    radial-gradient(circle at 50% 110%, rgba(239, 71, 111, 0.14), transparent 35%);
+  pointer-events: none;
+}
+
+.table-shell {
+  position: relative;
+  max-width: 1100px;
+  margin: 1.2rem auto;
+  padding: 1.2rem;
+  border-radius: 26px;
+  border: 8px solid #3f2f1d;
+  background: radial-gradient(circle at center, var(--felt-green), var(--felt-shadow) 75%);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.55), inset 0 0 25px rgba(0, 0, 0, 0.35);
+}
+
+.table-header { text-align: center; }
+.back-link {
+  color: var(--gold);
+  text-decoration: none;
+  font-weight: 600;
+}
+.table-header h1 {
+  margin: .4rem 0 0;
+  font-family: Cinzel, serif;
+  letter-spacing: .04em;
+  font-size: clamp(1.7rem, 2.5vw, 2.6rem);
+  text-shadow: 0 0 16px rgba(255, 209, 102, 0.35);
+}
+.table-header p { margin-top: .4rem; color: #d8eadf; }
+
+.score-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: .7rem;
+  margin: 1rem 0;
+}
+.stat {
+  background: rgba(5, 20, 14, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: .55rem .75rem;
+}
+.stat span { display: block; font-size: .8rem; color: #b8dbca; }
+.stat strong { font-size: 1.1rem; }
+
+.dealer-zone, .player-zone {
+  padding: .8rem;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 14px;
+  background: rgba(4, 26, 16, 0.42);
+}
+
+.zone-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.zone-title h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.score-pill {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: 999px;
+  padding: .2rem .7rem;
+}
+
+.center-banner {
+  margin: .95rem 0;
+  text-align: center;
+  padding: .7rem;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(255,209,102,.24), rgba(99,245,207,.2));
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.cards-row {
+  min-height: 150px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .65rem;
+  align-items: center;
+  padding: .6rem 0;
+}
+
+.card {
+  width: 86px;
+  height: 126px;
+  border-radius: 10px;
+  background: #fff;
+  color: #111;
+  padding: .45rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 7px 14px rgba(0, 0, 0, .35);
+  border: 2px solid rgba(0, 0, 0, .2);
+}
+.card.red { color: #b2142b; }
+.card .top, .card .bottom {
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1;
+}
+.card .bottom { transform: rotate(180deg); text-align: left; }
+.card .center {
+  font-size: 2.2rem;
+  align-self: center;
+  margin-top: .2rem;
+}
+.card.back {
+  background:
+    linear-gradient(135deg, #1e3a8a, #0f1f52),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, .1) 0 8px, transparent 8px 16px);
+  position: relative;
+  color: #d6e0ff;
+}
+.card.back::after {
+  content: "♠ ♥ ♣ ♦";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  letter-spacing: .2em;
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, .75);
+}
+
+.controls-panel {
+  margin-top: .9rem;
+  display: grid;
+  gap: .8rem;
+}
+.chip-controls, .action-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  justify-content: center;
+}
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: .65rem 1rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+.chip {
+  background: linear-gradient(180deg, #ffe8a3, #ffca54);
+  color: #402500;
+}
+.chip.danger { background: #6e1f2f; color: #ffd9e3; }
+.action {
+  background: #154f73;
+  color: #d9f3ff;
+}
+.action.primary { background: linear-gradient(180deg, #1ca25f, #0f7c46); color: #effff4; }
+.action.ghost { background: #343a52; color: #f4f6ff; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+
+@media (max-width: 680px) {
+  .score-strip { grid-template-columns: 1fr 1fr; }
+  .card { width: 74px; height: 110px; }
+}
