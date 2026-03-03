@@ -138,3 +138,19 @@ For durable persistence, attach a volume (if supported) or swap to a database.
 - Room state auto-saves every 10 seconds to `server/data/<room>.json`
 - Room state also saves on SIGINT/SIGTERM shutdown
 - Save/load errors are logged; server continues in-memory if disk fails
+
+## Enhanced gameplay (client-side update)
+
+The town builder now includes a richer in-browser simulation and visuals:
+
+- Hand-drawn style building rendering on the canvas (houses, farms, roads, sawmills)
+- New **Happiness** stat based on your layout (roads + connected neighborhoods + balanced industry)
+- **Mayor Goals** checklist to provide progression milestones
+- Tile inspector panel for better planning while hovering the map
+- Solo mode economy depth: farm synergy and happiness-based tax efficiency
+
+Controls remain the same:
+
+- Left click to place selected building
+- Shift+drag or middle mouse drag to pan
+- Mouse wheel to zoom

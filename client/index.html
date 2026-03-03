@@ -30,13 +30,18 @@
       <h2>Build</h2>
       <div id="buildButtons"></div>
       <p>Selected: <strong id="selectedLabel">house</strong></p>
+      <p id="selectionHint" class="hint"></p>
       <h3>Resources</h3>
       <ul>
         <li>Wood: <span id="woodVal">0</span></li>
         <li>Food: <span id="foodVal">0</span></li>
         <li>Gold: <span id="goldVal">0</span></li>
         <li>Population: <span id="popVal">0</span></li>
+        <li>Happiness: <span id="happinessVal">0</span></li>
       </ul>
+
+      <h3>Mayor Goals</h3>
+      <ul id="questList" class="questList"></ul>
     </aside>
 
     <section class="canvasWrap">
@@ -46,6 +51,8 @@
     <aside class="panel right">
       <h2>Players</h2>
       <ul id="playersList"></ul>
+      <h2>Tile Details</h2>
+      <div id="tileInfo" class="tileInfo">Hover over a tile to inspect it.</div>
       <h2>Chat</h2>
       <div id="chatLog" class="chatLog"></div>
       <form id="chatForm">
