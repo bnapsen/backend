@@ -307,6 +307,12 @@
     pierceT: 0
   };
 
+  function assistFactor(){
+    const lifeMissing = clamp((3 - player.lives) / 3, 0, 1);
+    const hpMissing = clamp(1 - (player.hp / Math.max(1, player.maxHp)), 0, 1);
+    return clamp(lifeMissing*0.7 + hpMissing*0.45, 0, 0.75);
+  }
+
   function effectiveFireRate(){ return player.baseFireRate * (player.overdriveT>0 ? 1.65 : 1.0); }
   function effectiveBulletSpeed(){ return player.bulletSpeed * (player.overdriveT>0 ? 1.18 : 1.0); }
   function effectiveDamage(){ return player.damage + (player.dmgBoostT>0 ? 1 : 0); }
@@ -410,10 +416,10 @@
 
   function makeBoss(cfg){
     const tier = Math.floor((cfg.id-1)/5)+1;
-    const maxHp = 150 + tier*85;
-    const weakHp = 30 + tier*14;
+    const maxHp = 130 + tier*70;
+    const weakHp = 24 + tier*11;
     const weak = Array.from({length:3}, (_,i)=>({ a: i*(TAU/3), orbit: 60, r: 14, hp: weakHp, maxHp: weakHp, alive: true }));
-    return { type:"boss", x: innerWidth/2, y: -160, r: 78, hp: maxHp, maxHp, coreExposed: false, coreHp: 110 + tier*60, coreMax: 110 + tier*60, phase: 1, t: 0, vy: 80, weak, aimedCd: 0.9, spreadCd: 2.4, laserCd: 3.6, summonCd: 4.8, spin: 0.0 };
+    return { type:"boss", x: innerWidth/2, y: -160, r: 78, hp: maxHp, maxHp, coreExposed: false, coreHp: 95 + tier*48, coreMax: 95 + tier*48, phase: 1, t: 0, vy: 80, weak, aimedCd: 0.95, spreadCd: 2.7, laserCd: 4.1, summonCd: 5.2, spin: 0.0 };
   }
 
   function spawnEnemy(cfg){
@@ -432,7 +438,9 @@
   }
 
   function dropPowerup(x,y,cfg){
-    if (Math.random() > cfg.dropChance) return;
+    const assist = assistFactor();
+    const boostedDropChance = clamp(cfg.dropChance + assist*0.14, 0, 0.72);
+    if (Math.random() > boostedDropChance) return;
     const roll = Math.random();
     let kind="heal";
     const nukeChance = clamp(0.010 + cfg.id*0.003, 0.010, 0.055);
@@ -478,7 +486,7 @@
     if (player.shield > 0){ player.shield = Math.max(0, player.shield - 1.0); player.invuln = 0.25; explode(player.x, player.y, 10, 220); beep(210,0.06,"sawtooth",0.16); return; }
     player.hp -= dmg; player.invuln = 0.85; explode(player.x, player.y, 26, 360); beep(150,0.08,"sawtooth",0.22);
     if (player.hp <= 0){
-      player.lives -= 1; player.hp = player.maxHp; player.shield = Math.max(player.shield, 1.2); player.invuln = 1.15; noise(0.14,0.18);
+      player.lives -= 1; player.hp = player.maxHp; player.shield = Math.max(player.shield, 2.2); player.invuln = 1.8; eBullets.length = 0; beams.length = 0; noise(0.14,0.18);
       if (player.lives <= 0){ state="gameover"; save.highScore = Math.max(save.highScore, score); save.bestLevel = Math.max(save.bestLevel, level); saveNow(); }
     }
   }
@@ -487,33 +495,35 @@
   function killEnemy(i, cfg){ const e = enemies[i]; awardKill(e.points, cfg); explode(e.x,e.y, e.type==="tank"?34:24, 340); dropPowerup(e.x,e.y,cfg); enemies.splice(i,1); killed++; beep(420,0.03,"triangle",0.12); }
 
   function updateBoss(b, cfg, dt){
+    const assist = assistFactor();
+    const pace = 1 - assist*0.35;
     b.t += dt;
     if (b.y < 150) b.y += b.vy*dt;
-    b.spin += dt*(0.85 + cfg.id*0.05);
-    b.x = innerWidth/2 + Math.sin(performance.now()/1000*0.9) * (150 + cfg.id*6);
-    for (const w of b.weak){ if (w.alive) w.a += dt*(0.9 + cfg.id*0.05); }
+    b.spin += dt*(0.72 + cfg.id*0.04)*pace;
+    b.x = innerWidth/2 + Math.sin(performance.now()/1000*0.9) * (132 + cfg.id*4.6);
+    for (const w of b.weak){ if (w.alive) w.a += dt*(0.8 + cfg.id*0.04)*pace; }
     if (!b.coreExposed && b.weak.filter(w=>w.alive).length === 0){ b.coreExposed = true; beep(660,0.12,"square",0.22); noise(0.10,0.14); }
     if (b.coreExposed) b.phase = (b.coreHp / b.coreMax < 0.55) ? 3 : 2;
     else b.phase = (b.hp / b.maxHp < 0.55) ? 2 : 1;
     b.aimedCd -= dt; b.spreadCd -= dt; b.laserCd -= dt; b.summonCd -= dt;
-    const aimSpeed = 270 + cfg.id*7;
-    const spreadSpeed = 210 + cfg.id*6;
-    if (b.aimedCd <= 0){ b.aimedCd = clamp(0.62 - cfg.id*0.018, 0.26, 0.62); enemyShoot(b.x, b.y+18, player.x, player.y, aimSpeed, 5, 1); }
+    const aimSpeed = (250 + cfg.id*5) * (1 - assist*0.15);
+    const spreadSpeed = (190 + cfg.id*5) * (1 - assist*0.12);
+    if (b.aimedCd <= 0){ b.aimedCd = clamp((0.68 - cfg.id*0.015) / pace, 0.34, 0.72); enemyShoot(b.x, b.y+18, player.x, player.y, aimSpeed, 5, 1); }
     if (b.spreadCd <= 0){
-      b.spreadCd = clamp(2.5 - cfg.id*0.07, 1.0, 2.5);
-      const n = 12 + Math.floor(cfg.id*0.9) + (b.phase===3?8:0);
+      b.spreadCd = clamp((2.8 - cfg.id*0.06) / pace, 1.2, 2.9);
+      const n = 10 + Math.floor(cfg.id*0.7) + (b.phase===3?6:0);
       for (let k=0;k<n;k++){ const a = (k/n)*TAU + performance.now()/1000*0.35; eBullets.push({ x:b.x, y:b.y+10, vx:Math.cos(a)*spreadSpeed, vy:Math.sin(a)*spreadSpeed, r:4, dmg:1 }); }
       noise(0.07,0.10);
     }
     if (b.phase>=2 && b.laserCd <= 0){
-      b.laserCd = clamp(3.8 - cfg.id*0.11, 1.5, 3.8);
+      b.laserCd = clamp((4.2 - cfg.id*0.09) / pace, 1.9, 4.2);
       const count = (b.phase===3) ? 2 : 1;
-      for (let i=0;i<count;i++) spawnBeam(b.x + rand(-20,20), b.y + 8, player.x + rand(-100,100), player.y + rand(-55,55), 0.65, 0.75, 18, 2);
+      for (let i=0;i<count;i++) spawnBeam(b.x + rand(-20,20), b.y + 8, player.x + rand(-100,100), player.y + rand(-55,55), 0.75, 0.62, 16, 2);
       beep(180,0.09,"sawtooth",0.16);
     }
     if (b.summonCd <= 0){
-      b.summonCd = clamp(4.9 - cfg.id*0.11, 2.1, 4.9);
-      const n = 2 + (b.phase===3?2:1);
+      b.summonCd = clamp((5.1 - cfg.id*0.08) / pace, 2.6, 5.4);
+      const n = 1 + (b.phase===3?2:1);
       for (let i=0;i<n;i++){
         const tRoll = Math.random();
         const type = tRoll < 0.34 ? "shooter" : (tRoll < 0.62 ? "zigzag" : "grunt");
@@ -534,7 +544,12 @@
       if (dist2(wx,wy,bx,by) <= (w.r+bullet.r)*(w.r+bullet.r)){
         w.hp -= (bullet.dmg||1);
         beep(520,0.03,"square",0.10);
-        if (w.hp <= 0){ w.alive=false; explode(wx,wy, 26, 360); noise(0.08,0.12); }
+        if (w.hp <= 0){
+          w.alive=false;
+          explode(wx,wy, 26, 360);
+          if (Math.random() < 0.6) powerups.push({ x:wx, y:wy, r:14, vy:rand(80,130), kind: Math.random()<0.7 ? "shield" : "heal" });
+          noise(0.08,0.12);
+        }
         return true;
       }
     }
