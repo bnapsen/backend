@@ -8,6 +8,8 @@
   const FIXED_DT = 1 / 120;
   const CAR_TURN_POWER = 2.45;
   const CAR_MAX_ANGULAR_SPEED = 0.095;
+  const CAR_EXPLOSION_RELATIVE_SPEED = 520;
+  const CAR_COLLISION_RADIUS_SCALE = 0.42;
 
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
@@ -47,6 +49,7 @@
     message: 'Kickoff!',
     messageTime: 1.4,
     shake: 0,
+    carCollisionCooldown: 0,
     particles: [],
     highGraphics: true,
     volume: 0.3,
@@ -583,6 +586,38 @@
     }
   }
 
+
+  function collideCars(a, b) {
+    if (state.carCollisionCooldown > 0) return;
+
+    const dx = b.pos.x - a.pos.x;
+    const dy = b.pos.y - a.pos.y;
+    const dist = Math.hypot(dx, dy) || 0.0001;
+    const minDist = (Math.max(a.w, a.h) + Math.max(b.w, b.h)) * CAR_COLLISION_RADIUS_SCALE;
+    if (dist > minDist) return;
+
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const relVel = { x: b.vel.x - a.vel.x, y: b.vel.y - a.vel.y };
+    const closingSpeed = -dot(relVel, { x: nx, y: ny });
+
+    if (closingSpeed < CAR_EXPLOSION_RELATIVE_SPEED) return;
+
+    const impactX = (a.pos.x + b.pos.x) * 0.5;
+    const impactY = (a.pos.y + b.pos.y) * 0.5;
+    spawnParticles(impactX, impactY, 65, '#ffb366', 520);
+    spawnParticles(a.pos.x, a.pos.y, 28, '#4ec9ff', 420);
+    spawnParticles(b.pos.x, b.pos.y, 28, '#ff6f61', 420);
+    state.shake = Math.max(state.shake, 0.42);
+    state.message = 'BOOM! Cars exploded on impact!';
+    state.messageTime = 1.1;
+    state.carCollisionCooldown = 0.85;
+    audio.ping(120, 0.22, 'sawtooth', 0.16);
+    audio.ping(70, 0.3, 'triangle', 0.12);
+
+    resetPositions();
+  }
+
   function collideBallCar(car) {
     const dx = ball.pos.x - car.pos.x;
     const dy = ball.pos.y - car.pos.y;
@@ -710,6 +745,7 @@
     state.countdown = MATCH_SECONDS;
     state.message = 'Kickoff!';
     state.messageTime = 1.2;
+    state.carCollisionCooldown = 0;
     state.gameOver = false;
     state.paused = false;
     resetPositions();
@@ -739,10 +775,12 @@
     updateCar(player, dt);
     updateCar(bot, dt);
     updateBall(dt);
+    collideCars(player, bot);
     collideBallCar(player);
     collideBallCar(bot);
 
     updateParticles(dt);
+    state.carCollisionCooldown = Math.max(0, state.carCollisionCooldown - dt);
 
     if (shouldSendInputFrame()) {
       state.multiplayer.localInputSeq += 1;
