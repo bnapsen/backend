@@ -79,9 +79,15 @@
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
+    }
+    .dice-chip b {
+      display: inline-block;
+      min-width: 138px;
+      white-space: nowrap;
     }
     .dice-visuals {
+      flex: 0 0 auto;
       display: flex;
       gap: 14px;
       position: relative;
