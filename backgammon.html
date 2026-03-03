@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Neon Backgammon Blitz</title>
+  <style>
+    :root {
+      --bg: #070611;
+      --panel: rgba(20, 18, 41, 0.85);
+      --line: rgba(130, 227, 255, 0.45);
+      --cyan: #57ecff;
+      --pink: #ff6ebe;
+      --gold: #ffd269;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: #f4f8ff;
+      background:
+        radial-gradient(circle at 15% 20%, rgba(121, 46, 255, 0.32), transparent 42%),
+        radial-gradient(circle at 85% 10%, rgba(28, 191, 255, 0.34), transparent 36%),
+        radial-gradient(circle at 50% 100%, rgba(255, 99, 184, 0.2), transparent 48%),
+        var(--bg);
+      display: grid;
+      place-items: center;
+      padding: 16px;
+    }
+    .wrap {
+      width: min(1180px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--panel);
+      backdrop-filter: blur(7px);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5), 0 0 35px rgba(87, 236, 255, 0.15);
+      overflow: hidden;
+    }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(90deg, rgba(87, 236, 255, 0.08), rgba(255, 110, 190, 0.08));
+    }
+    .title { font-weight: 800; letter-spacing: 0.04em; }
+    .link {
+      color: #fff;
+      text-decoration: none;
+      font-weight: 700;
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 10px;
+      padding: 7px 10px;
+    }
+    .hud {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .chip {
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 12px;
+      padding: 8px 10px;
+      background: rgba(255,255,255,.05);
+      font-size: 14px;
+    }
+    .chip b { color: var(--cyan); }
+    .board-wrap { padding: 16px; }
+    canvas {
+      width: 100%;
+      max-height: 66vh;
+      display: block;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.2);
+      background: linear-gradient(130deg,#250d40,#130725 30%,#0f1638);
+      box-shadow: inset 0 0 50px rgba(0,0,0,.55), 0 0 35px rgba(255,110,190,.16);
+      cursor: pointer;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 0 16px 16px;
+      align-items: center;
+    }
+    button {
+      border: 1px solid rgba(255,255,255,.3);
+      background: rgba(87,236,255,.12);
+      color: #fff;
+      font-weight: 700;
+      border-radius: 10px;
+      padding: 9px 12px;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.18); }
+    .status { color: #c6fffd; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <div class="title">NEON BACKGAMMON BLITZ</div>
+      <a class="link" href="index.html">← Back to home</a>
+    </header>
+
+    <section class="hud">
+      <div class="chip"><b id="turn">Turn: White</b></div>
+      <div class="chip">Dice: <b id="dice">Roll to start</b></div>
+      <div class="chip">Bar ⚡ White <b id="barW">0</b> / Black <b id="barB">0</b></div>
+      <div class="chip">Borne Off 🏁 White <b id="offW">0</b> / Black <b id="offB">0</b></div>
+    </section>
+
+    <div class="board-wrap">
+      <canvas id="board" width="1100" height="700"></canvas>
+    </div>
+
+    <div class="controls">
+      <button id="rollBtn">🎲 Roll Dice</button>
+      <button id="newBtn">🔁 New Match</button>
+      <div class="status" id="status">Click roll, then click one of your checkers. Bright rings are legal destinations.</div>
+    </div>
+  </main>
+
+<script>
+(() => {
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  const ui = {
+    turn: document.getElementById('turn'), dice: document.getElementById('dice'),
+    barW: document.getElementById('barW'), barB: document.getElementById('barB'),
+    offW: document.getElementById('offW'), offB: document.getElementById('offB'), status: document.getElementById('status')
+  };
+
+  const state = {
+    points: Array(24).fill(0),
+    current: 1,
+    bar: {1:0, [-1]:0},
+    borneOff: {1:0, [-1]:0},
+    dice: [],
+    selected: null,
+    legalForSelected: [],
+    lastRoll: [0,0],
+    winner: 0,
+  };
+
+  const pointRects = [];
+  function reset() {
+    state.points.fill(0);
+    state.points[23] = 2; state.points[12] = 5; state.points[7] = 3; state.points[5] = 5;
+    state.points[0] = -2; state.points[11] = -5; state.points[16] = -3; state.points[18] = -5;
+    state.current = 1;
+    state.bar[1] = state.bar[-1] = 0;
+    state.borneOff[1] = state.borneOff[-1] = 0;
+    state.dice = [];
+    state.selected = null;
+    state.legalForSelected = [];
+    state.lastRoll = [0,0];
+    state.winner = 0;
+    syncUi();
+    draw();
+  }
+
+  function rollDice() {
+    if (state.winner) return;
+    if (state.dice.length) return setStatus('Use your remaining dice first.');
+    const a = 1 + Math.floor(Math.random() * 6);
+    const b = 1 + Math.floor(Math.random() * 6);
+    state.lastRoll = [a,b];
+    state.dice = a === b ? [a,a,a,a] : [a,b];
+    state.selected = null;
+    state.legalForSelected = [];
+    setStatus(`Rolled ${a} and ${b}. Select a checker.`);
+    if (!hasAnyLegalMove()) {
+      setStatus(`No legal moves for ${playerName(state.current)}. Turn passes.`);
+      endTurn();
+    }
+    syncUi();
+    draw();
+  }
+
+  function playerName(p){ return p===1 ? 'White' : 'Black'; }
+  function checkerColor(p){ return p===1 ? '#f5fbff' : '#10111b'; }
+  function isHome(player, idx){ return player===1 ? idx >= 0 && idx <= 5 : idx >= 18 && idx <= 23; }
+
+  function allInHome(player){
+    if (state.bar[player] > 0) return false;
+    for (let i=0;i<24;i++) {
+      const v = state.points[i];
+      if ((player===1 && v>0 && !isHome(1,i)) || (player===-1 && v<0 && !isHome(-1,i))) return false;
+    }
+    return true;
+  }
+
+  function canLand(player, idx) {
+    const v = state.points[idx];
+    return player===1 ? v >= -1 : v <= 1;
+  }
+
+  function sourceHasChecker(source) {
+    if (source === 'bar') return state.bar[state.current] > 0;
+    const v = state.points[source];
+    return state.current===1 ? v>0 : v<0;
+  }
+
+  function legalMovesForSource(source) {
+    if (!state.dice.length || state.winner) return [];
+    const moves = [];
+    for (let di = 0; di < state.dice.length; di++) {
+      const die = state.dice[di];
+      const player = state.current;
+      if (state.bar[player] > 0 && source !== 'bar') continue;
+      let from = source;
+      let to;
+      if (source === 'bar') {
+        to = player===1 ? 24 - die : die - 1;
+      } else {
+        to = source + (player===1 ? -die : die);
+      }
+
+      if (to >= 0 && to <= 23) {
+        if (canLand(player, to)) moves.push({ from, to, die, di, bearOff:false });
+      } else {
+        if (source === 'bar') continue;
+        if (!allInHome(player) || !isHome(player, source)) continue;
+        if (player===1 && to < 0) {
+          let higher = false;
+          for (let i = source + 1; i <= 5; i++) if (state.points[i] > 0) higher = true;
+          if (to === -1 || !higher) moves.push({ from, to: 'off', die, di, bearOff:true });
+        }
+        if (player===-1 && to > 23) {
+          let lower = false;
+          for (let i = 18; i < source; i++) if (state.points[i] < 0) lower = true;
+          if (to === 24 || !lower) moves.push({ from, to: 'off', die, di, bearOff:true });
+        }
+      }
+    }
+    return moves;
+  }
+
+  function allSources() {
+    if (state.bar[state.current] > 0) return ['bar'];
+    const arr = [];
+    for (let i=0;i<24;i++) if (sourceHasChecker(i)) arr.push(i);
+    return arr;
+  }
+
+  function hasAnyLegalMove() {
+    return allSources().some(s => legalMovesForSource(s).length > 0);
+  }
+
+  function applyMove(m) {
+    const p = state.current;
+    if (m.from === 'bar') state.bar[p]--;
+    else state.points[m.from] += p===1 ? -1 : 1;
+
+    if (m.to === 'off') {
+      state.borneOff[p]++;
+    } else {
+      const destVal = state.points[m.to];
+      if (p===1 && destVal === -1) { state.points[m.to] = 0; state.bar[-1]++; }
+      if (p===-1 && destVal === 1) { state.points[m.to] = 0; state.bar[1]++; }
+      state.points[m.to] += p;
+    }
+
+    state.dice.splice(m.di, 1);
+    state.selected = null;
+    state.legalForSelected = [];
+
+    if (state.borneOff[p] >= 15) {
+      state.winner = p;
+      setStatus(`🔥 ${playerName(p)} wins the blitz! Hit New Match for another round.`);
+      syncUi();
+      draw();
+      return;
+    }
+
+    if (!state.dice.length || !hasAnyLegalMove()) {
+      if (state.dice.length && !hasAnyLegalMove()) {
+        setStatus('No remaining legal moves. Turn passes.');
+      }
+      endTurn();
+    }
+    syncUi();
+    draw();
+  }
+
+  function endTurn() {
+    state.current *= -1;
+    state.dice = [];
+    state.selected = null;
+    state.legalForSelected = [];
+    syncUi();
+    draw();
+  }
+
+  function syncUi() {
+    ui.turn.textContent = `Turn: ${playerName(state.current)}${state.winner ? ` — ${playerName(state.winner)} won` : ''}`;
+    ui.dice.textContent = state.dice.length ? state.dice.join(', ') : `Last roll: ${state.lastRoll[0] || '-'} / ${state.lastRoll[1] || '-'}`;
+    ui.barW.textContent = state.bar[1]; ui.barB.textContent = state.bar[-1];
+    ui.offW.textContent = state.borneOff[1]; ui.offB.textContent = state.borneOff[-1];
+  }
+  function setStatus(s){ ui.status.textContent = s; }
+
+  function drawBoardBase() {
+    ctx.clearRect(0,0,W,H);
+    const margin = 34;
+    const boardX = margin, boardY = margin, boardW = W - margin*2, boardH = H - margin*2;
+    const mid = boardX + boardW/2;
+
+    const glow = ctx.createLinearGradient(boardX, boardY, boardX + boardW, boardY + boardH);
+    glow.addColorStop(0, 'rgba(255,110,190,0.2)');
+    glow.addColorStop(1, 'rgba(87,236,255,0.18)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(boardX, boardY, boardW, boardH);
+
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    ctx.fillRect(mid - 25, boardY, 50, boardH);
+    ctx.strokeStyle = 'rgba(135,245,255,.65)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(mid - 25, boardY, 50, boardH);
+
+    const triangleW = (boardW - 50) / 12;
+    pointRects.length = 24;
+
+    const pointAt = (half, idxInHalf, top) => {
+      const xBase = half===0
+        ? boardX + idxInHalf * triangleW
+        : mid + 25 + idxInHalf * triangleW;
+      const pIdx = top
+        ? (half===0 ? 12 + idxInHalf : 18 + idxInHalf)
+        : (half===0 ? 11 - idxInHalf : 5 - idxInHalf);
+      pointRects[pIdx] = { x:xBase, y:boardY, w:triangleW, h:boardH/2, top };
+      const color = (idxInHalf % 2 === 0) ? '#54deff' : '#ff74ba';
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      if (top) {
+        ctx.moveTo(xBase + 1, boardY + 1);
+        ctx.lineTo(xBase + triangleW - 1, boardY + 1);
+        ctx.lineTo(xBase + triangleW/2, boardY + boardH/2 - 8);
+      } else {
+        ctx.moveTo(xBase + 1, boardY + boardH - 1);
+        ctx.lineTo(xBase + triangleW - 1, boardY + boardH - 1);
+        ctx.lineTo(xBase + triangleW/2, boardY + boardH/2 + 8);
+      }
+      ctx.closePath();
+      ctx.globalAlpha = 0.72;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    };
+
+    for (let i=0;i<6;i++) pointAt(0,i,true);
+    for (let i=0;i<6;i++) pointAt(1,i,true);
+    for (let i=0;i<6;i++) pointAt(0,i,false);
+    for (let i=0;i<6;i++) pointAt(1,i,false);
+
+    ctx.fillStyle = 'rgba(255,255,255,.75)';
+    ctx.font = '14px Inter, sans-serif';
+    for (let i=0;i<24;i++) {
+      const pr = pointRects[i];
+      const text = String(i+1);
+      ctx.fillText(text, pr.x + pr.w/2 - 6, pr.top ? boardY + boardH/2 + 22 : boardY + boardH/2 - 14);
+    }
+  }
+
+  function checkerPos(point, stackIndex) {
+    const pr = pointRects[point];
+    const r = Math.min(24, pr.w * 0.42);
+    const x = pr.x + pr.w/2;
+    const step = r * 0.92;
+    const y = pr.top ? (pr.y + 32 + stackIndex * step) : (pr.y + pr.h*2 - 32 - stackIndex * step);
+    return {x,y,r};
+  }
+
+  function drawCheckers() {
+    for (let i=0;i<24;i++) {
+      const n = Math.abs(state.points[i]);
+      const owner = Math.sign(state.points[i]);
+      if (!owner) continue;
+      for (let s=0;s<Math.min(n,5);s++) {
+        const p = checkerPos(i,s);
+        drawChecker(p.x,p.y,p.r,owner);
+      }
+      if (n>5) {
+        const p = checkerPos(i,4);
+        ctx.fillStyle = owner===1 ? '#0f1120' : '#f0f5ff';
+        ctx.font = 'bold 16px Inter';
+        ctx.fillText(`+${n-5}`, p.x-13, p.y+6);
+      }
+    }
+
+    const barX = W/2;
+    if (state.bar[1]) {
+      for (let i=0;i<Math.min(state.bar[1],5);i++) drawChecker(barX, H/2 + 36 + i*26, 20, 1);
+    }
+    if (state.bar[-1]) {
+      for (let i=0;i<Math.min(state.bar[-1],5);i++) drawChecker(barX, H/2 - 36 - i*26, 20, -1);
+    }
+  }
+
+  function drawChecker(x,y,r,owner){
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
+    const g = ctx.createRadialGradient(x-r*0.35,y-r*0.35,2,x,y,r);
+    if (owner===1) { g.addColorStop(0,'#ffffff'); g.addColorStop(1,'#c8e5ff'); }
+    else { g.addColorStop(0,'#525872'); g.addColorStop(1,'#090b16'); }
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = owner===1 ? 'rgba(88,235,255,.9)' : 'rgba(255,116,186,.9)';
+    ctx.lineWidth = 3; ctx.stroke();
+  }
+
+  function drawSelectionHints() {
+    if (state.selected === 'bar') {
+      ctx.strokeStyle = '#ffe78d';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(W/2 - 28, H/2 - 86, 56, 172);
+    } else if (Number.isInteger(state.selected)) {
+      const n = Math.abs(state.points[state.selected]);
+      const p = checkerPos(state.selected, Math.min(4, n-1));
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r+6,0,Math.PI*2);
+      ctx.strokeStyle = '#ffe78d'; ctx.lineWidth = 4; ctx.stroke();
+    }
+
+    state.legalForSelected.forEach((m, idx) => {
+      let x,y;
+      if (m.to === 'off') {
+        x = state.current===1 ? W - 55 : 55;
+        y = H/2;
+      } else {
+        const p = checkerPos(m.to, Math.min(4, Math.abs(state.points[m.to])));
+        x=p.x; y=p.y;
+      }
+      ctx.beginPath(); ctx.arc(x,y,18 + idx*2,0,Math.PI*2);
+      ctx.strokeStyle = 'rgba(255,210,105,.95)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,210,105,.18)';
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px Inter';
+      ctx.fillText(String(m.die), x - 4, y + 5);
+    });
+  }
+
+  function draw() {
+    drawBoardBase();
+    drawCheckers();
+    drawSelectionHints();
+  }
+
+  function pickSource(mx,my) {
+    if (state.bar[state.current] > 0) {
+      if (mx > W/2 - 45 && mx < W/2 + 45 && my > H/2 - 120 && my < H/2 + 120) return 'bar';
+      return null;
+    }
+    for (let i=0;i<24;i++) {
+      const pr = pointRects[i];
+      if (mx < pr.x || mx > pr.x + pr.w) continue;
+      if (pr.top && my > H/2) continue;
+      if (!pr.top && my < H/2) continue;
+      if (sourceHasChecker(i)) return i;
+    }
+    return null;
+  }
+
+  function pickMove(mx,my) {
+    for (const m of state.legalForSelected) {
+      if (m.to === 'off') {
+        const x = state.current===1 ? W - 55 : 55;
+        const y = H/2;
+        if (Math.hypot(mx-x,my-y) < 32) return m;
+      } else {
+        const p = checkerPos(m.to, Math.min(4, Math.abs(state.points[m.to])));
+        if (Math.hypot(mx-p.x,my-p.y) < p.r + 20) return m;
+      }
+    }
+    return null;
+  }
+
+  canvas.addEventListener('click', (e) => {
+    if (state.winner) return;
+    if (!state.dice.length) return setStatus('Roll dice first.');
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    const my = (e.clientY - rect.top) * (H / rect.height);
+
+    if (state.selected !== null) {
+      const mv = pickMove(mx,my);
+      if (mv) return applyMove(mv);
+    }
+
+    const src = pickSource(mx,my);
+    if (src === null) {
+      state.selected = null;
+      state.legalForSelected = [];
+      draw();
+      return;
+    }
+
+    const legal = legalMovesForSource(src);
+    if (!legal.length) {
+      setStatus('No legal move from that source with current dice.');
+      return;
+    }
+    state.selected = src;
+    state.legalForSelected = legal;
+    setStatus(`Selected ${src === 'bar' ? 'BAR' : 'point ' + (src+1)}. Choose a glowing destination ring.`);
+    draw();
+  });
+
+  document.getElementById('rollBtn').addEventListener('click', rollDice);
+  document.getElementById('newBtn').addEventListener('click', () => {
+    reset();
+    setStatus('New match ready. White starts. Roll dice!');
+  });
+
+  reset();
+})();
+</script>
+</body>
+</html>
