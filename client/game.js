@@ -23,6 +23,46 @@ const BUILDINGS = {
     population: 0,
     desc: 'Turns forests into timber and fuels expansion.'
   },
+  quarry: {
+    label: 'Quarry',
+    cost: { wood: 16, food: 6 },
+    color: '#8f97a3',
+    production: { stone: 1.6 },
+    population: 0,
+    desc: 'Extracts stone for heavier construction projects.'
+  },
+  mine: {
+    label: 'Iron Mine',
+    cost: { wood: 14, stone: 12 },
+    color: '#56606f',
+    production: { iron: 1.2 },
+    population: 0,
+    desc: 'Produces iron ore used by advanced structures.'
+  },
+  warehouse: {
+    label: 'Warehouse',
+    cost: { wood: 16, stone: 14 },
+    color: '#9a865a',
+    production: {},
+    population: 0,
+    desc: 'Improves logistics and boosts nearby industry output.'
+  },
+  market: {
+    label: 'Market',
+    cost: { wood: 12, stone: 8, food: 8 },
+    color: '#f3bf68',
+    production: { gold: 1.1 },
+    population: 0,
+    desc: 'Converts surplus food into gold and commerce.'
+  },
+  workshop: {
+    label: 'Workshop',
+    cost: { wood: 15, stone: 10, iron: 8 },
+    color: '#9d73d7',
+    production: { gold: 1.7 },
+    population: 1,
+    desc: 'Uses iron and logistics to create high-value goods.'
+  },
   road: {
     label: 'Road',
     cost: { wood: 1 },
@@ -33,16 +73,22 @@ const BUILDINGS = {
   }
 };
 
-const START_RESOURCES = { wood: 50, food: 20, gold: 10, population: 0, happiness: 55 };
+const START_RESOURCES = { wood: 50, stone: 8, iron: 0, food: 20, gold: 10, population: 0, happiness: 55 };
 const RESOURCE_TICK_MS = 1_000;
 const SEASON_LENGTH_MS = 45_000;
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
 
 const QUESTS = [
-  { id: 'starter-hamlet', label: 'Build your first 6 houses.', check: (s) => s.counts.house >= 6 },
-  { id: 'agrarian-boom', label: 'Reach 8 farms.', check: (s) => s.counts.farm >= 8 },
-  { id: 'street-grid', label: 'Lay down 24 roads.', check: (s) => s.counts.road >= 24 },
-  { id: 'population-40', label: 'Grow to population 40.', check: (s) => (s.resources.population || 0) >= 40 }
+  { id: 'starter-hamlet', label: 'Build your first 6 houses.', check: (s) => s.counts.house >= 6, progress: (s) => `${Math.min(6, s.counts.house || 0)}/6 houses` },
+  { id: 'agrarian-boom', label: 'Reach 8 farms.', check: (s) => s.counts.farm >= 8, progress: (s) => `${Math.min(8, s.counts.farm || 0)}/8 farms` },
+  { id: 'street-grid', label: 'Lay down 24 roads.', check: (s) => s.counts.road >= 24, progress: (s) => `${Math.min(24, s.counts.road || 0)}/24 roads` },
+  { id: 'population-40', label: 'Grow to population 40.', check: (s) => (s.resources.population || 0) >= 40, progress: (s) => `${Math.min(40, Math.round(s.resources.population || 0))}/40 population` },
+  { id: 'stone-age', label: 'Stockpile 120 stone for civic projects.', check: (s) => (s.resources.stone || 0) >= 120, progress: (s) => `${Math.min(120, Math.floor(s.resources.stone || 0))}/120 stone` },
+  { id: 'iron-industry', label: 'Operate 5 iron mines.', check: (s) => s.counts.mine >= 5, progress: (s) => `${Math.min(5, s.counts.mine || 0)}/5 mines` },
+  { id: 'trade-league', label: 'Build 4 markets and 3 warehouses.', check: (s) => s.counts.market >= 4 && s.counts.warehouse >= 3, progress: (s) => `${Math.min(4, s.counts.market || 0)}/4 markets • ${Math.min(3, s.counts.warehouse || 0)}/3 warehouses` },
+  { id: 'artisan-district', label: 'Create an artisan district with 6 workshops.', check: (s) => s.counts.workshop >= 6, progress: (s) => `${Math.min(6, s.counts.workshop || 0)}/6 workshops` },
+  { id: 'happy-metropolis', label: 'Reach population 90 while happiness is at least 72.', check: (s) => (s.resources.population || 0) >= 90 && (s.resources.happiness || 0) >= 72, progress: (s) => `${Math.min(90, Math.round(s.resources.population || 0))}/90 pop • ${Math.round(s.resources.happiness || 0)}/72 happiness` },
+  { id: 'economic-powerhouse', label: 'Maintain 250 gold and 90 food reserves.', check: (s) => (s.resources.gold || 0) >= 250 && (s.resources.food || 0) >= 90, progress: (s) => `${Math.min(250, Math.floor(s.resources.gold || 0))}/250 gold • ${Math.min(90, Math.floor(s.resources.food || 0))}/90 food` }
 ];
 
 const state = {
@@ -73,7 +119,7 @@ const state = {
     { x: 500, y: 150, speed: 0.16, size: 1.55 },
     { x: 830, y: 70, speed: 0.12, size: 1.1 }
   ],
-  tileStats: { counts: { house: 0, farm: 0, sawmill: 0, road: 0 }, roadsConnected: 0, clusteredFarms: 0 }
+  tileStats: { counts: { house: 0, farm: 0, sawmill: 0, quarry: 0, mine: 0, warehouse: 0, market: 0, workshop: 0, road: 0 }, roadsConnected: 0, clusteredFarms: 0, industrialSynergy: 0 }
 };
 
 const els = {
@@ -88,6 +134,8 @@ const els = {
   selectionHint: document.getElementById('selectionHint'),
   buildButtons: document.getElementById('buildButtons'),
   wood: document.getElementById('woodVal'),
+  stone: document.getElementById('stoneVal'),
+  iron: document.getElementById('ironVal'),
   food: document.getElementById('foodVal'),
   gold: document.getElementById('goldVal'),
   pop: document.getElementById('popVal'),
@@ -122,6 +170,8 @@ function toast(text) {
 
 function updateResourcesUi() {
   els.wood.textContent = state.resources.wood.toFixed(1);
+  els.stone.textContent = (state.resources.stone || 0).toFixed(1);
+  els.iron.textContent = (state.resources.iron || 0).toFixed(1);
   els.food.textContent = state.resources.food.toFixed(1);
   els.gold.textContent = state.resources.gold.toFixed(1);
   els.pop.textContent = Math.round(state.resources.population || 0);
@@ -198,9 +248,10 @@ function updateTileInfo() {
 }
 
 function refreshTownStats() {
-  const counts = { house: 0, farm: 0, sawmill: 0, road: 0 };
+  const counts = { house: 0, farm: 0, sawmill: 0, quarry: 0, mine: 0, warehouse: 0, market: 0, workshop: 0, road: 0 };
   let roadsConnected = 0;
   let clusteredFarms = 0;
+  let industrialSynergy = 0;
 
   for (let y = 0; y < state.gridSize; y += 1) {
     for (let x = 0; x < state.gridSize; x += 1) {
@@ -214,6 +265,10 @@ function refreshTownStats() {
         const n = [getTile(x + 1, y), getTile(x - 1, y), getTile(x, y + 1), getTile(x, y - 1)];
         clusteredFarms += n.filter((neighbor) => neighbor?.type === 'farm').length;
       }
+      if (tile.type === 'market' || tile.type === 'warehouse' || tile.type === 'workshop') {
+        const n = [getTile(x + 1, y), getTile(x - 1, y), getTile(x, y + 1), getTile(x, y - 1)];
+        industrialSynergy += n.filter((neighbor) => neighbor && ['market', 'warehouse', 'workshop', 'mine', 'quarry'].includes(neighbor.type)).length;
+      }
     }
   }
 
@@ -224,11 +279,14 @@ function refreshTownStats() {
     + roadsConnected * 1.1
     + counts.farm * 0.5
     + clusteredFarms * 0.12
+    + industrialSynergy * 0.16
+    + counts.market * 0.55
     + Math.max(-12, Math.min(10, foodBuffer * 0.18))
     - counts.sawmill * 0.4
+    - counts.mine * 0.35
   ));
 
-  state.tileStats = { counts, roadsConnected, clusteredFarms };
+  state.tileStats = { counts, roadsConnected, clusteredFarms, industrialSynergy };
   state.resources.happiness = happiness;
   if (happiness > 75) state.economyText = 'Prosperous';
   else if (happiness < 35 || foodBuffer < -10) state.economyText = 'Struggling';
@@ -247,7 +305,8 @@ function updateQuestUi() {
 
     const li = document.createElement('li');
     li.className = done ? 'done' : '';
-    li.textContent = `${done ? '✅' : '⬜'} ${quest.label}`;
+    const progressText = done ? 'Completed' : (quest.progress ? quest.progress(stats) : 'In progress');
+    li.textContent = `${done ? '✅' : '⬜'} ${quest.label} (${progressText})`;
     els.questList.appendChild(li);
   });
 }
@@ -309,8 +368,11 @@ function applySoloResourceTick() {
   const season = SEASONS[state.seasonIndex];
   const seasonFarmBoost = season === 'Summer' ? 1.3 : season === 'Winter' ? 0.65 : 1;
   const seasonWoodBoost = season === 'Autumn' ? 1.25 : season === 'Winter' ? 0.9 : 1;
+  const seasonStoneBoost = season === 'Winter' ? 1.15 : season === 'Spring' ? 0.9 : 1;
+  const seasonIronBoost = season === 'Winter' ? 0.82 : season === 'Autumn' ? 1.12 : 1;
   const moodBoost = Math.max(0.6, 1 + (state.resources.happiness - 50) / 180);
   const farmBonus = Math.min(1.8, 1 + state.tileStats.counts.farm * 0.02 + state.tileStats.clusteredFarms * 0.006);
+  const logisticsBoost = Math.min(1.6, 1 + state.tileStats.counts.warehouse * 0.04 + state.tileStats.industrialSynergy * 0.01);
 
   for (let y = 0; y < state.gridSize; y += 1) {
     for (let x = 0; x < state.gridSize; x += 1) {
@@ -323,9 +385,22 @@ function applySoloResourceTick() {
         if (tile.type === 'farm') adjusted *= farmBonus;
         if (tile.type === 'farm') adjusted *= seasonFarmBoost;
         if (tile.type === 'sawmill') adjusted *= seasonWoodBoost;
+        if (tile.type === 'quarry') adjusted *= seasonStoneBoost;
+        if (tile.type === 'mine') adjusted *= seasonIronBoost;
+        if (tile.type === 'mine' || tile.type === 'quarry' || tile.type === 'workshop') adjusted *= logisticsBoost;
         if (res === 'gold') adjusted *= moodBoost;
         if (res === 'gold' && tile.type === 'house' && (isRoadAt(x + 1, y) || isRoadAt(x - 1, y) || isRoadAt(x, y + 1) || isRoadAt(x, y - 1))) {
           adjusted *= 1.15;
+        }
+        if (tile.type === 'market') {
+          const marketFoodUse = Math.min(state.resources.food, 0.45);
+          state.resources.food -= marketFoodUse;
+          adjusted += marketFoodUse * 0.55;
+        }
+        if (tile.type === 'workshop') {
+          const ironUse = Math.min(state.resources.iron || 0, 0.3);
+          state.resources.iron = (state.resources.iron || 0) - ironUse;
+          adjusted += ironUse * 1.4;
         }
         state.resources[res] = (state.resources[res] || 0) + adjusted;
       }
@@ -526,6 +601,71 @@ function drawTileVisual(tile, sx, sy, tileSize) {
     ctx.moveTo(sx + tileSize * 0.64, sy + tileSize * 0.2);
     ctx.lineTo(sx + tileSize * 0.71, sy + tileSize * 0.11);
     ctx.lineTo(sx + tileSize * 0.78, sy + tileSize * 0.2);
+    ctx.stroke();
+    return;
+  }
+
+  if (tile.type === 'quarry') {
+    ctx.fillStyle = '#8791a0';
+    ctx.fillRect(sx + pad, sy + tileSize * 0.32, inner, tileSize * 0.56);
+    ctx.fillStyle = '#aeb7c3';
+    ctx.beginPath();
+    ctx.moveTo(sx + tileSize * 0.22, sy + tileSize * 0.42);
+    ctx.lineTo(sx + tileSize * 0.45, sy + tileSize * 0.18);
+    ctx.lineTo(sx + tileSize * 0.62, sy + tileSize * 0.4);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
+
+  if (tile.type === 'mine') {
+    ctx.fillStyle = '#5f6a7a';
+    ctx.fillRect(sx + pad, sy + tileSize * 0.36, inner, tileSize * 0.5);
+    ctx.fillStyle = '#3a4351';
+    ctx.beginPath();
+    ctx.moveTo(sx + tileSize * 0.2, sy + tileSize * 0.86);
+    ctx.lineTo(sx + tileSize * 0.5, sy + tileSize * 0.45);
+    ctx.lineTo(sx + tileSize * 0.8, sy + tileSize * 0.86);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#d59d50';
+    ctx.fillRect(sx + tileSize * 0.46, sy + tileSize * 0.54, tileSize * 0.08, tileSize * 0.18);
+    return;
+  }
+
+  if (tile.type === 'warehouse') {
+    ctx.fillStyle = '#8f7b55';
+    ctx.fillRect(sx + pad, sy + tileSize * 0.3, inner, tileSize * 0.58);
+    ctx.fillStyle = '#6d5c3d';
+    ctx.fillRect(sx + tileSize * 0.24, sy + tileSize * 0.52, tileSize * 0.52, tileSize * 0.24);
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.strokeRect(sx + tileSize * 0.24, sy + tileSize * 0.52, tileSize * 0.52, tileSize * 0.24);
+    return;
+  }
+
+  if (tile.type === 'market') {
+    ctx.fillStyle = '#f0ba63';
+    ctx.fillRect(sx + pad, sy + tileSize * 0.4, inner, tileSize * 0.46);
+    ctx.fillStyle = '#d05b65';
+    ctx.beginPath();
+    ctx.moveTo(sx + tileSize * 0.2, sy + tileSize * 0.4);
+    ctx.lineTo(sx + tileSize * 0.5, sy + tileSize * 0.16);
+    ctx.lineTo(sx + tileSize * 0.8, sy + tileSize * 0.4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#fff2d8';
+    ctx.fillRect(sx + tileSize * 0.38, sy + tileSize * 0.56, tileSize * 0.24, tileSize * 0.14);
+    return;
+  }
+
+  if (tile.type === 'workshop') {
+    ctx.fillStyle = '#8866be';
+    ctx.fillRect(sx + pad, sy + tileSize * 0.34, inner, tileSize * 0.52);
+    ctx.fillStyle = '#cfbfec';
+    ctx.fillRect(sx + tileSize * 0.25, sy + tileSize * 0.52, tileSize * 0.5, tileSize * 0.2);
+    ctx.strokeStyle = '#f6f0ff';
+    ctx.beginPath();
+    ctx.arc(sx + tileSize * 0.5, sy + tileSize * 0.44, tileSize * 0.1, 0, Math.PI * 2);
     ctx.stroke();
   }
 }
