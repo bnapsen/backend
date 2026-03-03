@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Super Neon Bros</title>
+  <title>SuperSplash Bros</title>
   <style>
     :root {
       --bg: #08051f;
       --bg2: #170a3d;
-      --neon-a: #17f2ff;
-      --neon-b: #ff4dc4;
-      --neon-c: #ffe35a;
+      --SuperSplash-a: #17f2ff;
+      --SuperSplash-b: #ff4dc4;
+      --SuperSplash-c: #ffe35a;
       --text: #eef6ff;
       --panel: rgba(10, 10, 30, 0.72);
     }
@@ -78,7 +78,7 @@
     .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; margin-top: 0.7rem; }
     .stat { border: 1px solid rgba(23, 242, 255, 0.3); background: rgba(8, 14, 34, 0.75); border-radius: 10px; padding: 0.55rem; }
     .stat strong { display: block; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.08em; opacity: 0.75; }
-    .stat span { font-size: 1.25rem; color: var(--neon-c); text-shadow: 0 0 10px rgba(255, 227, 90, 0.65); }
+    .stat span { font-size: 1.25rem; color: var(--SuperSplash-c); text-shadow: 0 0 10px rgba(255, 227, 90, 0.65); }
     .controls { margin-top: 0.9rem; font-size: 0.9rem; line-height: 1.45; }
     .controls kbd { border-radius: 6px; border: 1px solid rgba(238, 246, 255, 0.45); border-bottom-width: 2px; padding: 0.08rem 0.32rem; background: rgba(238, 246, 255, 0.14); font-size: 0.8rem; }
     .actions { margin-top: 0.95rem; display: flex; flex-wrap: wrap; gap: 0.55rem; }
@@ -86,11 +86,11 @@
     button, .back {
       border: none; border-radius: 999px; padding: 0.52rem 1rem; font-size: 0.76rem; font-weight: 800;
       letter-spacing: 0.09em; text-transform: uppercase; text-decoration: none; color: #10142a;
-      cursor: pointer; background: linear-gradient(90deg, var(--neon-a), var(--neon-b)); box-shadow: 0 0 14px rgba(23, 242, 255, 0.55);
+      cursor: pointer; background: linear-gradient(90deg, var(--SuperSplash-a), var(--SuperSplash-b)); box-shadow: 0 0 14px rgba(23, 242, 255, 0.55);
     }
     button:hover, .back:hover { transform: translateY(-1px); box-shadow: 0 0 18px rgba(255, 77, 196, 0.6); }
 
-    #status { margin-top: 0.7rem; min-height: 1.4rem; font-weight: 700; color: var(--neon-a); text-shadow: 0 0 10px rgba(23, 242, 255, 0.7); }
+    #status { margin-top: 0.7rem; min-height: 1.4rem; font-weight: 700; color: var(--SuperSplash-a); text-shadow: 0 0 10px rgba(23, 242, 255, 0.7); }
 
     @media (max-width: 940px) {
       .shell { grid-template-columns: 1fr; width: min(96vw, 780px); }
@@ -100,9 +100,9 @@
 <body>
   <main class="shell">
     <section class="panel">
-      <h1>Super Neon Bros DX</h1>
-      <p class="subtitle">Expanded worlds, animated hazards, smarter enemies, and combo-heavy platform gameplay. Clear all stages before the timer collapses the neon realm.</p>
-      <canvas id="game" width="960" height="540" aria-label="Super Neon Bros game"></canvas>
+      <h1>SuperSplash Bros DX</h1>
+      <p class="subtitle">Expanded worlds, animated hazards, smarter enemies, and combo-heavy platform gameplay. Clear all stages before the timer collapses the SuperSplash realm.</p>
+      <canvas id="game" width="960" height="540" aria-label="SuperSplash Bros game"></canvas>
     </section>
 
     <aside class="panel">
@@ -445,7 +445,7 @@
       currentLevelIndex++;
       if (currentLevelIndex >= levelTemplates.length) {
         finished = true;
-        setStatus("You beat all worlds! Neon crown secured.");
+        setStatus("You beat all worlds! SuperSplash crown secured.");
       } else {
         buildLevel(currentLevelIndex);
         player.x = 80;
