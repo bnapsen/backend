@@ -15,19 +15,19 @@
     <header class="table-header">
       <a class="back-link" href="index.html">← Back to Nova Arcade</a>
       <h1>Royal SuperSplash Blackjack</h1>
-      <p>Beat the dealer. Stack your chips. Feel the casino vibe.</p>
+      <p>Single-player blackjack with a proper table flow and realistic hand rules.</p>
     </header>
 
     <section class="blackjack-table" aria-label="Blackjack table layout">
-      <div class="table-inner-ring"></div>
+      <div class="table-rim" aria-hidden="true"></div>
       <div class="table-markings" aria-hidden="true">
         <span class="table-text">BLACKJACK PAYS 3 TO 2</span>
-        <span class="insurance-text">INSURANCE PAYS 2 TO 1</span>
+        <span class="insurance-text">DEALER STANDS ON ALL 17</span>
       </div>
 
       <section class="score-strip" aria-live="polite">
         <div class="stat"><span>Bankroll</span><strong id="bankroll">$1000</strong></div>
-        <div class="stat"><span>Current Bet</span><strong id="currentBet">$25</strong></div>
+        <div class="stat"><span>Table Bet</span><strong id="currentBet">$25</strong></div>
         <div class="stat"><span>Streak</span><strong id="streak">0</strong></div>
         <div class="stat"><span>Round</span><strong id="round">1</strong></div>
       </section>
@@ -40,7 +40,12 @@
         <div class="cards-row" id="dealerCards"></div>
       </section>
 
-      <section class="center-banner" id="message">Place your bet and deal a lucky hand.</section>
+      <section class="wager-lane" aria-live="polite">
+        <div class="wager-label">Current Wager</div>
+        <div class="wager-chip" id="wagerDisplay">$0</div>
+      </section>
+
+      <section class="center-banner" id="message">Set your table bet and press Deal.</section>
 
       <section class="player-zone">
         <div class="zone-title">
@@ -49,12 +54,6 @@
         </div>
         <div class="cards-row" id="playerCards"></div>
       </section>
-
-      <div class="betting-arcs" aria-hidden="true">
-        <div class="bet-spot left">BET</div>
-        <div class="bet-spot center">BET</div>
-        <div class="bet-spot right">BET</div>
-      </div>
     </section>
 
     <section class="controls-panel">
@@ -62,6 +61,7 @@
         <button class="chip" data-bet="5">+$5</button>
         <button class="chip" data-bet="25">+$25</button>
         <button class="chip" data-bet="100">+$100</button>
+        <button class="chip" data-bet="-25">-$25</button>
         <button class="chip danger" id="clearBet">Clear Bet</button>
       </div>
 
@@ -70,7 +70,7 @@
         <button id="hitBtn" class="action">Hit</button>
         <button id="standBtn" class="action">Stand</button>
         <button id="doubleBtn" class="action">Double</button>
-        <button id="newHandBtn" class="action ghost">New Hand</button>
+        <button id="newHandBtn" class="action ghost">Reset Table</button>
       </div>
     </section>
   </main>
