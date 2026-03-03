@@ -791,18 +791,93 @@
 
   function drawCar(car, transform) {
     const { scale, offsetX, offsetY } = transform;
+    const bodyW = car.w * scale;
+    const bodyH = car.h * scale;
+    const noseX = bodyW * 0.5;
+    const tailX = -bodyW * 0.5;
+
+    const roundedRectPath = (x, y, w, h, r) => {
+      const radius = Math.min(r, w * 0.5, h * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + w - radius, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+      ctx.lineTo(x + w, y + h - radius);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+      ctx.lineTo(x + radius, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+    };
+
     ctx.save();
     ctx.translate(offsetX + car.pos.x * scale, offsetY + car.pos.y * scale);
     ctx.rotate(car.angle);
 
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.fillRect(-car.w * 0.5 * scale + 4, -car.h * 0.5 * scale + 4, car.w * scale, car.h * scale);
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    roundedRectPath(tailX + 5, -bodyH * 0.5 + 6, bodyW, bodyH, bodyH * 0.24);
+    ctx.fill();
 
-    ctx.fillStyle = car.color;
-    ctx.fillRect(-car.w * 0.5 * scale, -car.h * 0.5 * scale, car.w * scale, car.h * scale);
+    ctx.fillStyle = '#15181f';
+    const wheelW = bodyW * 0.14;
+    const wheelH = bodyH * 0.28;
+    const wheelX = bodyW * 0.2;
+    const wheelY = bodyH * 0.38;
+    roundedRectPath(-wheelX - wheelW, -wheelY - wheelH, wheelW, wheelH, wheelW * 0.35);
+    ctx.fill();
+    roundedRectPath(wheelX, -wheelY - wheelH, wheelW, wheelH, wheelW * 0.35);
+    ctx.fill();
+    roundedRectPath(-wheelX - wheelW, wheelY, wheelW, wheelH, wheelW * 0.35);
+    ctx.fill();
+    roundedRectPath(wheelX, wheelY, wheelW, wheelH, wheelW * 0.35);
+    ctx.fill();
 
-    ctx.fillStyle = '#f9fdff';
-    ctx.fillRect(car.w * 0.22 * scale, -car.h * 0.2 * scale, car.w * 0.2 * scale, car.h * 0.4 * scale);
+    const paint = ctx.createLinearGradient(tailX, -bodyH * 0.5, noseX, bodyH * 0.5);
+    if (car.color === '#4ec9ff') {
+      paint.addColorStop(0, '#0f2c72');
+      paint.addColorStop(0.35, '#136fd4');
+      paint.addColorStop(0.7, '#1b6af9');
+      paint.addColorStop(1, '#4db8ff');
+    } else {
+      paint.addColorStop(0, '#5f1620');
+      paint.addColorStop(0.35, '#a22d38');
+      paint.addColorStop(0.7, '#df5763');
+      paint.addColorStop(1, '#ff8c77');
+    }
+    ctx.fillStyle = paint;
+    roundedRectPath(tailX, -bodyH * 0.5, bodyW, bodyH, bodyH * 0.26);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    ctx.lineWidth = Math.max(1.5, 2 * scale);
+    roundedRectPath(tailX + bodyW * 0.06, -bodyH * 0.5 + bodyH * 0.07, bodyW * 0.88, bodyH * 0.86, bodyH * 0.22);
+    ctx.stroke();
+
+    ctx.fillStyle = '#0f131a';
+    roundedRectPath(-bodyW * 0.08, -bodyH * 0.27, bodyW * 0.33, bodyH * 0.54, bodyH * 0.16);
+    ctx.fill();
+
+    const windshield = ctx.createLinearGradient(-bodyW * 0.02, -bodyH * 0.26, bodyW * 0.2, bodyH * 0.26);
+    windshield.addColorStop(0, 'rgba(120,170,220,0.72)');
+    windshield.addColorStop(1, 'rgba(20,40,65,0.86)');
+    ctx.fillStyle = windshield;
+    roundedRectPath(-bodyW * 0.03, -bodyH * 0.21, bodyW * 0.24, bodyH * 0.42, bodyH * 0.12);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(18,22,30,0.92)';
+    roundedRectPath(noseX - bodyW * 0.2, -bodyH * 0.44, bodyW * 0.25, bodyH * 0.09, bodyH * 0.04);
+    ctx.fill();
+
+    ctx.fillStyle = '#d7ecff';
+    roundedRectPath(noseX - bodyW * 0.03, -bodyH * 0.35, bodyW * 0.05, bodyH * 0.14, bodyH * 0.03);
+    ctx.fill();
+    roundedRectPath(noseX - bodyW * 0.03, bodyH * 0.21, bodyW * 0.05, bodyH * 0.14, bodyH * 0.03);
+    ctx.fill();
+
+    ctx.fillStyle = '#11151c';
+    roundedRectPath(tailX - bodyW * 0.03, -bodyH * 0.27, bodyW * 0.08, bodyH * 0.54, bodyH * 0.06);
+    ctx.fill();
 
     ctx.restore();
   }
