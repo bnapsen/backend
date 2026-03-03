@@ -54,6 +54,16 @@ Enter:
 
 Open two tabs to verify realtime sync.
 
+### No backend? Use solo mode
+
+If you just want to play locally without any server setup:
+
+1. Serve static files from repo root: `python3 -m http.server 8000`
+2. Open `http://localhost:8000/client/`
+3. Enter any name, then click **Play Solo (No Server)**
+
+Solo mode keeps the same building/resource rules in-browser so the game works even when WebSocket/backend is unavailable.
+
 ## How to point client to deployed server
 
 In the join popup there is a **Server WS URL** field.

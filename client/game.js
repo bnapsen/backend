@@ -1,9 +1,12 @@
 const BUILDINGS = {
-  house: { cost: { wood: 10 }, color: '#f2c078' },
-  farm: { cost: { wood: 10 }, color: '#7ed957' },
-  sawmill: { cost: { wood: 20 }, color: '#8a6f4d' },
-  road: { cost: { wood: 1 }, color: '#9da3b4' }
+  house: { cost: { wood: 10 }, color: '#f2c078', production: { gold: 0.2 }, population: 2 },
+  farm: { cost: { wood: 10 }, color: '#7ed957', production: { food: 1 }, population: 0 },
+  sawmill: { cost: { wood: 20 }, color: '#8a6f4d', production: { wood: 2 }, population: 0 },
+  road: { cost: { wood: 1 }, color: '#9da3b4', production: {}, population: 0 }
 };
+
+const START_RESOURCES = { wood: 50, food: 20, gold: 10, population: 0 };
+const RESOURCE_TICK_MS = 1_000;
 
 const state = {
   ws: null,
@@ -11,7 +14,7 @@ const state = {
   yourId: null,
   map: [],
   gridSize: 64,
-  resources: { wood: 0, food: 0, gold: 0, population: 0 },
+  resources: { ...START_RESOURCES },
   players: [],
   selected: 'house',
   camX: 0,
@@ -20,7 +23,9 @@ const state = {
   tilePx: 24,
   hoverTile: null,
   isPanning: false,
-  lastPointer: null
+  lastPointer: null,
+  mode: 'multiplayer',
+  soloTickTimer: null
 };
 
 const els = {
@@ -29,6 +34,7 @@ const els = {
   room: document.getElementById('roomInput'),
   ws: document.getElementById('wsInput'),
   join: document.getElementById('joinBtn'),
+  solo: document.getElementById('soloBtn'),
   roomLabel: document.getElementById('roomLabel'),
   selectedLabel: document.getElementById('selectedLabel'),
   buildButtons: document.getElementById('buildButtons'),
@@ -99,11 +105,120 @@ function buildButtons() {
 }
 
 function send(msg) {
+  if (state.mode === 'solo') {
+    handleSoloMessage(msg);
+    return;
+  }
+
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
   state.ws.send(JSON.stringify(msg));
 }
 
+function closeMultiplayerSocket() {
+  if (state.ws) {
+    state.ws.onclose = null;
+    state.ws.close();
+    state.ws = null;
+  }
+}
+
+function startSoloMode() {
+  closeMultiplayerSocket();
+  state.mode = 'solo';
+  state.room = 'solo';
+  state.yourId = 'solo-player';
+  state.gridSize = 64;
+  state.map = makeEmptyMap(state.gridSize);
+  state.resources = { ...START_RESOURCES };
+  state.players = [els.name.value.trim() || 'Solo Player'];
+
+  els.roomLabel.textContent = 'solo';
+  els.overlay.style.display = 'none';
+  updateResourcesUi();
+  updatePlayersUi();
+  addChatLine('[System] Solo mode enabled. No server connection required.');
+
+  clearInterval(state.soloTickTimer);
+  state.soloTickTimer = setInterval(applySoloResourceTick, RESOURCE_TICK_MS);
+}
+
+function makeEmptyMap(size) {
+  return Array.from({ length: size }, () => Array.from({ length: size }, () => null));
+}
+
+function applySoloResourceTick() {
+  for (let y = 0; y < state.gridSize; y += 1) {
+    for (let x = 0; x < state.gridSize; x += 1) {
+      const tile = state.map[y][x];
+      if (!tile) continue;
+      const rules = BUILDINGS[tile.type];
+      if (!rules || !rules.production) continue;
+      for (const [res, amount] of Object.entries(rules.production)) {
+        state.resources[res] = (state.resources[res] || 0) + amount;
+      }
+    }
+  }
+  updateResourcesUi();
+}
+
+function handleSoloMessage(msg) {
+  if (msg.type === 'place_building') {
+    const { x, y, buildingType } = msg;
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= state.gridSize || y >= state.gridSize) {
+      return;
+    }
+
+    const rules = BUILDINGS[buildingType];
+    if (!rules) return;
+
+    const tile = state.map[y][x];
+    if (tile && tile.type !== 'road') {
+      toast('Tile is occupied.');
+      return;
+    }
+
+    const canAfford = Object.entries(rules.cost).every(([res, amount]) => (state.resources[res] || 0) >= amount);
+    if (!canAfford) {
+      toast(`Not enough resources for ${buildingType}.`);
+      return;
+    }
+
+    for (const [res, amount] of Object.entries(rules.cost)) {
+      state.resources[res] -= amount;
+    }
+
+    state.map[y][x] = {
+      type: buildingType,
+      ownerId: state.yourId,
+      ts: Date.now()
+    };
+
+    state.resources.population = calculateSoloPopulation();
+    updateResourcesUi();
+  }
+
+  if (msg.type === 'chat_send') {
+    addChatLine(`[${new Date().toLocaleTimeString()}] ${state.players[0]}: ${msg.text}`);
+  }
+}
+
+function calculateSoloPopulation() {
+  let total = 0;
+  for (let y = 0; y < state.gridSize; y += 1) {
+    for (let x = 0; x < state.gridSize; x += 1) {
+      const tile = state.map[y][x];
+      if (!tile) continue;
+      const rules = BUILDINGS[tile.type];
+      total += rules?.population || 0;
+    }
+  }
+  return total;
+}
+
 function connect() {
+  clearInterval(state.soloTickTimer);
+  state.mode = 'multiplayer';
+
   const wsUrl = els.ws.value.trim();
   localStorage.setItem('town_ws_url', wsUrl);
   state.ws = new WebSocket(wsUrl);
@@ -174,7 +289,6 @@ function draw() {
 
   const tileSize = state.tilePx * state.zoom;
 
-  // Grid.
   ctx.strokeStyle = 'rgba(0,0,0,0.2)';
   for (let x = 0; x <= state.gridSize; x += 1) {
     const sx = state.camX + x * tileSize;
@@ -185,7 +299,6 @@ function draw() {
     ctx.beginPath(); ctx.moveTo(state.camX, sy); ctx.lineTo(state.camX + state.gridSize * tileSize, sy); ctx.stroke();
   }
 
-  // Buildings.
   for (let y = 0; y < state.gridSize; y += 1) {
     for (let x = 0; x < state.gridSize; x += 1) {
       const tile = state.map[y]?.[x];
@@ -195,7 +308,6 @@ function draw() {
     }
   }
 
-  // Hover preview.
   if (state.hoverTile) {
     const { tx, ty } = state.hoverTile;
     if (tx >= 0 && ty >= 0 && tx < state.gridSize && ty < state.gridSize) {
@@ -254,6 +366,7 @@ els.join.addEventListener('click', () => {
   if (!els.name.value.trim()) return toast('Please enter a name.');
   connect();
 });
+els.solo.addEventListener('click', () => startSoloMode());
 els.chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const text = els.chatInput.value.trim();

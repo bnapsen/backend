@@ -86,6 +86,12 @@ input {
   display: grid;
   gap: 8px;
 }
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
 #toast {
   position: fixed;
   bottom: 14px;
