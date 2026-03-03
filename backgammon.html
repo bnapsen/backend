@@ -171,6 +171,7 @@
       box-shadow: inset 0 0 50px rgba(0,0,0,.55), 0 0 35px rgba(255,174,118,.18);
       cursor: pointer;
       transition: box-shadow .25s ease;
+      touch-action: none;
     }
     canvas:hover {
       box-shadow: inset 0 0 60px rgba(0,0,0,.58), 0 0 44px rgba(145,214,255,.2);
@@ -224,6 +225,55 @@
         padding: 11px 16px;
       }
     }
+
+    @media (max-width: 700px) {
+      body {
+        padding: 0;
+        place-items: stretch;
+      }
+      .wrap {
+        border-radius: 0;
+        max-height: 100vh;
+        max-height: 100dvh;
+      }
+      .top {
+        padding: 10px 12px;
+      }
+      .title {
+        font-size: 0.9rem;
+      }
+      .link {
+        padding: 6px 9px;
+        font-size: 0.9rem;
+      }
+      .hud {
+        gap: 8px;
+        padding: 10px 12px;
+      }
+      .chip {
+        font-size: 13px;
+      }
+      .board-wrap {
+        padding: 8px;
+      }
+      canvas {
+        width: 100%;
+      }
+      .controls {
+        gap: 8px;
+        padding: 8px 12px 12px;
+      }
+      button {
+        min-height: 44px;
+      }
+      #rollBtn {
+        flex: 1 1 100%;
+      }
+      .status {
+        width: 100%;
+      }
+    }
+
   </style>
 </head>
 <body>
@@ -252,9 +302,10 @@
 
     <div class="controls">
       <button id="rollBtn">🎲 Roll Dice</button>
+      <button id="autoBtn">⚡ Auto Move</button>
       <button id="undoBtn">↩️ Undo</button>
       <button id="newBtn">🔁 New Match</button>
-      <div class="status" id="status">Click roll, then click/drag a checker. Double-click auto-moves it to the furthest legal glowing ring.</div>
+      <div class="status" id="status">Tap or click roll, then tap/drag a checker. Use Auto Move (or double-click) for the furthest legal destination.</div>
     </div>
   </main>
 
@@ -270,8 +321,13 @@
     offW: document.getElementById('offW'), offB: document.getElementById('offB'), status: document.getElementById('status'),
     mode: document.getElementById('mode'),
     die1: document.getElementById('die1'), die2: document.getElementById('die2'),
-    undoBtn: document.getElementById('undoBtn')
+    undoBtn: document.getElementById('undoBtn'),
+    autoBtn: document.getElementById('autoBtn')
   };
+
+  const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
+  const hitRadiusBoost = isCoarsePointer ? 14 : 0;
+  let drawQueued = false;
 
   const state = {
     points: Array(24).fill(0),
@@ -412,7 +468,7 @@
     state.history = [];
     ui.mode.textContent = 'White vs Bot (Black)';
     syncUi();
-    draw();
+    scheduleDraw();
   }
 
   function snapshot() {
@@ -454,7 +510,7 @@
     state.anim.trail = [];
     setStatus(saved.status || 'Move undone.');
     syncUi();
-    draw();
+    scheduleDraw();
   }
 
   function undoLastAction() {
@@ -531,7 +587,7 @@
       endTurn();
     }
     syncUi();
-    draw();
+    scheduleDraw();
   }
 
   function playerName(p){ return p===1 ? 'White' : 'Black'; }
@@ -642,7 +698,7 @@
       setStatus(`🔥 ${playerName(p)} wins the blitz! Hit New Match for another round.`);
       playSound('win');
       syncUi();
-      draw();
+      scheduleDraw();
       return;
     }
 
@@ -653,7 +709,7 @@
       endTurn();
     }
     syncUi();
-    draw();
+    scheduleDraw();
   }
 
   function endTurn() {
@@ -662,7 +718,7 @@
     state.selected = null;
     state.legalForSelected = [];
     syncUi();
-    draw();
+    scheduleDraw();
     maybeRunBotTurn();
   }
 
@@ -889,7 +945,7 @@
 
     state.selected = move.from;
     state.legalForSelected = [move];
-    draw();
+    scheduleDraw();
     setTimeout(() => {
       if (isBotTurn() && !state.winner) applyMove(move);
       if (isBotTurn() && state.dice.length && !state.winner) setTimeout(runBotTurnStep, 420);
@@ -1167,6 +1223,15 @@
     if (pulseActive || trailActive || moveActive) requestAnimationFrame(draw);
   }
 
+  function scheduleDraw() {
+    if (drawQueued) return;
+    drawQueued = true;
+    requestAnimationFrame(() => {
+      drawQueued = false;
+      draw();
+    });
+  }
+
   function getBoardPos(e) {
     const rect = canvas.getBoundingClientRect();
     return {
@@ -1216,10 +1281,10 @@
       if (m.to === 'off') {
         const x = state.current===1 ? W - 55 : 55;
         const y = H/2;
-        if (Math.hypot(mx-x,my-y) < 32) return m;
+        if (Math.hypot(mx-x,my-y) < 32 + hitRadiusBoost) return m;
       } else {
         const p = checkerPos(m.to, Math.abs(state.points[m.to]) + 1);
-        if (Math.hypot(mx-p.x,my-p.y) < p.r + 20) return m;
+        if (Math.hypot(mx-p.x,my-p.y) < p.r + 20 + hitRadiusBoost) return m;
       }
     }
     return null;
@@ -1246,7 +1311,7 @@
     state.drag = { source: src, mx, my, r: 24 };
     setStatus(`Dragging ${src === 'bar' ? 'BAR' : 'point ' + (src+1)} checker — drop onto a glowing ring.`);
     playSound('select');
-    draw();
+    scheduleDraw();
     return true;
   }
 
@@ -1254,7 +1319,7 @@
     if (!state.drag) return;
     state.drag.mx = mx;
     state.drag.my = my;
-    draw();
+    scheduleDraw();
   }
 
   function finishDrag(mx, my) {
@@ -1266,7 +1331,7 @@
       return;
     }
     setStatus('Drop on a glowing destination to move the checker.');
-    draw();
+    scheduleDraw();
   }
 
   canvas.addEventListener('click', (e) => {
@@ -1284,7 +1349,7 @@
     if (src === null) {
       state.selected = null;
       state.legalForSelected = [];
-      draw();
+      scheduleDraw();
       return;
     }
 
@@ -1298,7 +1363,7 @@
     state.legalForSelected = legal;
     setStatus(`Selected ${src === 'bar' ? 'BAR' : 'point ' + (src+1)}. Choose a glowing destination ring.`);
     playSound('select');
-    draw();
+    scheduleDraw();
   });
 
 
@@ -1331,25 +1396,36 @@
     }
   });
 
-  canvas.addEventListener('mousedown', (e) => {
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
     const { mx, my } = getBoardPos(e);
     beginDrag(mx, my);
   });
 
-  canvas.addEventListener('mousemove', (e) => {
+  canvas.addEventListener('pointermove', (e) => {
+    if (!state.drag) return;
+    if (e.pointerType === 'touch') e.preventDefault();
     const { mx, my } = getBoardPos(e);
     updateDrag(mx, my);
   });
 
-  canvas.addEventListener('mouseup', (e) => {
+  function endPointerDrag(e) {
+    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
     const { mx, my } = getBoardPos(e);
     finishDrag(mx, my);
-  });
+  }
 
-  canvas.addEventListener('mouseleave', () => {
+  canvas.addEventListener('pointerup', endPointerDrag);
+  canvas.addEventListener('pointercancel', () => {
     if (!state.drag) return;
     state.drag = null;
-    draw();
+    scheduleDraw();
+  });
+  canvas.addEventListener('pointerleave', () => {
+    if (!state.drag) return;
+    state.drag = null;
+    scheduleDraw();
   });
 
   document.getElementById('rollBtn').addEventListener('click', () => {
@@ -1376,6 +1452,34 @@
     setStatus('New match ready. White starts. Roll dice!');
   });
   ui.undoBtn.addEventListener('click', undoLastAction);
+  ui.autoBtn.addEventListener('click', () => {
+    if (state.winner) return;
+    if (isBotTurn()) return setStatus('Bot is taking its turn...');
+    if (!state.dice.length) {
+      setStatus('Roll dice first.');
+      playSound('denied');
+      return;
+    }
+    const sources = allSources();
+    let best = null;
+    for (const source of sources) {
+      const legal = legalMovesForSource(source);
+      const candidate = furthestMove(legal);
+      if (!candidate) continue;
+      if (!best || moveProgressForPlayer(candidate, state.current) > moveProgressForPlayer(best, state.current)) {
+        best = candidate;
+      }
+    }
+    if (!best) {
+      setStatus('No legal move available to auto-play.');
+      playSound('denied');
+      return;
+    }
+    state.selected = best.from;
+    state.legalForSelected = [best];
+    setStatus('Auto-moving to the furthest legal destination.');
+    applyMove(best);
+  });
 
   initDiceVisuals();
   reset();
