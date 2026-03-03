@@ -666,34 +666,211 @@
     maybeRunBotTurn();
   }
 
-  function evaluateMove(m) {
+  function cloneBoard(board) {
+    return {
+      points: board.points.slice(),
+      bar: { 1: board.bar[1], [-1]: board.bar[-1] },
+      borneOff: { 1: board.borneOff[1], [-1]: board.borneOff[-1] }
+    };
+  }
+
+  function isHomeOnBoard(board, player, idx) { return player===1 ? idx >= 0 && idx <= 5 : idx >= 18 && idx <= 23; }
+
+  function allInHomeOnBoard(board, player) {
+    if (board.bar[player] > 0) return false;
+    for (let i = 0; i < 24; i++) {
+      const v = board.points[i];
+      if ((player===1 && v>0 && !isHomeOnBoard(board, 1, i)) || (player===-1 && v<0 && !isHomeOnBoard(board, -1, i))) return false;
+    }
+    return true;
+  }
+
+  function canLandOnBoard(board, player, idx) {
+    const v = board.points[idx];
+    return player===1 ? v >= -1 : v <= 1;
+  }
+
+  function legalMovesForSourceOnBoard(board, player, dice, source) {
+    const moves = [];
+    for (let di = 0; di < dice.length; di++) {
+      const die = dice[di];
+      if (board.bar[player] > 0 && source !== 'bar') continue;
+      const from = source;
+      const to = source === 'bar' ? (player===1 ? 24 - die : die - 1) : source + (player===1 ? -die : die);
+
+      if (to >= 0 && to <= 23) {
+        if (canLandOnBoard(board, player, to)) moves.push({ from, to, die, di, bearOff:false });
+      } else {
+        if (source === 'bar') continue;
+        if (!allInHomeOnBoard(board, player) || !isHomeOnBoard(board, player, source)) continue;
+        if (player===1 && to < 0) {
+          let higher = false;
+          for (let i = source + 1; i <= 5; i++) if (board.points[i] > 0) higher = true;
+          if (to === -1 || !higher) moves.push({ from, to: 'off', die, di, bearOff:true });
+        }
+        if (player===-1 && to > 23) {
+          let lower = false;
+          for (let i = 18; i < source; i++) if (board.points[i] < 0) lower = true;
+          if (to === 24 || !lower) moves.push({ from, to: 'off', die, di, bearOff:true });
+        }
+      }
+    }
+    return moves;
+  }
+
+  function allSourcesOnBoard(board, player) {
+    if (board.bar[player] > 0) return ['bar'];
+    const arr = [];
+    for (let i = 0; i < 24; i++) {
+      const v = board.points[i];
+      if ((player===1 && v > 0) || (player===-1 && v < 0)) arr.push(i);
+    }
+    return arr;
+  }
+
+  function applyMoveToBoard(board, player, move) {
+    const next = cloneBoard(board);
+    if (move.from === 'bar') next.bar[player]--;
+    else next.points[move.from] += player===1 ? -1 : 1;
+
+    if (move.to === 'off') {
+      next.borneOff[player]++;
+    } else {
+      const destVal = next.points[move.to];
+      if (player===1 && destVal === -1) { next.points[move.to] = 0; next.bar[-1]++; }
+      if (player===-1 && destVal === 1) { next.points[move.to] = 0; next.bar[1]++; }
+      next.points[move.to] += player;
+    }
+    return next;
+  }
+
+  function pipCount(board, player) {
+    let total = board.bar[player] * 25;
+    for (let i = 0; i < 24; i++) {
+      const count = player===1 ? Math.max(0, board.points[i]) : Math.max(0, -board.points[i]);
+      if (!count) continue;
+      const dist = player===1 ? i + 1 : 24 - i;
+      total += count * dist;
+    }
+    return total;
+  }
+
+  function blotsExposed(board, player) {
+    let blots = 0;
+    for (let i = 0; i < 24; i++) {
+      if ((player===1 && board.points[i] === 1) || (player===-1 && board.points[i] === -1)) blots++;
+    }
+    return blots;
+  }
+
+  function madePoints(board, player) {
+    let made = 0;
+    for (let i = 0; i < 24; i++) {
+      const v = board.points[i];
+      if ((player===1 && v >= 2) || (player===-1 && v <= -2)) made++;
+    }
+    return made;
+  }
+
+  function anchoredPoints(board, player) {
+    const start = player===1 ? 18 : 0;
+    const end = player===1 ? 23 : 5;
+    let anchors = 0;
+    for (let i = start; i <= end; i++) {
+      const v = board.points[i];
+      if ((player===1 && v >= 2) || (player===-1 && v <= -2)) anchors++;
+    }
+    return anchors;
+  }
+
+  function homeBoardStrength(board, player) {
+    const start = player===1 ? 0 : 18;
+    const end = player===1 ? 5 : 23;
+    let strength = 0;
+    for (let i = start; i <= end; i++) {
+      const v = board.points[i];
+      if ((player===1 && v >= 2) || (player===-1 && v <= -2)) strength++;
+    }
+    return strength;
+  }
+
+  function boardPhase(board, player) {
+    const myPip = pipCount(board, player);
+    const oppPip = pipCount(board, -player);
+    if (board.borneOff[player] >= 8 || myPip < 70) return 'race';
+    if (board.bar[-player] > 0 || homeBoardStrength(board, player) >= 4) return 'attack';
+    if (oppPip - myPip > 25) return 'prime';
+    return 'contact';
+  }
+
+  function evaluateBoard(board, player) {
+    const phase = boardPhase(board, player);
+    const myPip = pipCount(board, player);
+    const oppPip = pipCount(board, -player);
+    const myBlots = blotsExposed(board, player);
+    const oppBlots = blotsExposed(board, -player);
+    const myPoints = madePoints(board, player);
+    const myAnchors = anchoredPoints(board, player);
+    const myHome = homeBoardStrength(board, player);
+    const pipEdge = oppPip - myPip;
+
     let score = 0;
-    if (m.to === 'off') score += 120;
-    else {
-      const landing = state.points[m.to] + state.current;
-      if (Math.abs(landing) >= 2) score += 24;
-      if (state.current === -1) score += m.to;
-      else score += 23 - m.to;
+    score += (board.borneOff[player] - board.borneOff[-player]) * 75;
+    score += (board.bar[-player] - board.bar[player]) * 55;
+    score += pipEdge * 1.2;
+    score += (oppBlots - myBlots) * 11;
+    score += myPoints * 8;
+    score += myAnchors * 7;
+    score += myHome * 10;
+
+    if (phase === 'race') {
+      score += pipEdge * 1.6;
+      score += board.borneOff[player] * 25;
+      score -= myBlots * 6;
+    } else if (phase === 'attack') {
+      score += board.bar[-player] * 35;
+      score += myHome * 14;
+      score += oppBlots * 16;
+    } else if (phase === 'prime') {
+      score += myPoints * 14;
+      score += myAnchors * 12;
+      score -= myBlots * 8;
+    } else {
+      score += myAnchors * 8;
+      score += oppBlots * 8;
     }
-    if (m.to !== 'off') {
-      const destVal = state.points[m.to];
-      if (state.current===1 && destVal === -1) score += 70;
-      if (state.current===-1 && destVal === 1) score += 70;
+
+    return score;
+  }
+
+  function bestBoardMove(board, player, dice) {
+    const all = [];
+    for (const src of allSourcesOnBoard(board, player)) {
+      for (const move of legalMovesForSourceOnBoard(board, player, dice, src)) all.push(move);
     }
-    if (m.from === 'bar') score += 40;
-    return score + Math.random() * 2;
+    if (!all.length) return null;
+
+    let bestMove = all[0];
+    let bestScore = -Infinity;
+    for (const move of all) {
+      const next = applyMoveToBoard(board, player, move);
+      const remainingDice = dice.filter((_, i) => i !== move.di);
+      let score = evaluateBoard(next, player);
+      if (remainingDice.length) {
+        const follow = bestBoardMove(next, player, remainingDice);
+        if (follow) score += follow.score * 0.55;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+    }
+    return { move: bestMove, score: bestScore };
   }
 
   function bestBotMove() {
-    const all = [];
-    for (const src of allSources()) {
-      for (const move of legalMovesForSource(src)) {
-        all.push(move);
-      }
-    }
-    if (!all.length) return null;
-    all.sort((a,b) => evaluateMove(b) - evaluateMove(a));
-    return all[0];
+    const pick = bestBoardMove(cloneBoard(state), state.current, state.dice);
+    return pick ? pick.move : null;
   }
 
   function runBotTurnStep() {
