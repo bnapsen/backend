@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Neon Stack Rush</title>
+  <title>SuperSplash Stack Rush</title>
   <style>
     :root {
       --bg-1: #05050f;
@@ -187,9 +187,9 @@
 <body>
   <main class="game-shell">
     <section class="panel">
-      <h1>Neon Stack Rush</h1>
+      <h1>SuperSplash Stack Rush</h1>
       <p class="subtitle">Tetris-inspired chaos with a twist: every few clears, the gravity vector flips. Survive the flux and keep your stack under control.</p>
-      <canvas id="game" width="320" height="640" aria-label="Neon Stack Rush game board"></canvas>
+      <canvas id="game" width="320" height="640" aria-label="SuperSplash Stack Rush game board"></canvas>
     </section>
 
     <aside class="panel">
@@ -272,7 +272,7 @@
       };
       if (collides(state.active.x, state.active.y, shape)) {
         state.gameOver = true;
-        statusEl.textContent = 'Game Over. The neon stack wins this round.';
+        statusEl.textContent = 'Game Over. The SuperSplash stack wins this round.';
       }
     }
 
@@ -449,7 +449,7 @@
       state.lastTime = 0;
       state.dropInterval = 700;
       gravityEl.textContent = 'Down';
-      statusEl.textContent = 'Neon stack online. Good luck.';
+      statusEl.textContent = 'SuperSplash stack online. Good luck.';
       spawnPiece();
       updateHUD();
       draw();
