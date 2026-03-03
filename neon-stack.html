@@ -55,6 +55,7 @@
 
     .game-shell {
       width: min(95vw, 960px);
+      max-height: min(96vh, 900px);
       display: grid;
       grid-template-columns: minmax(300px, 440px) minmax(220px, 1fr);
       gap: 1.2rem;
@@ -88,6 +89,9 @@
     canvas {
       width: 100%;
       max-width: 440px;
+      aspect-ratio: 1 / 2;
+      max-height: min(72vh, 640px);
+      height: auto;
       background: linear-gradient(180deg, rgba(2, 7, 20, 0.9), rgba(9, 4, 16, 0.95));
       border: 1px solid rgba(245, 211, 0, 0.4);
       border-radius: 10px;
@@ -146,6 +150,12 @@
       gap: 0.6rem;
     }
 
+    .toggle.active {
+      background: linear-gradient(90deg, #4158d0, #c850c0);
+      color: #ecf8ff;
+      box-shadow: 0 0 16px rgba(200, 80, 192, 0.45);
+    }
+
     button,
     .back-link {
       border: none;
@@ -180,6 +190,15 @@
       .game-shell {
         grid-template-columns: 1fr;
         width: min(96vw, 460px);
+        max-height: none;
+      }
+
+      .panel {
+        padding: 0.85rem;
+      }
+
+      canvas {
+        max-height: min(62vh, 620px);
       }
     }
   </style>
@@ -207,6 +226,7 @@
 
       <div class="actions">
         <button id="restart">Restart</button>
+        <button id="soundToggle" class="toggle" type="button" aria-pressed="false">Sound: Off</button>
         <a class="back-link" href="index.html">Back to Hub</a>
       </div>
 
@@ -244,6 +264,52 @@
     const levelEl = document.getElementById('level');
     const gravityEl = document.getElementById('gravity');
     const statusEl = document.getElementById('status');
+    const soundToggleEl = document.getElementById('soundToggle');
+
+    let audioCtx = null;
+    let soundEnabled = false;
+
+    function ensureAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return audioCtx;
+    }
+
+    function playSound(freq, duration = 0.08, volume = 0.05, wave = 'square', glide = 0) {
+      if (!soundEnabled) return;
+      const ctx = ensureAudio();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = wave;
+      osc.frequency.setValueAtTime(freq, now);
+      if (glide) osc.frequency.exponentialRampToValueAtTime(glide, now + duration);
+
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(volume, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + duration + 0.01);
+    }
+
+    function playChord(base = 320, spread = [1, 1.25, 1.5], duration = 0.2, volume = 0.035) {
+      spread.forEach((ratio, idx) => {
+        playSound(base * ratio, duration, volume, idx % 2 ? 'triangle' : 'square', base * ratio * 0.96);
+      });
+    }
+
+    function setSound(enabled) {
+      soundEnabled = enabled;
+      soundToggleEl.textContent = `Sound: ${enabled ? 'On' : 'Off'}`;
+      soundToggleEl.setAttribute('aria-pressed', String(enabled));
+      soundToggleEl.classList.toggle('active', enabled);
+      statusEl.textContent = enabled ? 'Audio online. Stack to the beat.' : 'Sound muted. Focus mode enabled.';
+      if (enabled) playChord(280, [1, 1.33], 0.14, 0.025);
+    }
 
     const state = {
       board: createBoard(),
@@ -273,6 +339,7 @@
       if (collides(state.active.x, state.active.y, shape)) {
         state.gameOver = true;
         statusEl.textContent = 'Game Over. The SuperSplash stack wins this round.';
+        playChord(120, [1, 0.84, 0.7], 0.36, 0.05);
       }
     }
 
@@ -310,6 +377,7 @@
       if (cleared) {
         state.lines += cleared;
         state.score += [0, 120, 350, 800, 1400][cleared] * state.level;
+        playChord(250 + (cleared * 40), [1, 1.2, 1.5, 2].slice(0, cleared + 1), 0.22, 0.03);
         state.level = 1 + Math.floor(state.lines / 10);
         state.dropInterval = Math.max(110, 700 - (state.level - 1) * 55);
 
@@ -333,7 +401,10 @@
     function move(dx) {
       if (state.gameOver) return;
       const nx = state.active.x + dx;
-      if (!collides(nx, state.active.y, state.active.shape)) state.active.x = nx;
+      if (!collides(nx, state.active.y, state.active.shape)) {
+        state.active.x = nx;
+        playSound(220, 0.035, 0.018, 'triangle', 200);
+      }
     }
 
     function drop() {
@@ -343,6 +414,7 @@
         state.active.y = ny;
       } else {
         mergePiece();
+        playSound(130, 0.09, 0.06, 'sawtooth', 90);
         clearLines();
         spawnPiece();
       }
@@ -355,6 +427,7 @@
         state.active.y += state.gravity;
         state.score += 2;
       }
+      playSound(680, 0.08, 0.03, 'sawtooth', 220);
       drop();
     }
 
@@ -366,6 +439,7 @@
         if (!collides(state.active.x + offset, state.active.y, rotated)) {
           state.active.shape = rotated;
           state.active.x += offset;
+          playSound(460, 0.05, 0.028, 'triangle', 560);
           return;
         }
       }
@@ -418,6 +492,7 @@
       state.gravity *= -1;
       gravityEl.textContent = state.gravity === 1 ? 'Down' : 'Up';
       statusEl.textContent = message;
+      playChord(state.gravity === 1 ? 210 : 360, [1, 1.5, 2], 0.24, 0.032);
     }
 
     function updateHUD() {
@@ -474,11 +549,13 @@
           flipGravity('Manual gravity hack activated.');
         } else {
           statusEl.textContent = 'Need 2,000 points for a manual flip.';
+          playSound(160, 0.1, 0.03, 'square', 120);
         }
       }
     });
 
     document.getElementById('restart').addEventListener('click', resetGame);
+    soundToggleEl.addEventListener('click', () => setSound(!soundEnabled));
 
     resetGame();
     requestAnimationFrame(gameLoop);
