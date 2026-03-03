@@ -8,6 +8,9 @@
   const FIXED_DT = 1 / 120;
   const CAR_TURN_POWER = 2.45;
   const CAR_MAX_ANGULAR_SPEED = 0.095;
+  const CAR_EXPLOSION_SPEED = 520;
+  const CAR_COLLISION_RADIUS_SCALE = 0.42;
+  const CAR_RESPAWN_SECONDS = 3;
 
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
@@ -89,7 +92,11 @@
       color,
       boost: 100,
       controls,
-      isBot: controls === null
+      isBot: controls === null,
+      spawnPos: v(x, y),
+      spawnAngle: angle,
+      destroyed: false,
+      respawnTimer: 0
     };
   }
 
@@ -475,7 +482,27 @@
     };
   }
 
+  function respawnCar(car) {
+    car.destroyed = false;
+    car.respawnTimer = 0;
+    car.pos = v(car.spawnPos.x, car.spawnPos.y);
+    car.vel = v();
+    car.angle = car.spawnAngle;
+    car.angVel = 0;
+    car.boost = 100;
+  }
+
+  function updateRespawns(dt) {
+    const cars = [player, bot];
+    for (const car of cars) {
+      if (!car.destroyed) continue;
+      car.respawnTimer -= dt;
+      if (car.respawnTimer <= 0) respawnCar(car);
+    }
+  }
+
   function updateCar(car, dt) {
+    if (car.destroyed) return;
     const input = getControlsForCar(car);
     const forward = angleToVec(car.angle);
     const right = { x: -forward.y, y: forward.x };
@@ -583,7 +610,47 @@
     }
   }
 
+
+  function collideCars(a, b) {
+    if (a.destroyed || b.destroyed) return;
+
+    const dx = b.pos.x - a.pos.x;
+    const dy = b.pos.y - a.pos.y;
+    const dist = Math.hypot(dx, dy) || 0.0001;
+    const minDist = (Math.max(a.w, a.h) + Math.max(b.w, b.h)) * CAR_COLLISION_RADIUS_SCALE;
+    if (dist > minDist) return;
+
+    const speedA = len(a.vel);
+    const speedB = len(b.vel);
+    if (speedA === speedB) return;
+
+    const fasterCar = speedA > speedB ? a : b;
+    const slowerCar = fasterCar === a ? b : a;
+    const fasterSpeed = Math.max(speedA, speedB);
+    if (fasterSpeed < CAR_EXPLOSION_SPEED) return;
+
+    const impactX = (a.pos.x + b.pos.x) * 0.5;
+    const impactY = (a.pos.y + b.pos.y) * 0.5;
+    spawnParticles(impactX, impactY, 65, '#ffb366', 520);
+    spawnParticles(slowerCar.pos.x, slowerCar.pos.y, 30, slowerCar.color, 440);
+    state.shake = Math.max(state.shake, 0.45);
+
+    slowerCar.destroyed = true;
+    slowerCar.respawnTimer = CAR_RESPAWN_SECONDS;
+    slowerCar.vel = v();
+    slowerCar.angVel = 0;
+    slowerCar.pos = v(-9999, -9999);
+
+    state.message = slowerCar === player ? 'You exploded! Respawning...' : 'Opponent exploded!';
+    state.messageTime = 1.2;
+    audio.ping(120, 0.22, 'sawtooth', 0.16);
+    audio.ping(70, 0.3, 'triangle', 0.12);
+
+    confineCar(fasterCar);
+  }
+
   function collideBallCar(car) {
+    if (car.destroyed) return;
     const dx = ball.pos.x - car.pos.x;
     const dy = ball.pos.y - car.pos.y;
     const cos = Math.cos(-car.angle);
@@ -664,17 +731,8 @@
   }
 
   function resetPositions() {
-    player.pos = v(FIELD.width * 0.25, FIELD.height * 0.5);
-    player.vel = v();
-    player.angle = 0;
-    player.angVel = 0;
-    player.boost = 100;
-
-    bot.pos = v(FIELD.width * 0.75, FIELD.height * 0.5);
-    bot.vel = v();
-    bot.angle = Math.PI;
-    bot.angVel = 0;
-    bot.boost = 100;
+    respawnCar(player);
+    respawnCar(bot);
 
     ball.pos = v(FIELD.width * 0.5, FIELD.height * 0.5);
     ball.vel = v((Math.random() - 0.5) * 130, (Math.random() - 0.5) * 100);
@@ -739,10 +797,12 @@
     updateCar(player, dt);
     updateCar(bot, dt);
     updateBall(dt);
+    collideCars(player, bot);
     collideBallCar(player);
     collideBallCar(bot);
 
     updateParticles(dt);
+    updateRespawns(dt);
 
     if (shouldSendInputFrame()) {
       state.multiplayer.localInputSeq += 1;
@@ -901,6 +961,7 @@
   }
 
   function drawCar(car, transform, projection) {
+    if (car.destroyed) return;
     const { scale } = transform;
     const p = projection.project(car.pos.x, car.pos.y);
     const carScale = scale * (0.76 + p.depth * 0.5);
