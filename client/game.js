@@ -35,6 +35,8 @@ const BUILDINGS = {
 
 const START_RESOURCES = { wood: 50, food: 20, gold: 10, population: 0, happiness: 55 };
 const RESOURCE_TICK_MS = 1_000;
+const SEASON_LENGTH_MS = 45_000;
+const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
 
 const QUESTS = [
   { id: 'starter-hamlet', label: 'Build your first 6 houses.', check: (s) => s.counts.house >= 6 },
@@ -63,7 +65,15 @@ const state = {
   soloTickTimer: null,
   completedQuests: new Set(),
   visualsTime: 0,
-  tileStats: { counts: { house: 0, farm: 0, sawmill: 0, road: 0 }, roadsConnected: 0 }
+  economyText: 'Stable',
+  seasonIndex: 0,
+  seasonStartedAt: Date.now(),
+  clouds: [
+    { x: 120, y: 90, speed: 0.1, size: 1.2 },
+    { x: 500, y: 150, speed: 0.16, size: 1.55 },
+    { x: 830, y: 70, speed: 0.12, size: 1.1 }
+  ],
+  tileStats: { counts: { house: 0, farm: 0, sawmill: 0, road: 0 }, roadsConnected: 0, clusteredFarms: 0 }
 };
 
 const els = {
@@ -82,6 +92,8 @@ const els = {
   gold: document.getElementById('goldVal'),
   pop: document.getElementById('popVal'),
   happiness: document.getElementById('happinessVal'),
+  season: document.getElementById('seasonVal'),
+  economy: document.getElementById('economyVal'),
   questList: document.getElementById('questList'),
   playersList: document.getElementById('playersList'),
   tileInfo: document.getElementById('tileInfo'),
@@ -114,6 +126,8 @@ function updateResourcesUi() {
   els.gold.textContent = state.resources.gold.toFixed(1);
   els.pop.textContent = Math.round(state.resources.population || 0);
   els.happiness.textContent = Math.round(state.resources.happiness || 0);
+  if (els.season) els.season.textContent = SEASONS[state.seasonIndex];
+  if (els.economy) els.economy.textContent = state.economyText;
 }
 
 function updatePlayersUi() {
@@ -186,6 +200,7 @@ function updateTileInfo() {
 function refreshTownStats() {
   const counts = { house: 0, farm: 0, sawmill: 0, road: 0 };
   let roadsConnected = 0;
+  let clusteredFarms = 0;
 
   for (let y = 0; y < state.gridSize; y += 1) {
     for (let x = 0; x < state.gridSize; x += 1) {
@@ -195,15 +210,29 @@ function refreshTownStats() {
       if (tile.type !== 'road' && (isRoadAt(x + 1, y) || isRoadAt(x - 1, y) || isRoadAt(x, y + 1) || isRoadAt(x, y - 1))) {
         roadsConnected += 1;
       }
+      if (tile.type === 'farm') {
+        const n = [getTile(x + 1, y), getTile(x - 1, y), getTile(x, y + 1), getTile(x, y - 1)];
+        clusteredFarms += n.filter((neighbor) => neighbor?.type === 'farm').length;
+      }
     }
   }
 
+  const foodBuffer = state.resources.food - Math.max(0, state.resources.population * 0.5);
   const happiness = Math.max(0, Math.min(100,
-    50 + counts.road * 0.7 + roadsConnected * 0.9 + counts.farm * 0.4 - counts.sawmill * 0.35
+    48
+    + counts.road * 0.7
+    + roadsConnected * 1.1
+    + counts.farm * 0.5
+    + clusteredFarms * 0.12
+    + Math.max(-12, Math.min(10, foodBuffer * 0.18))
+    - counts.sawmill * 0.4
   ));
 
-  state.tileStats = { counts, roadsConnected };
+  state.tileStats = { counts, roadsConnected, clusteredFarms };
   state.resources.happiness = happiness;
+  if (happiness > 75) state.economyText = 'Prosperous';
+  else if (happiness < 35 || foodBuffer < -10) state.economyText = 'Struggling';
+  else state.economyText = 'Stable';
 
   updateQuestUi();
   updateResourcesUi();
@@ -249,6 +278,9 @@ function startSoloMode() {
   state.gridSize = 64;
   state.map = makeEmptyMap(state.gridSize);
   state.resources = { ...START_RESOURCES };
+  state.seasonIndex = 0;
+  state.seasonStartedAt = Date.now();
+  state.economyText = 'Stable';
   state.players = [els.name.value.trim() || 'Solo Player'];
 
   els.roomLabel.textContent = 'solo';
@@ -256,7 +288,7 @@ function startSoloMode() {
   updateResourcesUi();
   updatePlayersUi();
   refreshTownStats();
-  addChatLine('[System] Solo sandbox enabled. Build, optimize, and chase mayor goals.');
+  addChatLine('[System] Solo sandbox enabled. Build, optimize, and chase mayor goals. Right-click to demolish and reclaim wood.');
 
   clearInterval(state.soloTickTimer);
   state.soloTickTimer = setInterval(applySoloResourceTick, RESOURCE_TICK_MS);
@@ -267,8 +299,18 @@ function makeEmptyMap(size) {
 }
 
 function applySoloResourceTick() {
-  const farmBonus = Math.min(1.6, 1 + state.tileStats.counts.farm * 0.02);
-  const moodBoost = 1 + (state.resources.happiness - 50) / 200;
+  const elapsed = Date.now() - state.seasonStartedAt;
+  if (elapsed >= SEASON_LENGTH_MS) {
+    state.seasonIndex = (state.seasonIndex + 1) % SEASONS.length;
+    state.seasonStartedAt = Date.now();
+    addChatLine(`[System] ${SEASONS[state.seasonIndex]} has arrived. Production modifiers changed.`);
+  }
+
+  const season = SEASONS[state.seasonIndex];
+  const seasonFarmBoost = season === 'Summer' ? 1.3 : season === 'Winter' ? 0.65 : 1;
+  const seasonWoodBoost = season === 'Autumn' ? 1.25 : season === 'Winter' ? 0.9 : 1;
+  const moodBoost = Math.max(0.6, 1 + (state.resources.happiness - 50) / 180);
+  const farmBonus = Math.min(1.8, 1 + state.tileStats.counts.farm * 0.02 + state.tileStats.clusteredFarms * 0.006);
 
   for (let y = 0; y < state.gridSize; y += 1) {
     for (let x = 0; x < state.gridSize; x += 1) {
@@ -279,12 +321,26 @@ function applySoloResourceTick() {
       for (const [res, amount] of Object.entries(rules.production)) {
         let adjusted = amount;
         if (tile.type === 'farm') adjusted *= farmBonus;
+        if (tile.type === 'farm') adjusted *= seasonFarmBoost;
+        if (tile.type === 'sawmill') adjusted *= seasonWoodBoost;
         if (res === 'gold') adjusted *= moodBoost;
+        if (res === 'gold' && tile.type === 'house' && (isRoadAt(x + 1, y) || isRoadAt(x - 1, y) || isRoadAt(x, y + 1) || isRoadAt(x, y - 1))) {
+          adjusted *= 1.15;
+        }
         state.resources[res] = (state.resources[res] || 0) + adjusted;
       }
     }
   }
 
+  const foodConsumption = state.resources.population * 0.28;
+  state.resources.food -= foodConsumption;
+  if (state.resources.food < 0) {
+    const hungerPenalty = Math.min(8, Math.abs(state.resources.food) * 0.22);
+    state.resources.happiness = Math.max(0, state.resources.happiness - hungerPenalty);
+    state.resources.food = 0;
+  }
+
+  refreshTownStats();
   updateResourcesUi();
 }
 
@@ -417,9 +473,12 @@ function drawTileVisual(tile, sx, sy, tileSize) {
   const wobble = Math.sin((Date.now() * 0.003) + (sx + sy) * 0.03) * 0.6;
 
   if (tile.type === 'road') {
-    ctx.fillStyle = '#a7b4c5';
+    ctx.fillStyle = '#7d8ea0';
+    ctx.fillRect(sx + tileSize * 0.26, sy + pad, tileSize * 0.48, inner);
+    ctx.fillRect(sx + pad, sy + tileSize * 0.26, inner, tileSize * 0.48);
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
     ctx.fillRect(sx + tileSize * 0.28, sy + pad, tileSize * 0.44, inner);
-    ctx.fillRect(sx + pad, sy + tileSize * 0.28, inner, tileSize * 0.44);
+    ctx.fillRect(sx + pad, sy + tileSize * 0.28, inner, tileSize * 0.08);
     return;
   }
 
@@ -435,6 +494,9 @@ function drawTileVisual(tile, sx, sy, tileSize) {
     ctx.fill();
     ctx.fillStyle = '#335d88';
     ctx.fillRect(sx + tileSize * 0.43, sy + tileSize * 0.62, tileSize * 0.16, tileSize * 0.26);
+    ctx.fillStyle = '#f9f3dc';
+    ctx.fillRect(sx + tileSize * 0.22, sy + tileSize * 0.52, tileSize * 0.14, tileSize * 0.12);
+    ctx.fillRect(sx + tileSize * 0.62, sy + tileSize * 0.52, tileSize * 0.14, tileSize * 0.12);
     return;
   }
 
@@ -459,7 +521,22 @@ function drawTileVisual(tile, sx, sy, tileSize) {
     ctx.fillRect(sx + tileSize * 0.64, sy + tileSize * 0.2, tileSize * 0.17, tileSize * 0.28);
     ctx.fillStyle = '#c8a27c';
     ctx.fillRect(sx + tileSize * 0.2, sy + tileSize * 0.56, tileSize * 0.44, tileSize * 0.14);
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.beginPath();
+    ctx.moveTo(sx + tileSize * 0.64, sy + tileSize * 0.2);
+    ctx.lineTo(sx + tileSize * 0.71, sy + tileSize * 0.11);
+    ctx.lineTo(sx + tileSize * 0.78, sy + tileSize * 0.2);
+    ctx.stroke();
   }
+}
+
+function drawCloud(x, y, size) {
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.beginPath();
+  ctx.arc(x, y, 18 * size, 0, Math.PI * 2);
+  ctx.arc(x + 20 * size, y - 8 * size, 15 * size, 0, Math.PI * 2);
+  ctx.arc(x + 38 * size, y, 18 * size, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function draw() {
@@ -468,17 +545,24 @@ function draw() {
   state.visualsTime += 0.005;
 
   const sky = ctx.createLinearGradient(0, 0, 0, h);
-  sky.addColorStop(0, '#4da6d8');
-  sky.addColorStop(1, '#8fd3ff');
+  const dayNight = (Math.sin(state.visualsTime * 0.2) + 1) / 2;
+  sky.addColorStop(0, `rgb(${40 + dayNight * 50}, ${80 + dayNight * 90}, ${120 + dayNight * 105})`);
+  sky.addColorStop(1, `rgb(${70 + dayNight * 90}, ${130 + dayNight * 100}, ${160 + dayNight * 85})`);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, h);
+
+  state.clouds.forEach((cloud) => {
+    drawCloud(cloud.x, cloud.y, cloud.size);
+    cloud.x += cloud.speed;
+    if (cloud.x > w + 60) cloud.x = -80;
+  });
 
   const tileSize = state.tilePx * state.zoom;
   const mapSizePx = state.gridSize * tileSize;
 
   const grass = ctx.createLinearGradient(0, state.camY, 0, state.camY + mapSizePx);
-  grass.addColorStop(0, '#5faa60');
-  grass.addColorStop(1, '#417d43');
+  grass.addColorStop(0, '#6ab86a');
+  grass.addColorStop(1, '#3d7b41');
   ctx.fillStyle = grass;
   ctx.fillRect(state.camX, state.camY, mapSizePx, mapSizePx);
 
@@ -501,9 +585,17 @@ function draw() {
   for (let y = 0; y < state.gridSize; y += 1) {
     for (let x = 0; x < state.gridSize; x += 1) {
       const tile = state.map[y]?.[x];
-      if (!tile) continue;
       const sx = state.camX + x * tileSize;
       const sy = state.camY + y * tileSize;
+      if (!tile) {
+        if ((x * 13 + y * 7) % 19 === 0 && tileSize > 10) {
+          ctx.fillStyle = 'rgba(33,95,37,0.48)';
+          ctx.beginPath();
+          ctx.arc(sx + tileSize * 0.52, sy + tileSize * 0.53, tileSize * 0.18, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        continue;
+      }
       drawTileVisual(tile, sx, sy, tileSize);
     }
   }
@@ -511,7 +603,9 @@ function draw() {
   if (state.hoverTile) {
     const { tx, ty } = state.hoverTile;
     if (tx >= 0 && ty >= 0 && tx < state.gridSize && ty < state.gridSize) {
-      ctx.fillStyle = 'rgba(105,216,255,0.3)';
+      const targetTile = getTile(tx, ty);
+      const canBuild = !targetTile || targetTile.type === 'road';
+      ctx.fillStyle = canBuild ? 'rgba(105,216,255,0.32)' : 'rgba(255,98,98,0.34)';
       ctx.fillRect(state.camX + tx * tileSize, state.camY + ty * tileSize, tileSize, tileSize);
     }
   }
@@ -547,6 +641,19 @@ function setupCanvasInput() {
   });
 
   els.canvas.addEventListener('pointerup', (e) => {
+    if (e.button === 2 && state.mode === 'solo') {
+      const { tx, ty } = screenToTile(e.clientX, e.clientY);
+      const tile = getTile(tx, ty);
+      if (tile && tile.ownerId === state.yourId) {
+        state.map[ty][tx] = null;
+        state.resources.wood += Math.max(0.5, (BUILDINGS[tile.type]?.cost.wood || 0) * 0.4);
+        state.resources.population = calculatePopulationFor(state.yourId);
+        refreshTownStats();
+      }
+      state.isPanning = false;
+      state.lastPointer = null;
+      return;
+    }
     if (!state.isPanning) {
       const { tx, ty } = screenToTile(e.clientX, e.clientY);
       send({ type: 'place_building', x: tx, y: ty, buildingType: state.selected });
@@ -560,6 +667,8 @@ function setupCanvasInput() {
     const dir = Math.sign(e.deltaY);
     state.zoom = Math.max(0.4, Math.min(3, state.zoom + (dir > 0 ? -0.1 : 0.1)));
   }, { passive: false });
+
+  els.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 els.ws.value = getDefaultWsUrl();
