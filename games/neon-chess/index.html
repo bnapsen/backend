@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neon Chess Arena</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header>
+      <h1>♟ Neon Chess Arena</h1>
+      <p>Play local, challenge the bot, or duel online in real-time.</p>
+    </header>
+
+    <section class="layout">
+      <div class="board-wrap">
+        <div id="board" class="board" aria-label="Chess board"></div>
+      </div>
+
+      <aside class="panel">
+        <div class="status-card">
+          <h2>Match Status</h2>
+          <p id="statusText">White to move</p>
+          <p id="turnText">Turn: White</p>
+        </div>
+
+        <div class="controls-card">
+          <h2>Modes</h2>
+          <button id="vsBotBtn" class="btn primary">Play vs Bot</button>
+          <button id="localBtn" class="btn">Local 2-Player</button>
+          <button id="onlineBtn" class="btn">Online Multiplayer</button>
+          <button id="resetBtn" class="btn">Reset Game</button>
+        </div>
+
+        <div class="controls-card">
+          <h2>Online Setup</h2>
+          <label>Room Code
+            <input id="roomInput" type="text" maxlength="12" placeholder="PUBLIC" />
+          </label>
+          <label>WebSocket Server
+            <input id="serverInput" type="text" placeholder="ws://localhost:8090" />
+          </label>
+          <div class="row">
+            <button id="hostBtn" class="btn">Host</button>
+            <button id="joinBtn" class="btn">Join</button>
+          </div>
+          <p id="networkText" class="network-text">Offline</p>
+        </div>
+
+        <div class="status-card">
+          <h2>Move Log</h2>
+          <ol id="moveLog"></ol>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>
