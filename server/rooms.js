@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const GRID_SIZE = 64;
-const START_RESOURCES = { wood: 50, food: 20, gold: 10, population: 0 };
+const START_RESOURCES = { wood: 50, stone: 8, iron: 0, food: 20, gold: 10, population: 0 };
 const SAVE_INTERVAL_MS = 10_000;
 const RESOURCE_TICK_MS = 1_000;
 
@@ -10,6 +10,11 @@ const BUILDINGS = {
   house: { cost: { wood: 10 }, production: { gold: 0.2 }, population: 2 },
   farm: { cost: { wood: 10 }, production: { food: 1 } },
   sawmill: { cost: { wood: 20 }, production: { wood: 2 } },
+  quarry: { cost: { wood: 16, food: 6 }, production: { stone: 1.6 } },
+  mine: { cost: { wood: 14, stone: 12 }, production: { iron: 1.2 } },
+  warehouse: { cost: { wood: 16, stone: 14 }, production: {} },
+  market: { cost: { wood: 12, stone: 8, food: 8 }, production: { gold: 1.1 } },
+  workshop: { cost: { wood: 15, stone: 10, iron: 8 }, production: { gold: 1.7 }, population: 1 },
   road: { cost: { wood: 1 }, production: {} }
 };
 
@@ -130,7 +135,7 @@ function applyResourceTick(room) {
       if (!tile) continue;
       const rules = BUILDINGS[tile.type];
       if (!rules || !rules.production) continue;
-      if (!increments.has(tile.ownerId)) increments.set(tile.ownerId, { wood: 0, food: 0, gold: 0 });
+      if (!increments.has(tile.ownerId)) increments.set(tile.ownerId, { wood: 0, stone: 0, iron: 0, food: 0, gold: 0 });
 
       const playerInc = increments.get(tile.ownerId);
       for (const [res, amount] of Object.entries(rules.production)) {
@@ -141,8 +146,10 @@ function applyResourceTick(room) {
 
   for (const [playerId, player] of room.players.entries()) {
     const resources = getPlayerResources(room, playerId);
-    const inc = increments.get(playerId) || { wood: 0, food: 0, gold: 0 };
+    const inc = increments.get(playerId) || { wood: 0, stone: 0, iron: 0, food: 0, gold: 0 };
     resources.wood += inc.wood;
+    resources.stone = (resources.stone || 0) + (inc.stone || 0);
+    resources.iron = (resources.iron || 0) + (inc.iron || 0);
     resources.food += inc.food;
     resources.gold += inc.gold;
     resources.population = computePopulation(room, playerId);
