@@ -1,0 +1,25 @@
+<svg width="800" height="450" viewBox="0 0 800 450" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="450" rx="28" fill="url(#bg)"/>
+  <path d="M0 330C132 274 249 390 403 320C540 258 663 332 800 286V450H0V330Z" fill="url(#mountain)" opacity="0.9"/>
+  <path d="M0 360C149 312 270 420 432 350C594 280 675 346 800 322V450H0V360Z" fill="#2A1333"/>
+  <path d="M82 336C230 254 402 405 548 312C629 261 684 296 748 269" stroke="#FFBE5C" stroke-width="13" stroke-linecap="round"/>
+  <circle cx="320" cy="300" r="50" fill="#1A233D" stroke="#9CE8FF" stroke-width="8"/>
+  <circle cx="480" cy="278" r="50" fill="#1A233D" stroke="#9CE8FF" stroke-width="8"/>
+  <path d="M320 300L397 232L480 278" stroke="#9CE8FF" stroke-width="14" stroke-linecap="round"/>
+  <path d="M364 251L434 252" stroke="#6AF8FF" stroke-width="10" stroke-linecap="round"/>
+  <rect x="392" y="206" width="18" height="24" rx="4" fill="#FFD4FF"/>
+  <path d="M264 272L208 261L208 286L264 282V272Z" fill="#FF8A4E"/>
+  <text x="48" y="88" fill="#A5D9FF" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="700">NOVA ARCADE</text>
+  <text x="48" y="142" fill="#F8FCFF" font-family="Inter, Arial, sans-serif" font-size="66" font-weight="800">NEON MOTO RUSH</text>
+  <defs>
+    <linearGradient id="bg" x1="400" y1="0" x2="400" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#223A87"/>
+      <stop offset="0.45" stop-color="#411B57"/>
+      <stop offset="1" stop-color="#0A0614"/>
+    </linearGradient>
+    <linearGradient id="mountain" x1="400" y1="250" x2="400" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5D6CFF" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#131130"/>
+    </linearGradient>
+  </defs>
+</svg>

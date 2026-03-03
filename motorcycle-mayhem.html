@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Moto Rush | Nova Arcade</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="motorcycle-mayhem.css">
+</head>
+<body>
+  <div class="game-shell">
+    <header class="hud-bar">
+      <div class="brand-wrap">
+        <a class="back-link" href="index.html">← Nova Arcade</a>
+        <h1>Neon Moto Rush</h1>
+      </div>
+      <div class="stats">
+        <span>Distance: <strong id="distance">0m</strong></span>
+        <span>Score: <strong id="score">0</strong></span>
+        <span>Best: <strong id="best">0</strong></span>
+      </div>
+    </header>
+
+    <main class="game-stage">
+      <canvas id="gameCanvas" width="1400" height="720" aria-label="Motorcycle racing game canvas"></canvas>
+      <div class="overlay" id="overlay">
+        <h2 id="overlayTitle">Ride Hard. Land Clean.</h2>
+        <p id="overlayText">W/S to accelerate/brake • A/D to tilt in air • Space to restart after crash.</p>
+        <button id="startBtn">Start Race</button>
+      </div>
+    </main>
+  </div>
+
+  <script src="motorcycle-mayhem.js"></script>
+</body>
+</html>
