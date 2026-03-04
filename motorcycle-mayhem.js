@@ -23,7 +23,7 @@ const world = {
   terrainStep: 80,
   baseY: 490,
   points: [],
-  obstacles: [],
+  rings: [],
   particles: []
 };
 
@@ -37,7 +37,8 @@ const rider = {
   wheelBase: 104,
   wheelRadius: 18,
   grounded: false,
-  airtime: 0
+  airtime: 0,
+  canJump: true
 };
 
 function terrainHeightAt(x) {
@@ -61,19 +62,20 @@ function ensureTerrain(startX, endX) {
       y -= 80 + Math.random() * 70;
     }
     world.points.push({ x: lastX, y });
-    if (Math.random() < 0.08) {
-      world.obstacles.push({
-        x: lastX + 60,
-        width: 35 + Math.random() * 45,
-        height: 24 + Math.random() * 34,
-        glow: Math.random() * 360
+    if (Math.random() < 0.14) {
+      world.rings.push({
+        x: lastX + 80 + Math.random() * 140,
+        y: y - (70 + Math.random() * 80),
+        r: 20 + Math.random() * 7,
+        hue: 170 + Math.random() * 120,
+        claimed: false
       });
     }
   }
 
   const firstSafeX = startX - 1000;
   world.points = world.points.filter((p) => p.x >= firstSafeX);
-  world.obstacles = world.obstacles.filter((o) => o.x >= firstSafeX - 200);
+  world.rings = world.rings.filter((ring) => ring.x >= firstSafeX - 200 && !ring.claimed);
 }
 
 function getGroundAt(x) {
@@ -105,7 +107,7 @@ function spawnDust(x, y, color = 'rgba(151,210,255,0.8)', scale = 1) {
 function resetRide() {
   world.offsetX = 0;
   world.points = [];
-  world.obstacles = [];
+  world.rings = [];
   world.particles = [];
   rider.x = 250;
   rider.y = 330;
@@ -115,6 +117,7 @@ function resetRide() {
   rider.av = 0;
   rider.grounded = false;
   rider.airtime = 0;
+  rider.canJump = true;
   score = 0;
   crashed = false;
   time = 0;
@@ -147,6 +150,7 @@ function update(dt) {
   const frontY = rider.y + Math.sin(rider.angle) * (rider.wheelBase / 2);
   const backY = rider.y - Math.sin(rider.angle) * (rider.wheelBase / 2);
 
+  const wasGrounded = rider.grounded;
   rider.grounded = false;
 
   const frontPen = frontY + rider.wheelRadius - frontGround;
@@ -162,6 +166,17 @@ function update(dt) {
 
     if (Math.abs(rider.vx) > 250) {
       spawnDust(backX - world.offsetX, backGround - rider.wheelRadius + 8, 'rgba(255,153,84,0.8)', 0.65);
+    }
+
+    if (!wasGrounded && rider.airtime > 0.36) {
+      const slope = Math.atan2(frontGround - backGround, frontX - backX);
+      const landingPrecision = Math.abs(rider.angle - slope);
+      if (landingPrecision < 0.16) {
+        const landingBonus = Math.floor(rider.airtime * 260);
+        rider.vx = Math.min(1550, rider.vx + 120);
+        score += landingBonus;
+        spawnDust(rider.x - world.offsetX, rider.y + 8, 'rgba(129,255,202,0.95)', 1.2);
+      }
     }
   }
 
@@ -179,18 +194,19 @@ function update(dt) {
 
   score += Math.floor((rider.vx * dt) / 16);
 
-  for (const obstacle of world.obstacles) {
-    const ox = obstacle.x;
-    const oy = getGroundAt(ox);
-    const hitX = Math.abs(rider.x - ox) < obstacle.width * 0.65;
-    const hitY = rider.y + 15 > oy - obstacle.height;
-    if (hitX && hitY && rider.vx > 130) {
-      crash('Slammed into an obstacle.');
-      break;
+  for (const ring of world.rings) {
+    if (ring.claimed) continue;
+    const hitX = Math.abs(rider.x - ring.x) < ring.r + 14;
+    const hitY = Math.abs(rider.y - ring.y) < ring.r + 20;
+    if (hitX && hitY) {
+      ring.claimed = true;
+      score += 180;
+      rider.vx = Math.min(1600, rider.vx + 70);
+      spawnDust(ring.x - world.offsetX, ring.y, `hsla(${ring.hue},95%,70%,0.95)`, 1.1);
     }
   }
 
-  if (Math.abs(rider.angle) > 1.65) {
+  if (Math.abs(rider.angle) > 1.85) {
     crash('Bad landing angle.');
   }
 
@@ -284,18 +300,27 @@ function drawTerrain() {
   }
   ctx.stroke();
 
-  for (const obstacle of world.obstacles) {
-    const x = obstacle.x - world.offsetX;
-    const ground = getGroundAt(obstacle.x);
-    const y = ground - obstacle.height;
-    const obsGrad = ctx.createLinearGradient(x, y, x, y + obstacle.height);
-    obsGrad.addColorStop(0, `hsla(${obstacle.glow},95%,70%,1)`);
-    obsGrad.addColorStop(1, 'rgba(36,19,14,1)');
-    ctx.fillStyle = obsGrad;
-    ctx.fillRect(x - obstacle.width / 2, y, obstacle.width, obstacle.height);
-    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-    ctx.strokeRect(x - obstacle.width / 2, y, obstacle.width, obstacle.height);
+  for (const ring of world.rings) {
+    if (ring.claimed) continue;
+    const x = ring.x - world.offsetX;
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = `hsla(${ring.hue},95%,70%,0.95)`;
+    ctx.shadowColor = `hsla(${ring.hue},95%,65%,0.85)`;
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(x, ring.y, ring.r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
   }
+}
+
+function jump() {
+  if (!running || !rider.grounded || !rider.canJump) return;
+  rider.vy = -760;
+  rider.av += 0.5;
+  rider.grounded = false;
+  rider.canJump = false;
+  spawnDust(rider.x - world.offsetX - 22, rider.y + 12, 'rgba(166,224,255,0.9)', 1.25);
 }
 
 function drawBike() {
@@ -391,6 +416,9 @@ startBtn.addEventListener('click', () => {
 
 window.addEventListener('keydown', (e) => {
   keys.add(e.code);
+  if (e.code === 'Space' && running) {
+    jump();
+  }
   if (e.code === 'Space' && !running) {
     overlay.classList.add('hidden');
     resetRide();
@@ -400,6 +428,9 @@ window.addEventListener('keydown', (e) => {
 
 window.addEventListener('keyup', (e) => {
   keys.delete(e.code);
+  if (e.code === 'Space') {
+    rider.canJump = true;
+  }
 });
 
 resetRide();
