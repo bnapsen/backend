@@ -153,9 +153,13 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.08;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
 
         const scene = new THREE.Scene();
-        scene.fog = new THREE.Fog(0x080c18, 22, 72);
+        scene.background = new THREE.Color(0x04070f);
+        scene.fog = new THREE.Fog(0x0a1021, 24, 82);
 
         const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 300);
 
@@ -167,6 +171,32 @@
         moon.castShadow = true;
         moon.shadow.mapSize.set(2048, 2048);
         scene.add(moon);
+
+        const rim = new THREE.DirectionalLight(0x9f7dff, 0.35);
+        rim.position.set(-16, 9, -12);
+        scene.add(rim);
+
+        const moonOrb = new THREE.Mesh(
+            new THREE.SphereGeometry(3.2, 20, 20),
+            new THREE.MeshBasicMaterial({ color: 0xc4dcff })
+        );
+        moonOrb.position.set(-48, 50, -72);
+        scene.add(moonOrb);
+
+        const starsGeo = new THREE.BufferGeometry();
+        const starsCount = 900;
+        const starPositions = new Float32Array(starsCount * 3);
+        for (let i = 0; i < starsCount; i += 1) {
+            starPositions[i * 3] = (Math.random() - 0.5) * 280;
+            starPositions[i * 3 + 1] = 35 + Math.random() * 120;
+            starPositions[i * 3 + 2] = (Math.random() - 0.5) * 280;
+        }
+        starsGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+        const stars = new THREE.Points(
+            starsGeo,
+            new THREE.PointsMaterial({ color: 0xc6daff, size: 0.55, sizeAttenuation: true, transparent: true, opacity: 0.9 })
+        );
+        scene.add(stars);
 
         const arena = new THREE.Mesh(
             new THREE.PlaneGeometry(180, 180),
@@ -224,6 +254,11 @@
         const keys = new Set();
         const zombies = [];
         const bullets = [];
+        const hitEffects = [];
+
+        const muzzleFlash = new THREE.PointLight(0x8fefff, 0, 10, 2.2);
+        scene.add(muzzleFlash);
+        let muzzleTime = 0;
 
         function createHumanoidZombie() {
             const group = new THREE.Group();
@@ -382,6 +417,8 @@
                     hp: 34 + wave * 6,
                     speed: 2 + wave * 0.18 + Math.random() * 0.65,
                     attackCd: Math.random() * 0.8,
+                    hitFlash: 0,
+                    strideOffset: Math.random() * Math.PI * 2,
                 });
             }
             updateHud();
@@ -408,19 +445,37 @@
             player.fireCooldown = weapon.fireRate;
             sfx.shoot(player.weaponKey);
 
-            const origin = player.pos.clone();
+            const origin = player.pos.clone().add(new THREE.Vector3(0, 1.45, 0));
+            const baseDir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ')).normalize();
+
+            let aimTarget = null;
+            let nearest = Infinity;
+            for (const zombie of zombies) {
+                const targetPos = zombie.mesh.position.clone().add(new THREE.Vector3(0, 1.35, 0));
+                const toZombie = targetPos.clone().sub(origin);
+                const ahead = toZombie.dot(baseDir);
+                if (ahead < 0.8) continue;
+                const perpendicular = toZombie.clone().sub(baseDir.clone().multiplyScalar(ahead)).length();
+                if (perpendicular < 1.25 && ahead < nearest) {
+                    nearest = ahead;
+                    aimTarget = targetPos;
+                }
+            }
+
+            muzzleFlash.position.copy(origin).addScaledVector(baseDir, 0.38);
+            muzzleFlash.intensity = 2 + Math.random() * 0.8;
+            muzzleTime = 0.045;
 
             for (let p = 0; p < weapon.pellets; p += 1) {
-                const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(
-                    player.pitch + (Math.random() - 0.5) * weapon.spread,
-                    player.yaw + (Math.random() - 0.5) * weapon.spread,
-                    0,
-                    'YXZ'
-                ));
+                const spreadX = (Math.random() - 0.5) * weapon.spread;
+                const spreadY = (Math.random() - 0.5) * weapon.spread;
+                const dir = aimTarget
+                    ? aimTarget.clone().sub(origin).normalize().applyEuler(new THREE.Euler(spreadX * 0.6, spreadY * 0.6, 0, 'YXZ')).normalize()
+                    : baseDir.clone().applyEuler(new THREE.Euler(spreadX, spreadY, 0, 'YXZ')).normalize();
 
                 const tracer = new THREE.Mesh(
-                    new THREE.SphereGeometry(0.09, 6, 6),
-                    new THREE.MeshBasicMaterial({ color: weapon.color })
+                    new THREE.SphereGeometry(0.075, 6, 6),
+                    new THREE.MeshStandardMaterial({ color: weapon.color, emissive: weapon.color, emissiveIntensity: 1.1, metalness: 0.08, roughness: 0.3 })
                 );
                 tracer.position.copy(origin);
                 scene.add(tracer);
@@ -451,6 +506,10 @@
             zombies.length = 0;
             for (const b of bullets) scene.remove(b.mesh);
             bullets.length = 0;
+            for (const fx of hitEffects) scene.remove(fx.mesh);
+            hitEffects.length = 0;
+            muzzleFlash.intensity = 0;
+            muzzleTime = 0;
 
             player.pos.set(0, 1.7, 0);
             player.health = 100;
@@ -462,6 +521,17 @@
             alive = true;
             spawnWave();
             updateHud();
+        }
+
+        function spawnHitEffect(position, tint = 0x7dff9c) {
+            const mesh = new THREE.Mesh(
+                new THREE.SphereGeometry(0.22, 10, 10),
+                new THREE.MeshStandardMaterial({ color: tint, emissive: tint, emissiveIntensity: 1.4, transparent: true, opacity: 0.95, roughness: 0.28 })
+            );
+            mesh.position.copy(position);
+            mesh.scale.setScalar(0.35);
+            scene.add(mesh);
+            hitEffects.push({ mesh, life: 0.2, maxLife: 0.2 });
         }
 
         startBtn.addEventListener('click', () => {
@@ -573,10 +643,13 @@
 
                     for (let z = zombies.length - 1; z >= 0; z -= 1) {
                         const zombie = zombies[z];
-                        const dist = zombie.mesh.position.distanceTo(b.pos);
-                        if (dist < 0.9) {
+                        const targetPoint = zombie.mesh.position.clone().add(new THREE.Vector3(0, 1.35, 0));
+                        const dist = targetPoint.distanceTo(b.pos);
+                        if (dist < 1.05) {
                             zombie.hp -= b.damage;
+                            zombie.hitFlash = 0.12;
                             zombie.mesh.position.addScaledVector(b.dir, b.knockback);
+                            spawnHitEffect(b.pos, zombie.hp <= 0 ? 0xff8ca5 : 0x86ff9d);
                             scene.remove(b.mesh);
                             bullets.splice(i, 1);
                             if (zombie.hp <= 0) {
@@ -595,10 +668,19 @@
                 for (const zombie of zombies) {
                     const toPlayer = player.pos.clone().sub(zombie.mesh.position);
                     const dist = toPlayer.length();
+                    const walkCycle = Math.sin(performance.now() * 0.0065 + zombie.strideOffset);
                     if (dist > 0.1) {
                         zombie.mesh.position.addScaledVector(toPlayer.normalize(), zombie.speed * dt);
                     }
                     zombie.mesh.lookAt(player.pos.x, zombie.mesh.position.y, player.pos.z);
+                    zombie.mesh.position.y = Math.max(0, walkCycle * 0.08);
+
+                    if (zombie.hitFlash > 0) {
+                        zombie.hitFlash -= dt;
+                        zombie.mesh.scale.setScalar(1.1);
+                    } else {
+                        zombie.mesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.22);
+                    }
 
                     zombie.attackCd -= dt;
                     if (dist < 1.5 && zombie.attackCd <= 0) {
@@ -606,6 +688,26 @@
                         zombie.attackCd = 0.72;
                         sfx.damage();
                     }
+                }
+
+                for (let h = hitEffects.length - 1; h >= 0; h -= 1) {
+                    const fx = hitEffects[h];
+                    fx.life -= dt;
+                    const progress = 1 - fx.life / fx.maxLife;
+                    fx.mesh.scale.setScalar(0.35 + progress * 1.25);
+                    fx.mesh.material.opacity = Math.max(0, 0.95 - progress);
+                    fx.mesh.position.y += dt * 0.7;
+                    if (fx.life <= 0) {
+                        scene.remove(fx.mesh);
+                        hitEffects.splice(h, 1);
+                    }
+                }
+
+                if (muzzleTime > 0) {
+                    muzzleTime -= dt;
+                    muzzleFlash.intensity = Math.max(0, muzzleFlash.intensity * 0.6);
+                } else {
+                    muzzleFlash.intensity = 0;
                 }
 
                 if (zombies.length === 0) {
