@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-labelledby="title desc">
+  <title id="title">Zombie Siege 3D cover</title>
+  <desc id="desc">Neon city street with glowing machine gun fire and zombie silhouettes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#080c1f"/>
+      <stop offset="55%" stop-color="#191338"/>
+      <stop offset="100%" stop-color="#2e0f25"/>
+    </linearGradient>
+    <linearGradient id="neon" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#52f2ff"/>
+      <stop offset="100%" stop-color="#f557ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#bg)"/>
+  <g opacity="0.35">
+    <rect x="80" y="120" width="90" height="280" fill="#2b335f"/>
+    <rect x="190" y="80" width="110" height="320" fill="#21284d"/>
+    <rect x="320" y="100" width="80" height="300" fill="#2f2f62"/>
+    <rect x="430" y="60" width="130" height="340" fill="#24204c"/>
+    <rect x="590" y="130" width="120" height="270" fill="#302049"/>
+  </g>
+  <rect x="0" y="400" width="800" height="200" fill="#090e1f"/>
+  <ellipse cx="410" cy="430" rx="290" ry="36" fill="#41f9ff" opacity="0.2"/>
+  <g transform="translate(100 255)">
+    <path d="M0 155 L70 80 L110 155 Z" fill="#1cf07b" opacity="0.7"/>
+    <rect x="35" y="78" width="36" height="80" fill="#5fcf7f"/>
+    <circle cx="53" cy="55" r="25" fill="#78ffa0"/>
+    <circle cx="45" cy="49" r="4" fill="#00161f"/>
+    <circle cx="61" cy="49" r="4" fill="#00161f"/>
+  </g>
+  <g transform="translate(620 265)">
+    <path d="M0 145 L60 75 L100 145 Z" fill="#1cf07b" opacity="0.7"/>
+    <rect x="28" y="73" width="36" height="74" fill="#5fcf7f"/>
+    <circle cx="46" cy="52" r="24" fill="#78ffa0"/>
+    <circle cx="38" cy="48" r="4" fill="#00161f"/>
+    <circle cx="54" cy="48" r="4" fill="#00161f"/>
+  </g>
+  <g transform="translate(335 245)">
+    <rect x="120" y="120" width="190" height="18" rx="8" fill="#22283f"/>
+    <rect x="245" y="112" width="36" height="26" rx="6" fill="#2d344f"/>
+    <rect x="108" y="118" width="24" height="24" rx="5" fill="#1f2438"/>
+    <rect x="250" y="98" width="8" height="14" fill="#565f87"/>
+    <circle cx="310" cy="129" r="9" fill="#ffa857" opacity="0.85"/>
+    <circle cx="333" cy="129" r="6" fill="#ffe87a" opacity="0.85"/>
+  </g>
+  <text x="400" y="118" text-anchor="middle" fill="url(#neon)" font-size="66" font-family="Inter, Arial, sans-serif" font-weight="800" letter-spacing="3">
+    ZOMBIE SIEGE 3D
+  </text>
+  <text x="400" y="160" text-anchor="middle" fill="#c9d1ff" font-size="24" font-family="Inter, Arial, sans-serif" opacity="0.92">
+    Endless waves • Upgrading machine gun • Neon survival
+  </text>
+</svg>
