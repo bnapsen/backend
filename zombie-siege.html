@@ -284,6 +284,91 @@
 
         const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
+        const sfx = {
+            ctx: null,
+            master: null,
+            unlocked: false,
+            init() {
+                if (this.ctx) return;
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) return;
+                this.ctx = new AC();
+                this.master = this.ctx.createGain();
+                this.master.gain.value = 0.12;
+                this.master.connect(this.ctx.destination);
+            },
+            unlock() {
+                this.init();
+                if (!this.ctx) return;
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+                this.unlocked = true;
+            },
+            tone(freq, duration = 0.12, type = 'square', volume = 0.2, slide = 1) {
+                if (!this.unlocked || !this.ctx) return;
+                const t0 = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, t0);
+                osc.frequency.exponentialRampToValueAtTime(Math.max(30, freq * slide), t0 + duration);
+                gain.gain.setValueAtTime(0.0001, t0);
+                gain.gain.exponentialRampToValueAtTime(volume, t0 + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+                osc.connect(gain);
+                gain.connect(this.master);
+                osc.start(t0);
+                osc.stop(t0 + duration + 0.02);
+            },
+            noise(duration = 0.08, volume = 0.12, highpass = 900) {
+                if (!this.unlocked || !this.ctx) return;
+                const len = Math.max(1, Math.floor(this.ctx.sampleRate * duration));
+                const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < len; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+                const src = this.ctx.createBufferSource();
+                const hp = this.ctx.createBiquadFilter();
+                hp.type = 'highpass';
+                hp.frequency.value = highpass;
+                const gain = this.ctx.createGain();
+                const t0 = this.ctx.currentTime;
+                gain.gain.setValueAtTime(volume, t0);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+                src.buffer = buffer;
+                src.connect(hp);
+                hp.connect(gain);
+                gain.connect(this.master);
+                src.start(t0);
+            },
+            shoot(weapon) {
+                const presets = {
+                    rifle: [540, 0.08, 'square', 0.1, 0.48],
+                    smg: [760, 0.05, 'sawtooth', 0.08, 0.55],
+                    shotgun: [220, 0.11, 'triangle', 0.16, 0.44],
+                };
+                const [freq, duration, type, volume, slide] = presets[weapon] || presets.rifle;
+                this.tone(freq + Math.random() * 30, duration, type, volume, slide);
+                if (weapon === 'shotgun') this.noise(0.09, 0.08, 640);
+            },
+            hit() {
+                this.tone(170 + Math.random() * 40, 0.06, 'triangle', 0.08, 0.72);
+            },
+            kill() {
+                this.tone(290, 0.1, 'sine', 0.12, 1.45);
+            },
+            damage() {
+                this.tone(120, 0.1, 'sawtooth', 0.11, 0.6);
+                this.noise(0.04, 0.05, 1200);
+            },
+            wave() {
+                this.tone(360, 0.1, 'triangle', 0.11, 1.22);
+                this.tone(520, 0.13, 'triangle', 0.09, 1.18);
+            },
+            gameOver() {
+                this.tone(210, 0.22, 'sawtooth', 0.12, 0.64);
+                this.tone(130, 0.26, 'triangle', 0.1, 0.52);
+            }
+        };
+
         function spawnWave() {
             waveRemaining = 5 + wave * 3;
             for (let i = 0; i < waveRemaining; i += 1) {
@@ -321,6 +406,7 @@
             if (!alive || player.fireCooldown > 0) return;
             const weapon = getCurrentWeapon();
             player.fireCooldown = weapon.fireRate;
+            sfx.shoot(player.weaponKey);
 
             const origin = player.pos.clone();
 
@@ -379,6 +465,7 @@
         }
 
         startBtn.addEventListener('click', () => {
+            sfx.unlock();
             overlay.style.display = 'none';
             canvas.requestPointerLock();
             resetGame();
@@ -406,13 +493,17 @@
             if (e.code === 'Digit3') setWeapon('shotgun');
         });
         window.addEventListener('mousedown', (e) => {
-            if (e.button === 0) player.firing = true;
+            if (e.button === 0) {
+                sfx.unlock();
+                player.firing = true;
+            }
         });
         window.addEventListener('mouseup', (e) => {
             if (e.button === 0) player.firing = false;
         });
 
         function endGame() {
+            sfx.gameOver();
             alive = false;
             overlay.style.display = 'grid';
             startBtn.textContent = 'Play Again';
@@ -432,6 +523,7 @@
                     <p style="margin-top: 1rem;"><a href="index.html">← Back to Nova Arcade</a></p>
                 `;
                 document.getElementById('startBtn').addEventListener('click', () => {
+                    sfx.unlock();
                     overlay.style.display = 'none';
                     canvas.requestPointerLock();
                     resetGame();
@@ -491,6 +583,9 @@
                                 scene.remove(zombie.mesh);
                                 zombies.splice(z, 1);
                                 player.kills += 1;
+                                sfx.kill();
+                            } else {
+                                sfx.hit();
                             }
                             break;
                         }
@@ -509,6 +604,7 @@
                     if (dist < 1.5 && zombie.attackCd <= 0) {
                         player.health -= 7 + wave * 0.25;
                         zombie.attackCd = 0.72;
+                        sfx.damage();
                     }
                 }
 
@@ -516,6 +612,7 @@
                     wave += 1;
                     upgradeGun();
                     spawnWave();
+                    sfx.wave();
                 }
 
                 if (player.health <= 0) endGame();
