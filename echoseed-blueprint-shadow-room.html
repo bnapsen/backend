@@ -52,6 +52,8 @@
       <div class="badge" id="modeBadge">Mode: Lattice Drone</div>
       <div class="badge" id="fanBadge">Fans: 1 2 3</div>
       <div class="badge" id="phraseBadge">Rune phrase: --</div>
+      <button id="gfxBtn">Graphics: High</button>
+      <div class="badge" id="gfxBadge">Quality: high</div>
     </div>
     <div style="margin-top:12px" class="mini">The room invents little Veyan words out of the tiles nearest the strongest shadow bands. Hum, clap, or play notes and watch the words mutate as the shutters rewrite the walls.</div>
     <div id="words"></div>
@@ -120,6 +122,7 @@ const ui = {
   ambVal: document.getElementById('ambVal'), brightVal: document.getElementById('brightVal'), airVal: document.getElementById('airVal'), openVal: document.getElementById('openVal'), roughVal: document.getElementById('roughVal'), resVal: document.getElementById('resVal'),
   ambBar: document.getElementById('ambBar'), brightBar: document.getElementById('brightBar'), airBar: document.getElementById('airBar'), openBar: document.getElementById('openBar'), roughBar: document.getElementById('roughBar'), resBar: document.getElementById('resBar'),
   modeBadge: document.getElementById('modeBadge'), fanBadge: document.getElementById('fanBadge'), phraseBadge: document.getElementById('phraseBadge'), shadowBadge: document.getElementById('shadowBadge'),
+  gfxBtn: document.getElementById('gfxBtn'), gfxBadge: document.getElementById('gfxBadge'),
   words: document.getElementById('words'), noteStrip: document.getElementById('noteStrip'), interact: document.getElementById('interact')
 };
 
@@ -141,6 +144,32 @@ let octave = 3;
 const keyMap = ['z','x','c','v','b','n','m',','];
 let currentWord = 'dormant';
 let opennessTimer = 0, phraseTimer = 0;
+const GRAPHICS_PRESETS = [
+  {name:'low', pixelRatio:1.0, shadowMapSize:512, dustCount:220, ribbonCount:24},
+  {name:'medium', pixelRatio:1.35, shadowMapSize:768, dustCount:380, ribbonCount:42},
+  {name:'high', pixelRatio:2.0, shadowMapSize:1024, dustCount:560, ribbonCount:64}
+];
+let graphicsModeIndex = 2;
+let dustCount = 0;
+
+const objectiveState = {
+  step1:false,
+  step2:false,
+  step3:false,
+  final:false,
+  noteStreakStart:0,
+  noteHits:new Set()
+};
+const eventFX = {
+  runeBoost:0,
+  gyreBoost:0,
+  coreHaloBoost:0,
+  ribbonBurst:0,
+  cinematicPulse:0,
+  lightBurst:0,
+  shutterKick:0,
+  cameraKick:0
+};
 
 const tempVec = new THREE.Vector3();
 const raycaster = new THREE.Raycaster();
@@ -160,6 +189,51 @@ const sensorState = {
 function setStatus(msg, warn=false){ ui.status.textContent = msg; ui.status.style.color = warn ? 'var(--warn)' : 'var(--good)'; }
 function setBar(el, v){ el.style.width = `${Math.round(THREE.MathUtils.clamp(v,0,1)*100)}%`; }
 function pct(v){ return `${Math.round(THREE.MathUtils.clamp(v,0,1)*100)}%`; }
+
+function currentGraphicsPreset(){ return GRAPHICS_PRESETS[graphicsModeIndex]; }
+
+function refreshGraphicsUI(){
+  const preset = currentGraphicsPreset();
+  ui.gfxBtn.textContent = `Graphics: ${preset.name[0].toUpperCase()}${preset.name.slice(1)}`;
+  ui.gfxBadge.textContent = `Quality: ${preset.name}`;
+}
+
+function configureShadowMaps(size){
+  spotlights.forEach(light=>{
+    light.shadow.mapSize.set(size, size);
+    if(light.shadow.map) light.shadow.map.dispose();
+  });
+}
+
+function rebuildDust(count){
+  dustCount = count;
+  dustMeta.length = 0;
+  const nextPos = new Float32Array(count * 3);
+  for(let i=0;i<count;i++){
+    const r = 1.4 + Math.random()*5.2;
+    const a = Math.random()*Math.PI*2;
+    const y = 0.6 + Math.random()*5.6;
+    nextPos[i*3] = Math.cos(a)*r; nextPos[i*3+1] = y; nextPos[i*3+2] = Math.sin(a)*r;
+    dustMeta.push({r,a,y,speed:0.5+Math.random()*1.4});
+  }
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(nextPos, 3));
+  dustPos = nextPos;
+}
+
+function setGraphicsMode(index){
+  graphicsModeIndex = (index + GRAPHICS_PRESETS.length) % GRAPHICS_PRESETS.length;
+  const preset = currentGraphicsPreset();
+  renderer.setPixelRatio(Math.min(devicePixelRatio, preset.pixelRatio));
+  configureShadowMaps(preset.shadowMapSize);
+  rebuildDust(preset.dustCount);
+  ribbonConfig.maxRibbons = preset.ribbonCount;
+  refreshGraphicsUI();
+}
+
+function cycleGraphicsMode(){
+  setGraphicsMode(graphicsModeIndex + 1);
+  setStatus(`Graphics mode set to ${currentGraphicsPreset().name}.`);
+}
 
 scene.add(new THREE.AmbientLight(0x33405a, 0.08));
 const floorGlow = new THREE.PointLight(0x3aa0ff, 1.2, 18, 2);
@@ -337,19 +411,38 @@ function makeFan(x,z,phase){
 makeFan(-5.8,-5.4,0.0); makeFan(5.8,-4.8,1.7); makeFan(0,5.7,3.2);
 
 const dustGeo = new THREE.BufferGeometry();
-const dustCount = 560;
-const dustPos = new Float32Array(dustCount * 3);
+let dustPos = new Float32Array(0);
 const dustMeta = [];
-for(let i=0;i<dustCount;i++){
-  const r = 1.4 + Math.random()*5.2;
-  const a = Math.random()*Math.PI*2;
-  const y = 0.6 + Math.random()*5.6;
-  dustPos[i*3] = Math.cos(a)*r; dustPos[i*3+1] = y; dustPos[i*3+2] = Math.sin(a)*r;
-  dustMeta.push({r,a,y,speed:0.5+Math.random()*1.4});
+const ribbonConfig = {maxRibbons: currentGraphicsPreset().ribbonCount};
+const ribbonTexture = makeRibbonTexture();
+const ribbonMaterial = new THREE.SpriteMaterial({map:ribbonTexture, color:0x96e6ff, transparent:true, opacity:0.0, blending:THREE.AdditiveBlending, depthWrite:false});
+const ribbonPool = [];
+for(let i=0;i<GRAPHICS_PRESETS[GRAPHICS_PRESETS.length-1].ribbonCount;i++){
+  const s = new THREE.Sprite(ribbonMaterial.clone());
+  s.scale.set(0.3,0.7,1);
+  s.visible = false;
+  scene.add(s);
+  ribbonPool.push({sprite:s, active:false, vel:new THREE.Vector3(), life:0, maxLife:1});
 }
-dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+
+function makeRibbonTexture(){
+  const c = document.createElement('canvas'); c.width = 64; c.height = 256;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0,0,0,256);
+  grad.addColorStop(0, 'rgba(255,255,255,0)');
+  grad.addColorStop(0.25, 'rgba(180,240,255,0.4)');
+  grad.addColorStop(0.5, 'rgba(140,220,255,0.95)');
+  grad.addColorStop(0.75, 'rgba(180,240,255,0.4)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0,0,64,256);
+  return new THREE.CanvasTexture(c);
+}
+
+rebuildDust(currentGraphicsPreset().dustCount);
 const dustMat = new THREE.PointsMaterial({color:0xa7ddff, size:0.045, transparent:true, opacity:0.22, depthWrite:false});
 const dust = new THREE.Points(dustGeo, dustMat); scene.add(dust);
+setGraphicsMode(graphicsModeIndex);
 
 let audioCtx, masterGain, reverbSend, noteAnalyser, micAnalyser, micSource, micStream;
 const outputFreq = new Uint8Array(128);
@@ -422,6 +515,7 @@ function triggerNote(key){
   oscA.start(now); oscB.start(now); sub.start(now); lfo.start(now);
   activeVoices.set(key, {oscA,oscB,sub,gain,lfo});
   highlightNotes();
+  evaluateObjectivesFromNotes();
 }
 
 function releaseNote(key){
@@ -459,6 +553,118 @@ function populateNoteStrip(){
 }
 populateNoteStrip();
 
+function activateStep1(){
+  eventFX.runeBoost = Math.max(eventFX.runeBoost, 1.0);
+  setStatus('Objective 1 complete: rune lattice brightened.');
+}
+
+function activateStep2(){
+  eventFX.gyreBoost = Math.max(eventFX.gyreBoost, 1.0);
+  eventFX.coreHaloBoost = Math.max(eventFX.coreHaloBoost, 1.0);
+  setStatus('Objective 2 complete: gyre rings surge and halo flares.');
+}
+
+function spawnRibbonBurst(){
+  const preset = currentGraphicsPreset();
+  const count = Math.min(preset.ribbonCount, ribbonPool.length);
+  const center = echoseed.getWorldPosition(new THREE.Vector3());
+  let spawned = 0;
+  for(let i=0;i<ribbonPool.length && spawned<count;i++){
+    const slot = ribbonPool[i];
+    if(slot.active) continue;
+    const a = (spawned/count) * Math.PI * 2;
+    const radius = 2.4 + Math.random()*2.3;
+    slot.active = true;
+    slot.life = 1.5 + Math.random()*0.8;
+    slot.maxLife = slot.life;
+    slot.sprite.visible = true;
+    slot.sprite.position.set(center.x + Math.cos(a)*radius, center.y - 0.6 + Math.random()*2.4, center.z + Math.sin(a)*radius);
+    slot.vel.copy(center).sub(slot.sprite.position).normalize().multiplyScalar(2.8 + Math.random()*1.8);
+    slot.sprite.material.opacity = 0.0;
+    spawned++;
+  }
+}
+
+function activateStep3(){
+  eventFX.ribbonBurst = Math.max(eventFX.ribbonBurst, 1.0);
+  spawnRibbonBurst();
+  setStatus('Objective 3 complete: particle ribbons converge on core.');
+}
+
+function activateFinalCompletion(){
+  eventFX.cinematicPulse = Math.max(eventFX.cinematicPulse, 1.0);
+  eventFX.lightBurst = Math.max(eventFX.lightBurst, 1.0);
+  eventFX.shutterKick = Math.max(eventFX.shutterKick, 1.0);
+  eventFX.cameraKick = Math.max(eventFX.cameraKick, 1.0);
+  pulse = Math.min(1.6, pulse + 0.9);
+  setStatus('Final objective complete: cinematic pulse synchronized.');
+}
+
+function completeObjective(step){
+  if(objectiveState[step]) return;
+  objectiveState[step] = true;
+  if(step === 'step1') activateStep1();
+  if(step === 'step2') activateStep2();
+  if(step === 'step3') activateStep3();
+  if(objectiveState.step1 && objectiveState.step2 && objectiveState.step3 && !objectiveState.final){
+    objectiveState.final = true;
+    activateFinalCompletion();
+  }
+}
+
+function evaluateObjectivesFromPhrase(){
+  if(currentWord && currentWord !== 'dormant') completeObjective('step1');
+}
+
+function evaluateObjectivesFromAirflow(){
+  const activeFans = fanPylons.filter(f=>f.active).length;
+  if(activeFans >= 3) completeObjective('step2');
+}
+
+function evaluateObjectivesFromNotes(){
+  const now = performance.now();
+  if(!objectiveState.noteStreakStart || now - objectiveState.noteStreakStart > 8000){
+    objectiveState.noteStreakStart = now;
+    objectiveState.noteHits.clear();
+  }
+  activeVoices.forEach((_, key)=>objectiveState.noteHits.add(key));
+  if(objectiveState.noteHits.size >= 6) completeObjective('step3');
+}
+
+function updateRibbonBursts(dt){
+  const corePos = core.getWorldPosition(new THREE.Vector3());
+  ribbonPool.forEach(slot=>{
+    if(!slot.active) return;
+    slot.life -= dt;
+    if(slot.life <= 0){
+      slot.active = false;
+      slot.sprite.visible = false;
+      slot.sprite.material.opacity = 0;
+      return;
+    }
+    slot.sprite.position.addScaledVector(slot.vel, dt);
+    slot.vel.lerp(corePos.clone().sub(slot.sprite.position).normalize().multiplyScalar(3.4), 0.06);
+    slot.sprite.lookAt(camera.position);
+    const lifeRatio = slot.life / slot.maxLife;
+    slot.sprite.material.opacity = Math.min(0.55, (1-lifeRatio) * 0.7) * (0.4 + eventFX.ribbonBurst*0.6);
+    slot.sprite.scale.setScalar(0.3 + (1-lifeRatio)*0.9);
+    if(slot.sprite.position.distanceTo(corePos) < 0.25){
+      slot.life = 0;
+    }
+  });
+}
+
+function updateEventFX(dt){
+  eventFX.runeBoost = Math.max(0, eventFX.runeBoost - dt*0.22);
+  eventFX.gyreBoost = Math.max(0, eventFX.gyreBoost - dt*0.3);
+  eventFX.coreHaloBoost = Math.max(0, eventFX.coreHaloBoost - dt*0.35);
+  eventFX.ribbonBurst = Math.max(0, eventFX.ribbonBurst - dt*0.45);
+  eventFX.cinematicPulse = Math.max(0, eventFX.cinematicPulse - dt*0.9);
+  eventFX.lightBurst = Math.max(0, eventFX.lightBurst - dt*1.2);
+  eventFX.shutterKick = Math.max(0, eventFX.shutterKick - dt*1.0);
+  eventFX.cameraKick = Math.max(0, eventFX.cameraKick - dt*1.0);
+}
+
 function recomputeShadowPhrase(){
   const score = [];
   for(const t of tileMeta){
@@ -480,6 +686,7 @@ function recomputeShadowPhrase(){
   currentWord = phrase || 'dormant';
   ui.phraseBadge.textContent = `Rune phrase: ${currentWord}`;
   ui.shadowBadge.textContent = `Shadow phrase: ${currentWord.toLowerCase()}`;
+  evaluateObjectivesFromPhrase();
   ui.words.innerHTML = '';
   top.forEach((item, idx)=>{
     const chip = document.createElement('div'); chip.className = 'chip' + (idx === 0 ? ' active' : '');
@@ -561,11 +768,12 @@ function updateEchoSeed(dt, t){
   echoseed.rotation.y += dt * (0.24 + sensorState.resonance*0.5);
   innerSkin.rotation.x += dt * (0.14 + sensorState.ambientBrightness*0.2);
   innerSkin.rotation.z += dt * (0.2 + sensorState.noteBrightness*0.18);
-  gyreA.rotation.y += dt * (0.5 + sensorState.resonance*0.55);
-  gyreB.rotation.x += dt * (0.44 + sensorState.brightness*0.48);
-  shimmerHalo.scale.setScalar(1 + sensorState.resonance*0.4 + pulse*0.14);
-  shimmerHalo.material.opacity = 0.05 + sensorState.brightness*0.08 + pulse*0.04;
-  core.material.emissiveIntensity = 1.8 + sensorState.brightness*4.2 + sensorState.resonance*2.8 + pulse*1.1;
+  const gyreSurge = 1 + eventFX.gyreBoost*1.35;
+  gyreA.rotation.y += dt * (0.5 + sensorState.resonance*0.55) * gyreSurge;
+  gyreB.rotation.x += dt * (0.44 + sensorState.brightness*0.48) * gyreSurge;
+  shimmerHalo.scale.setScalar(1 + sensorState.resonance*0.4 + pulse*0.14 + eventFX.coreHaloBoost*0.45);
+  shimmerHalo.material.opacity = 0.05 + sensorState.brightness*0.08 + pulse*0.04 + eventFX.coreHaloBoost*0.16;
+  core.material.emissiveIntensity = 1.8 + sensorState.brightness*4.2 + sensorState.resonance*2.8 + pulse*1.1 + eventFX.lightBurst*3.2;
   shell.material.emissiveIntensity = 0.22 + sensorState.resonance*0.54;
   crown.children.forEach((c, i)=>{
     c.rotation.z = 0.16 + Math.sin(t*1.6 + i)* (0.22 + sensorState.airflow*0.5);
@@ -576,7 +784,7 @@ function updateEchoSeed(dt, t){
     bank.group.rotation.z = Math.sin(t*0.6 + bank.phase) * 0.06;
     bank.vanes.forEach((v, i)=>{
       const local = Math.sin(t*(1.2 + i*0.07) + v.phase);
-      const fold = (sensorState.airflow*0.55 + sensorState.roughness*0.45 + sensorState.resonance*0.55 + pulse*0.2);
+      const fold = (sensorState.airflow*0.55 + sensorState.roughness*0.45 + sensorState.resonance*0.55 + pulse*0.2 + eventFX.shutterKick*0.8);
       const audioTwist = sensorState.ambientBrightness*0.6 + sensorState.noteBrightness*0.5;
       v.pivot.rotation.z = local*0.18 + fold*0.72 + Math.sin(t*2.2 + i + bi)*audioTwist*0.24;
       v.pivot.rotation.x = 0.08 + sensorState.brightness*0.4 + local*0.08;
@@ -588,18 +796,18 @@ function updateEchoSeed(dt, t){
   spotlights.forEach((light, i)=>{
     const hue = 0.52 + sensorState.noteBrightness*0.06 + i*0.02;
     light.color.setHSL(hue, 0.86, 0.7 + sensorState.brightness*0.05);
-    light.intensity = 4.4 + sensorState.brightness*10 + sensorState.resonance*4 + pulse*1.8;
+    light.intensity = 4.4 + sensorState.brightness*10 + sensorState.resonance*4 + pulse*1.8 + eventFX.lightBurst*6.5;
     light.angle = 0.46 + sensorState.roughness*0.16;
     light.penumbra = 0.46 + sensorState.ambientBrightness*0.3;
   });
-  floorGlow.intensity = 0.6 + sensorState.resonance*1.8 + pulse*0.8;
+  floorGlow.intensity = 0.6 + sensorState.resonance*1.8 + pulse*0.8 + eventFX.lightBurst*1.8;
 }
 
 function updateTiles(t){
-  const shadowDrive = 0.16 + sensorState.resonance*0.34 + sensorState.ambientEnergy*0.18;
+  const shadowDrive = 0.16 + sensorState.resonance*0.34 + sensorState.ambientEnergy*0.18 + eventFX.runeBoost*0.3;
   runeMaterials.forEach((mat, i)=>{
     mat.emissiveIntensity = 0.12 + shadowDrive*0.5 + Math.sin(t*0.8 + i)*0.03;
-    mat.emissive.setHSL(0.59 + sensorState.noteBrightness*0.04, 0.55, 0.08 + shadowDrive*0.08);
+    mat.emissive.setHSL(0.59 + sensorState.noteBrightness*0.04 + eventFX.runeBoost*0.03, 0.55, 0.08 + shadowDrive*0.08);
   });
 }
 
@@ -647,6 +855,7 @@ function toggleFan(index){
   const fan = fanPylons[index]; if(!fan) return;
   fan.active = !fan.active;
   setStatus(`Airflow pylon ${index+1} ${fan.active ? 'activated' : 'quieted'}.`);
+  evaluateObjectivesFromAirflow();
 }
 
 function pulseRoom(){ pulse = Math.min(1.2, pulse + 0.55); setStatus('The shutter ring pulses and the shadows sharpen.'); }
@@ -670,6 +879,8 @@ function updateCamera(){
   camera.rotation.order = 'YXZ';
   camera.rotation.y = player.yaw;
   camera.rotation.x = player.pitch;
+  camera.fov = 72 + eventFX.cameraKick*8.5;
+  camera.updateProjectionMatrix();
 }
 
 function setPointerLock(on=true){ if(on) canvas.requestPointerLock?.(); else document.exitPointerLock?.(); }
@@ -687,6 +898,7 @@ async function startRoom(){
   ui.overlay.style.display = 'none';
   pulseRoom();
   recomputeShadowPhrase();
+  evaluateObjectivesFromAirflow();
   testTone();
   setStatus('Room live. If you do not hear the startup tone, click Test Tone and check browser/site audio permissions.', audioCtx?.state !== 'running');
 }
@@ -696,6 +908,7 @@ ui.enterBtn.addEventListener('click', startRoom);
 ui.lockBtn.addEventListener('click', async ()=>{ if(!started) await startRoom(); else await ensureAudio(); setPointerLock(true); });
 ui.micBtn.addEventListener('click', async ()=>{ if(!started) await startRoom(); else await ensureAudio(); await enableMic(); });
 ui.testBtn.addEventListener('click', async ()=>{ if(!started) await startRoom(); else await ensureAudio(); testTone(); setStatus(audioCtx?.state==='running'?'Test tone played.':'Audio is still locked by the browser.', audioCtx?.state!=='running'); });
+ui.gfxBtn.addEventListener('click', ()=>cycleGraphicsMode());
 canvas.addEventListener('pointerdown', async ()=>{ if(started) await ensureAudio(); }, {passive:true});
 window.addEventListener('keydown', async e=>{
   const k = e.key.toLowerCase();
@@ -715,13 +928,14 @@ window.addEventListener('keydown', async e=>{
 });
 window.addEventListener('keyup', e=>{ const k = e.key.toLowerCase(); keys[k] = false; if(keyMap.includes(k)) releaseNote(k); });
 window.addEventListener('blur', ()=>{ Object.keys(keys).forEach(k=>keys[k]=false); [...activeVoices.keys()].forEach(releaseNote); });
-window.addEventListener('resize', ()=>{ renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); });
+window.addEventListener('resize', ()=>{ renderer.setPixelRatio(Math.min(devicePixelRatio, currentGraphicsPreset().pixelRatio)); renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); });
 
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(0.033, clock.getDelta());
   const t = clock.elapsedTime;
   pulse = Math.max(0, pulse - dt*0.42);
+  updateEventFX(dt);
   if(started){
     updatePlayer(dt);
     updateAudioMetrics();
@@ -732,6 +946,7 @@ function animate(){
     updateEchoSeed(dt, t);
     updateTiles(t);
     updateDust(t);
+    updateRibbonBursts(dt);
     if(phraseTimer <= 0){ recomputeShadowPhrase(); phraseTimer = 0.55; }
     updateHUD();
   }
