@@ -26,11 +26,14 @@
     .bar{height:8px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.08);margin-top:6px}.bar>div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2))}.bar.hot>div{background:linear-gradient(90deg,#ffb17d,#ffdd8a)}
     #status{margin-top:8px;min-height:16px;font-size:12px;color:var(--good)}
     #words{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}.chip{padding:8px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);font-size:12px}.chip.active{border-color:rgba(132,212,255,.42);box-shadow:0 0 18px rgba(132,212,255,.14) inset}
+    #objectiveList{margin-top:10px;display:grid;gap:4px;font-size:12px}
     #noteStrip{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin-top:10px}.noteCell{border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 6px;text-align:center;background:rgba(255,255,255,.04);font-size:12px}.noteCell.active{border-color:rgba(132,212,255,.42);box-shadow:0 0 16px rgba(132,212,255,.12) inset}
     #crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;opacity:.86}#crosshair::before,#crosshair::after{content:"";position:absolute;background:rgba(255,255,255,.88)}#crosshair::before{left:8px;top:0;width:2px;height:18px}#crosshair::after{left:0;top:8px;width:18px;height:2px}
     #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(2,5,10,.42),rgba(2,4,8,.84));pointer-events:auto}
     #card{width:min(800px,calc(100vw - 32px));padding:20px}#card ul{margin:10px 0 0 18px;padding:0;color:var(--muted);font-size:14px;line-height:1.4}#card li{margin:6px 0}
     #interact{position:absolute;left:50%;top:calc(50% + 24px);transform:translateX(-50%);padding:8px 10px;border-radius:10px;background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.14);font-size:12px;color:var(--text);display:none}
+    #completionPanel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:20px 24px;min-width:min(420px,calc(100vw - 40px));text-align:center;display:none;pointer-events:none;background:rgba(8,12,22,.92)}
+    #completionPanel h2{margin:0 0 8px}
     @media (max-width:980px){#right{top:auto;bottom:200px}#noteStrip{grid-template-columns:repeat(4,minmax(0,1fr))}.grid{grid-template-columns:1fr}}
   </style>
   <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js"}}</script>
@@ -55,6 +58,7 @@
     </div>
     <div style="margin-top:12px" class="mini">The room invents little Veyan words out of the tiles nearest the strongest shadow bands. Hum, clap, or play notes and watch the words mutate as the shutters rewrite the walls.</div>
     <div id="words"></div>
+    <div id="objectiveList"></div>
   </div>
   <div id="right" class="panel">
     <div class="grid">
@@ -80,6 +84,10 @@
   </div>
   <div id="crosshair"></div>
   <div id="interact"></div>
+  <div id="completionPanel" class="panel">
+    <h2>Level 1 Complete</h2>
+    <div id="missionStats" class="mini"></div>
+  </div>
   <div id="overlay">
     <div id="card" class="panel">
       <h2>Enter the EchoSeed room</h2>
@@ -120,7 +128,8 @@ const ui = {
   ambVal: document.getElementById('ambVal'), brightVal: document.getElementById('brightVal'), airVal: document.getElementById('airVal'), openVal: document.getElementById('openVal'), roughVal: document.getElementById('roughVal'), resVal: document.getElementById('resVal'),
   ambBar: document.getElementById('ambBar'), brightBar: document.getElementById('brightBar'), airBar: document.getElementById('airBar'), openBar: document.getElementById('openBar'), roughBar: document.getElementById('roughBar'), resBar: document.getElementById('resBar'),
   modeBadge: document.getElementById('modeBadge'), fanBadge: document.getElementById('fanBadge'), phraseBadge: document.getElementById('phraseBadge'), shadowBadge: document.getElementById('shadowBadge'),
-  words: document.getElementById('words'), noteStrip: document.getElementById('noteStrip'), interact: document.getElementById('interact')
+  words: document.getElementById('words'), noteStrip: document.getElementById('noteStrip'), interact: document.getElementById('interact'),
+  objectiveList: document.getElementById('objectiveList'), completionPanel: document.getElementById('completionPanel'), missionStats: document.getElementById('missionStats')
 };
 
 const ROOM = {w: 14, h: 8, d: 14, tile: 1};
@@ -140,6 +149,18 @@ const MODES = [
 let octave = 3;
 const keyMap = ['z','x','c','v','b','n','m',','];
 let currentWord = 'dormant';
+const mission = {
+  levelId: 'echoseed_l1',
+  steps: [false, false, false, false],
+  completed: false,
+  startTime: 0,
+  score: 0,
+  energyHold: 0,
+  stabilizePrompted: false,
+  celebrationTimer: 0
+};
+const ENERGY_THRESHOLD = 0.38;
+const ENERGY_HOLD_SECONDS = 3.2;
 let opennessTimer = 0, phraseTimer = 0;
 
 const tempVec = new THREE.Vector3();
@@ -160,6 +181,28 @@ const sensorState = {
 function setStatus(msg, warn=false){ ui.status.textContent = msg; ui.status.style.color = warn ? 'var(--warn)' : 'var(--good)'; }
 function setBar(el, v){ el.style.width = `${Math.round(THREE.MathUtils.clamp(v,0,1)*100)}%`; }
 function pct(v){ return `${Math.round(THREE.MathUtils.clamp(v,0,1)*100)}%`; }
+
+function resetMission(){
+  mission.steps = [false, false, false, false];
+  mission.completed = false;
+  mission.score = 0;
+  mission.energyHold = 0;
+  mission.stabilizePrompted = false;
+  mission.celebrationTimer = 0;
+  mission.startTime = performance.now();
+  ui.completionPanel.style.display = 'none';
+}
+
+function completeMission(){
+  mission.completed = true;
+  mission.celebrationTimer = 4;
+  pulse = 1.2;
+  const elapsed = Math.max(1, (performance.now() - mission.startTime) / 1000);
+  mission.score = Math.round(900 + sensorState.resonance * 500 + sensorState.brightness * 350 + (mission.steps.filter(Boolean).length * 150) - elapsed * 12);
+  ui.missionStats.textContent = `Mission ${mission.levelId} stabilized in ${elapsed.toFixed(1)}s · Score ${mission.score}`;
+  ui.completionPanel.style.display = 'block';
+  setStatus('Level 1 complete. Shadow room stabilized.');
+}
 
 scene.add(new THREE.AmbientLight(0x33405a, 0.08));
 const floorGlow = new THREE.PointLight(0x3aa0ff, 1.2, 18, 2);
@@ -488,6 +531,31 @@ function recomputeShadowPhrase(){
   });
 }
 
+function runeSegmentCount(){
+  if(!currentWord || currentWord === 'dormant') return 0;
+  return currentWord.split('-').filter(Boolean).length;
+}
+
+function updateObjectives(dt){
+  if(mission.completed){
+    mission.celebrationTimer = Math.max(0, mission.celebrationTimer - dt);
+    return;
+  }
+  mission.steps[0] = fanPylons.every((fan)=>fan.active);
+  if(mission.steps[0]){
+    if(sensorState.ambientEnergy >= ENERGY_THRESHOLD) mission.energyHold += dt;
+    else mission.energyHold = Math.max(0, mission.energyHold - dt*0.5);
+    if(mission.energyHold >= ENERGY_HOLD_SECONDS) mission.steps[1] = true;
+  }
+  if(mission.steps[1] && runeSegmentCount() >= 3) mission.steps[2] = true;
+  if(mission.steps[2] && !mission.stabilizePrompted){
+    setStatus('Objective ready: trigger a stabilize pulse with Space.');
+    mission.stabilizePrompted = true;
+  }
+  mission.score = Math.round(mission.steps.filter(Boolean).length * 250 + mission.energyHold * 60 + sensorState.resonance * 180 + sensorState.brightness * 160);
+  if(mission.steps.every(Boolean)) completeMission();
+}
+
 function updateAudioMetrics(){
   if(noteAnalyser){
     noteAnalyser.getByteFrequencyData(outputFreq);
@@ -558,7 +626,8 @@ function updateDerivedState(){
 }
 
 function updateEchoSeed(dt, t){
-  echoseed.rotation.y += dt * (0.24 + sensorState.resonance*0.5);
+  const celebrationBoost = mission.completed ? Math.max(0, mission.celebrationTimer) : 0;
+  echoseed.rotation.y += dt * (0.24 + sensorState.resonance*0.5 + celebrationBoost*0.12);
   innerSkin.rotation.x += dt * (0.14 + sensorState.ambientBrightness*0.2);
   innerSkin.rotation.z += dt * (0.2 + sensorState.noteBrightness*0.18);
   gyreA.rotation.y += dt * (0.5 + sensorState.resonance*0.55);
@@ -592,7 +661,11 @@ function updateEchoSeed(dt, t){
     light.angle = 0.46 + sensorState.roughness*0.16;
     light.penumbra = 0.46 + sensorState.ambientBrightness*0.3;
   });
-  floorGlow.intensity = 0.6 + sensorState.resonance*1.8 + pulse*0.8;
+  floorGlow.intensity = 0.6 + sensorState.resonance*1.8 + pulse*0.8 + celebrationBoost*0.8;
+  if(celebrationBoost > 0){
+    shimmerHalo.material.opacity = Math.max(shimmerHalo.material.opacity, 0.18 + celebrationBoost*0.06);
+    core.material.emissiveIntensity += celebrationBoost*0.7;
+  }
 }
 
 function updateTiles(t){
@@ -632,6 +705,13 @@ function updateHUD(){
   } else {
     ui.interact.style.display = 'none';
   }
+  const objectiveRows = [
+    `${mission.steps[0] ? '✅' : '◻️'} Activate all fan pylons`,
+    `${mission.steps[1] ? '✅' : '◻️'} Hold ambient energy ≥ ${Math.round(ENERGY_THRESHOLD*100)}% for ${ENERGY_HOLD_SECONDS.toFixed(1)}s (${mission.energyHold.toFixed(1)}s)`,
+    `${mission.steps[2] ? '✅' : '◻️'} Form a shadow phrase with 3+ rune segments`,
+    `${mission.steps[3] ? '✅' : '◻️'} Trigger stabilize pulse`
+  ];
+  ui.objectiveList.innerHTML = objectiveRows.map((row)=>`<div>${row}</div>`).join('');
 }
 
 function nearestPylon(){
@@ -644,14 +724,20 @@ function nearestPylon(){
 }
 
 function toggleFan(index){
+  if(mission.completed) return;
   const fan = fanPylons[index]; if(!fan) return;
   fan.active = !fan.active;
   setStatus(`Airflow pylon ${index+1} ${fan.active ? 'activated' : 'quieted'}.`);
 }
 
-function pulseRoom(){ pulse = Math.min(1.2, pulse + 0.55); setStatus('The shutter ring pulses and the shadows sharpen.'); }
+function pulseRoom(){
+  pulse = Math.min(1.2, pulse + 0.55);
+  if(!mission.completed && mission.steps[2]) mission.steps[3] = true;
+  setStatus('The shutter ring pulses and the shadows sharpen.');
+}
 
 function updatePlayer(dt){
+  if(mission.completed){ player.vel.set(0,0,0); return; }
   const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
   const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize().multiplyScalar(-1);
   const move = new THREE.Vector3();
@@ -684,6 +770,7 @@ document.addEventListener('mousemove', e=>{
 async function startRoom(){
   await ensureAudio();
   started = true;
+  resetMission();
   ui.overlay.style.display = 'none';
   pulseRoom();
   recomputeShadowPhrase();
@@ -729,6 +816,7 @@ function animate(){
     opennessTimer -= dt; phraseTimer -= dt;
     if(opennessTimer <= 0){ updateOpenness(); opennessTimer = 0.28; }
     updateDerivedState();
+    updateObjectives(dt);
     updateEchoSeed(dt, t);
     updateTiles(t);
     updateDust(t);
