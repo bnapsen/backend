@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>EchoSeed Blueprint Shadow Room</title>
+  <style>
+    :root{
+      --bg:#060912; --panel:rgba(8,12,22,.78); --line:rgba(255,255,255,.12); --text:#eef5ff;
+      --muted:#99a9c7; --accent:#84d4ff; --accent2:#cf8dff; --good:#9ff7ca; --warn:#ffd18a;
+    }
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:radial-gradient(circle at 50% 8%,#101832 0%,#09101f 42%,#03060c 100%);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text)}
+    canvas{display:block;width:100%;height:100%}
+    #ui{position:fixed;inset:0;pointer-events:none}
+    .panel{position:absolute;background:var(--panel);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:18px;box-shadow:0 16px 38px rgba(0,0,0,.28);pointer-events:auto}
+    #left{left:16px;top:16px;width:min(430px,calc(100vw - 32px));padding:14px 16px}
+    #right{right:16px;top:16px;width:min(350px,calc(100vw - 32px));padding:14px 16px}
+    #bottom{left:50%;bottom:16px;transform:translateX(-50%);width:min(1050px,calc(100vw - 32px));padding:12px 14px}
+    h1{margin:0 0 6px;font-size:22px} h2{margin:0 0 8px;font-size:18px}
+    p{margin:6px 0;line-height:1.38;color:var(--muted);font-size:13px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    button,.badge{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:var(--text);padding:10px 12px;border-radius:12px;font:inherit}
+    button{cursor:pointer;transition:transform .12s ease, background .12s ease} button:hover{transform:translateY(-1px);background:rgba(255,255,255,.10)} button.primary{background:linear-gradient(135deg,rgba(132,212,255,.22),rgba(207,141,255,.18));border-color:rgba(132,212,255,.36)}
+    .label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8aa1c4}.value{font-size:16px;margin-top:4px}.mini{font-size:12px;color:var(--muted)}
+    .bar{height:8px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.08);margin-top:6px}.bar>div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2))}.bar.hot>div{background:linear-gradient(90deg,#ffb17d,#ffdd8a)}
+    #status{margin-top:8px;min-height:16px;font-size:12px;color:var(--good)}
+    #words{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}.chip{padding:8px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);font-size:12px}.chip.active{border-color:rgba(132,212,255,.42);box-shadow:0 0 18px rgba(132,212,255,.14) inset}
+    #noteStrip{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin-top:10px}.noteCell{border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 6px;text-align:center;background:rgba(255,255,255,.04);font-size:12px}.noteCell.active{border-color:rgba(132,212,255,.42);box-shadow:0 0 16px rgba(132,212,255,.12) inset}
+    #crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;opacity:.86}#crosshair::before,#crosshair::after{content:"";position:absolute;background:rgba(255,255,255,.88)}#crosshair::before{left:8px;top:0;width:2px;height:18px}#crosshair::after{left:0;top:8px;width:18px;height:2px}
+    #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(2,5,10,.42),rgba(2,4,8,.84));pointer-events:auto}
+    #card{width:min(800px,calc(100vw - 32px));padding:20px}#card ul{margin:10px 0 0 18px;padding:0;color:var(--muted);font-size:14px;line-height:1.4}#card li{margin:6px 0}
+    #interact{position:absolute;left:50%;top:calc(50% + 24px);transform:translateX(-50%);padding:8px 10px;border-radius:10px;background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.14);font-size:12px;color:var(--text);display:none}
+    @media (max-width:980px){#right{top:auto;bottom:200px}#noteStrip{grid-template-columns:repeat(4,minmax(0,1fr))}.grid{grid-template-columns:1fr}}
+  </style>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js"}}</script>
+</head>
+<body>
+<div id="ui">
+  <div id="left" class="panel">
+    <h1>EchoSeed Blueprint Shadow Room</h1>
+    <p>This room follows the blueprint logic: a sensor crown measures ambient sound and airflow, a shutter lattice moves in front of a bright core, and the room tiles catch living shadow. The Veyan rune tiles stay in place as a language-wall the EchoSeed writes on with darkness.</p>
+    <div class="row" style="margin-top:10px">
+      <button id="startBtn" class="primary">Start Room</button>
+      <button id="lockBtn">Enter Walk Mode</button>
+      <button id="micBtn">Enable Mic</button>
+      <button id="testBtn">Test Tone</button>
+      <div class="badge" id="audioBadge">Audio: locked</div>
+    </div>
+    <div id="status"></div>
+    <div class="row" style="margin-top:10px">
+      <div class="badge" id="modeBadge">Mode: Lattice Drone</div>
+      <div class="badge" id="fanBadge">Fans: 1 2 3</div>
+      <div class="badge" id="phraseBadge">Rune phrase: --</div>
+    </div>
+    <div style="margin-top:12px" class="mini">The room invents little Veyan words out of the tiles nearest the strongest shadow bands. Hum, clap, or play notes and watch the words mutate as the shutters rewrite the walls.</div>
+    <div id="words"></div>
+  </div>
+  <div id="right" class="panel">
+    <div class="grid">
+      <div><div class="label">Ambient sound</div><div id="ambVal" class="value">0%</div><div class="bar"><div id="ambBar"></div></div></div>
+      <div><div class="label">Audio brightness</div><div id="brightVal" class="value">0%</div><div class="bar"><div id="brightBar"></div></div></div>
+      <div><div class="label">Airflow</div><div id="airVal" class="value">0%</div><div class="bar"><div id="airBar"></div></div></div>
+      <div><div class="label">Openness</div><div id="openVal" class="value">0%</div><div class="bar"><div id="openBar"></div></div></div>
+      <div><div class="label">Shadow roughness</div><div id="roughVal" class="value">0%</div><div class="bar hot"><div id="roughBar"></div></div></div>
+      <div><div class="label">Resonance</div><div id="resVal" class="value">0%</div><div class="bar hot"><div id="resBar"></div></div></div>
+    </div>
+    <p style="margin-top:12px"><strong>WASD</strong> move, <strong>mouse</strong> look, <strong>Shift</strong> sprint, <strong>Z-M</strong> play notes, <strong>[ ]</strong> octave, <strong>1/2/3</strong> toggle airflow pylons, <strong>Space</strong> pulse the shutter ring, <strong>F</strong> cycle musical mode.</p>
+    <p class="mini">The useful idea is simple: the EchoSeed makes invisible room activity legible. You can see HVAC drift, footsteps, speech energy, humming, and your played notes as changing shadow bands on the tile language.</p>
+  </div>
+  <div id="bottom" class="panel">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <div>
+        <h2 style="margin:0">Sound becomes shadow</h2>
+        <p class="mini" style="margin-top:4px">This is a simulation of the blueprint packet, not new physics: microphones + airflow logic -> mapped states -> shutter motion + LED engine -> shadow on the room surfaces.</p>
+      </div>
+      <div class="badge" id="shadowBadge">Shadow phrase: dormant</div>
+    </div>
+    <div id="noteStrip"></div>
+  </div>
+  <div id="crosshair"></div>
+  <div id="interact"></div>
+  <div id="overlay">
+    <div id="card" class="panel">
+      <h2>Enter the EchoSeed room</h2>
+      <p>This chamber is built around the real-world blueprint idea rather than just a game gimmick.</p>
+      <ul>
+        <li>The central object uses a <strong>sensor crown</strong>, <strong>LED core</strong>, <strong>shutter lattice</strong>, and <strong>gyre rings</strong>.</li>
+        <li>Ambient sound from the microphone changes loudness, brightness, and resonance.</li>
+        <li>Airflow comes from fan pylons and your own movement through the room.</li>
+        <li>The moving shutter banks cast actual shadows onto the tiled walls so the room becomes a readable instrument.</li>
+      </ul>
+      <div class="row" style="margin-top:14px"><button id="enterBtn" class="primary">Enter Room</button></div>
+    </div>
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+
+const canvas = document.createElement('canvas');
+document.body.appendChild(canvas);
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x060912);
+scene.fog = new THREE.FogExp2(0x060912, 0.02);
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.05, 200);
+const clock = new THREE.Clock();
+
+const ui = {
+  overlay: document.getElementById('overlay'),
+  startBtn: document.getElementById('startBtn'), enterBtn: document.getElementById('enterBtn'),
+  lockBtn: document.getElementById('lockBtn'), micBtn: document.getElementById('micBtn'), testBtn: document.getElementById('testBtn'),
+  audioBadge: document.getElementById('audioBadge'), status: document.getElementById('status'),
+  ambVal: document.getElementById('ambVal'), brightVal: document.getElementById('brightVal'), airVal: document.getElementById('airVal'), openVal: document.getElementById('openVal'), roughVal: document.getElementById('roughVal'), resVal: document.getElementById('resVal'),
+  ambBar: document.getElementById('ambBar'), brightBar: document.getElementById('brightBar'), airBar: document.getElementById('airBar'), openBar: document.getElementById('openBar'), roughBar: document.getElementById('roughBar'), resBar: document.getElementById('resBar'),
+  modeBadge: document.getElementById('modeBadge'), fanBadge: document.getElementById('fanBadge'), phraseBadge: document.getElementById('phraseBadge'), shadowBadge: document.getElementById('shadowBadge'),
+  words: document.getElementById('words'), noteStrip: document.getElementById('noteStrip'), interact: document.getElementById('interact')
+};
+
+const ROOM = {w: 14, h: 8, d: 14, tile: 1};
+const mouse = new THREE.Vector2();
+const keys = {};
+const player = {pos:new THREE.Vector3(0,1.7,5.6), vel:new THREE.Vector3(), yaw:Math.PI, pitch:-0.06};
+let pointerLocked = false;
+let started = false;
+let pulse = 0;
+let modeIndex = 0;
+const MODES = [
+  {name:'Lattice Drone', steps:[0,2,3,5,7,8,10,12]},
+  {name:'Veyan Minor', steps:[0,1,4,5,7,8,10,12]},
+  {name:'Glass Major', steps:[0,2,4,6,7,9,11,12]},
+  {name:'Shadow Hex', steps:[0,3,5,6,8,11,12,15]}
+];
+let octave = 3;
+const keyMap = ['z','x','c','v','b','n','m',','];
+let currentWord = 'dormant';
+let opennessTimer = 0, phraseTimer = 0;
+
+const tempVec = new THREE.Vector3();
+const raycaster = new THREE.Raycaster();
+const scanOrigin = new THREE.Vector3(0,1.85,0);
+const scanDirs = [];
+for(let i=0;i<40;i++){
+  const phi = Math.acos(1 - 2*((i+0.5)/40));
+  const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+  scanDirs.push(new THREE.Vector3(Math.cos(theta)*Math.sin(phi), Math.cos(phi)*0.55, Math.sin(theta)*Math.sin(phi)).normalize());
+}
+
+const sensorState = {
+  ambientEnergy:0, ambientBrightness:0, noteEnergy:0, noteBrightness:0,
+  airflow:0, openness:0.68, roughness:0.24, resonance:0, agitation:0, brightness:0
+};
+
+function setStatus(msg, warn=false){ ui.status.textContent = msg; ui.status.style.color = warn ? 'var(--warn)' : 'var(--good)'; }
+function setBar(el, v){ el.style.width = `${Math.round(THREE.MathUtils.clamp(v,0,1)*100)}%`; }
+function pct(v){ return `${Math.round(THREE.MathUtils.clamp(v,0,1)*100)}%`; }
+
+scene.add(new THREE.AmbientLight(0x33405a, 0.08));
+const floorGlow = new THREE.PointLight(0x3aa0ff, 1.2, 18, 2);
+floorGlow.position.set(0,0.6,0); scene.add(floorGlow);
+
+const tileRoot = new THREE.Group(); scene.add(tileRoot);
+const shadowReceivers = [];
+const runeSet = [
+  {name:'VE', seed:11},{name:'SHA', seed:21},{name:'THA', seed:37},{name:'RU', seed:9},{name:'KEL', seed:18},{name:'NOX', seed:44},
+  {name:'ESH', seed:53},{name:'AUM', seed:25},{name:'LIR', seed:12},{name:'QEN', seed:61},{name:'VO', seed:7},{name:'SYR', seed:34},
+  {name:'TEL', seed:48},{name:'OM', seed:14},{name:'DRA', seed:42},{name:'ISH', seed:28}
+];
+const runeMaterials = [];
+const tileMeta = [];
+
+function runeTexture(rune, accent=0.55){
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const bg = g.createLinearGradient(0,0,256,256);
+  bg.addColorStop(0, `hsl(${205 + (rune.seed*3)%80} 35% 17%)`);
+  bg.addColorStop(1, `hsl(${225 + (rune.seed*7)%80} 26% 8%)`);
+  g.fillStyle = bg; g.fillRect(0,0,256,256);
+  g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = 8; g.strokeRect(10,10,236,236);
+  g.strokeStyle = `hsla(${190 + rune.seed*5}, 90%, ${55+accent*12}%, 0.9)`;
+  g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = 12;
+  const pts = [];
+  let s = rune.seed * 9973;
+  for(let i=0;i<6;i++){
+    s = (s * 1664525 + 1013904223) >>> 0;
+    pts.push({x:48 + (s % 160), y:40 + ((s>>>8) % 176)});
+  }
+  g.beginPath(); g.moveTo(pts[0].x, pts[0].y);
+  for(let i=1;i<pts.length;i++){
+    if(i%2===0) g.lineTo(pts[i].x, pts[i].y);
+    else g.quadraticCurveTo((pts[i-1].x+pts[i].x)/2, pts[i].y, pts[i].x, pts[i].y);
+  }
+  g.stroke();
+  g.beginPath();
+  g.arc(pts[1].x, pts[1].y, 11, 0, Math.PI*2);
+  g.arc(pts[4].x, pts[4].y, 8, 0, Math.PI*2);
+  g.stroke();
+  g.fillStyle = 'rgba(255,255,255,0.16)'; g.font = '600 24px Inter, Arial'; g.textAlign = 'center';
+  g.fillText(rune.name, 128, 228);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; return tex;
+}
+
+for(const rune of runeSet){
+  const mat = new THREE.MeshStandardMaterial({
+    map:runeTexture(rune), metalness:0.05, roughness:0.82, emissive:new THREE.Color(0x0b1120), emissiveIntensity:0.25,
+    side:THREE.DoubleSide
+  });
+  runeMaterials.push(mat);
+}
+
+function addTile(x,y,z,rx,ry,matIndex,surface){
+  const geo = new THREE.PlaneGeometry(0.96,0.96);
+  const mesh = new THREE.Mesh(geo, runeMaterials[matIndex]);
+  mesh.position.set(x,y,z); mesh.rotation.set(rx,ry,0); mesh.receiveShadow = true; mesh.castShadow = false;
+  tileRoot.add(mesh); shadowReceivers.push(mesh);
+  tileMeta.push({mesh, rune:runeSet[matIndex], surface});
+}
+
+function buildRoomTiles(){
+  const y0 = 0.01, y1 = ROOM.h - 0.01;
+  for(let ix=-ROOM.w/2 + 0.5; ix<ROOM.w/2; ix+=1){
+    for(let iz=-ROOM.d/2 + 0.5; iz<ROOM.d/2; iz+=1){
+      addTile(ix, y0, iz, -Math.PI/2, 0, ((ix*13+iz*7)%runeSet.length + runeSet.length)%runeSet.length, 'floor');
+      addTile(ix, y1, iz, Math.PI/2, 0, ((ix*5-iz*11)%runeSet.length + runeSet.length)%runeSet.length, 'ceiling');
+    }
+  }
+  for(let ix=-ROOM.w/2 + 0.5; ix<ROOM.w/2; ix+=1){
+    for(let iy=0.5; iy<ROOM.h; iy+=1){
+      addTile(ix, iy, -ROOM.d/2 + 0.01, 0, 0, ((ix*9+iy*5)%runeSet.length + runeSet.length)%runeSet.length, 'north');
+      addTile(ix, iy, ROOM.d/2 - 0.01, 0, Math.PI, ((ix*4+iy*7)%runeSet.length + runeSet.length)%runeSet.length, 'south');
+    }
+  }
+  for(let iz=-ROOM.d/2 + 0.5; iz<ROOM.d/2; iz+=1){
+    for(let iy=0.5; iy<ROOM.h; iy+=1){
+      addTile(-ROOM.w/2 + 0.01, iy, iz, 0, Math.PI/2, ((iz*12+iy*4)%runeSet.length + runeSet.length)%runeSet.length, 'west');
+      addTile(ROOM.w/2 - 0.01, iy, iz, 0, -Math.PI/2, ((iz*7+iy*9)%runeSet.length + runeSet.length)%runeSet.length, 'east');
+    }
+  }
+}
+buildRoomTiles();
+
+const pedestal = new THREE.Group();
+scene.add(pedestal);
+const base = new THREE.Mesh(new THREE.BoxGeometry(2.2,1.1,2.2), new THREE.MeshStandardMaterial({color:0x0f1523, metalness:0.3, roughness:0.72}));
+base.position.y = 0.55; base.castShadow = base.receiveShadow = true; pedestal.add(base);
+const hatch = new THREE.Mesh(new THREE.PlaneGeometry(1.0,0.48), new THREE.MeshStandardMaterial({color:0x1f2a40, metalness:0.4, roughness:0.56, emissive:0x091120, emissiveIntensity:0.2}));
+hatch.position.set(0,0.6,1.101); pedestal.add(hatch);
+
+const echoseed = new THREE.Group();
+echoseed.position.y = 2.3; scene.add(echoseed);
+const shellPoints = [];
+for(let i=0;i<12;i++){
+  const t = i/11;
+  const y = -1.12 + t*2.24;
+  const r = 0.18 + Math.sin(t*Math.PI)*0.62 + Math.pow(Math.sin(t*Math.PI), 2.2)*0.1;
+  shellPoints.push(new THREE.Vector2(r, y));
+}
+const shellGeo = new THREE.LatheGeometry(shellPoints, 32);
+const shellMat = new THREE.MeshPhysicalMaterial({color:0x92ecff, roughness:0.16, metalness:0.06, transmission:0.34, transparent:true, opacity:0.64, thickness:0.7, emissive:0x12304a, emissiveIntensity:0.34, side:THREE.DoubleSide});
+const shell = new THREE.Mesh(shellGeo, shellMat); shell.castShadow = true; shell.receiveShadow = true; echoseed.add(shell);
+const innerSkin = new THREE.Mesh(new THREE.IcosahedronGeometry(0.64, 2), new THREE.MeshStandardMaterial({color:0x213a62, metalness:0.16, roughness:0.38, emissive:0x2c63a2, emissiveIntensity:0.42, wireframe:true}));
+innerSkin.scale.set(0.82,1.18,0.82); echoseed.add(innerSkin);
+const core = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 24), new THREE.MeshStandardMaterial({color:0xd8ffff, emissive:0x8fe9ff, emissiveIntensity:3.0, metalness:0.1, roughness:0.2}));
+echoseed.add(core);
+const gyreA = new THREE.Mesh(new THREE.TorusGeometry(1.22,0.05,20,80), new THREE.MeshStandardMaterial({color:0x85c9ff, metalness:0.5, roughness:0.28, emissive:0x21436e, emissiveIntensity:0.7}));
+gyreA.rotation.x = 0.76; gyreA.rotation.z = 0.38; gyreA.castShadow = true; echoseed.add(gyreA);
+const gyreB = new THREE.Mesh(new THREE.TorusGeometry(0.98,0.038,20,70), new THREE.MeshStandardMaterial({color:0xcf89ff, metalness:0.5, roughness:0.3, emissive:0x4a225e, emissiveIntensity:0.7}));
+gyreB.rotation.y = 0.6; gyreB.rotation.z = -0.48; gyreB.castShadow = true; echoseed.add(gyreB);
+const crown = new THREE.Group(); echoseed.add(crown);
+for(let i=0;i<8;i++){
+  const g = new THREE.Group();
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.022,0.92,8), new THREE.MeshStandardMaterial({color:0xc7e2ff, metalness:0.55, roughness:0.36, emissive:0x183258, emissiveIntensity:0.2}));
+  rod.position.y = 0.46;
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.05,16,16), new THREE.MeshStandardMaterial({color:0xffffff, emissive:0x7ccfff, emissiveIntensity:1.5}));
+  tip.position.y = 0.95;
+  g.add(rod, tip);
+  g.position.set(Math.cos(i/8*Math.PI*2)*0.44, 0.72, Math.sin(i/8*Math.PI*2)*0.44);
+  g.rotation.z = 0.2 + (i%2?1:-1)*0.24;
+  g.rotation.x = (i%3-1)*0.1;
+  crown.add(g);
+}
+
+const shutterRoot = new THREE.Group(); echoseed.add(shutterRoot);
+const bankData = [];
+const bankDirs = [
+  new THREE.Vector3(0,0,-1), new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,1), new THREE.Vector3(-1,0,0)
+];
+const spotlights = [];
+for(let b=0;b<4;b++){
+  const dir = bankDirs[b].clone();
+  const bank = new THREE.Group();
+  bank.position.copy(dir.clone().multiplyScalar(0.52));
+  bank.lookAt(dir.clone().multiplyScalar(3));
+  shutterRoot.add(bank);
+  const vanes = [];
+  for(let i=0;i<7;i++){
+    const pivot = new THREE.Group();
+    const vane = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.35, 0.03), new THREE.MeshStandardMaterial({color:0xdbe9ff, metalness:0.58, roughness:0.28, emissive:0x20406a, emissiveIntensity:0.28}));
+    vane.castShadow = true;
+    vane.position.y = (i-3)*0.18;
+    pivot.position.x = (i-3)*0.07;
+    pivot.add(vane);
+    bank.add(pivot);
+    vanes.push({pivot, mesh:vane, phase:i*0.47 + b*1.2});
+  }
+  bankData.push({group:bank, vanes, phase:b*0.7});
+  const target = new THREE.Object3D();
+  target.position.copy(dir.clone().multiplyScalar(ROOM.w/2 - 0.4));
+  scene.add(target);
+  const light = new THREE.SpotLight(0x92f3ff, 5.8, 20, 0.6, 0.65, 1.2);
+  light.position.copy(dir.clone().multiplyScalar(0.32));
+  light.target = target; light.castShadow = true; light.shadow.mapSize.set(1024, 1024); light.shadow.bias = -0.0002;
+  light.shadow.camera.near = 0.2; light.shadow.camera.far = 20;
+  echoseed.add(light); echoseed.add(light.target);
+  spotlights.push(light);
+}
+const shimmerHalo = new THREE.Mesh(new THREE.SphereGeometry(1.52, 32, 24), new THREE.MeshBasicMaterial({color:0x7edcff, transparent:true, opacity:0.07, blending:THREE.AdditiveBlending, side:THREE.BackSide}));
+echoseed.add(shimmerHalo);
+
+const fanPylons = [];
+function makeFan(x,z,phase){
+  const g = new THREE.Group(); g.position.set(x,0,z); scene.add(g);
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.24,1.7,12), new THREE.MeshStandardMaterial({color:0x101827, metalness:0.24, roughness:0.74}));
+  tower.position.y = 0.85; tower.castShadow = tower.receiveShadow = true; g.add(tower);
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.24,0.18,18), new THREE.MeshStandardMaterial({color:0x79c7ff, metalness:0.42, roughness:0.34, emissive:0x1f436c, emissiveIntensity:0.24}));
+  top.position.y = 1.7; g.add(top);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.56,4.8,20,1,true), new THREE.MeshBasicMaterial({color:0x84d6ff, transparent:true, opacity:0.08, side:THREE.DoubleSide, depthWrite:false}));
+  beam.position.y = 2.3; beam.rotation.x = Math.PI/2; beam.lookAt(0,2.3,0); g.add(beam);
+  fanPylons.push({group:g, top, beam, active:true, phase});
+}
+makeFan(-5.8,-5.4,0.0); makeFan(5.8,-4.8,1.7); makeFan(0,5.7,3.2);
+
+const dustGeo = new THREE.BufferGeometry();
+const dustCount = 560;
+const dustPos = new Float32Array(dustCount * 3);
+const dustMeta = [];
+for(let i=0;i<dustCount;i++){
+  const r = 1.4 + Math.random()*5.2;
+  const a = Math.random()*Math.PI*2;
+  const y = 0.6 + Math.random()*5.6;
+  dustPos[i*3] = Math.cos(a)*r; dustPos[i*3+1] = y; dustPos[i*3+2] = Math.sin(a)*r;
+  dustMeta.push({r,a,y,speed:0.5+Math.random()*1.4});
+}
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+const dustMat = new THREE.PointsMaterial({color:0xa7ddff, size:0.045, transparent:true, opacity:0.22, depthWrite:false});
+const dust = new THREE.Points(dustGeo, dustMat); scene.add(dust);
+
+let audioCtx, masterGain, reverbSend, noteAnalyser, micAnalyser, micSource, micStream;
+const outputFreq = new Uint8Array(128);
+const micFreq = new Uint8Array(256);
+const activeVoices = new Map();
+
+function createImpulse(ctx, seconds=1.8){
+  const len = Math.floor(ctx.sampleRate * seconds);
+  const buffer = ctx.createBuffer(2, len, ctx.sampleRate);
+  for(let ch=0; ch<2; ch++){
+    const data = buffer.getChannelData(ch);
+    for(let i=0;i<len;i++) data[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 2.2);
+  }
+  return buffer;
+}
+
+function buildAudio(){
+  if(audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain(); masterGain.gain.value = 0.72; masterGain.connect(audioCtx.destination);
+  const convolver = audioCtx.createConvolver(); convolver.buffer = createImpulse(audioCtx, 2.1);
+  reverbSend = audioCtx.createGain(); reverbSend.gain.value = 0.18; reverbSend.connect(convolver); convolver.connect(masterGain);
+  noteAnalyser = audioCtx.createAnalyser(); noteAnalyser.fftSize = 256; noteAnalyser.smoothingTimeConstant = 0.85;
+  noteAnalyser.connect(masterGain);
+  updateAudioBadge();
+}
+
+async function ensureAudio(){
+  buildAudio();
+  if(audioCtx.state !== 'running') await audioCtx.resume();
+  updateAudioBadge();
+}
+
+function updateAudioBadge(){
+  ui.audioBadge.textContent = `Audio: ${audioCtx?.state === 'running' ? 'running' : 'locked'}`;
+}
+
+async function enableMic(){
+  try{
+    await ensureAudio();
+    micStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}});
+    micSource = audioCtx.createMediaStreamSource(micStream);
+    micAnalyser = audioCtx.createAnalyser(); micAnalyser.fftSize = 512; micAnalyser.smoothingTimeConstant = 0.82;
+    const micSilent = audioCtx.createGain(); micSilent.gain.value = 0.0;
+    micSource.connect(micAnalyser); micSource.connect(micSilent); micSilent.connect(audioCtx.destination);
+    setStatus('Microphone enabled. Room sound will now sculpt the shadows.');
+  }catch(err){
+    console.error(err);
+    setStatus('Microphone unavailable or denied.', true);
+  }
+}
+
+function midiToFreq(m){ return 440 * Math.pow(2, (m - 69) / 12); }
+function currentMode(){ return MODES[modeIndex]; }
+function noteFromKey(key){ const idx = keyMap.indexOf(key); return idx < 0 ? null : octave*12 + 48 + currentMode().steps[idx]; }
+function idxFor(key){ return Math.max(0, keyMap.indexOf(key)); }
+
+function triggerNote(key){
+  const midi = noteFromKey(key); if(midi == null || !audioCtx || activeVoices.has(key)) return;
+  const now = audioCtx.currentTime, freq = midiToFreq(midi);
+  const oscA = audioCtx.createOscillator(); oscA.type = 'sawtooth'; oscA.frequency.setValueAtTime(freq, now);
+  const oscB = audioCtx.createOscillator(); oscB.type = 'triangle'; oscB.frequency.setValueAtTime(freq * 0.501, now);
+  const sub = audioCtx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(freq * 0.5, now);
+  const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.setValueAtTime(1100 + idxFor(key)*90, now); filter.Q.value = 6;
+  const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.0001, now); gain.gain.exponentialRampToValueAtTime(0.16, now + 0.03); gain.gain.exponentialRampToValueAtTime(0.12, now + 0.16);
+  const lfo = audioCtx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 4.2 + idxFor(key)*0.18;
+  const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 45;
+  lfo.connect(lfoGain); lfoGain.connect(filter.frequency);
+  oscA.connect(filter); oscB.connect(filter); sub.connect(filter); filter.connect(gain); gain.connect(noteAnalyser); gain.connect(reverbSend);
+  oscA.start(now); oscB.start(now); sub.start(now); lfo.start(now);
+  activeVoices.set(key, {oscA,oscB,sub,gain,lfo});
+  highlightNotes();
+}
+
+function releaseNote(key){
+  const v = activeVoices.get(key); if(!v || !audioCtx) return;
+  const now = audioCtx.currentTime;
+  v.gain.gain.cancelScheduledValues(now);
+  v.gain.gain.setValueAtTime(Math.max(0.0001, v.gain.gain.value), now);
+  v.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+  v.oscA.stop(now + 0.28); v.oscB.stop(now + 0.28); v.sub.stop(now + 0.28); v.lfo.stop(now + 0.28);
+  activeVoices.delete(key);
+  highlightNotes();
+}
+
+function testTone(){
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); const filter = audioCtx.createBiquadFilter();
+  osc.type = 'triangle'; osc.frequency.setValueAtTime(220, now); osc.frequency.exponentialRampToValueAtTime(440, now + 0.35);
+  filter.type = 'lowpass'; filter.frequency.value = 1800; gain.gain.setValueAtTime(0.0001, now); gain.gain.exponentialRampToValueAtTime(0.24, now + 0.03); gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+  osc.connect(filter); filter.connect(noteAnalyser); filter.connect(reverbSend); osc.start(now); osc.stop(now + 0.65);
+}
+
+function highlightNotes(){
+  [...ui.noteStrip.children].forEach((node, i)=>node.classList.toggle('active', activeVoices.has(keyMap[i])));
+}
+
+function populateNoteStrip(){
+  keyMap.forEach((k,i)=>{
+    const cell = document.createElement('div'); cell.className = 'noteCell'; cell.textContent = `${k.toUpperCase()} · ${runeSet[i].name}`;
+    cell.addEventListener('pointerdown', async ()=>{ await ensureAudio(); triggerNote(k); });
+    cell.addEventListener('pointerup', ()=>releaseNote(k));
+    cell.addEventListener('pointerleave', ()=>releaseNote(k));
+    ui.noteStrip.appendChild(cell);
+  });
+}
+populateNoteStrip();
+
+function recomputeShadowPhrase(){
+  const score = [];
+  for(const t of tileMeta){
+    const wp = t.mesh.getWorldPosition(tempVec);
+    let darkness = 0;
+    for(const light of spotlights){
+      const lightPos = light.getWorldPosition(new THREE.Vector3());
+      const dist = lightPos.distanceTo(wp);
+      const falloff = THREE.MathUtils.clamp(1 - dist/12, 0, 1);
+      const dot = tempVec.clone().sub(lightPos).normalize().dot(light.target.position.clone().sub(lightPos).normalize());
+      darkness += falloff * Math.max(0, dot);
+    }
+    darkness *= (0.4 + sensorState.roughness*0.9 + pulse*0.2);
+    score.push({tile:t, score:darkness});
+  }
+  score.sort((a,b)=>b.score-a.score);
+  const top = score.slice(0, 4);
+  const phrase = top.map(s=>s.tile.rune.name).join('-');
+  currentWord = phrase || 'dormant';
+  ui.phraseBadge.textContent = `Rune phrase: ${currentWord}`;
+  ui.shadowBadge.textContent = `Shadow phrase: ${currentWord.toLowerCase()}`;
+  ui.words.innerHTML = '';
+  top.forEach((item, idx)=>{
+    const chip = document.createElement('div'); chip.className = 'chip' + (idx === 0 ? ' active' : '');
+    chip.textContent = `${item.tile.rune.name} ${item.tile.surface}`;
+    ui.words.appendChild(chip);
+  });
+}
+
+function updateAudioMetrics(){
+  if(noteAnalyser){
+    noteAnalyser.getByteFrequencyData(outputFreq);
+    let sum = 0, hi = 0, lo = 0;
+    for(let i=0;i<outputFreq.length;i++){
+      const v = outputFreq[i] / 255;
+      sum += v * v;
+      if(i < outputFreq.length/3) lo += v; else hi += v;
+    }
+    sensorState.noteEnergy = THREE.MathUtils.lerp(sensorState.noteEnergy, Math.sqrt(sum/outputFreq.length)*2.6, 0.14);
+    sensorState.noteBrightness = THREE.MathUtils.lerp(sensorState.noteBrightness, hi / Math.max(0.001, lo + hi), 0.12);
+  } else {
+    sensorState.noteEnergy *= 0.9;
+  }
+  if(micAnalyser){
+    micAnalyser.getByteFrequencyData(micFreq);
+    let sum = 0, hi = 0, lo = 0;
+    for(let i=0;i<micFreq.length;i++){
+      const v = micFreq[i] / 255;
+      sum += v * v;
+      if(i < micFreq.length/4) lo += v; else hi += v;
+    }
+    sensorState.ambientEnergy = THREE.MathUtils.lerp(sensorState.ambientEnergy, Math.sqrt(sum/micFreq.length)*3.2, 0.12);
+    sensorState.ambientBrightness = THREE.MathUtils.lerp(sensorState.ambientBrightness, hi / Math.max(0.001, hi + lo), 0.12);
+  } else {
+    sensorState.ambientEnergy *= 0.97;
+    sensorState.ambientBrightness = THREE.MathUtils.lerp(sensorState.ambientBrightness, 0.22, 0.04);
+  }
+}
+
+function updateAirflow(t){
+  const moveInfluence = player.vel.length() * 0.12;
+  let fanForce = 0;
+  fanPylons.forEach((fan)=>{
+    const on = fan.active ? 1 : 0.12;
+    fan.top.material.emissiveIntensity = THREE.MathUtils.lerp(fan.top.material.emissiveIntensity, 0.18 + on*0.95, 0.08);
+    fan.beam.material.opacity = THREE.MathUtils.lerp(fan.beam.material.opacity, fan.active ? 0.16 : 0.03, 0.08);
+    fan.beam.scale.x = 1 + Math.sin(t*4 + fan.phase) * (fan.active ? 0.18 : 0.05);
+    fan.beam.scale.z = 1 + Math.cos(t*4.2 + fan.phase) * (fan.active ? 0.18 : 0.05);
+    if(fan.active) fanForce += 0.22 + 0.08*Math.sin(t*1.8 + fan.phase);
+  });
+  const draft = 0.08 + 0.06*Math.sin(t*0.6);
+  sensorState.airflow = THREE.MathUtils.lerp(sensorState.airflow, THREE.MathUtils.clamp(fanForce + moveInfluence + draft, 0, 1), 0.08);
+}
+
+function updateOpenness(){
+  let total = 0, totalSq = 0;
+  const origin = scanOrigin.clone();
+  for(const dir of scanDirs){
+    raycaster.set(origin, dir);
+    const hits = raycaster.intersectObjects(shadowReceivers, false);
+    const dist = hits.length ? hits[0].distance : 10;
+    total += dist; totalSq += dist*dist;
+  }
+  const mean = total / scanDirs.length;
+  const variance = Math.max(0, totalSq / scanDirs.length - mean*mean);
+  sensorState.openness = THREE.MathUtils.lerp(sensorState.openness, THREE.MathUtils.clamp(mean / 8.2, 0, 1), 0.05);
+  sensorState.roughness = THREE.MathUtils.lerp(sensorState.roughness, THREE.MathUtils.clamp(Math.sqrt(variance) / 2.4 + sensorState.ambientBrightness*0.3, 0, 1), 0.07);
+}
+
+function updateDerivedState(){
+  const agitationTarget = sensorState.airflow*0.44 + sensorState.ambientEnergy*0.52 + sensorState.noteEnergy*0.36;
+  const brightTarget = sensorState.noteEnergy*0.58 + sensorState.ambientEnergy*0.28 + sensorState.ambientBrightness*0.26;
+  const resonanceTarget = sensorState.noteBrightness*0.34 + sensorState.ambientBrightness*0.32 + sensorState.noteEnergy*0.18 + sensorState.airflow*0.18 + pulse*0.22;
+  sensorState.agitation = THREE.MathUtils.lerp(sensorState.agitation, THREE.MathUtils.clamp(agitationTarget,0,1), 0.08);
+  sensorState.brightness = THREE.MathUtils.lerp(sensorState.brightness, THREE.MathUtils.clamp(brightTarget,0,1), 0.1);
+  sensorState.resonance = THREE.MathUtils.lerp(sensorState.resonance, THREE.MathUtils.clamp(resonanceTarget,0,1), 0.08);
+}
+
+function updateEchoSeed(dt, t){
+  echoseed.rotation.y += dt * (0.24 + sensorState.resonance*0.5);
+  innerSkin.rotation.x += dt * (0.14 + sensorState.ambientBrightness*0.2);
+  innerSkin.rotation.z += dt * (0.2 + sensorState.noteBrightness*0.18);
+  gyreA.rotation.y += dt * (0.5 + sensorState.resonance*0.55);
+  gyreB.rotation.x += dt * (0.44 + sensorState.brightness*0.48);
+  shimmerHalo.scale.setScalar(1 + sensorState.resonance*0.4 + pulse*0.14);
+  shimmerHalo.material.opacity = 0.05 + sensorState.brightness*0.08 + pulse*0.04;
+  core.material.emissiveIntensity = 1.8 + sensorState.brightness*4.2 + sensorState.resonance*2.8 + pulse*1.1;
+  shell.material.emissiveIntensity = 0.22 + sensorState.resonance*0.54;
+  crown.children.forEach((c, i)=>{
+    c.rotation.z = 0.16 + Math.sin(t*1.6 + i)* (0.22 + sensorState.airflow*0.5);
+    c.rotation.x = Math.cos(t*1.4 + i*0.7) * (0.06 + sensorState.ambientBrightness*0.18);
+    c.children[1].material.emissiveIntensity = 0.7 + sensorState.ambientEnergy*1.8 + sensorState.noteBrightness*0.8;
+  });
+  bankData.forEach((bank, bi)=>{
+    bank.group.rotation.z = Math.sin(t*0.6 + bank.phase) * 0.06;
+    bank.vanes.forEach((v, i)=>{
+      const local = Math.sin(t*(1.2 + i*0.07) + v.phase);
+      const fold = (sensorState.airflow*0.55 + sensorState.roughness*0.45 + sensorState.resonance*0.55 + pulse*0.2);
+      const audioTwist = sensorState.ambientBrightness*0.6 + sensorState.noteBrightness*0.5;
+      v.pivot.rotation.z = local*0.18 + fold*0.72 + Math.sin(t*2.2 + i + bi)*audioTwist*0.24;
+      v.pivot.rotation.x = 0.08 + sensorState.brightness*0.4 + local*0.08;
+      v.mesh.position.z = Math.sin(t*1.8 + i + bi) * 0.04;
+      v.mesh.scale.y = 0.88 + sensorState.brightness*0.65 + sensorState.noteEnergy*0.2;
+      v.mesh.material.emissiveIntensity = 0.14 + sensorState.resonance*0.34;
+    });
+  });
+  spotlights.forEach((light, i)=>{
+    const hue = 0.52 + sensorState.noteBrightness*0.06 + i*0.02;
+    light.color.setHSL(hue, 0.86, 0.7 + sensorState.brightness*0.05);
+    light.intensity = 4.4 + sensorState.brightness*10 + sensorState.resonance*4 + pulse*1.8;
+    light.angle = 0.46 + sensorState.roughness*0.16;
+    light.penumbra = 0.46 + sensorState.ambientBrightness*0.3;
+  });
+  floorGlow.intensity = 0.6 + sensorState.resonance*1.8 + pulse*0.8;
+}
+
+function updateTiles(t){
+  const shadowDrive = 0.16 + sensorState.resonance*0.34 + sensorState.ambientEnergy*0.18;
+  runeMaterials.forEach((mat, i)=>{
+    mat.emissiveIntensity = 0.12 + shadowDrive*0.5 + Math.sin(t*0.8 + i)*0.03;
+    mat.emissive.setHSL(0.59 + sensorState.noteBrightness*0.04, 0.55, 0.08 + shadowDrive*0.08);
+  });
+}
+
+function updateDust(t){
+  for(let i=0;i<dustCount;i++){
+    const p = dustMeta[i];
+    p.a += (0.003 + sensorState.airflow*0.018 + sensorState.ambientEnergy*0.01) * p.speed;
+    dustPos[i*3] = Math.cos(p.a) * (p.r + Math.sin(t*0.7 + i)*0.12);
+    dustPos[i*3+1] = p.y + Math.sin(t*1.2 + i)*0.06 + sensorState.ambientEnergy*0.24;
+    dustPos[i*3+2] = Math.sin(p.a) * (p.r + Math.cos(t*0.5 + i)*0.12);
+  }
+  dustGeo.attributes.position.needsUpdate = true;
+  dustMat.opacity = 0.16 + sensorState.airflow*0.18 + sensorState.brightness*0.08;
+  dustMat.size = 0.04 + sensorState.resonance*0.03;
+}
+
+function updateHUD(){
+  ui.ambVal.textContent = pct(sensorState.ambientEnergy); setBar(ui.ambBar, sensorState.ambientEnergy);
+  ui.brightVal.textContent = pct((sensorState.ambientBrightness + sensorState.noteBrightness)*0.5); setBar(ui.brightBar, (sensorState.ambientBrightness + sensorState.noteBrightness)*0.5);
+  ui.airVal.textContent = pct(sensorState.airflow); setBar(ui.airBar, sensorState.airflow);
+  ui.openVal.textContent = pct(sensorState.openness); setBar(ui.openBar, sensorState.openness);
+  ui.roughVal.textContent = pct(sensorState.roughness); setBar(ui.roughBar, sensorState.roughness);
+  ui.resVal.textContent = pct(sensorState.resonance); setBar(ui.resBar, sensorState.resonance);
+  ui.modeBadge.textContent = `Mode: ${currentMode().name}`;
+  ui.fanBadge.textContent = `Fans: ${fanPylons.map((f,i)=>`${i+1}${f.active?'•':'○'}`).join(' ')}`;
+  const nearest = nearestPylon();
+  if(nearest && nearest.dist < 2.2){
+    ui.interact.style.display = 'block';
+    ui.interact.textContent = `Press ${nearest.index+1} or E to ${nearest.pylon.active ? 'quiet' : 'wake'} pylon ${nearest.index+1}`;
+  } else {
+    ui.interact.style.display = 'none';
+  }
+}
+
+function nearestPylon(){
+  let best = null;
+  fanPylons.forEach((pylon, index)=>{
+    const d = pylon.group.position.distanceTo(player.pos);
+    if(!best || d < best.dist) best = {pylon, index, dist:d};
+  });
+  return best;
+}
+
+function toggleFan(index){
+  const fan = fanPylons[index]; if(!fan) return;
+  fan.active = !fan.active;
+  setStatus(`Airflow pylon ${index+1} ${fan.active ? 'activated' : 'quieted'}.`);
+}
+
+function pulseRoom(){ pulse = Math.min(1.2, pulse + 0.55); setStatus('The shutter ring pulses and the shadows sharpen.'); }
+
+function updatePlayer(dt){
+  const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize().multiplyScalar(-1);
+  const move = new THREE.Vector3();
+  if(keys['w']) move.add(forward); if(keys['s']) move.sub(forward); if(keys['a']) move.sub(right); if(keys['d']) move.add(right);
+  if(move.lengthSq() > 0) move.normalize();
+  const speed = keys['shift'] ? 5.8 : 3.9;
+  player.vel.lerp(move.multiplyScalar(speed), 0.14);
+  player.pos.addScaledVector(player.vel, dt);
+  player.pos.x = THREE.MathUtils.clamp(player.pos.x, -ROOM.w/2 + 0.8, ROOM.w/2 - 0.8);
+  player.pos.z = THREE.MathUtils.clamp(player.pos.z, -ROOM.d/2 + 0.8, ROOM.d/2 - 0.8);
+  player.pos.y = 1.7;
+}
+
+function updateCamera(){
+  camera.position.copy(player.pos);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = player.yaw;
+  camera.rotation.x = player.pitch;
+}
+
+function setPointerLock(on=true){ if(on) canvas.requestPointerLock?.(); else document.exitPointerLock?.(); }
+document.addEventListener('pointerlockchange', ()=>{ pointerLocked = document.pointerLockElement === canvas; });
+document.addEventListener('mousemove', e=>{
+  if(!pointerLocked) return;
+  player.yaw -= e.movementX * 0.0024;
+  player.pitch -= e.movementY * 0.0020;
+  player.pitch = THREE.MathUtils.clamp(player.pitch, -1.28, 1.28);
+});
+
+async function startRoom(){
+  await ensureAudio();
+  started = true;
+  ui.overlay.style.display = 'none';
+  pulseRoom();
+  recomputeShadowPhrase();
+  testTone();
+  setStatus('Room live. If you do not hear the startup tone, click Test Tone and check browser/site audio permissions.', audioCtx?.state !== 'running');
+}
+
+ui.startBtn.addEventListener('click', startRoom);
+ui.enterBtn.addEventListener('click', startRoom);
+ui.lockBtn.addEventListener('click', async ()=>{ if(!started) await startRoom(); else await ensureAudio(); setPointerLock(true); });
+ui.micBtn.addEventListener('click', async ()=>{ if(!started) await startRoom(); else await ensureAudio(); await enableMic(); });
+ui.testBtn.addEventListener('click', async ()=>{ if(!started) await startRoom(); else await ensureAudio(); testTone(); setStatus(audioCtx?.state==='running'?'Test tone played.':'Audio is still locked by the browser.', audioCtx?.state!=='running'); });
+canvas.addEventListener('pointerdown', async ()=>{ if(started) await ensureAudio(); }, {passive:true});
+window.addEventListener('keydown', async e=>{
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+  if(!started && (['w','a','s','d',' ','1','2','3','f','[',']'].includes(k) || keyMap.includes(k))) await startRoom();
+  else if(started && (keyMap.includes(k) || ['f','[',']',' '].includes(k))) await ensureAudio();
+  if(e.repeat) return;
+  if(k === ' ') { e.preventDefault(); pulseRoom(); return; }
+  if(k === 'f'){ modeIndex = (modeIndex + 1) % MODES.length; setStatus(`Mode changed to ${currentMode().name}.`); return; }
+  if(k === '['){ octave = Math.max(2, octave - 1); setStatus(`Octave ${octave}.`); return; }
+  if(k === ']'){ octave = Math.min(6, octave + 1); setStatus(`Octave ${octave}.`); return; }
+  if(k === '1'){ toggleFan(0); return; }
+  if(k === '2'){ toggleFan(1); return; }
+  if(k === '3'){ toggleFan(2); return; }
+  if(k === 'e'){ const near = nearestPylon(); if(near && near.dist < 2.2) toggleFan(near.index); return; }
+  if(keyMap.includes(k)) triggerNote(k);
+});
+window.addEventListener('keyup', e=>{ const k = e.key.toLowerCase(); keys[k] = false; if(keyMap.includes(k)) releaseNote(k); });
+window.addEventListener('blur', ()=>{ Object.keys(keys).forEach(k=>keys[k]=false); [...activeVoices.keys()].forEach(releaseNote); });
+window.addEventListener('resize', ()=>{ renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); });
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.033, clock.getDelta());
+  const t = clock.elapsedTime;
+  pulse = Math.max(0, pulse - dt*0.42);
+  if(started){
+    updatePlayer(dt);
+    updateAudioMetrics();
+    updateAirflow(t);
+    opennessTimer -= dt; phraseTimer -= dt;
+    if(opennessTimer <= 0){ updateOpenness(); opennessTimer = 0.28; }
+    updateDerivedState();
+    updateEchoSeed(dt, t);
+    updateTiles(t);
+    updateDust(t);
+    if(phraseTimer <= 0){ recomputeShadowPhrase(); phraseTimer = 0.55; }
+    updateHUD();
+  }
+  updateCamera();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
