@@ -159,7 +159,9 @@
                         <div class="game-info">
                             <h3>EchoSeed Blueprint Shadow Room</h3>
                             <p>Explore an immersive 3D chamber where sound and airflow reshape a living language of shadows.</p>
-                            <a href="echoseed-blueprint-shadow-room.html" class="btn btn-card">Launch Game</a>
+                            <a href="echoseed-blueprint-shadow-room.html" class="btn btn-card">Launch Level 1</a>
+                            <a href="space-shooter.html" id="echoseedLevel2Btn" class="btn btn-card">Launch Level 2</a>
+                            <p id="echoseedLevel2LockMsg" class="lock-note" aria-live="polite"></p>
                         </div>
                     </article>
                 </div>
@@ -170,5 +172,28 @@
             <p>&copy; 2026 Nova Arcade. Built for players who love quick thrills.</p>
         </footer>
     </div>
+    <script>
+        const unlockKey = "nova.unlock.echoseed_l1";
+        const level2Button = document.getElementById("echoseedLevel2Btn");
+        const lockMessage = document.getElementById("echoseedLevel2LockMsg");
+
+        if (level2Button && lockMessage) {
+            const unlocked = localStorage.getItem(unlockKey) === "1";
+            if (unlocked) {
+                level2Button.removeAttribute("aria-disabled");
+                level2Button.classList.remove("is-disabled");
+                level2Button.tabIndex = 0;
+                lockMessage.textContent = "";
+            } else {
+                level2Button.setAttribute("aria-disabled", "true");
+                level2Button.classList.add("is-disabled");
+                level2Button.tabIndex = -1;
+                lockMessage.textContent = "Complete EchoSeed Level 1 to unlock";
+                level2Button.addEventListener("click", (event) => {
+                    event.preventDefault();
+                });
+            }
+        }
+    </script>
 </body>
 </html>

@@ -234,6 +234,20 @@ body {
     border: 1px solid rgba(94, 224, 255, 0.35);
 }
 
+.btn-card.is-disabled,
+.btn-card[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.lock-note {
+    margin: 0.5rem 0 0;
+    min-height: 1.2rem;
+    color: #ffd18a;
+    font-size: 0.9rem;
+}
+
 .footer {
     margin-top: 2rem;
     text-align: center;

@@ -29,6 +29,10 @@
     #noteStrip{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin-top:10px}.noteCell{border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 6px;text-align:center;background:rgba(255,255,255,.04);font-size:12px}.noteCell.active{border-color:rgba(132,212,255,.42);box-shadow:0 0 16px rgba(132,212,255,.12) inset}
     #crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;opacity:.86}#crosshair::before,#crosshair::after{content:"";position:absolute;background:rgba(255,255,255,.88)}#crosshair::before{left:8px;top:0;width:2px;height:18px}#crosshair::after{left:0;top:8px;width:18px;height:2px}
     #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(2,5,10,.42),rgba(2,4,8,.84));pointer-events:auto}
+    #completionOverlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(1,4,8,.5),rgba(2,4,8,.9));pointer-events:auto;z-index:4}
+    .completion-metrics{margin-top:10px;color:var(--muted);font-size:13px}
+    .completion-cta{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+    .completion-cta a{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:var(--text);padding:10px 12px;border-radius:12px;transition:transform .12s ease, background .12s ease}.completion-cta a:hover{transform:translateY(-1px);background:rgba(255,255,255,.10)}.completion-cta a.primary{background:linear-gradient(135deg,rgba(132,212,255,.22),rgba(207,141,255,.18));border-color:rgba(132,212,255,.36)}
     #card{width:min(800px,calc(100vw - 32px));padding:20px}#card ul{margin:10px 0 0 18px;padding:0;color:var(--muted);font-size:14px;line-height:1.4}#card li{margin:6px 0}
     #interact{position:absolute;left:50%;top:calc(50% + 24px);transform:translateX(-50%);padding:8px 10px;border-radius:10px;background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.14);font-size:12px;color:var(--text);display:none}
     @media (max-width:980px){#right{top:auto;bottom:200px}#noteStrip{grid-template-columns:repeat(4,minmax(0,1fr))}.grid{grid-template-columns:1fr}}
@@ -93,6 +97,17 @@
       <div class="row" style="margin-top:14px"><button id="enterBtn" class="primary">Enter Room</button></div>
     </div>
   </div>
+  <div id="completionOverlay">
+    <div id="completionCard" class="panel">
+      <h2>EchoSeed Level 1 Complete</h2>
+      <p>You stabilized the shutter lattice and translated a live rune phrase from the room shadows.</p>
+      <div id="completionMeta" class="completion-metrics">Saving your completion data…</div>
+      <div class="completion-cta">
+        <button id="replayLevelBtn">Replay Level 1</button>
+        <a href="space-shooter.html" class="primary" id="goLevel2Link">Go to Level 2</a>
+      </div>
+    </div>
+  </div>
 </div>
 <script type="module">
 import * as THREE from 'three';
@@ -114,7 +129,10 @@ const clock = new THREE.Clock();
 
 const ui = {
   overlay: document.getElementById('overlay'),
+  completionOverlay: document.getElementById('completionOverlay'),
+  completionMeta: document.getElementById('completionMeta'),
   startBtn: document.getElementById('startBtn'), enterBtn: document.getElementById('enterBtn'),
+  replayLevelBtn: document.getElementById('replayLevelBtn'),
   lockBtn: document.getElementById('lockBtn'), micBtn: document.getElementById('micBtn'), testBtn: document.getElementById('testBtn'),
   audioBadge: document.getElementById('audioBadge'), status: document.getElementById('status'),
   ambVal: document.getElementById('ambVal'), brightVal: document.getElementById('brightVal'), airVal: document.getElementById('airVal'), openVal: document.getElementById('openVal'), roughVal: document.getElementById('roughVal'), resVal: document.getElementById('resVal'),
@@ -141,6 +159,9 @@ let octave = 3;
 const keyMap = ['z','x','c','v','b','n','m',','];
 let currentWord = 'dormant';
 let opennessTimer = 0, phraseTimer = 0;
+const levelState = {startTimeMs: null, completed: false};
+const LEVEL1_UNLOCK_KEY = 'nova.unlock.echoseed_l1';
+const LEVEL1_META_KEY = 'nova.meta.echoseed_l1';
 
 const tempVec = new THREE.Vector3();
 const raycaster = new THREE.Raycaster();
@@ -684,15 +705,36 @@ document.addEventListener('mousemove', e=>{
 async function startRoom(){
   await ensureAudio();
   started = true;
+  levelState.startTimeMs = performance.now();
+  levelState.completed = false;
   ui.overlay.style.display = 'none';
+  ui.completionOverlay.style.display = 'none';
   pulseRoom();
   recomputeShadowPhrase();
   testTone();
   setStatus('Room live. If you do not hear the startup tone, click Test Tone and check browser/site audio permissions.', audioCtx?.state !== 'running');
 }
 
+function completeLevel1(score = 0){
+  if(levelState.completed) return;
+  levelState.completed = true;
+  const completionTimeMs = Math.max(0, Math.round((performance.now() - (levelState.startTimeMs ?? performance.now()))));
+  const metadata = {
+    completedAt: new Date().toISOString(),
+    completionTimeMs,
+    score: Math.round(score)
+  };
+  localStorage.setItem(LEVEL1_UNLOCK_KEY, '1');
+  localStorage.setItem(LEVEL1_META_KEY, JSON.stringify(metadata));
+  ui.completionMeta.textContent = `Time: ${(completionTimeMs / 1000).toFixed(1)}s · Score: ${metadata.score}`;
+  ui.completionOverlay.style.display = 'flex';
+  setPointerLock(false);
+  setStatus('Level 1 complete. Level 2 unlocked.');
+}
+
 ui.startBtn.addEventListener('click', startRoom);
 ui.enterBtn.addEventListener('click', startRoom);
+ui.replayLevelBtn.addEventListener('click', ()=>window.location.reload());
 ui.lockBtn.addEventListener('click', async ()=>{ if(!started) await startRoom(); else await ensureAudio(); setPointerLock(true); });
 ui.micBtn.addEventListener('click', async ()=>{ if(!started) await startRoom(); else await ensureAudio(); await enableMic(); });
 ui.testBtn.addEventListener('click', async ()=>{ if(!started) await startRoom(); else await ensureAudio(); testTone(); setStatus(audioCtx?.state==='running'?'Test tone played.':'Audio is still locked by the browser.', audioCtx?.state!=='running'); });
@@ -733,6 +775,10 @@ function animate(){
     updateTiles(t);
     updateDust(t);
     if(phraseTimer <= 0){ recomputeShadowPhrase(); phraseTimer = 0.55; }
+    const activeFans = fanPylons.filter(f=>f.active).length;
+    if(!levelState.completed && activeFans === fanPylons.length && sensorState.resonance > 0.55 && currentWord !== 'dormant'){
+      completeLevel1(450 + sensorState.resonance * 300 + sensorState.brightness * 250 + sensorState.openness * 200);
+    }
     updateHUD();
   }
   updateCamera();
