@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neon Survivor: Eclipse Protocol</title>
+  <style>
+    :root {
+      --bg: #070916;
+      --panel: rgba(8, 12, 28, 0.82);
+      --line: rgba(126, 245, 255, 0.25);
+      --text: #e9f4ff;
+      --accent: #4ef2ff;
+      --accent2: #ff5edc;
+      --good: #69ff8e;
+      --warn: #ffd86d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(circle at 10% 10%, #121b3d 0%, #090f24 40%, #060912 100%);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+    .game-wrap {
+      width: min(1100px, 100vw);
+      height: min(820px, 100vh);
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 55px rgba(78, 242, 255, 0.12) inset;
+      background: linear-gradient(180deg, rgba(10, 14, 28, 0.92), rgba(6, 10, 20, 0.95));
+    }
+    canvas { width: 100%; height: 100%; display: block; }
+    .hud {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+    }
+    .chip {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.9rem;
+      backdrop-filter: blur(7px);
+      box-shadow: 0 0 24px rgba(78, 242, 255, 0.08);
+    }
+    .bar {
+      flex: 1;
+      height: 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(8, 15, 30, 0.85);
+      overflow: hidden;
+      min-width: 180px;
+    }
+    .bar > span { display:block; height:100%; width:0; }
+    #hpFill { background: linear-gradient(90deg, #ff5f8f, #ff9781); }
+    #xpFill { background: linear-gradient(90deg, #55f2ff, #6b8bff); }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at 50% 30%, rgba(14, 24, 52, 0.78), rgba(3, 5, 12, 0.92));
+      padding: 20px;
+    }
+    .panel {
+      width: min(880px, 100%);
+      background: rgba(7, 12, 28, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 22px;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+    }
+    .title {
+      font-size: clamp(1.45rem, 2.5vw, 2.3rem);
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #dffaff;
+      text-shadow: 0 0 24px rgba(78, 242, 255, 0.35);
+    }
+    .subtitle { color:#a9b9da; margin:10px 0 0; line-height:1.5; }
+    .grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      margin-top: 16px;
+    }
+    .btn {
+      border: 1px solid rgba(107, 225, 255, 0.36);
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(15, 32, 62, 0.95), rgba(10, 22, 45, 0.95));
+      color: #e9f6ff;
+      padding: 12px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      text-align: left;
+      transition: transform .14s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      border-color: rgba(100, 255, 208, 0.65);
+      box-shadow: 0 0 18px rgba(78, 242, 255, 0.25);
+    }
+    .btn small { display:block; color:#9cb4d8; font-weight:500; margin-top:6px; }
+    .hide { display:none !important; }
+    .help {
+      position: absolute;
+      bottom: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: .85rem;
+      color: #95a8c8;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="game-wrap">
+    <canvas id="game" width="1100" height="820"></canvas>
+    <div class="hud">
+      <div class="hud-row">
+        <div class="chip" id="wave">Wave 1</div>
+        <div class="chip" id="score">Score 0</div>
+        <div class="chip" id="level">Level 1</div>
+      </div>
+      <div class="hud-row">
+        <div class="chip">HP</div>
+        <div class="bar"><span id="hpFill"></span></div>
+        <div class="chip" id="hpText">120 / 120</div>
+      </div>
+      <div class="hud-row">
+        <div class="chip">XP</div>
+        <div class="bar"><span id="xpFill"></span></div>
+        <div class="chip" id="xpText">0 / 50</div>
+      </div>
+    </div>
+
+    <div class="overlay" id="startOverlay">
+      <div class="panel">
+        <h1 class="title">Neon Survivor: Eclipse Protocol</h1>
+        <p class="subtitle">Dash through a collapsing cyber arena. Move with <b>WASD / Arrow Keys</b>, aim with the mouse, and survive escalating enemy waves. Defeat enemies to absorb energy and level up with powerful upgrades.</p>
+        <div class="grid">
+          <button class="btn" id="startBtn">Start Mission<small>Enter the arena and begin wave defense.</small></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay hide" id="levelOverlay">
+      <div class="panel">
+        <h2 class="title" style="font-size:1.4rem">Level Up — Pick an Upgrade</h2>
+        <div class="grid" id="upgradeGrid"></div>
+      </div>
+    </div>
+
+    <div class="overlay hide" id="gameOverOverlay">
+      <div class="panel">
+        <h2 class="title" style="font-size:1.6rem">System Overrun</h2>
+        <p class="subtitle" id="gameOverText"></p>
+        <div class="grid">
+          <button class="btn" id="restartBtn">Run it back<small>Restart with a fresh loadout.</small></button>
+          <a href="index.html" class="btn" style="text-decoration:none; display:block;">Back to Arcade<small>Return to Nova Arcade.</small></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="help">
+      <span>Shift = Dash · P = Pause</span>
+      <span>Tip: Keep moving. Getting surrounded is the fastest way to lose.</span>
+    </div>
+  </div>
+
+  <script src="neon-survivor.js"></script>
+</body>
+</html>
