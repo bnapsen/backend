@@ -1,0 +1,24 @@
+<svg width="900" height="540" viewBox="0 0 900 540" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="900" y2="540" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#101838"/>
+      <stop offset="1" stop-color="#040711"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(430 280) rotate(90) scale(220)">
+      <stop stop-color="#31F4FF" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#31F4FF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="900" height="540" fill="url(#bg)"/>
+  <rect width="900" height="540" fill="url(#glow)"/>
+  <g stroke="#3EDAFD" stroke-opacity="0.28">
+    <path d="M0 60H900"/><path d="M0 140H900"/><path d="M0 220H900"/><path d="M0 300H900"/><path d="M0 380H900"/><path d="M0 460H900"/>
+    <path d="M80 0V540"/><path d="M200 0V540"/><path d="M320 0V540"/><path d="M440 0V540"/><path d="M560 0V540"/><path d="M680 0V540"/><path d="M800 0V540"/>
+  </g>
+  <circle cx="640" cy="180" r="28" fill="#FF6AD9"/>
+  <circle cx="690" cy="260" r="42" fill="#FF8A5A"/>
+  <circle cx="620" cy="320" r="22" fill="#7F78FF"/>
+  <path d="M410 260L338 220L355 260L338 300L410 260Z" fill="#97F4FF" stroke="#D8FFFF" stroke-width="6"/>
+  <text x="56" y="470" fill="#E8F6FF" font-size="56" font-family="Inter,Arial,sans-serif" font-weight="800">NEON SURVIVOR</text>
+  <text x="56" y="510" fill="#99B3D8" font-size="24" font-family="Inter,Arial,sans-serif">Eclipse Protocol</text>
+</svg>
