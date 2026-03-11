@@ -235,7 +235,7 @@ body {
 }
 
 
-.campaign-flow {
+.play-flow {
     display: inline-flex;
     gap: 0.7rem;
     align-items: center;
@@ -261,23 +261,6 @@ body {
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-}
-
-.game-card.is-locked {
-    opacity: 0.68;
-}
-
-.game-card.is-locked .level-tag {
-    border-color: rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--muted);
-}
-
-.game-card.is-locked .btn-card {
-    pointer-events: none;
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
-    color: #c8d0e4;
 }
 
 .footer {
