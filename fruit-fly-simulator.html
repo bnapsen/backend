@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fruit Fly Simulator</title>
+  <style>
+    :root {
+      --bg: #130f1f;
+      --panel: rgba(14, 20, 38, 0.86);
+      --text: #f4f8ff;
+      --accent: #8dff6a;
+      --accent-2: #ffd166;
+      --danger: #ff6b6b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% 20%, #2e1a52, transparent 45%),
+        radial-gradient(circle at 80% 10%, #26335e, transparent 52%),
+        linear-gradient(165deg, #10091d, #1f1533 50%, #120f1f);
+      display: grid;
+      place-items: center;
+      padding: 1rem;
+    }
+
+    .layout {
+      width: min(96vw, 1000px);
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: minmax(320px, 700px) minmax(250px, 1fr);
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(141, 255, 106, 0.25);
+      border-radius: 16px;
+      padding: 1rem;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(4px);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.25rem, 1.8vw, 1.8rem);
+      letter-spacing: 0.03em;
+    }
+
+    p { margin: 0.55rem 0 0; line-height: 1.4; }
+
+    canvas {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 209, 102, 0.35);
+      background: linear-gradient(180deg, #30264f 0%, #1d1632 100%);
+      margin-top: 1rem;
+      display: block;
+    }
+
+    .stats {
+      display: grid;
+      gap: 0.6rem;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 1rem;
+    }
+
+    .stat {
+      padding: 0.7rem;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      opacity: 0.8;
+      letter-spacing: 0.08em;
+    }
+
+    .stat span {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--accent-2);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      margin-top: 1rem;
+    }
+
+    button, a {
+      border: none;
+      border-radius: 999px;
+      padding: 0.6rem 1rem;
+      text-decoration: none;
+      color: #161a24;
+      background: linear-gradient(90deg, var(--accent), #74e8ff);
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    #status {
+      min-height: 1.5rem;
+      margin-top: 0.8rem;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .danger { color: var(--danger) !important; }
+
+    .controls {
+      font-size: 0.92rem;
+      opacity: 0.95;
+      margin-top: 0.7rem;
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="layout">
+    <section class="panel">
+      <h1>Fruit Fly Simulator</h1>
+      <p>You are a tiny fruit fly in a giant kitchen. Chase sugary fruit, dodge the fly swatter, and survive as long as you can.</p>
+      <canvas id="game" width="800" height="600" aria-label="Fruit Fly Simulator game field"></canvas>
+    </section>
+
+    <aside class="panel">
+      <div class="stats">
+        <div class="stat"><strong>Score</strong><span id="score">0</span></div>
+        <div class="stat"><strong>Nectar</strong><span id="energy">100</span></div>
+        <div class="stat"><strong>Speed</strong><span id="speed">1.0x</span></div>
+        <div class="stat"><strong>Survival</strong><span id="time">0s</span></div>
+      </div>
+
+      <p class="controls">
+        <strong>Controls:</strong> Move with <kbd>WASD</kbd> or <kbd>Arrow keys</kbd>. Collect fruit to refill nectar and score. If nectar reaches 0, your fly faints.
+      </p>
+
+      <div class="actions">
+        <button id="restart" type="button">New Life</button>
+        <a href="index.html">Back to Arcade</a>
+      </div>
+      <p id="status">Buzz buzz... find fruit!</p>
+    </aside>
+  </main>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    const scoreEl = document.getElementById('score');
+    const energyEl = document.getElementById('energy');
+    const speedEl = document.getElementById('speed');
+    const timeEl = document.getElementById('time');
+    const statusEl = document.getElementById('status');
+
+    const keys = new Set();
+    let gameOver = false;
+    let startTime = 0;
+
+    const fly = { x: 380, y: 300, r: 14, speed: 3.1, vx: 0, vy: 0 };
+    let swatter = { x: 100, y: 100, r: 24, speed: 1.8 };
+    let fruit = [];
+    let score = 0;
+    let energy = 100;
+
+    const spawnFruit = () => {
+      fruit = Array.from({ length: 6 }, (_, i) => ({
+        x: 50 + Math.random() * (canvas.width - 100),
+        y: 50 + Math.random() * (canvas.height - 100),
+        r: 10 + Math.random() * 7,
+        hue: [18, 42, 75, 345, 310, 55][i % 6]
+      }));
+    };
+
+    const reset = () => {
+      fly.x = 380;
+      fly.y = 300;
+      swatter = { x: 120, y: 120, r: 24, speed: 1.8 };
+      score = 0;
+      energy = 100;
+      gameOver = false;
+      startTime = performance.now();
+      spawnFruit();
+      statusEl.textContent = 'Buzz buzz... find fruit!';
+      statusEl.classList.remove('danger');
+      requestAnimationFrame(loop);
+    };
+
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
+    const updateFly = () => {
+      let dx = 0;
+      let dy = 0;
+      if (keys.has('arrowleft') || keys.has('a')) dx -= 1;
+      if (keys.has('arrowright') || keys.has('d')) dx += 1;
+      if (keys.has('arrowup') || keys.has('w')) dy -= 1;
+      if (keys.has('arrowdown') || keys.has('s')) dy += 1;
+
+      const len = Math.hypot(dx, dy) || 1;
+      fly.vx = (dx / len) * fly.speed;
+      fly.vy = (dy / len) * fly.speed;
+
+      fly.x = clamp(fly.x + fly.vx, fly.r, canvas.width - fly.r);
+      fly.y = clamp(fly.y + fly.vy, fly.r, canvas.height - fly.r);
+
+      if (dx || dy) {
+        energy = Math.max(0, energy - 0.06);
+      } else {
+        energy = Math.max(0, energy - 0.02);
+      }
+    };
+
+    const updateSwatter = () => {
+      const angle = Math.atan2(fly.y - swatter.y, fly.x - swatter.x);
+      const boost = Math.min(score / 120, 2.2);
+      swatter.speed = 1.8 + boost;
+      swatter.x += Math.cos(angle) * swatter.speed;
+      swatter.y += Math.sin(angle) * swatter.speed;
+    };
+
+    const collectFruit = () => {
+      for (let i = fruit.length - 1; i >= 0; i -= 1) {
+        const item = fruit[i];
+        const d = Math.hypot(fly.x - item.x, fly.y - item.y);
+        if (d < fly.r + item.r) {
+          score += 10;
+          energy = Math.min(100, energy + 18);
+          fruit.splice(i, 1);
+          fruit.push({
+            x: 40 + Math.random() * (canvas.width - 80),
+            y: 40 + Math.random() * (canvas.height - 80),
+            r: 10 + Math.random() * 7,
+            hue: Math.random() * 360
+          });
+          statusEl.textContent = 'Sweet! You found ripe fruit.';
+          statusEl.classList.remove('danger');
+        }
+      }
+    };
+
+    const detectLoss = () => {
+      const d = Math.hypot(fly.x - swatter.x, fly.y - swatter.y);
+      if (d < fly.r + swatter.r - 6) {
+        gameOver = true;
+        statusEl.textContent = 'Swatted! Press New Life to buzz again.';
+        statusEl.classList.add('danger');
+      }
+
+      if (energy <= 0) {
+        gameOver = true;
+        statusEl.textContent = 'Out of nectar! Press New Life to respawn.';
+        statusEl.classList.add('danger');
+      }
+    };
+
+    const drawFruit = () => {
+      fruit.forEach((item) => {
+        ctx.fillStyle = `hsl(${item.hue} 85% 58%)`;
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, item.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.beginPath();
+        ctx.moveTo(item.x, item.y - item.r);
+        ctx.lineTo(item.x + 2, item.y - item.r - 8);
+        ctx.stroke();
+      });
+    };
+
+    const drawFly = () => {
+      ctx.save();
+      ctx.translate(fly.x, fly.y);
+
+      ctx.fillStyle = 'rgba(220, 240, 255, 0.58)';
+      ctx.beginPath();
+      ctx.ellipse(-9, -8, 10, 6, Math.sin(performance.now() / 60) * 0.2, 0, Math.PI * 2);
+      ctx.ellipse(9, -8, 10, 6, -Math.sin(performance.now() / 60) * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#172033';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, fly.r, fly.r - 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#9dfdff';
+      ctx.beginPath();
+      ctx.arc(5, -3, 2.5, 0, Math.PI * 2);
+      ctx.arc(-5, -3, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    };
+
+    const drawSwatter = () => {
+      ctx.save();
+      const angle = Math.atan2(fly.y - swatter.y, fly.x - swatter.x);
+      ctx.translate(swatter.x, swatter.y);
+      ctx.rotate(angle + Math.PI / 2);
+
+      ctx.fillStyle = '#d6d9e8';
+      ctx.fillRect(-3, swatter.r - 2, 6, 50);
+
+      ctx.strokeStyle = '#f56f9e';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 0, swatter.r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(245,111,158,0.35)';
+      ctx.lineWidth = 1;
+      for (let x = -swatter.r + 6; x <= swatter.r - 6; x += 6) {
+        ctx.beginPath();
+        ctx.moveTo(x, -Math.sqrt(swatter.r ** 2 - x ** 2));
+        ctx.lineTo(x, Math.sqrt(swatter.r ** 2 - x ** 2));
+        ctx.stroke();
+      }
+      ctx.restore();
+    };
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      for (let i = 0; i < 40; i += 1) {
+        ctx.fillRect(i * 20, 0, 1, canvas.height);
+      }
+
+      drawFruit();
+      drawSwatter();
+      drawFly();
+    };
+
+    const loop = (now) => {
+      if (gameOver) return;
+
+      updateFly();
+      updateSwatter();
+      collectFruit();
+      detectLoss();
+      draw();
+
+      const survival = Math.floor((now - startTime) / 1000);
+      scoreEl.textContent = String(score);
+      energyEl.textContent = String(Math.round(energy));
+      speedEl.textContent = `${(swatter.speed / 2).toFixed(1)}x`;
+      timeEl.textContent = `${survival}s`;
+
+      if (!gameOver) requestAnimationFrame(loop);
+    };
+
+    document.addEventListener('keydown', (event) => {
+      keys.add(event.key.toLowerCase());
+    });
+
+    document.addEventListener('keyup', (event) => {
+      keys.delete(event.key.toLowerCase());
+    });
+
+    document.getElementById('restart').addEventListener('click', reset);
+
+    reset();
+  </script>
+</body>
+</html>
