@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Star Sprint</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">Multiplayer browser game</p>
+      <h1>Star Sprint</h1>
+      <p class="lede">Create a room, share the code, and race your friends to collect five stars first.</p>
+    </section>
+
+    <section class="panel setup-panel" id="setup-panel">
+      <label class="field">
+        <span>Your name</span>
+        <input id="name-input" maxlength="18" placeholder="Nova">
+      </label>
+
+      <div class="setup-actions">
+        <button id="create-button" class="primary">Create room</button>
+        <div class="join-row">
+          <input id="room-input" maxlength="5" placeholder="Room code">
+          <button id="join-button">Join room</button>
+        </div>
+      </div>
+
+      <p class="hint">Use arrow keys or WASD to move once you’re in.</p>
+      <p class="status" id="status-text"></p>
+    </section>
+
+    <section class="game hidden" id="game-panel">
+      <div class="panel room-bar">
+        <div>
+          <p class="label">Room code</p>
+          <p class="room-code" id="room-code">-----</p>
+        </div>
+        <div class="room-actions">
+          <button id="copy-button">Copy code</button>
+          <button id="reset-button">New round</button>
+        </div>
+      </div>
+
+      <div class="layout">
+        <section class="panel arena-panel">
+          <div class="arena" id="arena"></div>
+        </section>
+
+        <aside class="panel sidebar">
+          <div>
+            <p class="label">Goal</p>
+            <p class="goal-text">First to 5 stars wins.</p>
+          </div>
+          <div>
+            <p class="label">Players</p>
+            <ul class="scoreboard" id="scoreboard"></ul>
+          </div>
+          <div>
+            <p class="label">Round status</p>
+            <p class="winner-text" id="winner-text">Waiting for players...</p>
+          </div>
+          <div class="controls">
+            <button data-direction="up">Up</button>
+            <div class="control-row">
+              <button data-direction="left">Left</button>
+              <button data-direction="down">Down</button>
+              <button data-direction="right">Right</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
+
