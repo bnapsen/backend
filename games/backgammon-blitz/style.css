@@ -288,10 +288,18 @@ button:disabled {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 14px;
+  align-items: stretch;
 }
 
 .score-row {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.board-header > div,
+.score-row > div {
+  min-height: 74px;
+  display: grid;
+  align-content: start;
 }
 
 .turn-text,
@@ -299,6 +307,8 @@ button:disabled {
   margin: 4px 0 0;
   font-size: 18px;
   font-weight: 700;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
 }
 
 .board-stage {
@@ -307,6 +317,7 @@ button:disabled {
   border-radius: 22px;
   border: 1px solid var(--line-strong);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  overflow: hidden;
 }
 
 #board {
@@ -323,32 +334,46 @@ button:disabled {
 }
 
 .dice-panel {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 138px;
   gap: 14px;
-  flex-wrap: wrap;
   align-items: center;
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.035);
+  background:
+    linear-gradient(135deg, rgba(140, 228, 255, 0.06), rgba(255, 212, 135, 0.08)),
+    rgba(255, 255, 255, 0.035);
+  min-height: 112px;
 }
 
 .dice-copy {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
 .dice-value {
   font-size: 18px;
   font-weight: 800;
+  line-height: 1.2;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: #fff6d8;
+  text-wrap: balance;
+  font-variant-numeric: tabular-nums;
 }
 
 .dice-visuals {
   display: flex;
   gap: 14px;
+  width: 138px;
+  min-width: 138px;
+  justify-content: center;
   transition: transform 0.75s cubic-bezier(.2, .8, .25, 1.15), filter 0.45s ease;
   transform-origin: center;
+  will-change: transform;
 }
 
 .dice-visuals.table-roll {
@@ -401,6 +426,10 @@ button:disabled {
 
 .inline-chip.ready-chip {
   color: var(--good);
+}
+
+.status-text {
+  min-height: 44px;
 }
 
 .toast {
@@ -473,6 +502,16 @@ button:disabled {
   .board-header,
   .score-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dice-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .dice-visuals {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
   }
 }
 
