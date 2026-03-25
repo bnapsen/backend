@@ -153,18 +153,29 @@
           </div>
 
           <div class="board-stage">
+            <div class="board-overlay" aria-hidden="true">
+              <div class="roll-track"></div>
+              <div class="dice-visuals board-dice" id="diceVisuals">
+                <div class="die-shell die-shell-one" id="dieShell1">
+                  <span class="die" id="die1"></span>
+                </div>
+                <div class="die-shell die-shell-two" id="dieShell2">
+                  <span class="die" id="die2"></span>
+                </div>
+              </div>
+            </div>
             <canvas id="board" width="1240" height="760" aria-label="Backgammon board"></canvas>
           </div>
 
           <div class="board-footer">
             <div class="dice-panel">
               <div class="dice-copy">
-                <p class="label">Dice tray</p>
+                <p class="label">Dice result</p>
                 <div class="dice-value" id="diceText">Roll to start</div>
               </div>
-              <div class="dice-visuals" id="diceVisuals" aria-hidden="true">
-                <span class="die" id="die1"></span>
-                <span class="die" id="die2"></span>
+              <div class="dice-note">
+                <p class="label">Board roll</p>
+                <p class="turn-text" id="diceStageLabel">Top rail ready</p>
               </div>
             </div>
             <div class="action-bar">

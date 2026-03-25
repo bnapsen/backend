@@ -33,6 +33,7 @@
     phaseText: document.getElementById('phaseText'),
     diceLabel: document.getElementById('diceLabel'),
     diceText: document.getElementById('diceText'),
+    diceStageLabel: document.getElementById('diceStageLabel'),
     barWhite: document.getElementById('barWhite'),
     barBlack: document.getElementById('barBlack'),
     raceLabel: document.getElementById('raceLabel'),
@@ -41,8 +42,11 @@
     networkStatus: document.getElementById('networkStatus'),
     modePill: document.getElementById('modePill'),
     statusText: document.getElementById('statusText'),
+    boardStage: document.querySelector('.board-stage'),
     die1: document.getElementById('die1'),
     die2: document.getElementById('die2'),
+    dieShell1: document.getElementById('dieShell1'),
+    dieShell2: document.getElementById('dieShell2'),
     diceVisuals: document.getElementById('diceVisuals'),
     toast: document.getElementById('toast'),
     stepOne: document.getElementById('stepOne'),
@@ -62,6 +66,7 @@
     drag: null,
     toastTimer: 0,
     botTimer: 0,
+    diceTimer: 0,
     statusMessage: '',
     pointRects: [],
     drawQueued: false,
@@ -266,6 +271,7 @@
       ui.phaseText.textContent = 'Start a match to begin.';
       ui.diceLabel.textContent = 'Roll to start';
       ui.diceText.textContent = 'Roll to start';
+      ui.diceStageLabel.textContent = 'Top rail ready';
       ui.barWhite.textContent = '0';
       ui.barBlack.textContent = '0';
       ui.raceLabel.textContent = 'White 0 / Black 0';
@@ -281,6 +287,9 @@
     ui.diceText.textContent = state.snapshot.dice.length
       ? `Live dice: ${state.snapshot.dice.join(', ')}`
       : `Last roll: ${state.snapshot.lastRoll?.[0] || '-'} / ${state.snapshot.lastRoll?.[1] || '-'}`;
+    ui.diceStageLabel.textContent = state.snapshot.dice.length
+      ? 'Dice in play'
+      : (state.snapshot.lastRoll?.[0] ? 'Roll settled' : 'Top rail ready');
     ui.barWhite.textContent = String(state.snapshot.bar[Core.WHITE]);
     ui.barBlack.textContent = String(state.snapshot.bar[Core.BLACK]);
     ui.raceLabel.textContent = `White ${pipCount(Core.WHITE)} / Black ${pipCount(Core.BLACK)}`;
@@ -355,24 +364,109 @@
       }
       syncDieFace(die, 1);
     });
+    syncDiceRestPose();
+  }
+
+  function syncDiceRestPose() {
+    const boardRect = ui.boardStage.getBoundingClientRect();
+    if (!boardRect.width) {
+      return;
+    }
+    const shellSize = 70;
+    const settleY = Math.max(18, Math.min(40, boardRect.height * 0.04));
+    const centerX = boardRect.width / 2;
+    const settleLeft = Math.round(centerX - shellSize - 10);
+    const settleRight = Math.round(centerX + 10);
+
+    ui.dieShell1.style.setProperty('--end-x', `${settleLeft}px`);
+    ui.dieShell1.style.setProperty('--end-y', `${settleY}px`);
+    ui.dieShell1.style.setProperty('--end-rot', '-8deg');
+    ui.dieShell1.style.transform = `translate3d(${settleLeft}px, ${settleY}px, 0) rotate(-8deg)`;
+
+    ui.dieShell2.style.setProperty('--end-x', `${settleRight}px`);
+    ui.dieShell2.style.setProperty('--end-y', `${Math.round(settleY + 2)}px`);
+    ui.dieShell2.style.setProperty('--end-rot', '10deg');
+    ui.dieShell2.style.transform = `translate3d(${settleRight}px, ${Math.round(settleY + 2)}px, 0) rotate(10deg)`;
   }
 
   function animateDiceRoll(first, second) {
+    const shells = [ui.dieShell1, ui.dieShell2];
+    const boardRect = ui.boardStage.getBoundingClientRect();
+    const shellSize = 70;
+    const settleY = Math.max(18, Math.min(40, boardRect.height * 0.04));
+    const centerX = boardRect.width / 2;
+    const settleLeft = Math.round(centerX - shellSize - 10);
+    const settleRight = Math.round(centerX + 10);
+    const leftStartX = Math.round(boardRect.width * 0.08);
+    const rightStartX = Math.round(boardRect.width * 0.82);
+    const midY = Math.round(settleY + 8);
+    const lateY = Math.round(settleY + 16);
+
+    window.clearTimeout(state.diceTimer);
+    ui.boardStage.classList.add('is-rolling');
+    ui.diceStageLabel.textContent = 'Board roll live';
+
+    const setups = [
+      {
+        shell: ui.dieShell1,
+        startX: leftStartX,
+        startY: 26,
+        midX: Math.round(boardRect.width * 0.34),
+        midY,
+        lateX: Math.round(settleLeft - 16),
+        lateY,
+        endX: settleLeft,
+        endY: settleY,
+        startRot: '-34deg',
+        endRot: '-8deg',
+      },
+      {
+        shell: ui.dieShell2,
+        startX: rightStartX,
+        startY: 16,
+        midX: Math.round(boardRect.width * 0.62),
+        midY: Math.round(midY - 6),
+        lateX: Math.round(settleRight + 14),
+        lateY: Math.round(lateY - 4),
+        endX: settleRight,
+        endY: Math.round(settleY + 2),
+        startRot: '28deg',
+        endRot: '10deg',
+      },
+    ];
+
+    setups.forEach((setup) => {
+      setup.shell.style.setProperty('--start-x', `${setup.startX}px`);
+      setup.shell.style.setProperty('--start-y', `${setup.startY}px`);
+      setup.shell.style.setProperty('--mid-x', `${setup.midX}px`);
+      setup.shell.style.setProperty('--mid-y', `${setup.midY}px`);
+      setup.shell.style.setProperty('--late-x', `${setup.lateX}px`);
+      setup.shell.style.setProperty('--late-y', `${setup.lateY}px`);
+      setup.shell.style.setProperty('--end-x', `${setup.endX}px`);
+      setup.shell.style.setProperty('--end-y', `${setup.endY}px`);
+      setup.shell.style.setProperty('--start-rot', setup.startRot);
+      setup.shell.style.setProperty('--end-rot', setup.endRot);
+      setup.shell.classList.remove('launch');
+      void setup.shell.offsetWidth;
+      setup.shell.classList.add('launch');
+    });
+
     [ui.die1, ui.die2].forEach((die) => die.classList.add('rolling'));
-    const travel = Math.max(70, Math.min(220, canvas.getBoundingClientRect().width * 0.18));
-    ui.diceVisuals.style.setProperty('--dice-travel', `${travel}px`);
-    ui.diceVisuals.classList.add('table-roll', 'roll-burst');
     const scramble = window.setInterval(() => {
       syncDieFace(ui.die1, 1 + Math.floor(Math.random() * 6));
       syncDieFace(ui.die2, 1 + Math.floor(Math.random() * 6));
     }, 60);
-    window.setTimeout(() => {
+    state.diceTimer = window.setTimeout(() => {
       window.clearInterval(scramble);
       [ui.die1, ui.die2].forEach((die) => die.classList.remove('rolling'));
       syncDieFace(ui.die1, first);
       syncDieFace(ui.die2, second);
-      ui.diceVisuals.classList.remove('table-roll');
-      window.setTimeout(() => ui.diceVisuals.classList.remove('roll-burst'), 280);
+      shells.forEach((shell) => {
+        shell.classList.remove('launch');
+        shell.style.transform = `translate3d(${shell.style.getPropertyValue('--end-x')}, ${shell.style.getPropertyValue('--end-y')}, 0) rotate(${shell.style.getPropertyValue('--end-rot')})`;
+      });
+      ui.boardStage.classList.remove('is-rolling');
+      ui.diceStageLabel.textContent = 'Roll settled';
     }, 760);
   }
 
@@ -1252,6 +1346,7 @@
       event.preventDefault();
       rollTurn();
     });
+    window.addEventListener('resize', syncDiceRestPose);
   }
 
   function hydrateSettings() {
