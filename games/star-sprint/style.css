@@ -306,7 +306,7 @@ button {
   transition: transform 150ms ease, border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
 }
 
-button:hover {
+button:hover:not(.board-piece):not(.board-square) {
   transform: translateY(-1px);
   border-color: rgba(255, 255, 255, 0.26);
 }
@@ -424,6 +424,7 @@ button:disabled {
 }
 
 .board-square:hover {
+  transform: none;
   filter: brightness(1.03);
 }
 
@@ -507,6 +508,10 @@ button:disabled {
 .board-piece:hover::before,
 .board-piece.active::before {
   opacity: 1;
+}
+
+.board-piece:hover {
+  transform: translate(var(--x, 0), var(--y, 0));
 }
 
 .board-piece.active {

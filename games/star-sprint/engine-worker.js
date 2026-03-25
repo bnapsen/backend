@@ -4,6 +4,8 @@ const CANDIDATE_SOURCES = [
   'https://cdn.jsdelivr.net/npm/stockfish@11.0.0/src/stockfish.js',
 ];
 
+const WASM_SOURCE = 'https://cdn.jsdelivr.net/npm/stockfish@11.0.0/src/stockfish.wasm';
+
 let engine = null;
 let ready = false;
 let loadingError = null;
@@ -68,7 +70,7 @@ function tryLoadEngine() {
     try {
       importScripts(source);
       if (typeof STOCKFISH === 'function') {
-        attachEngine(STOCKFISH());
+        attachEngine(STOCKFISH(undefined, WASM_SOURCE));
         return;
       }
     } catch (error) {
