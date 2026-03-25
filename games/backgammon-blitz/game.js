@@ -384,45 +384,54 @@
     syncDiceRestPose();
   }
 
-  function syncDiceRestPose() {
+  function getDiceArena() {
     const boardRect = ui.boardStage.getBoundingClientRect();
-    if (!boardRect.width) {
+    const shellSize = 58;
+    const centerX = boardRect.width / 2;
+    const centerY = boardRect.height * 0.48;
+    const halfGap = 6;
+    return {
+      boardRect,
+      shellSize,
+      settleLeft: Math.round(centerX - shellSize - halfGap),
+      settleRight: Math.round(centerX + halfGap),
+      settleY: Math.round(centerY - shellSize / 2),
+      laneTop: Math.round(centerY - 78),
+      laneBottom: Math.round(centerY + 78),
+      laneLeft: Math.round(boardRect.width * 0.14),
+      laneRight: Math.round(boardRect.width * 0.86),
+    };
+  }
+
+  function syncDiceRestPose() {
+    const arena = getDiceArena();
+    if (!arena.boardRect.width) {
       return;
     }
-    const shellSize = 58;
-    const settleY = Math.max(24, Math.min(46, boardRect.height * 0.05));
-    const centerX = boardRect.width / 2;
-    const settleLeft = Math.round(centerX - shellSize - 4);
-    const settleRight = Math.round(centerX + 4);
 
-    ui.dieShell1.style.setProperty('--end-x', `${settleLeft}px`);
-    ui.dieShell1.style.setProperty('--end-y', `${settleY}px`);
+    ui.dieShell1.style.setProperty('--end-x', `${arena.settleLeft}px`);
+    ui.dieShell1.style.setProperty('--end-y', `${arena.settleY}px`);
     ui.dieShell1.style.setProperty('--end-rot', '-8deg');
-    ui.dieShell1.style.transform = `translate3d(${settleLeft}px, ${settleY}px, 0) rotate(-8deg)`;
+    ui.dieShell1.style.transform = `translate3d(${arena.settleLeft}px, ${arena.settleY}px, 0) rotate(-8deg)`;
 
-    ui.dieShell2.style.setProperty('--end-x', `${settleRight}px`);
-    ui.dieShell2.style.setProperty('--end-y', `${Math.round(settleY + 2)}px`);
+    ui.dieShell2.style.setProperty('--end-x', `${arena.settleRight}px`);
+    ui.dieShell2.style.setProperty('--end-y', `${Math.round(arena.settleY + 2)}px`);
     ui.dieShell2.style.setProperty('--end-rot', '10deg');
-    ui.dieShell2.style.transform = `translate3d(${settleRight}px, ${Math.round(settleY + 2)}px, 0) rotate(10deg)`;
+    ui.dieShell2.style.transform = `translate3d(${arena.settleRight}px, ${Math.round(arena.settleY + 2)}px, 0) rotate(10deg)`;
   }
 
   function animateDiceRoll(first, second) {
     const shells = [ui.dieShell1, ui.dieShell2];
-    const boardRect = ui.boardStage.getBoundingClientRect();
-    const shellSize = 58;
-    const settleY = Math.max(24, Math.min(46, boardRect.height * 0.05));
-    const centerX = boardRect.width / 2;
-    const settleLeft = Math.round(centerX - shellSize - 4);
-    const settleRight = Math.round(centerX + 4);
+    const arena = getDiceArena();
     const intent = state.throwIntent;
-    const leftStartX = intent ? Math.round(intent.startX - 26) : Math.round(boardRect.width * 0.42);
-    const rightStartX = intent ? Math.round(intent.startX + 18) : Math.round(boardRect.width * 0.52);
-    const startY = intent ? Math.round(intent.startY - 26) : Math.round(settleY + 4);
+    const leftStartX = intent ? Math.round(intent.startX - 26) : Math.round(arena.settleLeft - 18);
+    const rightStartX = intent ? Math.round(intent.startX + 18) : Math.round(arena.settleRight + 18);
+    const startY = intent ? Math.round(intent.startY - 26) : Math.round(arena.settleY + 6);
     const driftX = intent ? Math.max(-220, Math.min(220, intent.dx)) : 0;
-    const driftY = intent ? Math.max(-80, Math.min(80, intent.dy)) : 0;
-    const midY = Math.round(settleY + 6 + Math.max(0, driftY * 0.1));
-    const lateY = Math.round(settleY + 14 + Math.max(0, driftY * 0.12));
-    const midBase = centerX + driftX * 0.34;
+    const driftY = intent ? Math.max(-120, Math.min(120, intent.dy)) : 0;
+    const midY = Math.round(arena.settleY + 18 + Math.max(0, driftY * 0.1));
+    const lateY = Math.round(arena.settleY + 26 + Math.max(0, driftY * 0.12));
+    const midBase = (arena.settleLeft + arena.settleRight + arena.shellSize) / 2 + driftX * 0.34;
 
     window.clearTimeout(state.diceTimer);
     state.throwIntent = null;
@@ -436,10 +445,10 @@
         startY,
         midX: Math.round(midBase - 44),
         midY,
-        lateX: Math.round(settleLeft - 16),
+        lateX: Math.round(arena.settleLeft - 22),
         lateY,
-        endX: settleLeft,
-        endY: settleY,
+        endX: arena.settleLeft,
+        endY: arena.settleY,
         startRot: intent ? `${Math.round(-18 + driftX * 0.08)}deg` : '-18deg',
         endRot: '-8deg',
       },
@@ -449,10 +458,10 @@
         startY: Math.max(8, startY - 8),
         midX: Math.round(midBase + 44),
         midY: Math.round(midY - 4),
-        lateX: Math.round(settleRight + 14),
+        lateX: Math.round(arena.settleRight + 20),
         lateY: Math.round(lateY - 4),
-        endX: settleRight,
-        endY: Math.round(settleY + 2),
+        endX: arena.settleRight,
+        endY: Math.round(arena.settleY + 2),
         startRot: intent ? `${Math.round(14 + driftX * 0.06)}deg` : '14deg',
         endRot: '10deg',
       },
@@ -515,8 +524,9 @@
   }
 
   function setDiceThrowPreview(point) {
-    const baseX = Math.max(24, Math.min(ui.boardStage.getBoundingClientRect().width - 88, point.x - 34));
-    const baseY = Math.max(12, Math.min(118, point.y - 24));
+    const arena = getDiceArena();
+    const baseX = Math.max(arena.laneLeft, Math.min(arena.laneRight - 86, point.x - 34));
+    const baseY = Math.max(arena.laneTop, Math.min(arena.laneBottom - 52, point.y - 24));
     ui.dieShell1.style.transform = `translate3d(${Math.round(baseX)}px, ${Math.round(baseY)}px, 0) rotate(-14deg)`;
     ui.dieShell2.style.transform = `translate3d(${Math.round(baseX + 40)}px, ${Math.round(baseY + 6)}px, 0) rotate(12deg)`;
   }

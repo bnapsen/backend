@@ -404,11 +404,12 @@ button:disabled {
 
 .roll-track {
   position: absolute;
-  left: 17%;
-  right: 17%;
-  top: 22px;
-  height: 94px;
-  border-radius: 999px;
+  left: 13%;
+  right: 13%;
+  top: 50%;
+  height: 164px;
+  transform: translateY(-50%);
+  border-radius: 32px;
   opacity: 0.42;
   background:
     radial-gradient(circle at 50% 50%, rgba(255, 243, 196, 0.18), transparent 52%),
@@ -421,7 +422,7 @@ button:disabled {
 
 .board-stage.is-rolling .roll-track {
   opacity: 0.92;
-  transform: scaleX(1.01);
+  transform: translateY(-50%) scale(1.015);
 }
 
 .board-footer {
@@ -491,6 +492,7 @@ button:disabled {
 
 .die-shell.launch {
   animation: dice-flight 980ms cubic-bezier(.18, .88, .22, 1) both;
+  transition: none;
 }
 
 .board-stage.is-rolling .die-shell {
