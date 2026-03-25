@@ -74,6 +74,7 @@
     toastTimer: 0,
     botTimer: 0,
     diceTimer: 0,
+    diceScrambleTimer: 0,
     diceGrab: null,
     throwIntent: null,
     statusMessage: '',
@@ -420,6 +421,25 @@
     ui.dieShell2.style.transform = `translate3d(${arena.settleRight}px, ${Math.round(arena.settleY + 2)}px, 0) rotate(10deg)`;
   }
 
+  function stopDiceAnimation(first, second) {
+    window.clearTimeout(state.diceTimer);
+    window.clearInterval(state.diceScrambleTimer);
+    state.diceTimer = 0;
+    state.diceScrambleTimer = 0;
+    [ui.die1, ui.die2].forEach((die) => die.classList.remove('rolling'));
+    ui.boardStage.classList.remove('is-rolling');
+    [ui.dieShell1, ui.dieShell2].forEach((shell) => {
+      shell.classList.remove('launch');
+    });
+
+    if (Number.isInteger(first) && first >= 1 && first <= 6) {
+      syncDieFace(ui.die1, first);
+    }
+    if (Number.isInteger(second) && second >= 1 && second <= 6) {
+      syncDieFace(ui.die2, second);
+    }
+  }
+
   function animateDiceRoll(first, second) {
     const shells = [ui.dieShell1, ui.dieShell2];
     const arena = getDiceArena();
@@ -433,7 +453,7 @@
     const lateY = Math.round(arena.settleY + 26 + Math.max(0, driftY * 0.12));
     const midBase = (arena.settleLeft + arena.settleRight + arena.shellSize) / 2 + driftX * 0.34;
 
-    window.clearTimeout(state.diceTimer);
+    stopDiceAnimation();
     state.throwIntent = null;
     ui.boardStage.classList.add('is-rolling');
     ui.diceStageLabel.textContent = 'Board roll live';
@@ -484,20 +504,15 @@
     });
 
     [ui.die1, ui.die2].forEach((die) => die.classList.add('rolling'));
-    const scramble = window.setInterval(() => {
+    state.diceScrambleTimer = window.setInterval(() => {
       syncDieFace(ui.die1, 1 + Math.floor(Math.random() * 6));
       syncDieFace(ui.die2, 1 + Math.floor(Math.random() * 6));
     }, 60);
     state.diceTimer = window.setTimeout(() => {
-      window.clearInterval(scramble);
-      [ui.die1, ui.die2].forEach((die) => die.classList.remove('rolling'));
-      syncDieFace(ui.die1, first);
-      syncDieFace(ui.die2, second);
+      stopDiceAnimation(first, second);
       shells.forEach((shell) => {
-        shell.classList.remove('launch');
         shell.style.transform = `translate3d(${shell.style.getPropertyValue('--end-x')}, ${shell.style.getPropertyValue('--end-y')}, 0) rotate(${shell.style.getPropertyValue('--end-rot')})`;
       });
-      ui.boardStage.classList.remove('is-rolling');
       ui.diceStageLabel.textContent = 'Roll settled';
       renderControls();
     }, 760);
@@ -712,6 +727,7 @@
   function startSolo() {
     disconnectSocket();
     cancelBotTurn();
+    stopDiceAnimation();
     clearSelection();
     cleanupDrag();
     state.mode = 'solo';
