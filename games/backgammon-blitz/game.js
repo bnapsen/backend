@@ -6,6 +6,8 @@
   const STORAGE_KEYS = {
     name: 'neonBackgammon.name',
     serverUrl: 'neonBackgammon.serverUrl',
+    setupCollapsed: 'neonBackgammon.setupCollapsed',
+    infoCollapsed: 'neonBackgammon.infoCollapsed',
   };
   const query = new URLSearchParams(window.location.search);
   const canvas = document.getElementById('board');
@@ -22,6 +24,8 @@
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
     soloBtn: document.getElementById('soloBtn'),
+    toggleSetupBtn: document.getElementById('toggleSetupBtn'),
+    toggleSidebarBtn: document.getElementById('toggleSidebarBtn'),
     rollBtn: document.getElementById('rollBtn'),
     autoBtn: document.getElementById('autoBtn'),
     restartBtn: document.getElementById('restartBtn'),
@@ -52,6 +56,9 @@
     stepOne: document.getElementById('stepOne'),
     stepTwo: document.getElementById('stepTwo'),
     stepThree: document.getElementById('stepThree'),
+    layoutShell: document.getElementById('layoutShell'),
+    setupColumn: document.getElementById('setupColumn'),
+    infoSidebar: document.getElementById('infoSidebar'),
   };
 
   const state = {
@@ -67,6 +74,8 @@
     toastTimer: 0,
     botTimer: 0,
     diceTimer: 0,
+    diceGrab: null,
+    throwIntent: null,
     statusMessage: '',
     pointRects: [],
     drawQueued: false,
@@ -74,6 +83,10 @@
       move: null,
       pulses: [],
       trail: [],
+    },
+    panels: {
+      setupCollapsed: false,
+      infoCollapsed: false,
     },
   };
 
@@ -136,6 +149,8 @@
   function persistSettings() {
     localStorage.setItem(STORAGE_KEYS.name, ui.nameInput.value.trim());
     localStorage.setItem(STORAGE_KEYS.serverUrl, state.serverUrl);
+    localStorage.setItem(STORAGE_KEYS.setupCollapsed, state.panels.setupCollapsed ? '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.infoCollapsed, state.panels.infoCollapsed ? '1' : '0');
   }
 
   function showToast(message) {
@@ -335,6 +350,8 @@
     ui.stepOne.classList.toggle('active', Boolean(ui.nameInput.value.trim()));
     ui.stepTwo.classList.toggle('active', state.mode === 'online' || state.mode === 'solo');
     ui.stepThree.classList.toggle('active', Boolean(state.snapshot));
+    ui.boardStage.classList.toggle('ready-to-roll', Boolean(activeTurn && state.snapshot && !state.snapshot.winner && state.snapshot.dice.length === 0 && !state.diceGrab));
+    ui.boardStage.classList.toggle('throwing', Boolean(state.diceGrab));
   }
 
   function render() {
@@ -372,11 +389,11 @@
     if (!boardRect.width) {
       return;
     }
-    const shellSize = 70;
-    const settleY = Math.max(18, Math.min(40, boardRect.height * 0.04));
+    const shellSize = 58;
+    const settleY = Math.max(24, Math.min(46, boardRect.height * 0.05));
     const centerX = boardRect.width / 2;
-    const settleLeft = Math.round(centerX - shellSize - 10);
-    const settleRight = Math.round(centerX + 10);
+    const settleLeft = Math.round(centerX - shellSize - 4);
+    const settleRight = Math.round(centerX + 4);
 
     ui.dieShell1.style.setProperty('--end-x', `${settleLeft}px`);
     ui.dieShell1.style.setProperty('--end-y', `${settleY}px`);
@@ -392,17 +409,23 @@
   function animateDiceRoll(first, second) {
     const shells = [ui.dieShell1, ui.dieShell2];
     const boardRect = ui.boardStage.getBoundingClientRect();
-    const shellSize = 70;
-    const settleY = Math.max(18, Math.min(40, boardRect.height * 0.04));
+    const shellSize = 58;
+    const settleY = Math.max(24, Math.min(46, boardRect.height * 0.05));
     const centerX = boardRect.width / 2;
-    const settleLeft = Math.round(centerX - shellSize - 10);
-    const settleRight = Math.round(centerX + 10);
-    const leftStartX = Math.round(boardRect.width * 0.08);
-    const rightStartX = Math.round(boardRect.width * 0.82);
-    const midY = Math.round(settleY + 8);
-    const lateY = Math.round(settleY + 16);
+    const settleLeft = Math.round(centerX - shellSize - 4);
+    const settleRight = Math.round(centerX + 4);
+    const intent = state.throwIntent;
+    const leftStartX = intent ? Math.round(intent.startX - 26) : Math.round(boardRect.width * 0.42);
+    const rightStartX = intent ? Math.round(intent.startX + 18) : Math.round(boardRect.width * 0.52);
+    const startY = intent ? Math.round(intent.startY - 26) : Math.round(settleY + 4);
+    const driftX = intent ? Math.max(-220, Math.min(220, intent.dx)) : 0;
+    const driftY = intent ? Math.max(-80, Math.min(80, intent.dy)) : 0;
+    const midY = Math.round(settleY + 6 + Math.max(0, driftY * 0.1));
+    const lateY = Math.round(settleY + 14 + Math.max(0, driftY * 0.12));
+    const midBase = centerX + driftX * 0.34;
 
     window.clearTimeout(state.diceTimer);
+    state.throwIntent = null;
     ui.boardStage.classList.add('is-rolling');
     ui.diceStageLabel.textContent = 'Board roll live';
 
@@ -410,27 +433,27 @@
       {
         shell: ui.dieShell1,
         startX: leftStartX,
-        startY: 26,
-        midX: Math.round(boardRect.width * 0.34),
+        startY,
+        midX: Math.round(midBase - 44),
         midY,
         lateX: Math.round(settleLeft - 16),
         lateY,
         endX: settleLeft,
         endY: settleY,
-        startRot: '-34deg',
+        startRot: intent ? `${Math.round(-18 + driftX * 0.08)}deg` : '-18deg',
         endRot: '-8deg',
       },
       {
         shell: ui.dieShell2,
         startX: rightStartX,
-        startY: 16,
-        midX: Math.round(boardRect.width * 0.62),
-        midY: Math.round(midY - 6),
+        startY: Math.max(8, startY - 8),
+        midX: Math.round(midBase + 44),
+        midY: Math.round(midY - 4),
         lateX: Math.round(settleRight + 14),
         lateY: Math.round(lateY - 4),
         endX: settleRight,
         endY: Math.round(settleY + 2),
-        startRot: '28deg',
+        startRot: intent ? `${Math.round(14 + driftX * 0.06)}deg` : '14deg',
         endRot: '10deg',
       },
     ];
@@ -467,7 +490,87 @@
       });
       ui.boardStage.classList.remove('is-rolling');
       ui.diceStageLabel.textContent = 'Roll settled';
+      renderControls();
     }, 760);
+  }
+
+  function setPanelCollapse(which, collapsed) {
+    state.panels[which] = collapsed;
+    ui.layoutShell.classList.toggle('setup-hidden', state.panels.setupCollapsed);
+    ui.layoutShell.classList.toggle('info-hidden', state.panels.infoCollapsed);
+    ui.setupColumn.classList.toggle('is-collapsed', state.panels.setupCollapsed);
+    ui.infoSidebar.classList.toggle('is-collapsed', state.panels.infoCollapsed);
+    ui.toggleSetupBtn.textContent = state.panels.setupCollapsed ? 'Show setup' : 'Hide setup';
+    ui.toggleSidebarBtn.textContent = state.panels.infoCollapsed ? 'Show info' : 'Hide info';
+    persistSettings();
+    window.setTimeout(syncDiceRestPose, 40);
+  }
+
+  function overlayPointFromEvent(event) {
+    const rect = ui.boardStage.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
+      y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)),
+    };
+  }
+
+  function setDiceThrowPreview(point) {
+    const baseX = Math.max(24, Math.min(ui.boardStage.getBoundingClientRect().width - 88, point.x - 34));
+    const baseY = Math.max(12, Math.min(118, point.y - 24));
+    ui.dieShell1.style.transform = `translate3d(${Math.round(baseX)}px, ${Math.round(baseY)}px, 0) rotate(-14deg)`;
+    ui.dieShell2.style.transform = `translate3d(${Math.round(baseX + 40)}px, ${Math.round(baseY + 6)}px, 0) rotate(12deg)`;
+  }
+
+  function beginDiceThrow(event) {
+    if (!canAct() || !state.snapshot || state.snapshot.dice.length || state.snapshot.winner) {
+      return;
+    }
+    event.preventDefault();
+    const point = overlayPointFromEvent(event);
+    state.diceGrab = {
+      pointerId: event.pointerId,
+      startX: point.x,
+      startY: point.y,
+      currentX: point.x,
+      currentY: point.y,
+    };
+    ui.boardStage.classList.add('throwing');
+    ui.diceStageLabel.textContent = 'Drag and release to throw';
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setDiceThrowPreview(point);
+    renderControls();
+  }
+
+  function moveDiceThrow(event) {
+    if (!state.diceGrab || state.diceGrab.pointerId !== event.pointerId) {
+      return;
+    }
+    const point = overlayPointFromEvent(event);
+    state.diceGrab.currentX = point.x;
+    state.diceGrab.currentY = point.y;
+    setDiceThrowPreview(point);
+  }
+
+  function endDiceThrow(event) {
+    if (!state.diceGrab || state.diceGrab.pointerId !== event.pointerId) {
+      return;
+    }
+    const grab = state.diceGrab;
+    state.diceGrab = null;
+    ui.boardStage.classList.remove('throwing');
+    const point = overlayPointFromEvent(event);
+    const dx = point.x - grab.startX;
+    const dy = point.y - grab.startY;
+    state.throwIntent = {
+      startX: grab.startX,
+      startY: grab.startY,
+      dx,
+      dy,
+    };
+    syncDiceRestPose();
+    ui.diceStageLabel.textContent = 'Throw sent';
+    renderControls();
+    rollTurn();
   }
 
   function clearSelection() {
@@ -1250,6 +1353,8 @@
     ui.hostBtn.addEventListener('click', () => connectOnline('host'));
     ui.joinBtn.addEventListener('click', () => connectOnline('join'));
     ui.soloBtn.addEventListener('click', startSolo);
+    ui.toggleSetupBtn.addEventListener('click', () => setPanelCollapse('setupCollapsed', !state.panels.setupCollapsed));
+    ui.toggleSidebarBtn.addEventListener('click', () => setPanelCollapse('infoCollapsed', !state.panels.infoCollapsed));
     ui.rollBtn.addEventListener('click', rollTurn);
     ui.autoBtn.addEventListener('click', autoMove);
     ui.restartBtn.addEventListener('click', restartMatch);
@@ -1347,6 +1452,17 @@
       rollTurn();
     });
     window.addEventListener('resize', syncDiceRestPose);
+    [ui.dieShell1, ui.dieShell2].forEach((shell) => {
+      shell.addEventListener('pointerdown', beginDiceThrow);
+      shell.addEventListener('pointermove', moveDiceThrow);
+      shell.addEventListener('pointerup', endDiceThrow);
+      shell.addEventListener('pointercancel', () => {
+        state.diceGrab = null;
+        ui.boardStage.classList.remove('throwing');
+        syncDiceRestPose();
+        renderControls();
+      });
+    });
   }
 
   function hydrateSettings() {
@@ -1354,6 +1470,10 @@
     state.serverUrl = sanitizeServerUrl(localStorage.getItem(STORAGE_KEYS.serverUrl) || query.get('server') || '');
     ui.serverUrlInput.value = state.serverUrl;
     ui.roomInput.value = sanitizeRoomCode(query.get('room') || '');
+    state.panels.setupCollapsed = localStorage.getItem(STORAGE_KEYS.setupCollapsed) === '1';
+    state.panels.infoCollapsed = localStorage.getItem(STORAGE_KEYS.infoCollapsed) === '1';
+    setPanelCollapse('setupCollapsed', state.panels.setupCollapsed);
+    setPanelCollapse('infoCollapsed', state.panels.infoCollapsed);
   }
 
   function bootFromQuery() {

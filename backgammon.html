@@ -13,14 +13,18 @@
   <div class="page-shell">
     <header class="topbar">
       <a class="back-link" href="index.html">Back to Nova Arcade</a>
+      <div class="topbar-actions">
+        <button id="toggleSetupBtn" class="secondary ui-toggle">Hide setup</button>
+        <button id="toggleSidebarBtn" class="secondary ui-toggle">Hide info</button>
+      </div>
       <div class="topbar-status">
         <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
         <div class="status-pill ghost" id="modePill">No match running</div>
       </div>
     </header>
 
-    <main class="layout">
-      <section class="setup-column">
+    <main class="layout" id="layoutShell">
+      <section class="setup-column" id="setupColumn">
         <section class="hero panel">
           <p class="eyebrow">Internet-ready backgammon</p>
           <h1>Neon Backgammon Blitz</h1>
@@ -187,7 +191,7 @@
         </section>
       </section>
 
-      <aside class="sidebar">
+      <aside class="sidebar" id="infoSidebar">
         <section class="panel sidebar-panel">
           <div class="sidebar-header">
             <div>

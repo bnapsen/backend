@@ -60,12 +60,23 @@ input {
   gap: 16px;
   align-items: center;
   margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .back-link {
   text-decoration: none;
   font-weight: 700;
   color: var(--muted);
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ui-toggle {
+  padding-inline: 12px;
 }
 
 .topbar-status {
@@ -104,8 +115,26 @@ input {
 
 .layout {
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr) 300px;
+  grid-template-columns: 320px minmax(0, 1.18fr) 270px;
   gap: 16px;
+  align-items: start;
+}
+
+.layout.setup-hidden {
+  grid-template-columns: minmax(0, 1.22fr) 270px;
+}
+
+.layout.info-hidden {
+  grid-template-columns: 320px minmax(0, 1.22fr);
+}
+
+.layout.setup-hidden.info-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.setup-column.is-collapsed,
+.sidebar.is-collapsed {
+  display: none;
 }
 
 .panel {
@@ -348,6 +377,15 @@ button:disabled {
   isolation: isolate;
 }
 
+.board-stage.ready-to-roll .die-shell {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.board-stage.throwing .die-shell {
+  cursor: grabbing;
+}
+
 #board {
   width: 100%;
   display: block;
@@ -366,10 +404,10 @@ button:disabled {
 
 .roll-track {
   position: absolute;
-  left: 5%;
-  right: 5%;
-  top: 18px;
-  height: 112px;
+  left: 17%;
+  right: 17%;
+  top: 22px;
+  height: 94px;
   border-radius: 999px;
   opacity: 0.42;
   background:
@@ -443,11 +481,12 @@ button:disabled {
   position: absolute;
   left: 0;
   top: 0;
-  width: 70px;
-  height: 70px;
+  width: 58px;
+  height: 58px;
   transform: translate3d(var(--end-x, 0px), var(--end-y, 0px), 0) rotate(var(--end-rot, 0deg));
   filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.34)) drop-shadow(0 0 18px rgba(255, 214, 141, 0.14));
   will-change: transform, filter;
+  transition: transform 0.08s linear;
 }
 
 .die-shell.launch {
@@ -464,9 +503,9 @@ button:disabled {
 }
 
 .die {
-  width: 60px;
-  height: 60px;
-  border-radius: 16px;
+  width: 100%;
+  height: 100%;
+  border-radius: 15px;
   border: 1px solid rgba(255, 255, 255, 0.38);
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(176, 208, 236, 0.58));
   display: grid;
@@ -477,7 +516,7 @@ button:disabled {
 }
 
 .die.rolling {
-  animation: die-shake 0.38s linear infinite, die-spin 0.68s linear infinite;
+  animation: die-shake 0.3s linear infinite, die-spin 0.56s linear infinite;
 }
 
 .pip {
@@ -580,6 +619,12 @@ button:disabled {
   .sidebar {
     grid-column: 1 / -1;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .layout.setup-hidden,
+  .layout.info-hidden,
+  .layout.setup-hidden.info-hidden {
+    grid-template-columns: 1fr;
   }
 }
 
