@@ -8,6 +8,9 @@
     engineLevel: 'neonCrownChess.engineLevel',
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
+  const ENGINE_WORKER_VERSION = '20260325b';
+  const ENGINE_INIT_TIMEOUT_MS = 4500;
+  const ENGINE_MOVE_TIMEOUT_MS = 6000;
   const query = new URLSearchParams(window.location.search);
   const FILES = Core.FILES;
   const ENGINE_LEVELS = {
@@ -44,6 +47,7 @@
     engineInitPromise: null,
     engineInitResolve: null,
     engineInitReject: null,
+    engineInitTimer: 0,
     engineRequestSeq: 0,
     enginePending: null,
   };
@@ -844,6 +848,7 @@
   }
 
   function teardownEngineWorker() {
+    window.clearTimeout(state.engineInitTimer);
     if (state.engineWorker) {
       try {
         state.engineWorker.postMessage({ type: 'stop' });
@@ -858,6 +863,7 @@
     state.engineInitPromise = null;
     state.engineInitResolve = null;
     state.engineInitReject = null;
+    state.engineInitTimer = 0;
   }
 
   function resetEngineBridge() {
@@ -879,6 +885,8 @@
   function handleEngineMessage(event) {
     const payload = event.data || {};
     if (payload.type === 'ready') {
+      window.clearTimeout(state.engineInitTimer);
+      state.engineInitTimer = 0;
       state.engineReady = true;
       state.engineFallback = false;
       setEngineStatus(`Stockfish ready - ${engineLevelProfile().label}`);
@@ -891,6 +899,7 @@
       state.engineFallback = true;
       setEngineStatus('Stockfish unavailable, using fallback engine.');
       if (state.enginePending) {
+        window.clearTimeout(state.enginePending.timer);
         state.enginePending.reject(new Error(payload.message || 'Engine error'));
         state.enginePending = null;
       }
@@ -901,6 +910,7 @@
     if (payload.type === 'bestmove' && state.enginePending && payload.requestId === state.enginePending.requestId) {
       const pending = state.enginePending;
       state.enginePending = null;
+      window.clearTimeout(pending.timer);
       pending.resolve(uciToMove(payload.move));
     }
   }
@@ -924,9 +934,11 @@
 
     try {
       if (!state.engineWorker) {
-        state.engineWorker = new Worker('engine-worker.js');
+        state.engineWorker = new Worker(`engine-worker.js?v=${ENGINE_WORKER_VERSION}`);
         state.engineWorker.onmessage = handleEngineMessage;
         state.engineWorker.onerror = () => {
+          window.clearTimeout(state.engineInitTimer);
+          state.engineInitTimer = 0;
           state.engineFallback = true;
           state.engineReady = false;
           setEngineStatus('Stockfish failed to load, using fallback engine.');
@@ -934,8 +946,29 @@
           render();
         };
       }
+      window.clearTimeout(state.engineInitTimer);
+      state.engineInitTimer = window.setTimeout(() => {
+        if (state.engineReady || !state.engineInitPromise) {
+          return;
+        }
+        state.engineFallback = true;
+        state.engineReady = false;
+        setEngineStatus('Stockfish took too long to load, using fallback engine.');
+        if (state.engineWorker) {
+          try {
+            state.engineWorker.terminate();
+          } catch (error) {
+            // Ignore termination issues during fallback.
+          }
+        }
+        state.engineWorker = null;
+        resolveEngineInit(false, new Error('Engine init timed out.'));
+        render();
+      }, ENGINE_INIT_TIMEOUT_MS);
       state.engineWorker.postMessage({ type: 'init' });
     } catch (error) {
+      window.clearTimeout(state.engineInitTimer);
+      state.engineInitTimer = 0;
       state.engineFallback = true;
       setEngineStatus('Stockfish failed to start, using fallback engine.');
       resolveEngineInit(false, error);
@@ -953,9 +986,21 @@
     setEngineStatus(`Stockfish thinking - ${profile.label}`);
     return new Promise((resolve, reject) => {
       if (state.enginePending) {
+        window.clearTimeout(state.enginePending.timer);
         state.enginePending.reject(new Error('Superseded by a newer engine request.'));
       }
-      state.enginePending = { requestId, resolve, reject };
+      const timer = window.setTimeout(() => {
+        if (!state.enginePending || state.enginePending.requestId !== requestId) {
+          return;
+        }
+        state.enginePending = null;
+        state.engineFallback = true;
+        state.engineReady = false;
+        setEngineStatus('Stockfish stalled, using fallback engine.');
+        reject(new Error('Engine move timed out.'));
+        render();
+      }, ENGINE_MOVE_TIMEOUT_MS);
+      state.enginePending = { requestId, resolve, reject, timer };
       state.engineWorker.postMessage({
         type: 'analyze',
         requestId,
@@ -970,6 +1015,7 @@
     window.clearTimeout(state.botTimer);
     if (state.engineWorker && state.enginePending) {
       state.engineWorker.postMessage({ type: 'stop' });
+      window.clearTimeout(state.enginePending.timer);
       state.enginePending.reject(new Error('Engine request cancelled.'));
       state.enginePending = null;
     }
