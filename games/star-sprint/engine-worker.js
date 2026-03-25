@@ -22,42 +22,49 @@ function normalizeLine(raw) {
   return '';
 }
 
+function handleLine(line) {
+  if (!line) {
+    return;
+  }
+
+  if (line === 'readyok') {
+    ready = true;
+    self.postMessage({ type: 'ready' });
+    return;
+  }
+
+  if (line.startsWith('bestmove ')) {
+    const parts = line.split(/\s+/);
+    self.postMessage({
+      type: 'bestmove',
+      requestId: activeRequestId,
+      move: parts[1] || '(none)',
+      ponder: parts[3] || null,
+    });
+    activeRequestId = null;
+    activeRequest = null;
+    return;
+  }
+
+  if (line.startsWith('info ')) {
+    if (activeRequestId !== null) {
+      self.postMessage({
+        type: 'info',
+        requestId: activeRequestId,
+        line,
+      });
+    }
+  }
+}
+
 function attachEngine(instance) {
   engine = instance;
   engine.onmessage = (raw) => {
-    const line = normalizeLine(raw);
-    if (!line) {
+    const text = normalizeLine(raw);
+    if (!text) {
       return;
     }
-
-    if (line === 'readyok') {
-      ready = true;
-      self.postMessage({ type: 'ready' });
-      return;
-    }
-
-    if (line.startsWith('bestmove ')) {
-      const parts = line.split(/\s+/);
-      self.postMessage({
-        type: 'bestmove',
-        requestId: activeRequestId,
-        move: parts[1] || '(none)',
-        ponder: parts[3] || null,
-      });
-      activeRequestId = null;
-      activeRequest = null;
-      return;
-    }
-
-    if (line.startsWith('info ')) {
-      if (activeRequestId !== null) {
-        self.postMessage({
-          type: 'info',
-          requestId: activeRequestId,
-          line,
-        });
-      }
-    }
+    text.split(/\r?\n/).forEach((line) => handleLine(line.trim()));
   };
 }
 
