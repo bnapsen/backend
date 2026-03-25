@@ -21,7 +21,7 @@
         <section class="hero panel">
           <p class="eyebrow">Internet-ready multiplayer chess</p>
           <h1>Neon Crown Chess</h1>
-          <p class="lede">Classic chess with smooth board motion, one-click room hosting, quick invite links, and a solo bot for practice while you wait for a friend.</p>
+          <p class="lede">Classic chess with smooth board motion, one-click room hosting, quick invite links, drag controls on phone and desktop, and a real engine opponent for solo play.</p>
 
           <div class="step-strip">
             <div class="step-card" id="stepOne">
@@ -61,7 +61,23 @@
           <div class="hero-actions">
             <button id="hostBtn" class="primary">Host match</button>
             <button id="joinBtn">Join match</button>
-            <button id="soloBtn">Play solo</button>
+            <button id="soloBtn">Play vs engine</button>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>Engine strength</span>
+              <select id="engineLevelSelect">
+                <option value="6">Relaxed</option>
+                <option value="10" selected>Club</option>
+                <option value="14">Sharp</option>
+                <option value="18">Tough</option>
+              </select>
+            </label>
+            <div class="control-card">
+              <span class="label">Controls</span>
+              <p id="controlHint">Mouse: click or drag. Phone: drag pieces. Keyboard: arrows move focus, Enter selects, Escape clears.</p>
+            </div>
           </div>
 
           <div class="invite-panel">
@@ -86,7 +102,8 @@
             </label>
           </details>
 
-          <p class="status-text" id="statusText">Host a match to create an invite link, join with a code from a friend, or play solo against the practice bot.</p>
+          <p class="status-text" id="statusText">Host a match to create an invite link, join with a code from a friend, or play solo against the engine.</p>
+          <p class="engine-status" id="engineStatus">Engine idle.</p>
         </section>
 
         <section class="panel guide-panel">
@@ -105,7 +122,7 @@
             </div>
             <div class="guide-item">
               <strong>Proper chess rules</strong>
-              <p>The backend validates every move, so both players always stay in sync.</p>
+              <p>The backend validates every move, and solo mode can hand positions to an in-browser engine for stronger play.</p>
             </div>
           </div>
         </section>

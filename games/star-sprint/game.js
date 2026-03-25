@@ -5,9 +5,17 @@
   const STORAGE_KEYS = {
     name: 'neonCrownChess.name',
     serverUrl: 'neonCrownChess.serverUrl',
+    engineLevel: 'neonCrownChess.engineLevel',
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const query = new URLSearchParams(window.location.search);
+  const FILES = Core.FILES;
+  const ENGINE_LEVELS = {
+    6: { label: 'Relaxed', movetime: 220 },
+    10: { label: 'Club', movetime: 420 },
+    14: { label: 'Sharp', movetime: 700 },
+    18: { label: 'Tough', movetime: 1000 },
+  };
 
   const state = {
     mode: 'idle',
@@ -24,14 +32,30 @@
     botTimer: null,
     flipBoard: false,
     pieceElements: new Map(),
+    keyboardFocus: { x: 4, y: 6 },
+    clickGuardUntil: 0,
+    drag: null,
+    dragGhost: null,
+    engineLevel: 10,
+    engineWorker: null,
+    engineReady: false,
+    engineStatus: 'Engine idle.',
+    engineFallback: false,
+    engineInitPromise: null,
+    engineInitResolve: null,
+    engineInitReject: null,
+    engineRequestSeq: 0,
+    enginePending: null,
   };
 
   const ui = {
     nameInput: document.getElementById('nameInput'),
     roomInput: document.getElementById('roomInput'),
     serverUrlInput: document.getElementById('serverUrlInput'),
+    engineLevelSelect: document.getElementById('engineLevelSelect'),
     inviteInput: document.getElementById('inviteInput'),
     statusText: document.getElementById('statusText'),
+    engineStatus: document.getElementById('engineStatus'),
     roomCodeLabel: document.getElementById('roomCodeLabel'),
     turnText: document.getElementById('turnText'),
     phaseText: document.getElementById('phaseText'),
@@ -86,9 +110,23 @@
     return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
   }
 
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function engineLevelProfile() {
+    return ENGINE_LEVELS[state.engineLevel] || ENGINE_LEVELS[10];
+  }
+
+  function setEngineStatus(message) {
+    state.engineStatus = message;
+    ui.engineStatus.textContent = message;
+  }
+
   function persistSettings() {
     localStorage.setItem(STORAGE_KEYS.name, ui.nameInput.value.trim());
     localStorage.setItem(STORAGE_KEYS.serverUrl, state.serverUrl);
+    localStorage.setItem(STORAGE_KEYS.engineLevel, String(state.engineLevel));
   }
 
   function getPlayerName() {
@@ -100,6 +138,11 @@
       return 'black';
     }
     return 'white';
+  }
+
+  function defaultFocusForControlledSide() {
+    const color = state.mode === 'solo' ? 'white' : state.yourColor || 'white';
+    return color === 'black' ? { x: 4, y: 1 } : { x: 4, y: 6 };
   }
 
   function currentOrientation() {
@@ -132,6 +175,26 @@
     };
   }
 
+  function boardPointToCoords(clientX, clientY) {
+    const rect = ui.boardGrid.getBoundingClientRect();
+    if (
+      clientX < rect.left ||
+      clientX > rect.right ||
+      clientY < rect.top ||
+      clientY > rect.bottom
+    ) {
+      return null;
+    }
+    const squareSize = rect.width / 8;
+    const displayX = clamp(Math.floor((clientX - rect.left) / squareSize), 0, 7);
+    const displayY = clamp(Math.floor((clientY - rect.top) / squareSize), 0, 7);
+    return boardCoords(displayX, displayY);
+  }
+
+  function coordToNotation(x, y) {
+    return `${FILES[x]}${8 - y}`;
+  }
+
   function showToast(message) {
     window.clearTimeout(state.toastTimer);
     ui.toast.textContent = message;
@@ -147,7 +210,7 @@
   }
 
   function renderStatus() {
-    ui.statusText.textContent = state.statusMessage || 'Host a match to create an invite link, join with a code from a friend, or play solo against the practice bot.';
+    ui.statusText.textContent = state.statusMessage || 'Host a match to create an invite link, join with a code from a friend, or play solo against the engine.';
   }
 
   function inviteUrl() {
@@ -208,7 +271,7 @@
               <div class="player-color-label">${capitalize(color)} pieces</div>
             </div>
             <span class="inline-chip ${active ? 'turn-chip' : ''}">
-              ${active ? 'Turn' : player.id === 'solo-bot' ? 'Bot' : 'Ready'}
+              ${active ? 'Turn' : player.id === 'engine-black' ? engineLevelProfile().label : 'Ready'}
             </span>
           </div>
         </div>
@@ -218,7 +281,11 @@
     ui.playerCards.innerHTML = cards;
 
     if (state.mode === 'solo') {
-      ui.presenceText.textContent = 'Solo practice against Crown Bot.';
+      ui.presenceText.textContent = state.engineReady
+        ? `Solo vs Stockfish - ${engineLevelProfile().label}`
+        : state.engineFallback
+          ? 'Solo vs fallback engine'
+          : 'Solo vs engine';
     } else {
       ui.presenceText.textContent = `${players.length}/2 players connected`;
     }
@@ -254,19 +321,19 @@
   function renderLegend() {
     const items = [
       {
-        title: 'Standard rules',
-        body: 'Castling, en passant, promotion, check, checkmate, stalemate, and the fifty-move rule are all supported.',
-        token: '\u2654',
+        title: 'Mouse, touch, or keyboard',
+        body: 'Click squares, drag pieces with a mouse or phone, or use arrow keys plus Enter to play without the mouse.',
+        token: '\u2658',
       },
       {
-        title: 'Smooth remote play',
-        body: 'The backend validates every move so both browsers stay synced, even if someone refreshes or reconnects later.',
-        token: '\u2194',
-      },
-      {
-        title: 'Solo warm-up',
-        body: 'Play against Crown Bot while you wait. It is lightweight, quick, and strong enough for casual practice.',
+        title: 'Real engine support',
+        body: 'Solo mode warms up a Stockfish worker in the browser and falls back to a local move chooser if the engine cannot load.',
         token: '\u2699',
+      },
+      {
+        title: 'Online sync',
+        body: 'The backend still validates every multiplayer move, so both browsers stay locked to the same legal position.',
+        token: '\u2194',
       },
     ];
 
@@ -300,10 +367,39 @@
     return Boolean(color && state.snapshot.turn === color);
   }
 
+  function setKeyboardFocus(x, y) {
+    state.keyboardFocus = {
+      x: clamp(x, 0, 7),
+      y: clamp(y, 0, 7),
+    };
+  }
+
+  function moveKeyboardFocus(displayDx, displayDy) {
+    const focused = state.keyboardFocus || defaultFocusForControlledSide();
+    const visual = displayCoords(focused.x, focused.y);
+    const next = boardCoords(
+      clamp(visual.displayX + displayDx, 0, 7),
+      clamp(visual.displayY + displayDy, 0, 7)
+    );
+    setKeyboardFocus(next.x, next.y);
+    renderBoard();
+  }
+
+  function squareAriaLabel(x, y, piece) {
+    const base = coordToNotation(x, y);
+    if (!piece) {
+      return `${base}, empty square`;
+    }
+    return `${base}, ${capitalize(piece.color)} ${Core.PIECES[piece.type].name}`;
+  }
+
+  function isMoveLegalTo(x, y) {
+    return state.legalMoves.find((move) => move.x === x && move.y === y) || null;
+  }
+
   function renderBoardSquares() {
     boardSquares.innerHTML = '';
     const lastMove = state.snapshot ? state.snapshot.lastMove : null;
-    const legalSet = new Map(state.legalMoves.map((move) => [`${move.x},${move.y}`, move]));
     const checkedColor = state.snapshot ? state.snapshot.check : null;
 
     for (let displayY = 0; displayY < 8; displayY += 1) {
@@ -312,11 +408,22 @@
         const square = document.createElement('button');
         square.type = 'button';
         square.className = `board-square ${(actual.x + actual.y) % 2 === 0 ? 'light' : 'dark'}`;
-        square.addEventListener('click', () => handleSquare(actual.x, actual.y));
+        square.tabIndex = -1;
+        square.setAttribute('aria-label', squareAriaLabel(actual.x, actual.y, boardPieceAt(actual.x, actual.y)));
+        square.addEventListener('click', () => {
+          if (performance.now() < state.clickGuardUntil) {
+            return;
+          }
+          ui.boardGrid.focus();
+          setKeyboardFocus(actual.x, actual.y);
+          handleSquare(actual.x, actual.y);
+        });
 
-        const key = `${actual.x},${actual.y}`;
         if (state.selected && state.selected.x === actual.x && state.selected.y === actual.y) {
           square.classList.add('selected');
+        }
+        if (state.keyboardFocus && state.keyboardFocus.x === actual.x && state.keyboardFocus.y === actual.y) {
+          square.classList.add('focused');
         }
         if (
           lastMove &&
@@ -330,7 +437,7 @@
           square.classList.add('check');
         }
 
-        const move = legalSet.get(key);
+        const move = isMoveLegalTo(actual.x, actual.y);
         if (move) {
           const marker = document.createElement('span');
           marker.className = move.capture ? 'move-ring' : 'move-dot';
@@ -354,6 +461,54 @@
         boardSquares.appendChild(square);
       }
     }
+  }
+
+  function destroyDragGhost() {
+    if (state.dragGhost) {
+      state.dragGhost.remove();
+      state.dragGhost = null;
+    }
+  }
+
+  function positionDragGhost(clientX, clientY) {
+    if (!state.dragGhost) {
+      return;
+    }
+    const size = ui.boardGrid.getBoundingClientRect().width / 8;
+    state.dragGhost.style.width = `${size}px`;
+    state.dragGhost.style.height = `${size}px`;
+    state.dragGhost.style.transform = `translate(${clientX - (size / 2)}px, ${clientY - (size / 2)}px)`;
+  }
+
+  function createDragGhost(piece, clientX, clientY) {
+    destroyDragGhost();
+    const ghost = document.createElement('div');
+    ghost.className = `drag-ghost ${piece.color}`;
+    ghost.innerHTML = `<span class="piece-face">${Core.getPieceGlyph(piece)}</span>`;
+    document.body.appendChild(ghost);
+    state.dragGhost = ghost;
+    positionDragGhost(clientX, clientY);
+  }
+
+  function cleanupDrag() {
+    if (!state.drag) {
+      return;
+    }
+    if (state.drag.sourceElement) {
+      state.drag.sourceElement.classList.remove('drag-source');
+      try {
+        if (state.drag.sourceElement.hasPointerCapture && state.drag.sourceElement.hasPointerCapture(state.drag.pointerId)) {
+          state.drag.sourceElement.releasePointerCapture(state.drag.pointerId);
+        }
+      } catch (error) {
+        // Ignore pointer capture release issues.
+      }
+    }
+    window.removeEventListener('pointermove', handleGlobalPointerMove);
+    window.removeEventListener('pointerup', handleGlobalPointerEnd);
+    window.removeEventListener('pointercancel', handleGlobalPointerEnd);
+    destroyDragGhost();
+    state.drag = null;
   }
 
   function renderPieces() {
@@ -392,13 +547,16 @@
         }
 
         const isMovedPiece = Boolean(lastMove && lastMove.to.x === x && lastMove.to.y === y);
-        element.className = `board-piece ${piece.color}${piece.id === selectedId ? ' active' : ''}${isMovedPiece ? ' moved' : ''}`;
+        const isDragSource = Boolean(state.drag && state.drag.pieceId === piece.id);
+        element.className = `board-piece ${piece.color}${piece.id === selectedId ? ' active' : ''}${isMovedPiece ? ' moved' : ''}${isDragSource ? ' drag-source' : ''}`;
         element.style.setProperty('--x', `calc(var(--square-size) * ${displayX})`);
         element.style.setProperty('--y', `calc(var(--square-size) * ${displayY})`);
         element.querySelector('.piece-face').textContent = Core.getPieceGlyph(piece);
-        element.onclick = (event) => {
-          event.stopPropagation();
-          handleSquare(x, y);
+        element.onpointerdown = (event) => {
+          if (performance.now() < state.clickGuardUntil) {
+            return;
+          }
+          handlePiecePointerDown(event, x, y, piece);
         };
         seen.add(piece.id);
       }
@@ -449,8 +607,12 @@
   function renderPills() {
     if (state.mode === 'solo') {
       ui.networkStatus.dataset.tone = 'online';
-      ui.networkStatus.textContent = 'Solo';
-      ui.modePill.textContent = 'Practice match';
+      ui.networkStatus.textContent = 'Engine';
+      ui.modePill.textContent = state.engineReady
+        ? `Vs Stockfish - ${engineLevelProfile().label}`
+        : state.engineFallback
+          ? 'Vs fallback engine'
+          : 'Engine warm-up';
       return;
     }
 
@@ -477,12 +639,14 @@
 
   function renderControls() {
     const hasRoom = Boolean(state.roomCode && state.mode === 'online');
-    ui.hostBtn.disabled = Boolean(state.socket && state.socket.readyState === WebSocket.CONNECTING);
-    ui.joinBtn.disabled = Boolean(state.socket && state.socket.readyState === WebSocket.CONNECTING) || !sanitizeRoomCode(ui.roomInput.value);
+    const pendingConnection = Boolean(state.socket && state.socket.readyState === WebSocket.CONNECTING);
+    ui.hostBtn.disabled = pendingConnection;
+    ui.joinBtn.disabled = pendingConnection || !sanitizeRoomCode(ui.roomInput.value);
     ui.restartBtn.disabled = !state.snapshot;
     ui.flipBtn.disabled = !state.snapshot;
     ui.copyBtn.disabled = !hasRoom;
     ui.copyCodeBtn.disabled = !hasRoom;
+    ui.engineLevelSelect.disabled = state.mode === 'online';
 
     ui.stepOne.classList.toggle('active', Boolean(ui.nameInput.value.trim()));
     ui.stepTwo.classList.toggle('active', state.mode === 'online' || state.mode === 'solo');
@@ -499,6 +663,7 @@
     renderCaptured();
     renderBoard();
     renderControls();
+    setEngineStatus(state.engineStatus);
   }
 
   function clearSelection() {
@@ -539,13 +704,91 @@
     soloState.maxPlayers = 2;
     soloState.players = [
       { id: 'solo-human', name: getPlayerName(), color: 'white' },
-      { id: 'solo-bot', name: 'Crown Bot', color: 'black' },
+      { id: 'engine-black', name: state.engineReady ? `Stockfish ${engineLevelProfile().label}` : 'Engine', color: 'black' },
     ];
-    soloState.service = 'solo';
+    soloState.service = state.engineReady ? 'stockfish' : 'solo';
     return soloState;
   }
 
-  function chooseBotMove(snapshot, color) {
+  function snapshotToFen(snapshot) {
+    const pieceToFen = {
+      pawn: 'p',
+      knight: 'n',
+      bishop: 'b',
+      rook: 'r',
+      queen: 'q',
+      king: 'k',
+    };
+
+    const rows = [];
+    for (let y = 0; y < 8; y += 1) {
+      let empty = 0;
+      let row = '';
+      for (let x = 0; x < 8; x += 1) {
+        const piece = Core.getPiece(snapshot.board, x, y);
+        if (!piece) {
+          empty += 1;
+          continue;
+        }
+        if (empty) {
+          row += String(empty);
+          empty = 0;
+        }
+        const symbol = pieceToFen[piece.type] || 'p';
+        row += piece.color === 'white' ? symbol.toUpperCase() : symbol;
+      }
+      if (empty) {
+        row += String(empty);
+      }
+      rows.push(row);
+    }
+
+    const castling = [];
+    const whiteKing = Core.getPiece(snapshot.board, 4, 7);
+    const blackKing = Core.getPiece(snapshot.board, 4, 0);
+    const whiteKingRook = Core.getPiece(snapshot.board, 7, 7);
+    const whiteQueenRook = Core.getPiece(snapshot.board, 0, 7);
+    const blackKingRook = Core.getPiece(snapshot.board, 7, 0);
+    const blackQueenRook = Core.getPiece(snapshot.board, 0, 0);
+
+    if (whiteKing && whiteKing.type === 'king' && whiteKing.color === 'white' && !whiteKing.moved) {
+      if (whiteKingRook && whiteKingRook.type === 'rook' && whiteKingRook.color === 'white' && !whiteKingRook.moved) castling.push('K');
+      if (whiteQueenRook && whiteQueenRook.type === 'rook' && whiteQueenRook.color === 'white' && !whiteQueenRook.moved) castling.push('Q');
+    }
+    if (blackKing && blackKing.type === 'king' && blackKing.color === 'black' && !blackKing.moved) {
+      if (blackKingRook && blackKingRook.type === 'rook' && blackKingRook.color === 'black' && !blackKingRook.moved) castling.push('k');
+      if (blackQueenRook && blackQueenRook.type === 'rook' && blackQueenRook.color === 'black' && !blackQueenRook.moved) castling.push('q');
+    }
+
+    return [
+      rows.join('/'),
+      snapshot.turn === 'black' ? 'b' : 'w',
+      castling.length ? castling.join('') : '-',
+      snapshot.enPassant ? coordToNotation(snapshot.enPassant.x, snapshot.enPassant.y) : '-',
+      snapshot.halfmoveClock || 0,
+      snapshot.moveNumber || 1,
+    ].join(' ');
+  }
+
+  function uciToMove(uci) {
+    if (!uci || uci === '(none)' || uci.length < 4) {
+      return null;
+    }
+    const fromFile = FILES.indexOf(uci[0]);
+    const toFile = FILES.indexOf(uci[2]);
+    const fromRank = Number(uci[1]);
+    const toRank = Number(uci[3]);
+    if (fromFile < 0 || toFile < 0 || Number.isNaN(fromRank) || Number.isNaN(toRank)) {
+      return null;
+    }
+    return {
+      from: { x: fromFile, y: 8 - fromRank },
+      to: { x: toFile, y: 8 - toRank },
+      promotion: uci[4] ? ({ q: 'queen', r: 'rook', b: 'bishop', n: 'knight' }[uci[4]] || null) : null,
+    };
+  }
+
+  function chooseFallbackMove(snapshot, color) {
     const moves = Core.getAllLegalMoves(snapshot, color);
     if (!moves.length) {
       return null;
@@ -591,41 +834,178 @@
       }
     }
 
-    return bestMove;
+    return {
+      from: bestMove.from,
+      to: bestMove.to,
+      promotion: bestMove.promotionRequired ? 'queen' : undefined,
+    };
   }
 
-  function queueBotTurn() {
+  function teardownEngineWorker() {
+    if (state.engineWorker) {
+      try {
+        state.engineWorker.postMessage({ type: 'stop' });
+        state.engineWorker.terminate();
+      } catch (error) {
+        // Ignore engine shutdown issues.
+      }
+    }
+    state.engineWorker = null;
+    state.engineReady = false;
+    state.enginePending = null;
+    state.engineInitPromise = null;
+    state.engineInitResolve = null;
+    state.engineInitReject = null;
+  }
+
+  function resolveEngineInit(ok, value) {
+    const resolver = ok ? state.engineInitResolve : state.engineInitReject;
+    state.engineInitResolve = null;
+    state.engineInitReject = null;
+    state.engineInitPromise = null;
+    if (resolver) {
+      resolver(value);
+    }
+  }
+
+  function handleEngineMessage(event) {
+    const payload = event.data || {};
+    if (payload.type === 'ready') {
+      state.engineReady = true;
+      state.engineFallback = false;
+      setEngineStatus(`Stockfish ready - ${engineLevelProfile().label}`);
+      resolveEngineInit(true, true);
+      render();
+      return;
+    }
+    if (payload.type === 'error') {
+      state.engineReady = false;
+      state.engineFallback = true;
+      setEngineStatus('Stockfish unavailable, using fallback engine.');
+      if (state.enginePending) {
+        state.enginePending.reject(new Error(payload.message || 'Engine error'));
+        state.enginePending = null;
+      }
+      resolveEngineInit(false, new Error(payload.message || 'Engine error'));
+      render();
+      return;
+    }
+    if (payload.type === 'bestmove' && state.enginePending && payload.requestId === state.enginePending.requestId) {
+      const pending = state.enginePending;
+      state.enginePending = null;
+      pending.resolve(uciToMove(payload.move));
+    }
+  }
+
+  function ensureEngineReady() {
+    if (state.engineFallback) {
+      return Promise.resolve(false);
+    }
+    if (state.engineReady && state.engineWorker) {
+      return Promise.resolve(true);
+    }
+    if (state.engineInitPromise) {
+      return state.engineInitPromise;
+    }
+
+    state.engineInitPromise = new Promise((resolve, reject) => {
+      state.engineInitResolve = resolve;
+      state.engineInitReject = reject;
+    });
+    setEngineStatus('Loading Stockfish engine...');
+
+    try {
+      if (!state.engineWorker) {
+        state.engineWorker = new Worker('engine-worker.js');
+        state.engineWorker.onmessage = handleEngineMessage;
+        state.engineWorker.onerror = () => {
+          state.engineFallback = true;
+          state.engineReady = false;
+          setEngineStatus('Stockfish failed to load, using fallback engine.');
+          resolveEngineInit(false, new Error('Engine worker failed to load.'));
+          render();
+        };
+      }
+      state.engineWorker.postMessage({ type: 'init' });
+    } catch (error) {
+      state.engineFallback = true;
+      setEngineStatus('Stockfish failed to start, using fallback engine.');
+      resolveEngineInit(false, error);
+    }
+
+    return state.engineInitPromise.catch(() => false);
+  }
+
+  function requestEngineMove(snapshot) {
+    if (!state.engineWorker || !state.engineReady) {
+      return Promise.resolve(chooseFallbackMove(snapshot, 'black'));
+    }
+    const requestId = ++state.engineRequestSeq;
+    const profile = engineLevelProfile();
+    setEngineStatus(`Stockfish thinking - ${profile.label}`);
+    return new Promise((resolve, reject) => {
+      if (state.enginePending) {
+        state.enginePending.reject(new Error('Superseded by a newer engine request.'));
+      }
+      state.enginePending = { requestId, resolve, reject };
+      state.engineWorker.postMessage({
+        type: 'analyze',
+        requestId,
+        fen: snapshotToFen(snapshot),
+        skill: state.engineLevel,
+        movetime: profile.movetime,
+      });
+    });
+  }
+
+  function cancelEngineThinking() {
     window.clearTimeout(state.botTimer);
-    state.botTimer = window.setTimeout(() => {
+    if (state.engineWorker && state.enginePending) {
+      state.engineWorker.postMessage({ type: 'stop' });
+      state.enginePending.reject(new Error('Engine request cancelled.'));
+      state.enginePending = null;
+    }
+  }
+
+  function queueEngineTurn() {
+    window.clearTimeout(state.botTimer);
+    state.botTimer = window.setTimeout(async () => {
       if (state.mode !== 'solo' || !state.snapshot || state.snapshot.turn !== 'black' || state.snapshot.winner || state.snapshot.drawReason) {
         return;
       }
 
-      const botMove = chooseBotMove(state.snapshot, 'black');
-      if (!botMove) {
+      const fenAtStart = snapshotToFen(state.snapshot);
+      const workingSnapshot = Core.cloneState(state.snapshot);
+      let move = null;
+      try {
+        const engineReady = await ensureEngineReady();
+        move = engineReady
+          ? await requestEngineMove(workingSnapshot)
+          : chooseFallbackMove(workingSnapshot, 'black');
+      } catch (error) {
+        move = chooseFallbackMove(workingSnapshot, 'black');
+      }
+      if (!move || state.mode !== 'solo' || !state.snapshot || snapshotToFen(state.snapshot) !== fenAtStart) {
         return;
       }
-
       const sandbox = Core.cloneState(state.snapshot);
-      const result = Core.applyMove(sandbox, {
-        from: botMove.from,
-        to: botMove.to,
-        promotion: botMove.promotionRequired ? 'queen' : undefined,
-      });
-
+      const result = Core.applyMove(sandbox, move);
       if (!result.ok) {
         return;
       }
-
       state.snapshot = decorateSoloSnapshot(sandbox);
       setStatusMessage(state.snapshot.status);
+      if (state.engineReady) {
+        setEngineStatus(`Stockfish ready - ${engineLevelProfile().label}`);
+      }
       clearSelection();
       render();
-    }, 550);
+    }, 260);
   }
 
   function submitMove(move) {
     closePromotion();
+    cancelEngineThinking();
 
     if (state.mode === 'online') {
       if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
@@ -653,8 +1033,37 @@
       setStatusMessage(state.snapshot.status);
       clearSelection();
       render();
-      queueBotTurn();
+      queueEngineTurn();
     }
+  }
+
+  function selectSquare(x, y) {
+    const piece = boardPieceAt(x, y);
+    if (!canInteract() || !piece || piece.color !== getControlledColor()) {
+      return false;
+    }
+    state.selected = { x, y };
+    state.legalMoves = Core.getLegalMoves(state.snapshot, x, y);
+    setKeyboardFocus(x, y);
+    renderBoard();
+    return true;
+  }
+
+  function attemptMoveTo(x, y) {
+    const destination = isMoveLegalTo(x, y);
+    if (!destination || !state.selected) {
+      return false;
+    }
+    const move = {
+      from: { ...state.selected },
+      to: { x, y },
+    };
+    if (destination.promotionRequired) {
+      openPromotion(move);
+    } else {
+      submitMove(move);
+    }
+    return true;
   }
 
   function handleSquare(x, y) {
@@ -662,34 +1071,133 @@
       return;
     }
 
+    setKeyboardFocus(x, y);
     const piece = boardPieceAt(x, y);
     const controlledColor = getControlledColor();
     const interactive = canInteract();
 
-    if (state.selected) {
-      const destination = state.legalMoves.find((move) => move.x === x && move.y === y);
-      if (destination && interactive) {
-        const move = {
-          from: { ...state.selected },
-          to: { x, y },
-        };
-        if (destination.promotionRequired) {
-          openPromotion(move);
-        } else {
-          submitMove(move);
-        }
-        return;
-      }
+    if (state.selected && attemptMoveTo(x, y)) {
+      return;
     }
 
     if (interactive && piece && piece.color === controlledColor) {
-      state.selected = { x, y };
-      state.legalMoves = Core.getLegalMoves(state.snapshot, x, y);
-      renderBoard();
+      if (state.selected && state.selected.x === x && state.selected.y === y) {
+        clearSelection();
+        return;
+      }
+      selectSquare(x, y);
       return;
     }
 
     clearSelection();
+  }
+
+  function handlePiecePointerDown(event, x, y, piece) {
+    if (!canInteract() || piece.color !== getControlledColor()) {
+      return;
+    }
+    if (event.button !== undefined && event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    ui.boardGrid.focus();
+    setKeyboardFocus(x, y);
+    selectSquare(x, y);
+    createDragGhost(piece, event.clientX, event.clientY);
+    state.drag = {
+      pointerId: event.pointerId,
+      pieceId: piece.id,
+      from: { x, y },
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      sourceElement: event.currentTarget,
+    };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch (error) {
+      // Ignore pointer capture issues.
+    }
+    event.currentTarget.classList.add('drag-source');
+    window.addEventListener('pointermove', handleGlobalPointerMove);
+    window.addEventListener('pointerup', handleGlobalPointerEnd);
+    window.addEventListener('pointercancel', handleGlobalPointerEnd);
+  }
+
+  function handleGlobalPointerMove(event) {
+    if (!state.drag || event.pointerId !== state.drag.pointerId) {
+      return;
+    }
+    if (Math.hypot(event.clientX - state.drag.startX, event.clientY - state.drag.startY) > 8) {
+      state.drag.moved = true;
+    }
+    positionDragGhost(event.clientX, event.clientY);
+    const hoverSquare = boardPointToCoords(event.clientX, event.clientY);
+    if (hoverSquare) {
+      setKeyboardFocus(hoverSquare.x, hoverSquare.y);
+      renderBoardSquares();
+    }
+  }
+
+  function handleGlobalPointerEnd(event) {
+    if (!state.drag || event.pointerId !== state.drag.pointerId) {
+      return;
+    }
+    const dragInfo = state.drag;
+    const dropSquare = boardPointToCoords(event.clientX, event.clientY);
+    cleanupDrag();
+    state.clickGuardUntil = performance.now() + 180;
+    if (dropSquare && dragInfo.moved) {
+      setKeyboardFocus(dropSquare.x, dropSquare.y);
+      if (attemptMoveTo(dropSquare.x, dropSquare.y)) {
+        return;
+      }
+      selectSquare(dragInfo.from.x, dragInfo.from.y);
+      return;
+    }
+    handleSquare(dragInfo.from.x, dragInfo.from.y);
+  }
+
+  function handleBoardKeydown(event) {
+    if (event.target !== ui.boardGrid) {
+      return;
+    }
+    switch (event.key) {
+      case 'ArrowUp':
+        event.preventDefault();
+        moveKeyboardFocus(0, -1);
+        return;
+      case 'ArrowDown':
+        event.preventDefault();
+        moveKeyboardFocus(0, 1);
+        return;
+      case 'ArrowLeft':
+        event.preventDefault();
+        moveKeyboardFocus(-1, 0);
+        return;
+      case 'ArrowRight':
+        event.preventDefault();
+        moveKeyboardFocus(1, 0);
+        return;
+      case 'Enter':
+      case ' ':
+        event.preventDefault();
+        handleSquare(state.keyboardFocus.x, state.keyboardFocus.y);
+        return;
+      case 'Escape':
+        event.preventDefault();
+        clearSelection();
+        return;
+      default:
+        return;
+    }
+  }
+
+  function updateSoloEngineLabel() {
+    if (state.mode === 'solo' && state.snapshot) {
+      state.snapshot = decorateSoloSnapshot(state.snapshot);
+      renderBoard();
+    }
   }
 
   function updateFromServerSnapshot(snapshot, message) {
@@ -731,7 +1239,8 @@
     }
 
     disconnectSocket();
-    window.clearTimeout(state.botTimer);
+    cancelEngineThinking();
+    cleanupDrag();
     closePromotion();
     state.mode = 'online';
     state.yourColor = null;
@@ -740,6 +1249,7 @@
     state.selected = null;
     state.legalMoves = [];
     state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
+    setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
     persistSettings();
     setStatusMessage(mode === 'host'
       ? 'Creating your room and opening the connection...'
@@ -772,6 +1282,7 @@
         state.yourColor = payload.color;
         state.roomCode = payload.roomCode;
         ui.roomInput.value = payload.roomCode;
+        setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
         setStatusMessage(`${capitalize(payload.color)} pieces are yours. Share the invite link when you are ready.`);
         render();
         return;
@@ -804,7 +1315,8 @@
 
   function startSolo() {
     disconnectSocket();
-    window.clearTimeout(state.botTimer);
+    cancelEngineThinking();
+    cleanupDrag();
     closePromotion();
     state.mode = 'solo';
     state.yourColor = 'white';
@@ -814,8 +1326,19 @@
     state.snapshot = decorateSoloSnapshot(Core.createGameState());
     state.selected = null;
     state.legalMoves = [];
-    setStatusMessage('Solo practice started. You control White and Crown Bot controls Black.');
+    setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
+    setStatusMessage('Engine match started. You control White. Mouse, touch, and keyboard controls are all enabled.');
+    setEngineStatus('Warming up Stockfish...');
     render();
+    ensureEngineReady().then((ready) => {
+      if (state.mode !== 'solo') {
+        return;
+      }
+      if (ready) {
+        updateSoloEngineLabel();
+      }
+      render();
+    });
   }
 
   async function copyText(value, successMessage) {
@@ -853,12 +1376,25 @@
       updateInviteUi();
     });
 
+    ui.engineLevelSelect.addEventListener('change', () => {
+      state.engineLevel = Number(ui.engineLevelSelect.value) || 10;
+      persistSettings();
+      if (state.engineReady) {
+        setEngineStatus(`Stockfish ready - ${engineLevelProfile().label}`);
+      } else if (state.mode === 'solo') {
+        setEngineStatus('Warming up Stockfish...');
+      }
+      updateSoloEngineLabel();
+      render();
+    });
+
     ui.hostBtn.addEventListener('click', () => connectOnline('host'));
     ui.joinBtn.addEventListener('click', () => connectOnline('join'));
     ui.soloBtn.addEventListener('click', startSolo);
     ui.copyBtn.addEventListener('click', () => copyText(inviteUrl(), 'Invite link copied.'));
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
     ui.restartBtn.addEventListener('click', () => {
+      cleanupDrag();
       closePromotion();
       clearSelection();
       if (state.mode === 'online') {
@@ -874,10 +1410,19 @@
     ui.flipBtn.addEventListener('click', () => {
       state.flipBoard = !state.flipBoard;
       renderBoard();
+      ui.boardGrid.focus();
     });
     ui.promotionModal.addEventListener('click', (event) => {
       if (event.target === ui.promotionModal) {
         closePromotion();
+      }
+    });
+    ui.boardGrid.tabIndex = 0;
+    ui.boardGrid.addEventListener('keydown', handleBoardKeydown);
+    ui.boardGrid.addEventListener('focus', () => {
+      if (!state.keyboardFocus) {
+        setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
+        renderBoard();
       }
     });
   }
@@ -886,6 +1431,9 @@
     ui.nameInput.value = localStorage.getItem(STORAGE_KEYS.name) || '';
     state.serverUrl = sanitizeServerUrl(query.get('server') || localStorage.getItem(STORAGE_KEYS.serverUrl) || PROD_SERVER_URL);
     ui.serverUrlInput.value = state.serverUrl;
+    state.engineLevel = Number(localStorage.getItem(STORAGE_KEYS.engineLevel) || '10') || 10;
+    ui.engineLevelSelect.value = String(state.engineLevel);
+    setEngineStatus('Engine idle.');
     const inviteRoom = sanitizeRoomCode(query.get('room'));
     if (inviteRoom) {
       ui.roomInput.value = inviteRoom;
@@ -894,6 +1442,7 @@
       renderStatus();
     }
 
+    setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
     renderLegend();
     bindEvents();
     render();

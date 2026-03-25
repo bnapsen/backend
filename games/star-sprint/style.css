@@ -40,6 +40,7 @@ body {
 
 button,
 input,
+select,
 summary {
   font: inherit;
 }
@@ -155,6 +156,7 @@ h2 {
 .lede,
 .invite-help,
 .status-text,
+.engine-status,
 .winner-text,
 .mini-status,
 .turn-text,
@@ -217,7 +219,8 @@ h2 {
 .guide-item,
 .player-card,
 .history-list li,
-.legend-item {
+.legend-item,
+.control-card {
   padding: 14px 16px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.07);
@@ -272,6 +275,7 @@ h2 {
 }
 
 input,
+select,
 button {
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -282,6 +286,17 @@ input {
   padding: 13px 14px;
   color: var(--text);
   background: rgba(6, 12, 22, 0.9);
+}
+
+select {
+  width: 100%;
+  padding: 13px 14px;
+  color: var(--text);
+  background: rgba(6, 12, 22, 0.9);
+}
+
+select option {
+  color: #07131f;
 }
 
 button {
@@ -322,6 +337,14 @@ button:disabled {
   margin-top: 12px;
 }
 
+.engine-status {
+  margin: 0;
+}
+
+.control-card p {
+  margin: 8px 0 0;
+}
+
 .room-code {
   font-size: 1.6rem;
   letter-spacing: 0.18em;
@@ -345,6 +368,12 @@ button:disabled {
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.04),
     0 18px 48px rgba(0, 0, 0, 0.28);
+  touch-action: none;
+}
+
+.board-grid:focus-visible {
+  outline: 4px solid rgba(110, 231, 200, 0.7);
+  outline-offset: 6px;
 }
 
 .board-squares,
@@ -383,6 +412,10 @@ button:disabled {
 
 .board-square.selected {
   box-shadow: inset 0 0 0 4px rgba(110, 231, 200, 0.9);
+}
+
+.board-square.focused {
+  box-shadow: inset 0 0 0 4px rgba(255, 159, 110, 0.9);
 }
 
 .board-square.check {
@@ -458,6 +491,7 @@ button:disabled {
     opacity 160ms ease,
     filter 160ms ease;
   z-index: 2;
+  touch-action: none;
 }
 
 .board-piece::before {
@@ -481,6 +515,10 @@ button:disabled {
 
 .board-piece.moved {
   filter: drop-shadow(0 10px 16px rgba(245, 214, 111, 0.3));
+}
+
+.board-piece.drag-source {
+  opacity: 0.22;
 }
 
 .piece-face {
@@ -510,6 +548,24 @@ button:disabled {
 
 .piece-ghost {
   opacity: 0;
+}
+
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: var(--square-size);
+  height: var(--square-size);
+  padding: 8px;
+  border: none;
+  background: transparent;
+  pointer-events: none;
+  z-index: 60;
+  transform: translate(-9999px, -9999px);
+}
+
+.drag-ghost .piece-face {
+  filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.28));
 }
 
 .capture-row {
