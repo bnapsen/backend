@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-labelledby="title desc">
+  <title id="title">Star Sprint cover art</title>
+  <desc id="desc">A neon multiplayer arena with colorful player tokens racing toward a glowing star.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#07111f"/>
+      <stop offset="100%" stop-color="#14284b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#fff7b8"/>
+      <stop offset="65%" stop-color="#ffd84d"/>
+      <stop offset="100%" stop-color="#ff9f43"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="480" fill="url(#bg)"/>
+  <g opacity="0.2" stroke="#9ed8ff">
+    <path d="M80 120H560"/>
+    <path d="M80 180H560"/>
+    <path d="M80 240H560"/>
+    <path d="M80 300H560"/>
+    <path d="M80 360H560"/>
+    <path d="M140 90V390"/>
+    <path d="M220 90V390"/>
+    <path d="M300 90V390"/>
+    <path d="M380 90V390"/>
+    <path d="M460 90V390"/>
+    <path d="M540 90V390"/>
+  </g>
+  <circle cx="320" cy="220" r="52" fill="url(#glow)"/>
+  <circle cx="208" cy="312" r="28" fill="#4dabf7"/>
+  <circle cx="438" cy="292" r="28" fill="#ff6b6b"/>
+  <circle cx="270" cy="162" r="20" fill="#69db7c"/>
+  <text x="320" y="430" fill="#edf4ff" text-anchor="middle" font-family="Arial, sans-serif" font-size="44" font-weight="700">STAR SPRINT</text>
+</svg>

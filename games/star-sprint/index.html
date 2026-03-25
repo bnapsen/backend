@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Star Sprint</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="back-link" href="../../index.html">Back to Nova Arcade</a>
+      <div class="status-pill" id="networkStatus">Offline</div>
+    </header>
+
+    <main class="layout">
+      <section class="hero panel">
+        <p class="eyebrow">Multiplayer arena</p>
+        <h1>Star Sprint</h1>
+        <p class="lede">Join a room, race across the grid, and be the first player to collect five stars.</p>
+
+        <div class="join-grid">
+          <label>
+            <span>Name</span>
+            <input id="nameInput" maxlength="18" placeholder="Nova" />
+          </label>
+          <label>
+            <span>Room</span>
+            <input id="roomInput" maxlength="12" placeholder="PUBLIC" />
+          </label>
+          <label class="server-field">
+            <span>Server WS URL</span>
+            <input id="serverUrlInput" placeholder="ws://localhost:8081" />
+          </label>
+        </div>
+
+        <div class="hero-actions">
+          <button id="hostBtn" class="primary">Host room</button>
+          <button id="joinBtn">Join room</button>
+          <button id="copyBtn">Copy invite</button>
+        </div>
+
+        <p class="status-text" id="statusText">Host a room or join an existing one to start playing.</p>
+      </section>
+
+      <section class="arena-wrap panel">
+        <div class="room-bar">
+          <div>
+            <p class="label">Room</p>
+            <p class="room-code" id="roomCodeLabel">-</p>
+          </div>
+          <div>
+            <p class="label">Goal</p>
+            <p class="goal-text">First to 5 stars</p>
+          </div>
+        </div>
+        <div class="arena" id="arena"></div>
+      </section>
+
+      <aside class="sidebar">
+        <section class="panel sidebar-panel">
+          <p class="label">Players</p>
+          <ul class="scoreboard" id="scoreboard"></ul>
+        </section>
+
+        <section class="panel sidebar-panel">
+          <p class="label">Round status</p>
+          <p class="winner-text" id="winnerText">Waiting for players...</p>
+          <button id="resetBtn" class="primary wide">New round</button>
+        </section>
+
+        <section class="panel sidebar-panel">
+          <p class="label">Controls</p>
+          <p class="helper-text">Use arrow keys or WASD to move.</p>
+          <div class="controls">
+            <button data-direction="up">Up</button>
+            <div class="control-row">
+              <button data-direction="left">Left</button>
+              <button data-direction="down">Down</button>
+              <button data-direction="right">Right</button>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
+

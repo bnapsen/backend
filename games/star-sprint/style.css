@@ -1,0 +1,265 @@
+:root {
+  --bg: #07111f;
+  --bg-2: #0b1830;
+  --panel: rgba(7, 17, 31, 0.84);
+  --panel-border: rgba(255, 255, 255, 0.12);
+  --text: #edf4ff;
+  --muted: #9eb6d9;
+  --accent: #ffd84d;
+  --accent-2: #ff7a59;
+  --success: #6ef0b3;
+  font-family: "Inter", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top, rgba(94, 224, 255, 0.18), transparent 35%),
+    radial-gradient(circle at bottom right, rgba(255, 122, 89, 0.2), transparent 30%),
+    linear-gradient(180deg, var(--bg) 0%, #020712 100%);
+}
+
+.page-shell {
+  width: min(1240px, calc(100vw - 28px));
+  margin: 0 auto;
+  padding: 24px 0 40px;
+}
+
+.topbar,
+.room-bar,
+.layout,
+.hero-actions,
+.controls,
+.control-row {
+  display: flex;
+  gap: 12px;
+}
+
+.topbar,
+.room-bar {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.layout {
+  align-items: start;
+}
+
+.panel {
+  border: 1px solid var(--panel-border);
+  border-radius: 24px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+}
+
+.hero,
+.arena-wrap,
+.sidebar-panel {
+  padding: 22px;
+}
+
+.hero {
+  flex: 0 0 320px;
+}
+
+.arena-wrap {
+  flex: 1 1 auto;
+}
+
+.sidebar {
+  display: grid;
+  gap: 16px;
+  width: 300px;
+}
+
+.back-link {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.status-pill {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.eyebrow,
+.label {
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2.8rem, 5vw, 4.8rem);
+  line-height: 0.95;
+}
+
+.lede,
+.helper-text,
+.goal-text,
+.winner-text,
+.status-text {
+  color: var(--muted);
+}
+
+.join-grid {
+  display: grid;
+  gap: 12px;
+  margin: 22px 0 16px;
+}
+
+.join-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+.server-field {
+  margin-top: 4px;
+}
+
+input,
+button {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font: inherit;
+}
+
+input {
+  width: 100%;
+  padding: 13px 14px;
+  color: var(--text);
+  background: rgba(5, 11, 22, 0.88);
+}
+
+button {
+  padding: 12px 14px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+button.primary {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #07111f;
+  font-weight: 800;
+}
+
+.wide {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.room-code {
+  margin: 0;
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+}
+
+.arena {
+  display: grid;
+  gap: 6px;
+  margin-top: 20px;
+  aspect-ratio: 1;
+}
+
+.cell {
+  position: relative;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(17, 31, 56, 0.9), rgba(7, 17, 31, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.cell.star::before,
+.cell.player::after {
+  content: "";
+  position: absolute;
+  inset: 18%;
+  border-radius: 50%;
+}
+
+.cell.star::before {
+  background: radial-gradient(circle, #fff6ad 0%, var(--accent) 60%, #eaa50a 100%);
+  box-shadow: 0 0 22px rgba(255, 216, 77, 0.5);
+}
+
+.cell.player::after {
+  background: var(--player-color, #fff);
+  border: 3px solid rgba(255, 255, 255, 0.3);
+}
+
+.cell.you {
+  outline: 2px solid var(--success);
+  outline-offset: -3px;
+}
+
+.scoreboard {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.scoreboard li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.player-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+@media (max-width: 980px) {
+  .layout {
+    flex-direction: column;
+  }
+
+  .hero,
+  .sidebar {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-shell {
+    width: min(100vw - 18px, 1240px);
+  }
+
+  .hero-actions,
+  .controls,
+  .control-row,
+  .topbar,
+  .room-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
