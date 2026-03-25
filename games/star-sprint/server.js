@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 
+const http = require('http');
 const { WebSocketServer } = require('ws');
 const crypto = require('crypto');
 
+const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
 const WIDTH = 12;
 const HEIGHT = 12;
@@ -148,7 +150,18 @@ function resetRoom(room) {
   room.star = spawnStar(room);
 }
 
-const wss = new WebSocketServer({ port: PORT });
+const server = http.createServer((req, res) => {
+  if (req.url === '/' || req.url === '/healthz') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: true, service: 'star-sprint', rooms: rooms.size }));
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws) => {
   ws.meta = { roomCode: null, playerId: null };
@@ -220,5 +233,6 @@ wss.on('connection', (ws) => {
   });
 });
 
-console.log(`Star Sprint multiplayer server listening on :${PORT}`);
-
+server.listen(PORT, HOST, () => {
+  console.log(`Star Sprint multiplayer server listening on http://${HOST}:${PORT}`);
+});

@@ -15,9 +15,11 @@ npm start
 
 By default the WebSocket server listens on port `8081`. In production you can override that with the `PORT` environment variable.
 
+The server also exposes `GET /healthz` so it can be used on platforms like Render that require an HTTP health check.
+
 ## Deploy notes
 
 - Frontend path: `/games/star-sprint/`
 - WebSocket backend: separate Node process or service
 - Update the in-game server URL field to match your deployed `wss://` endpoint if needed
-
+- This repo includes a root `render.yaml` for deploying the backend from `games/star-sprint/`

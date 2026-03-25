@@ -106,6 +106,17 @@ The backend is stateless except room save files under `server/data/*.json`.
 5. Deploy and copy public URL.
 6. In client join popup, set WS URL to `wss://<your-url>`.
 
+## Star Sprint backend
+
+The Star Sprint multiplayer backend lives in `games/star-sprint/` and the repo root now includes a `render.yaml` that can create a Render web service for it.
+
+Recommended production flow:
+
+1. Create a Render Blueprint from this GitHub repo.
+2. Let Render create the `star-sprint-backend` web service from `games/star-sprint/`.
+3. Use the resulting `wss://...onrender.com` URL in the Star Sprint page.
+4. Optionally add a custom domain such as `starsprint-api.classiccarcollectorshub.com`.
+
 ### Persistence note
 
 Many platforms have ephemeral disks. If container filesystem resets, room files may be lost.

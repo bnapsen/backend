@@ -1,13 +1,15 @@
 (() => {
   'use strict';
 
+  const STORAGE_KEY = 'starSprint.serverUrl';
+  const query = new URLSearchParams(window.location.search);
   const BOARD_SIZE = 12;
   const state = {
     roomCode: '',
     playerId: '',
     socket: null,
     snapshot: null,
-    serverUrl: `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname || 'localhost'}:8081`,
+    serverUrl: '',
   };
 
   const ui = {
@@ -115,6 +117,7 @@
     ui.roomInput.value = room;
     ui.serverUrlInput.value = serverUrl;
     state.serverUrl = serverUrl;
+    window.localStorage.setItem(STORAGE_KEY, serverUrl);
     setStatus(`Connecting to ${room}...`);
     setNetworkStatus('Connecting...');
 
@@ -171,7 +174,8 @@
   ui.resetBtn.addEventListener('click', () => send({ type: 'reset' }));
   ui.copyBtn.addEventListener('click', async () => {
     const room = sanitizeRoomCode(ui.roomInput.value || state.roomCode);
-    const invite = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(room)}`;
+    const serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
+    const invite = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(room)}&server=${encodeURIComponent(serverUrl)}`;
     await navigator.clipboard.writeText(invite);
     setStatus('Invite link copied to the clipboard.');
   });
@@ -198,7 +202,14 @@
     move(direction);
   });
 
-  ui.roomInput.value = sanitizeRoomCode(new URLSearchParams(window.location.search).get('room') || 'PUBLIC');
+  const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  const defaultServerUrl = isLocal
+    ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname || 'localhost'}:8081`
+    : '';
+  const rememberedServer = window.localStorage.getItem(STORAGE_KEY) || '';
+  state.serverUrl = sanitizeServerUrl(query.get('server') || rememberedServer || defaultServerUrl);
+
+  ui.roomInput.value = sanitizeRoomCode(query.get('room') || 'PUBLIC');
   ui.serverUrlInput.value = state.serverUrl;
   ui.arena.style.gridTemplateColumns = `repeat(${BOARD_SIZE}, minmax(0, 1fr))`;
   for (let i = 0; i < BOARD_SIZE * BOARD_SIZE; i += 1) {
@@ -207,4 +218,3 @@
     ui.arena.appendChild(cell);
   }
 })();
-
