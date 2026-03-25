@@ -10,68 +10,153 @@
   <div class="page-shell">
     <header class="topbar">
       <a class="back-link" href="../../index.html">Back to Nova Arcade</a>
-      <div class="status-pill" id="networkStatus">Offline</div>
+      <div class="topbar-status">
+        <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
+        <div class="status-pill ghost" id="playerCountPill">0 / 6 racers</div>
+      </div>
     </header>
 
     <main class="layout">
-      <section class="hero panel">
-        <p class="eyebrow">Multiplayer arena</p>
-        <h1>Star Sprint</h1>
-        <p class="lede">Join a room, race across the grid, and be the first player to collect five stars.</p>
+      <section class="setup-column">
+        <section class="hero panel">
+          <p class="eyebrow">Multiplayer sprint duel</p>
+          <h1>Star Sprint</h1>
+          <p class="lede">Host a room in one click, copy the invite, and race your friend to five glowing stars.</p>
 
-        <div class="join-grid">
-          <label>
-            <span>Name</span>
-            <input id="nameInput" maxlength="18" placeholder="Nova" />
-          </label>
-          <label>
-            <span>Room</span>
-            <input id="roomInput" maxlength="12" placeholder="PUBLIC" />
-          </label>
-          <label class="server-field">
-            <span>Server WS URL</span>
-            <input id="serverUrlInput" placeholder="ws://localhost:8081" />
-          </label>
-        </div>
+          <div class="step-strip">
+            <div class="step-card" id="stepHost">
+              <span class="step-number">1</span>
+              <div>
+                <strong>Host a room</strong>
+                <p>Start a fresh private room instantly.</p>
+              </div>
+            </div>
+            <div class="step-card" id="stepShare">
+              <span class="step-number">2</span>
+              <div>
+                <strong>Copy the invite</strong>
+                <p>Send one link so your second player lands in the right room.</p>
+              </div>
+            </div>
+            <div class="step-card" id="stepJoin">
+              <span class="step-number">3</span>
+              <div>
+                <strong>Race live</strong>
+                <p>Use WASD or the arrow keys and beat the other player to five stars.</p>
+              </div>
+            </div>
+          </div>
 
-        <div class="hero-actions">
-          <button id="hostBtn" class="primary">Host room</button>
-          <button id="joinBtn">Join room</button>
-          <button id="copyBtn">Copy invite</button>
-        </div>
+          <div class="field-grid">
+            <label>
+              <span>Name</span>
+              <input id="nameInput" maxlength="18" placeholder="Nova" autocomplete="nickname" />
+            </label>
+            <label>
+              <span>Room code</span>
+              <input id="roomInput" maxlength="12" placeholder="Auto-generated when hosting" />
+            </label>
+          </div>
 
-        <p class="status-text" id="statusText">Host a room or join an existing one to start playing.</p>
+          <div class="hero-actions">
+            <button id="hostBtn" class="primary">Host new room</button>
+            <button id="joinBtn">Join existing room</button>
+          </div>
+
+          <div class="invite-panel">
+            <div class="invite-header">
+              <div>
+                <p class="label">Invite link</p>
+                <p class="invite-help">Best for two players: host here, then send this link.</p>
+              </div>
+              <button id="copyCodeBtn" class="secondary">Copy room code</button>
+            </div>
+            <div class="invite-row">
+              <input id="inviteInput" readonly value="" />
+              <button id="copyBtn" class="primary">Copy invite</button>
+            </div>
+          </div>
+
+          <details class="advanced-panel">
+            <summary>Advanced connection settings</summary>
+            <label class="advanced-field">
+              <span>Server WS URL</span>
+              <input id="serverUrlInput" placeholder="wss://backend-ujaa.onrender.com" />
+            </label>
+          </details>
+
+          <p class="status-text" id="statusText">Host a room to create an invite link, or paste a room code and join an existing match.</p>
+        </section>
+
+        <section class="panel guide-panel">
+          <div class="guide-header">
+            <p class="label">Fastest 2-player setup</p>
+            <h2>Thirty-second match setup</h2>
+          </div>
+          <div class="guide-list">
+            <div class="guide-item">
+              <strong>Player 1</strong>
+              <p>Enter your name and press <span class="inline-chip">Host new room</span>.</p>
+            </div>
+            <div class="guide-item">
+              <strong>Player 2</strong>
+              <p>Open the invite link, enter a name, and press <span class="inline-chip">Join existing room</span>.</p>
+            </div>
+            <div class="guide-item">
+              <strong>Movement</strong>
+              <p>Arrow keys or WASD. The glowing star respawns each time someone captures it.</p>
+            </div>
+          </div>
+        </section>
       </section>
 
       <section class="arena-wrap panel">
-        <div class="room-bar">
+        <div class="arena-header">
           <div>
             <p class="label">Room</p>
             <p class="room-code" id="roomCodeLabel">-</p>
           </div>
           <div>
             <p class="label">Goal</p>
-            <p class="goal-text">First to 5 stars</p>
+            <p class="goal-text" id="goalText">First to 5 stars</p>
+          </div>
+          <div>
+            <p class="label">Live room</p>
+            <p class="presence-text" id="presenceText">Waiting for racers...</p>
           </div>
         </div>
-        <div class="arena" id="arena"></div>
+
+        <div class="arena-frame">
+          <div class="arena-backdrop"></div>
+          <div class="arena" id="arena"></div>
+        </div>
+
+        <div class="arena-footer">
+          <p class="winner-text" id="winnerText">Waiting for players...</p>
+          <button id="resetBtn" class="primary">New round</button>
+        </div>
       </section>
 
       <aside class="sidebar">
         <section class="panel sidebar-panel">
-          <p class="label">Players</p>
+          <div class="sidebar-header">
+            <div>
+              <p class="label">Race board</p>
+              <h2>Leaderboard</h2>
+            </div>
+            <p class="mini-status" id="raceSummary">No racers connected yet.</p>
+          </div>
           <ul class="scoreboard" id="scoreboard"></ul>
         </section>
 
         <section class="panel sidebar-panel">
-          <p class="label">Round status</p>
-          <p class="winner-text" id="winnerText">Waiting for players...</p>
-          <button id="resetBtn" class="primary wide">New round</button>
-        </section>
-
-        <section class="panel sidebar-panel">
           <p class="label">Controls</p>
-          <p class="helper-text">Use arrow keys or WASD to move.</p>
+          <div class="control-notes">
+            <span class="inline-chip">WASD</span>
+            <span class="inline-chip">Arrow keys</span>
+            <span class="inline-chip">Tap buttons</span>
+          </div>
+          <p class="helper-text">You cannot move through walls or through another racer, so use positioning to block a path to the next star.</p>
           <div class="controls">
             <button data-direction="up">Up</button>
             <div class="control-row">
@@ -83,9 +168,10 @@
         </section>
       </aside>
     </main>
+
+    <div class="toast" id="toast" aria-live="polite"></div>
   </div>
 
   <script src="game.js"></script>
 </body>
 </html>
-

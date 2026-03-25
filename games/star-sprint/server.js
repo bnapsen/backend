@@ -12,6 +12,7 @@ const HEIGHT = 12;
 const GOAL = 5;
 const MAX_PLAYERS = 6;
 const COLORS = ['#ff6b6b', '#4dabf7', '#ffd43b', '#69db7c', '#f783ac', '#b197fc'];
+const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const rooms = new Map();
 
 function send(ws, payload) {
@@ -19,25 +20,50 @@ function send(ws, payload) {
   ws.send(JSON.stringify(payload));
 }
 
-function roomState(code) {
-  if (!rooms.has(code)) {
-    rooms.set(code, {
-      code,
-      width: WIDTH,
-      height: HEIGHT,
-      goal: GOAL,
-      players: new Map(),
-      star: { x: 0, y: 0 },
-      winnerId: null,
-      winnerName: null,
-    });
-    rooms.get(code).star = spawnStar(rooms.get(code));
-  }
-  return rooms.get(code);
+function sanitizeRoomCode(raw) {
+  return String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 12);
 }
 
-function sanitizeRoomCode(raw) {
-  return String(raw || 'PUBLIC').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) || 'PUBLIC';
+function generateRoomCode() {
+  let code = '';
+  do {
+    code = Array.from({ length: 6 }, () => ROOM_CHARS[Math.floor(Math.random() * ROOM_CHARS.length)]).join('');
+  } while (rooms.has(code));
+  return code;
+}
+
+function createRoom(code) {
+  const room = {
+    code,
+    width: WIDTH,
+    height: HEIGHT,
+    goal: GOAL,
+    maxPlayers: MAX_PLAYERS,
+    players: new Map(),
+    star: { x: 0, y: 0 },
+    winnerId: null,
+    winnerName: null,
+  };
+  room.star = spawnStar(room);
+  rooms.set(code, room);
+  return room;
+}
+
+function roomState(code, mode) {
+  const normalized = sanitizeRoomCode(code);
+  if (mode === 'host') {
+    const hostCode = normalized || generateRoomCode();
+    return rooms.get(hostCode) || createRoom(hostCode);
+  }
+
+  if (!normalized || !rooms.has(normalized)) {
+    return null;
+  }
+  return rooms.get(normalized);
 }
 
 function listPlayers(room) {
@@ -52,15 +78,24 @@ function listPlayers(room) {
 }
 
 function snapshot(room) {
+  const players = listPlayers(room);
+  const leader = players
+    .slice()
+    .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name))[0] || null;
+
   return {
     roomCode: room.code,
     width: room.width,
     height: room.height,
     goal: room.goal,
+    maxPlayers: room.maxPlayers,
+    playerCount: players.length,
+    leaderId: leader?.id || null,
+    leaderName: leader?.name || null,
     winnerId: room.winnerId,
     winnerName: room.winnerName,
     star: room.star,
-    players: listPlayers(room),
+    players,
   };
 }
 
@@ -71,13 +106,28 @@ function broadcastState(room) {
   }
 }
 
-function randomOpenCell(room) {
-  while (true) {
-    const x = Math.floor(Math.random() * room.width);
-    const y = Math.floor(Math.random() * room.height);
-    const occupied = Array.from(room.players.values()).some((player) => player.x === x && player.y === y);
-    if (!occupied) return { x, y };
+function listAllCells(room) {
+  const cells = [];
+  for (let y = 0; y < room.height; y += 1) {
+    for (let x = 0; x < room.width; x += 1) {
+      cells.push({ x, y });
+    }
   }
+
+  for (let index = cells.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const temp = cells[index];
+    cells[index] = cells[swapIndex];
+    cells[swapIndex] = temp;
+  }
+
+  return cells;
+}
+
+function randomOpenCell(room) {
+  const occupied = new Set(Array.from(room.players.values()).map((player) => `${player.x},${player.y}`));
+  const cells = listAllCells(room);
+  return cells.find((cell) => !occupied.has(`${cell.x},${cell.y}`)) || { x: 0, y: 0 };
 }
 
 function spawnStar(room) {
@@ -113,7 +163,9 @@ function movePlayer(room, player, direction) {
 
   if (nextX < 0 || nextY < 0 || nextX >= room.width || nextY >= room.height) return;
 
-  const occupied = Array.from(room.players.values()).some((other) => other.id !== player.id && other.x === nextX && other.y === nextY);
+  const occupied = Array.from(room.players.values()).some(
+    (other) => other.id !== player.id && other.x === nextX && other.y === nextY
+  );
   if (occupied) return;
 
   player.x = nextX;
@@ -133,21 +185,18 @@ function movePlayer(room, player, direction) {
 function resetRoom(room) {
   room.winnerId = null;
   room.winnerName = null;
-  const used = new Set();
 
+  const cells = listAllCells(room);
+  let cursor = 0;
   for (const player of room.players.values()) {
+    const nextCell = cells[cursor];
+    cursor += 1;
     player.score = 0;
-    let position = null;
-    do {
-      position = randomOpenCell(room);
-    } while (used.has(`${position.x},${position.y}`));
-
-    used.add(`${position.x},${position.y}`);
-    player.x = position.x;
-    player.y = position.y;
+    player.x = nextCell.x;
+    player.y = nextCell.y;
   }
 
-  room.star = spawnStar(room);
+  room.star = cells[cursor] || spawnStar(room);
 }
 
 const server = http.createServer((req, res) => {
@@ -175,7 +224,14 @@ wss.on('connection', (ws) => {
     }
 
     if (msg.type === 'join') {
-      const room = roomState(sanitizeRoomCode(msg.room));
+      const mode = msg.mode === 'join' ? 'join' : 'host';
+      const room = roomState(msg.room, mode);
+
+      if (!room) {
+        send(ws, { type: 'error', message: 'That room does not exist yet. Ask the host to start it first.' });
+        return;
+      }
+
       if (room.players.size >= MAX_PLAYERS) {
         send(ws, { type: 'error', message: 'That room is already full.' });
         return;
@@ -187,7 +243,9 @@ wss.on('connection', (ws) => {
         type: 'welcome',
         roomCode: room.code,
         playerId: player.id,
-        message: msg.mode === 'host' ? 'Room created. Share the code and start racing.' : 'Joined room successfully.',
+        message: mode === 'host'
+          ? 'Room created. Copy the invite link and send it to your second player.'
+          : 'Joined room successfully. Race starts as soon as you move.',
         state: snapshot(room),
       });
       broadcastState(room);
@@ -219,7 +277,7 @@ wss.on('connection', (ws) => {
     if (!room) return;
 
     room.players.delete(playerId);
-    if (room.players.size === 0) {
+    if (!room.players.size) {
       rooms.delete(roomCode);
       return;
     }
