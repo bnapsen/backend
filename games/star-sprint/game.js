@@ -18,6 +18,8 @@
     snapshot: null,
     serverUrl: '',
     isHost: false,
+    localMode: false,
+    botTimer: null,
     toastTimer: null,
   };
 
@@ -38,6 +40,7 @@
     playerCountPill: document.getElementById('playerCountPill'),
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
+    soloBtn: document.getElementById('soloBtn'),
     copyBtn: document.getElementById('copyBtn'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     resetBtn: document.getElementById('resetBtn'),
@@ -99,9 +102,14 @@
   function setBusy(isBusy) {
     ui.hostBtn.disabled = isBusy;
     ui.joinBtn.disabled = isBusy;
+    ui.soloBtn.disabled = isBusy;
   }
 
   function updateInviteLink() {
+    if (state.localMode) {
+      ui.inviteInput.value = 'Solo mode does not use invite links.';
+      return '';
+    }
     const room = sanitizeRoomCode(ui.roomInput.value || state.roomCode);
     const server = sanitizeServerUrl(ui.serverUrlInput.value || state.serverUrl);
     const invite = room
@@ -112,6 +120,12 @@
   }
 
   function updateStepStrip() {
+    if (state.localMode) {
+      ui.stepHost.classList.remove('active');
+      ui.stepShare.classList.remove('active');
+      ui.stepJoin.classList.add('active');
+      return;
+    }
     const hasRoom = Boolean(state.roomCode || sanitizeRoomCode(ui.roomInput.value));
     const playerCount = state.snapshot?.players?.length || 0;
     ui.stepHost.classList.toggle('active', !state.snapshot && !hasRoom);
@@ -128,6 +142,13 @@
       ui.presenceText.textContent = 'Waiting for racers...';
       ui.goalText.textContent = `First to ${GOAL} stars`;
       ui.raceSummary.textContent = 'No racers connected yet.';
+      return;
+    }
+
+    if (state.localMode) {
+      ui.presenceText.textContent = 'Solo race vs bot';
+      ui.goalText.textContent = 'Beat the bot to 5 stars';
+      ui.raceSummary.textContent = 'Solo mode live.';
       return;
     }
 
@@ -227,6 +248,8 @@
 
     if (snapshot.winnerName) {
       ui.winnerText.textContent = `${snapshot.winnerName} wins the round. Hit New round for an instant rematch.`;
+    } else if (state.localMode) {
+      ui.winnerText.textContent = 'Solo mode live. Race the bot to five stars and cut it off from the next spawn.';
     } else if (snapshot.playerCount < 2) {
       ui.winnerText.textContent = state.isHost
         ? 'Your room is live. Copy the invite link and send it to the second player.'
@@ -239,6 +262,199 @@
   function send(payload) {
     if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return;
     state.socket.send(JSON.stringify(payload));
+  }
+
+  function stopBotLoop() {
+    if (state.botTimer) {
+      window.clearInterval(state.botTimer);
+      state.botTimer = null;
+    }
+  }
+
+  function leaveCurrentSession() {
+    stopBotLoop();
+    state.localMode = false;
+    if (state.socket) {
+      state.socket.close();
+      state.socket = null;
+    }
+  }
+
+  function getRandomOpenCell(snapshot, excluded = new Set()) {
+    const occupied = new Set(excluded);
+    for (const player of snapshot.players) {
+      occupied.add(`${player.x},${player.y}`);
+    }
+
+    const cells = [];
+    for (let y = 0; y < snapshot.height; y += 1) {
+      for (let x = 0; x < snapshot.width; x += 1) {
+        cells.push({ x, y });
+      }
+    }
+
+    for (let index = cells.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(Math.random() * (index + 1));
+      const temp = cells[index];
+      cells[index] = cells[swap];
+      cells[swap] = temp;
+    }
+
+    return cells.find((cell) => !occupied.has(`${cell.x},${cell.y}`)) || { x: 0, y: 0 };
+  }
+
+  function createSoloSnapshot(name) {
+    const snapshot = {
+      roomCode: 'SOLO',
+      width: BOARD_SIZE,
+      height: BOARD_SIZE,
+      goal: GOAL,
+      maxPlayers: 2,
+      playerCount: 2,
+      leaderId: null,
+      leaderName: null,
+      winnerId: null,
+      winnerName: null,
+      star: { x: 0, y: 0 },
+      players: [],
+    };
+
+    const you = {
+      id: 'solo-player',
+      name,
+      x: 0,
+      y: 0,
+      score: 0,
+      color: '#68d9ff',
+    };
+    snapshot.players.push(you);
+
+    const botCell = getRandomOpenCell(snapshot);
+    const bot = {
+      id: 'solo-bot',
+      name: 'Comet Bot',
+      x: botCell.x,
+      y: botCell.y,
+      score: 0,
+      color: '#ff7c57',
+    };
+    snapshot.players.push(bot);
+
+    const starCell = getRandomOpenCell(snapshot);
+    snapshot.star = starCell;
+    return snapshot;
+  }
+
+  function refreshSoloMeta() {
+    if (!state.snapshot) return;
+    state.snapshot.playerCount = state.snapshot.players.length;
+    const leader = state.snapshot.players
+      .slice()
+      .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name))[0] || null;
+    state.snapshot.leaderId = leader?.id || null;
+    state.snapshot.leaderName = leader?.name || null;
+  }
+
+  function applySoloMove(playerId, direction) {
+    if (!state.localMode || !state.snapshot || state.snapshot.winnerId) return false;
+    const player = state.snapshot.players.find((entry) => entry.id === playerId);
+    if (!player) return false;
+
+    let nextX = player.x;
+    let nextY = player.y;
+    if (direction === 'up') nextY -= 1;
+    if (direction === 'down') nextY += 1;
+    if (direction === 'left') nextX -= 1;
+    if (direction === 'right') nextX += 1;
+
+    if (nextX < 0 || nextY < 0 || nextX >= state.snapshot.width || nextY >= state.snapshot.height) {
+      return false;
+    }
+
+    const occupied = state.snapshot.players.some(
+      (other) => other.id !== playerId && other.x === nextX && other.y === nextY
+    );
+    if (occupied) return false;
+
+    player.x = nextX;
+    player.y = nextY;
+
+    if (state.snapshot.star.x === player.x && state.snapshot.star.y === player.y) {
+      player.score += 1;
+      if (player.score >= state.snapshot.goal) {
+        state.snapshot.winnerId = player.id;
+        state.snapshot.winnerName = player.name;
+        stopBotLoop();
+      } else {
+        state.snapshot.star = getRandomOpenCell(state.snapshot);
+      }
+    }
+
+    refreshSoloMeta();
+    render(state.snapshot);
+    return true;
+  }
+
+  function getBotDirection() {
+    const snapshot = state.snapshot;
+    const bot = snapshot.players.find((entry) => entry.id === 'solo-bot');
+    const human = snapshot.players.find((entry) => entry.id === state.playerId);
+    if (!bot || !human) return null;
+
+    const candidates = [];
+    if (snapshot.star.x < bot.x) candidates.push('left');
+    if (snapshot.star.x > bot.x) candidates.push('right');
+    if (snapshot.star.y < bot.y) candidates.push('up');
+    if (snapshot.star.y > bot.y) candidates.push('down');
+
+    const fallback = ['up', 'down', 'left', 'right'];
+    for (const direction of fallback) {
+      if (!candidates.includes(direction)) candidates.push(direction);
+    }
+
+    for (const direction of candidates) {
+      let nextX = bot.x;
+      let nextY = bot.y;
+      if (direction === 'up') nextY -= 1;
+      if (direction === 'down') nextY += 1;
+      if (direction === 'left') nextX -= 1;
+      if (direction === 'right') nextX += 1;
+      if (nextX < 0 || nextY < 0 || nextX >= snapshot.width || nextY >= snapshot.height) continue;
+      if (nextX === human.x && nextY === human.y) continue;
+      return direction;
+    }
+
+    return null;
+  }
+
+  function startBotLoop() {
+    stopBotLoop();
+    state.botTimer = window.setInterval(() => {
+      if (!state.localMode || !state.snapshot || state.snapshot.winnerId) return;
+      const direction = getBotDirection();
+      if (direction) {
+        applySoloMove('solo-bot', direction);
+      }
+    }, 520);
+  }
+
+  function startSoloGame() {
+    const name = getCurrentName();
+    leaveCurrentSession();
+    state.localMode = true;
+    state.isHost = false;
+    state.playerId = 'solo-player';
+    state.roomCode = 'SOLO';
+    ui.roomInput.value = 'SOLO';
+    updateInviteLink();
+    setBusy(false);
+    setConnectionState('Solo mode', 'online');
+    setStatus('Solo mode started. Race Comet Bot to five stars.');
+    state.snapshot = createSoloSnapshot(name);
+    refreshSoloMeta();
+    render(state.snapshot);
+    startBotLoop();
+    showToast('Solo race started.');
   }
 
   function connect(mode) {
@@ -255,10 +471,7 @@
     window.localStorage.setItem(STORAGE_KEYS.name, name);
     window.localStorage.setItem(STORAGE_KEYS.serverUrl, serverUrl);
 
-    if (state.socket) {
-      state.socket.close();
-      state.socket = null;
-    }
+    leaveCurrentSession();
 
     state.isHost = mode === 'host';
     state.roomCode = room;
@@ -275,10 +488,12 @@
     state.socket = socket;
 
     socket.addEventListener('open', () => {
+      if (state.socket !== socket) return;
       send({ type: 'join', room, name, mode });
     });
 
     socket.addEventListener('message', (event) => {
+      if (state.socket !== socket) return;
       let message = null;
       try {
         message = JSON.parse(event.data);
@@ -315,12 +530,14 @@
     });
 
     socket.addEventListener('close', () => {
+      if (state.socket !== socket) return;
       setBusy(false);
       setConnectionState('Offline', 'offline');
       setStatus('Disconnected from the game server.');
     });
 
     socket.addEventListener('error', () => {
+      if (state.socket !== socket) return;
       setBusy(false);
       setConnectionState('Connection issue', 'error');
       setStatus('Could not reach the game server. Check the connection settings.');
@@ -343,7 +560,14 @@
 
   ui.hostBtn.addEventListener('click', () => connect('host'));
   ui.joinBtn.addEventListener('click', () => connect('join'));
-  ui.resetBtn.addEventListener('click', () => send({ type: 'reset' }));
+  ui.soloBtn.addEventListener('click', startSoloGame);
+  ui.resetBtn.addEventListener('click', () => {
+    if (state.localMode) {
+      startSoloGame();
+      return;
+    }
+    send({ type: 'reset' });
+  });
   ui.copyBtn.addEventListener('click', async () => {
     await copyText(updateInviteLink(), 'Invite link copied.', 'Host or join a room first.');
   });
@@ -364,6 +588,10 @@
 
   document.querySelectorAll('[data-direction]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (state.localMode) {
+        applySoloMove(state.playerId, button.dataset.direction);
+        return;
+      }
       send({ type: 'move', direction: button.dataset.direction });
     });
   });
@@ -383,6 +611,10 @@
     const direction = mapping[event.key];
     if (!direction) return;
     event.preventDefault();
+    if (state.localMode) {
+      applySoloMove(state.playerId, direction);
+      return;
+    }
     send({ type: 'move', direction });
   });
 
