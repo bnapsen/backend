@@ -4,6 +4,7 @@
   const STORAGE_KEY = 'starSprint.serverUrl';
   const query = new URLSearchParams(window.location.search);
   const BOARD_SIZE = 12;
+  const PROD_SERVER_URL = 'wss://star-sprint-backend.onrender.com';
   const state = {
     roomCode: '',
     playerId: '',
@@ -205,7 +206,7 @@
   const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const defaultServerUrl = isLocal
     ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname || 'localhost'}:8081`
-    : '';
+    : PROD_SERVER_URL;
   const rememberedServer = window.localStorage.getItem(STORAGE_KEY) || '';
   state.serverUrl = sanitizeServerUrl(query.get('server') || rememberedServer || defaultServerUrl);
 
