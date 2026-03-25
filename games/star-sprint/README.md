@@ -1,5 +1,7 @@
 # Star Sprint
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/bnapsen/backend)
+
 Star Sprint is a room-based multiplayer browser game for Nova Arcade. Players join the same room, move across a shared grid, and race to collect five stars before anyone else.
 
 ## Run the frontend
