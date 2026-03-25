@@ -5,6 +5,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const Chess = require('./chess-core.js');
+const Backgammon = require('./backgammon-core.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
@@ -12,6 +13,20 @@ const MAX_PLAYERS = 2;
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const COLORS = ['white', 'black'];
 const rooms = new Map();
+const GAME_DEFS = {
+  chess: {
+    id: 'chess',
+    title: 'Neon Crown Chess',
+    createGameState: () => Chess.createGameState(),
+    cloneState: (game) => Chess.cloneState(game),
+  },
+  backgammon: {
+    id: 'backgammon',
+    title: 'Neon Backgammon Blitz',
+    createGameState: () => Backgammon.createGameState(),
+    cloneState: (game) => Backgammon.cloneState(game),
+  },
+};
 
 function send(socket, payload) {
   if (!socket || socket.readyState !== 1) {
@@ -40,6 +55,10 @@ function sanitizeRoomCode(raw) {
     .slice(0, 12);
 }
 
+function normalizeGameType(raw) {
+  return raw === 'backgammon' ? 'backgammon' : 'chess';
+}
+
 function generateRoomCode() {
   let code = '';
   do {
@@ -48,30 +67,49 @@ function generateRoomCode() {
   return code;
 }
 
-function createRoom(code) {
+function createRoom(code, gameType) {
+  const gameDef = GAME_DEFS[gameType] || GAME_DEFS.chess;
   const room = {
     code,
+    gameType: gameDef.id,
+    gameDef,
     maxPlayers: MAX_PLAYERS,
     players: new Map(),
-    game: Chess.createGameState(),
+    game: gameDef.createGameState(),
   };
   rooms.set(code, room);
   return room;
 }
 
-function getRoomForJoin(code, mode) {
+function getRoomForJoin(code, mode, gameType) {
   const normalized = sanitizeRoomCode(code);
 
   if (mode === 'host') {
     const hostCode = normalized || generateRoomCode();
-    return rooms.get(hostCode) || createRoom(hostCode);
+    const existing = rooms.get(hostCode);
+    if (existing && existing.gameType !== gameType) {
+      return {
+        error: `That room code is already in use by ${existing.game.title}. Host again for a fresh code.`,
+      };
+    }
+    return {
+      room: existing || createRoom(hostCode, gameType),
+    };
   }
 
   if (!normalized || !rooms.has(normalized)) {
-    return null;
+    return {
+      error: 'That room does not exist yet. Ask the host to start it first.',
+    };
   }
 
-  return rooms.get(normalized);
+  const room = rooms.get(normalized);
+  if (room.gameType !== gameType) {
+    return {
+      error: `That room is running ${room.game.title}. Open the matching game to join it.`,
+    };
+  }
+  return { room };
 }
 
 function getOpenColor(room) {
@@ -88,13 +126,15 @@ function listPlayers(room) {
 }
 
 function snapshot(room) {
-  const game = Chess.cloneState(room.game);
+  const game = room.gameDef.cloneState(room.game);
   return {
     ...game,
     roomCode: room.code,
     players: listPlayers(room),
     maxPlayers: room.maxPlayers,
-    service: 'neon-crown-chess',
+    service: 'nova-arcade-realtime',
+    gameType: room.gameType,
+    title: room.game.title,
   };
 }
 
@@ -114,11 +154,13 @@ function broadcastState(room, message) {
 
 function handleJoin(socket, payload) {
   const mode = payload && payload.mode === 'join' ? 'join' : 'host';
-  const room = getRoomForJoin(payload.roomCode, mode);
-  if (!room) {
-    sendError(socket, 'That room does not exist yet. Ask the host to start it first.');
+  const gameType = normalizeGameType(payload && payload.game);
+  const lookup = getRoomForJoin(payload.roomCode, mode, gameType);
+  if (lookup.error) {
+    sendError(socket, lookup.error);
     return;
   }
+  const room = lookup.room;
 
   if (room.players.size >= room.maxPlayers) {
     sendError(socket, 'That room is already full.');
@@ -148,6 +190,7 @@ function handleJoin(socket, payload) {
     roomCode: room.code,
     color: player.color,
     title: room.game.title,
+    gameType: room.gameType,
   });
 
   const message = room.players.size === 1
@@ -173,6 +216,10 @@ function requirePlayer(socket) {
   return { room, player };
 }
 
+function playerBackgammonSide(player) {
+  return player.color === 'white' ? Backgammon.WHITE : Backgammon.BLACK;
+}
+
 function handleMove(socket, payload) {
   const context = requirePlayer(socket);
   if (!context) {
@@ -180,19 +227,59 @@ function handleMove(socket, payload) {
   }
 
   const { room, player } = context;
-  if (room.game.turn !== player.color) {
-    sendError(socket, `It is ${room.game.turn}'s turn.`);
-    return;
-  }
+  let result;
 
-  const result = Chess.applyMove(room.game, {
-    from: payload.from,
-    to: payload.to,
-    promotion: payload.promotion,
-  });
+  if (room.gameType === 'backgammon') {
+    if (room.game.current !== playerBackgammonSide(player)) {
+      sendError(socket, `It is ${Backgammon.playerName(room.game.current)}'s turn.`);
+      return;
+    }
+    result = Backgammon.applyMove(room.game, {
+      from: payload.from,
+      to: payload.to,
+      di: payload.di,
+      die: payload.die,
+    });
+  } else {
+    if (room.game.turn !== player.color) {
+      sendError(socket, `It is ${room.game.turn}'s turn.`);
+      return;
+    }
+    result = Chess.applyMove(room.game, {
+      from: payload.from,
+      to: payload.to,
+      promotion: payload.promotion,
+    });
+  }
 
   if (!result.ok) {
     sendError(socket, result.error || 'That move could not be played.');
+    return;
+  }
+
+  broadcastState(room);
+}
+
+function handleRoll(socket) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'backgammon') {
+    sendError(socket, 'Rolling dice is only used in backgammon rooms.');
+    return;
+  }
+
+  if (room.game.current !== playerBackgammonSide(player)) {
+    sendError(socket, `It is ${Backgammon.playerName(room.game.current)}'s turn.`);
+    return;
+  }
+
+  const result = Backgammon.rollDice(room.game);
+  if (!result.ok) {
+    sendError(socket, result.error || 'The dice could not be rolled.');
     return;
   }
 
@@ -206,7 +293,7 @@ function handleRestart(socket) {
   }
 
   const { room, player } = context;
-  room.game = Chess.createGameState();
+  room.game = room.gameDef.createGameState();
   broadcastState(room, `${player.name} reset the board.`);
 }
 
@@ -240,7 +327,8 @@ const server = http.createServer((req, res) => {
   if (req.url === '/healthz') {
     const body = JSON.stringify({
       ok: true,
-      service: 'neon-crown-chess',
+      service: 'nova-arcade-realtime',
+      games: Object.keys(GAME_DEFS),
       rooms: rooms.size,
     });
     res.writeHead(200, {
@@ -253,7 +341,8 @@ const server = http.createServer((req, res) => {
 
   const body = JSON.stringify({
     ok: true,
-    service: 'neon-crown-chess',
+    service: 'nova-arcade-realtime',
+    games: Object.keys(GAME_DEFS),
     websocket: true,
   });
   res.writeHead(200, {
@@ -278,6 +367,9 @@ wss.on('connection', (socket) => {
     switch (payload.action) {
       case 'join':
         handleJoin(socket, payload);
+        break;
+      case 'roll':
+        handleRoll(socket);
         break;
       case 'move':
         handleMove(socket, payload);

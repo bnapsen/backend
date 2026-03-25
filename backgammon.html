@@ -2,1488 +2,221 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>SuperSplash Backgammon Blitz</title>
-  <style>
-    :root {
-      --bg: #091421;
-      --panel: rgba(10, 26, 40, 0.9);
-      --line: rgba(159, 211, 255, 0.38);
-      --cyan: #87d6ff;
-      --pink: #ffad76;
-      --gold: #ffe08e;
-      --wood-dark: #3b2a1d;
-      --wood-mid: #755036;
-      --wood-light: #a26f47;
-      --felt: #17384f;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      min-height: 100dvh;
-      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      color: #f4f8ff;
-      background:
-        radial-gradient(circle at 15% 20%, rgba(89, 145, 199, 0.25), transparent 42%),
-        radial-gradient(circle at 85% 10%, rgba(244, 177, 89, 0.2), transparent 36%),
-        radial-gradient(circle at 50% 100%, rgba(43, 98, 147, 0.25), transparent 48%),
-        var(--bg);
-      display: grid;
-      place-items: center;
-      padding: clamp(8px, 2vh, 16px);
-    }
-    .wrap {
-      width: min(1320px, 100%);
-      max-height: calc(100vh - clamp(16px, 4vh, 32px));
-      max-height: calc(100dvh - clamp(16px, 4vh, 32px));
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      background: var(--panel);
-      backdrop-filter: blur(7px);
-      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45), 0 0 35px rgba(114, 194, 255, 0.16);
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-    .top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--line);
-      background: linear-gradient(90deg, rgba(114, 194, 255, 0.11), rgba(255, 174, 118, 0.1));
-    }
-    .title { font-weight: 800; letter-spacing: 0.04em; }
-    .link {
-      color: #fff;
-      text-decoration: none;
-      font-weight: 700;
-      border: 1px solid rgba(255,255,255,.3);
-      border-radius: 10px;
-      padding: 7px 10px;
-    }
-    .hud {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 12px;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--line);
-    }
-    .chip {
-      border: 1px solid rgba(255,255,255,.15);
-      border-radius: 12px;
-      padding: 8px 10px;
-      background: rgba(255,255,255,.05);
-      font-size: 14px;
-    }
-    .chip b { color: var(--cyan); }
-    .dice-chip {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: nowrap;
-    }
-    .dice-chip b {
-      display: inline-block;
-      min-width: 138px;
-      white-space: nowrap;
-    }
-    .dice-visuals {
-      flex: 0 0 auto;
-      display: flex;
-      gap: 14px;
-      position: relative;
-      transition: transform .75s cubic-bezier(.2,.8,.25,1.15), filter .45s ease;
-      transform-origin: center;
-    }
-    .dice-visuals.table-roll {
-      transform: translateX(var(--dice-travel, 0px));
-      filter: drop-shadow(0 0 20px rgba(255, 205, 116, .45));
-    }
-    .dice-visuals.roll-burst {
-      animation: dice-burst .7s ease;
-    }
-    .die {
-      width: 56px;
-      height: 56px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.45);
-      background: linear-gradient(145deg, rgba(255,255,255,.92), rgba(181, 213, 238,.58));
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      grid-template-rows: repeat(3, 1fr);
-      padding: 8px;
-      box-shadow: 0 14px 22px rgba(0,0,0,.38), inset 0 0 8px rgba(255,255,255,.45);
-    }
-    .die.rolling {
-      animation: die-shake .38s linear infinite, die-spin .68s linear infinite;
-    }
-    .pip {
-      width: 10px;
-      height: 10px;
-      background: #22384b;
-      border-radius: 50%;
-      opacity: 0;
-      place-self: center;
-      box-shadow: 0 0 8px rgba(114,194,255,.45);
-    }
-    @keyframes die-shake {
-      0% { transform: rotate(0deg) translateY(0); }
-      25% { transform: rotate(-11deg) translateY(-3px) scale(1.03); }
-      50% { transform: rotate(9deg) translateY(4px) scale(1.02); }
-      75% { transform: rotate(-8deg) translateY(-2px) scale(1.03); }
-      100% { transform: rotate(0deg) translateY(0); }
-    }
-    @keyframes die-spin {
-      0% { filter: brightness(1.05); }
-      50% { filter: brightness(1.25); }
-      100% { filter: brightness(1.05); }
-    }
-    @keyframes dice-burst {
-      0% { transform: translateX(0) scale(.92); }
-      60% { transform: translateX(var(--dice-travel, 0px)) scale(1.08); }
-      100% { transform: translateX(0) scale(1); }
-    }
-    .board-wrap {
-      padding: clamp(10px, 2vw, 18px);
-      flex: 1;
-      min-height: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    canvas {
-      width: min(100%, calc((100vh - 290px) * (1240 / 760)));
-      width: min(100%, calc((100dvh - 290px) * (1240 / 760)));
-      height: auto;
-      max-height: 100%;
-      aspect-ratio: 1240 / 760;
-      display: block;
-      border-radius: 16px;
-      border: 1px solid rgba(255,255,255,.2);
-      background:
-        radial-gradient(circle at 30% 22%, rgba(255,255,255,0.08), transparent 34%),
-        radial-gradient(circle at 70% 80%, rgba(255,255,255,0.05), transparent 35%),
-        linear-gradient(130deg,#17384f,#102838 30%,#1f3942);
-      box-shadow: inset 0 0 50px rgba(0,0,0,.55), 0 0 35px rgba(255,174,118,.18);
-      cursor: pointer;
-      transition: box-shadow .25s ease;
-      touch-action: none;
-    }
-    canvas:hover {
-      box-shadow: inset 0 0 60px rgba(0,0,0,.58), 0 0 44px rgba(145,214,255,.2);
-    }
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      padding: 0 16px 16px;
-      align-items: center;
-    }
-    button {
-      border: 1px solid rgba(255,255,255,.3);
-      background: rgba(114,194,255,.16);
-      color: #fff;
-      font-weight: 700;
-      border-radius: 10px;
-      padding: 9px 12px;
-      cursor: pointer;
-    }
-    button:hover { filter: brightness(1.18); }
-    #rollBtn {
-      font-size: 1.08rem;
-      padding: 13px 20px;
-      border-radius: 12px;
-      background: linear-gradient(130deg, rgba(114,194,255,.34), rgba(255,174,118,.26));
-      box-shadow: 0 0 22px rgba(114,194,255,.28), inset 0 0 18px rgba(255,255,255,.1);
-    }
-    .status { color: #c6fffd; font-size: 14px; }
-
-    @media (max-width: 900px) {
-      .top {
-        flex-wrap: wrap;
-      }
-      .dice-chip {
-        flex-wrap: wrap;
-      }
-      .dice-chip b {
-        min-width: 0;
-      }
-      .die {
-        width: 46px;
-        height: 46px;
-        border-radius: 12px;
-      }
-      .controls {
-        padding-top: 8px;
-      }
-      #rollBtn {
-        font-size: 1rem;
-        padding: 11px 16px;
-      }
-    }
-
-    @media (max-width: 700px) {
-      body {
-        padding: 0;
-        place-items: stretch;
-      }
-      .wrap {
-        border-radius: 0;
-        max-height: 100vh;
-        max-height: 100dvh;
-      }
-      .top {
-        padding: 10px 12px;
-      }
-      .title {
-        font-size: 0.9rem;
-      }
-      .link {
-        padding: 6px 9px;
-        font-size: 0.9rem;
-      }
-      .hud {
-        gap: 8px;
-        padding: 10px 12px;
-      }
-      .chip {
-        font-size: 13px;
-      }
-      .board-wrap {
-        padding: 8px;
-      }
-      canvas {
-        width: 100%;
-      }
-      .controls {
-        gap: 8px;
-        padding: 8px 12px 12px;
-      }
-      button {
-        min-height: 44px;
-      }
-      #rollBtn {
-        flex: 1 1 100%;
-      }
-      .status {
-        width: 100%;
-      }
-    }
-
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Neon Backgammon Blitz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="games/backgammon-blitz/style.css" />
 </head>
 <body>
-  <main class="wrap">
-    <header class="top">
-      <div class="title">NEON BACKGAMMON BLITZ</div>
-      <a class="link" href="index.html">← Back to home</a>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="back-link" href="index.html">Back to Nova Arcade</a>
+      <div class="topbar-status">
+        <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
+        <div class="status-pill ghost" id="modePill">No match running</div>
+      </div>
     </header>
 
-    <section class="hud">
-      <div class="chip"><b id="turn">Turn: White</b></div>
-      <div class="chip">Mode: <b id="mode">White vs Bot (Black)</b></div>
-      <div class="chip dice-chip">Dice: <b id="dice">Roll to start</b>
-        <span class="dice-visuals" id="diceVisuals">
-          <span class="die" id="die1"></span>
-          <span class="die" id="die2"></span>
-        </span>
-      </div>
-      <div class="chip">Bar ⚡ White <b id="barW">0</b> / Black <b id="barB">0</b></div>
-      <div class="chip">Borne Off 🏁 White <b id="offW">0</b> / Black <b id="offB">0</b></div>
-    </section>
-
-    <div class="board-wrap">
-      <canvas id="board" width="1240" height="760"></canvas>
-    </div>
-
-    <div class="controls">
-      <button id="rollBtn">🎲 Roll Dice</button>
-      <button id="autoBtn">⚡ Auto Move</button>
-      <button id="undoBtn">↩️ Undo</button>
-      <button id="newBtn">🔁 New Match</button>
-      <div class="status" id="status">Tap or click roll, then tap/drag a checker. Use Auto Move (or double-click) for the furthest legal destination.</div>
-    </div>
-  </main>
-
-<script>
-(() => {
-  const canvas = document.getElementById('board');
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-
-  const ui = {
-    turn: document.getElementById('turn'), dice: document.getElementById('dice'),
-    barW: document.getElementById('barW'), barB: document.getElementById('barB'),
-    offW: document.getElementById('offW'), offB: document.getElementById('offB'), status: document.getElementById('status'),
-    mode: document.getElementById('mode'),
-    die1: document.getElementById('die1'), die2: document.getElementById('die2'),
-    undoBtn: document.getElementById('undoBtn'),
-    autoBtn: document.getElementById('autoBtn')
-  };
-
-  const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
-  const hitRadiusBoost = isCoarsePointer ? 14 : 0;
-  let drawQueued = false;
-
-  const state = {
-    points: Array(24).fill(0),
-    current: 1,
-    bar: {1:0, [-1]:0},
-    borneOff: {1:0, [-1]:0},
-    dice: [],
-    selected: null,
-    legalForSelected: [],
-    drag: null,
-    lastRoll: [0,0],
-    winner: 0,
-    bot: -1,
-    anim: { move: null, pulses: [], trail: [] },
-    history: [],
-  };
-
-  const audio = {
-    ctx: null,
-    enabled: false,
-  };
-
-  const pointRects = [];
-
-  const pipLayouts = {
-    1: [4],
-    2: [0, 8],
-    3: [0, 4, 8],
-    4: [0, 2, 6, 8],
-    5: [0, 2, 4, 6, 8],
-    6: [0, 2, 3, 5, 6, 8],
-  };
-
-  function initDiceVisuals() {
-    [ui.die1, ui.die2].forEach((die) => {
-      die.innerHTML = '';
-      for (let i = 0; i < 9; i++) {
-        const pip = document.createElement('span');
-        pip.className = 'pip';
-        die.appendChild(pip);
-      }
-      setDieFace(die, 1);
-    });
-  }
-
-  function setDieFace(die, value) {
-    const pips = die.querySelectorAll('.pip');
-    pips.forEach((pip, idx) => {
-      pip.style.opacity = pipLayouts[value].includes(idx) ? 1 : 0;
-    });
-  }
-
-  function animateDiceRoll(finalA, finalB) {
-    [ui.die1, ui.die2].forEach((die) => die.classList.add('rolling'));
-    const visuals = ui.die1.parentElement;
-    const travel = Math.max(70, Math.min(220, canvas.getBoundingClientRect().width * 0.18));
-    visuals.style.setProperty('--dice-travel', `${travel}px`);
-    visuals.classList.add('table-roll', 'roll-burst');
-    const scramble = setInterval(() => {
-      setDieFace(ui.die1, 1 + Math.floor(Math.random() * 6));
-      setDieFace(ui.die2, 1 + Math.floor(Math.random() * 6));
-    }, 60);
-    setTimeout(() => {
-      clearInterval(scramble);
-      [ui.die1, ui.die2].forEach((die) => die.classList.remove('rolling'));
-      setDieFace(ui.die1, finalA);
-      setDieFace(ui.die2, finalB);
-      visuals.classList.remove('table-roll');
-      setTimeout(() => visuals.classList.remove('roll-burst'), 280);
-    }, 760);
-  }
-
-  function barCheckerPos(player, stackIndex) {
-    return {
-      x: W / 2,
-      y: player === 1 ? H / 2 + 36 + stackIndex * 26 : H / 2 - 36 - stackIndex * 26,
-      r: 20,
-    };
-  }
-
-  function offTargetPos(player) {
-    return { x: player === 1 ? W - 55 : 55, y: H / 2, r: 22 };
-  }
-
-  function spawnPulse(x, y, color = 'rgba(255,210,105,0.9)') {
-    state.anim.pulses.push({ x, y, color, start: performance.now(), duration: 520 });
-  }
-
-  function spawnTrailSpark(x, y, owner) {
-    state.anim.trail.push({
-      x,
-      y,
-      owner,
-      start: performance.now(),
-      duration: 260 + Math.random() * 220,
-      driftX: (Math.random() - 0.5) * 18,
-      driftY: -10 - Math.random() * 12,
-      size: 3 + Math.random() * 4,
-    });
-  }
-
-  function startMoveAnimation(move, player) {
-    const from = move.from === 'bar'
-      ? barCheckerPos(player, Math.max(0, state.bar[player] - 1))
-      : checkerPos(move.from, Math.max(0, Math.abs(state.points[move.from]) - 1));
-    const to = move.to === 'off'
-      ? offTargetPos(player)
-      : checkerPos(move.to, Math.abs(state.points[move.to]) + 1);
-    state.anim.move = {
-      owner: player,
-      startX: from.x,
-      startY: from.y,
-      endX: to.x,
-      endY: to.y,
-      r: from.r,
-      startedAt: performance.now(),
-      duration: 430,
-      lift: move.to === 'off' ? 34 : 24,
-    };
-  }
-
-  function reset() {
-    state.points.fill(0);
-    state.points[23] = 2; state.points[12] = 5; state.points[7] = 3; state.points[5] = 5;
-    state.points[0] = -2; state.points[11] = -5; state.points[16] = -3; state.points[18] = -5;
-    state.current = 1;
-    state.bar[1] = state.bar[-1] = 0;
-    state.borneOff[1] = state.borneOff[-1] = 0;
-    state.dice = [];
-    state.selected = null;
-    state.legalForSelected = [];
-    state.drag = null;
-    state.lastRoll = [0,0];
-    state.winner = 0;
-    state.anim.move = null;
-    state.anim.pulses = [];
-    state.anim.trail = [];
-    state.history = [];
-    ui.mode.textContent = 'White vs Bot (Black)';
-    syncUi();
-    scheduleDraw();
-  }
-
-  function snapshot() {
-    return {
-      points: [...state.points],
-      current: state.current,
-      bar: { 1: state.bar[1], [-1]: state.bar[-1] },
-      borneOff: { 1: state.borneOff[1], [-1]: state.borneOff[-1] },
-      dice: [...state.dice],
-      selected: state.selected,
-      legalForSelected: state.legalForSelected.map((move) => ({ ...move })),
-      lastRoll: [...state.lastRoll],
-      winner: state.winner,
-      status: ui.status.textContent,
-    };
-  }
-
-  function pushHistory() {
-    state.history.push(snapshot());
-    if (state.history.length > 80) state.history.shift();
-    syncUi();
-  }
-
-  function restoreSnapshot(saved) {
-    state.points = [...saved.points];
-    state.current = saved.current;
-    state.bar[1] = saved.bar[1];
-    state.bar[-1] = saved.bar[-1];
-    state.borneOff[1] = saved.borneOff[1];
-    state.borneOff[-1] = saved.borneOff[-1];
-    state.dice = [...saved.dice];
-    state.selected = saved.selected;
-    state.legalForSelected = saved.legalForSelected.map((move) => ({ ...move }));
-    state.lastRoll = [...saved.lastRoll];
-    state.winner = saved.winner;
-    state.drag = null;
-    state.anim.move = null;
-    state.anim.pulses = [];
-    state.anim.trail = [];
-    setStatus(saved.status || 'Move undone.');
-    syncUi();
-    scheduleDraw();
-  }
-
-  function undoLastAction() {
-    if (isBotTurn()) {
-      setStatus('Wait for the bot to finish before undoing.');
-      return;
-    }
-    if (!state.history.length) {
-      setStatus('Nothing to undo yet.');
-      return;
-    }
-    const previous = state.history.pop();
-    restoreSnapshot(previous);
-    setStatus('Undid last action.');
-  }
-
-  function ensureAudio() {
-    if (audio.ctx) return;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    audio.ctx = new AC();
-  }
-
-  function playSound(type) {
-    ensureAudio();
-    if (!audio.ctx) return;
-    if (audio.ctx.state === 'suspended') audio.ctx.resume();
-    const now = audio.ctx.currentTime;
-    const presets = {
-      roll: [[240, 0.06], [310, 0.06]],
-      select: [[500, 0.05]],
-      move: [[320, 0.08], [470, 0.06]],
-      hit: [[180, 0.08], [120, 0.12]],
-      bearOff: [[620, 0.08], [760, 0.12]],
-      win: [[640, 0.11], [840, 0.13], [1080, 0.18]],
-      denied: [[140, 0.08]],
-    };
-    const tones = presets[type] || presets.move;
-    tones.forEach(([freq, dur], idx) => {
-      const osc = audio.ctx.createOscillator();
-      const gain = audio.ctx.createGain();
-      osc.type = type === 'hit' ? 'square' : 'sine';
-      osc.frequency.value = freq;
-      gain.gain.value = 0;
-      osc.connect(gain);
-      gain.connect(audio.ctx.destination);
-      const start = now + idx * 0.055;
-      gain.gain.linearRampToValueAtTime(0.08, start + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-      osc.start(start);
-      osc.stop(start + dur);
-    });
-  }
-
-  function isBotTurn() {
-    return state.current === state.bot;
-  }
-
-  function rollDice() {
-    if (state.winner) return;
-    if (state.dice.length) return setStatus('Use your remaining dice first.');
-    pushHistory();
-    const a = 1 + Math.floor(Math.random() * 6);
-    const b = 1 + Math.floor(Math.random() * 6);
-    state.lastRoll = [a,b];
-    state.dice = a === b ? [a,a,a,a] : [a,b];
-    animateDiceRoll(a, b);
-    state.selected = null;
-    state.legalForSelected = [];
-    setStatus(`Rolled ${a} and ${b}. Select a checker.`);
-    playSound('roll');
-    if (!hasAnyLegalMove()) {
-      setStatus(`No legal moves for ${playerName(state.current)}. Turn passes.`);
-      endTurn();
-    }
-    syncUi();
-    scheduleDraw();
-  }
-
-  function playerName(p){ return p===1 ? 'White' : 'Black'; }
-  function checkerColor(p){ return p===1 ? '#f5fbff' : '#10111b'; }
-  function isHome(player, idx){ return player===1 ? idx >= 0 && idx <= 5 : idx >= 18 && idx <= 23; }
-
-  function allInHome(player){
-    if (state.bar[player] > 0) return false;
-    for (let i=0;i<24;i++) {
-      const v = state.points[i];
-      if ((player===1 && v>0 && !isHome(1,i)) || (player===-1 && v<0 && !isHome(-1,i))) return false;
-    }
-    return true;
-  }
-
-  function canLand(player, idx) {
-    const v = state.points[idx];
-    return player===1 ? v >= -1 : v <= 1;
-  }
-
-  function sourceHasChecker(source) {
-    if (source === 'bar') return state.bar[state.current] > 0;
-    const v = state.points[source];
-    return state.current===1 ? v>0 : v<0;
-  }
-
-  function legalMovesForSource(source) {
-    if (!state.dice.length || state.winner) return [];
-    const moves = [];
-    for (let di = 0; di < state.dice.length; di++) {
-      const die = state.dice[di];
-      const player = state.current;
-      if (state.bar[player] > 0 && source !== 'bar') continue;
-      let from = source;
-      let to;
-      if (source === 'bar') {
-        to = player===1 ? 24 - die : die - 1;
-      } else {
-        to = source + (player===1 ? -die : die);
-      }
-
-      if (to >= 0 && to <= 23) {
-        if (canLand(player, to)) moves.push({ from, to, die, di, bearOff:false });
-      } else {
-        if (source === 'bar') continue;
-        if (!allInHome(player) || !isHome(player, source)) continue;
-        if (player===1 && to < 0) {
-          let higher = false;
-          for (let i = source + 1; i <= 5; i++) if (state.points[i] > 0) higher = true;
-          if (to === -1 || !higher) moves.push({ from, to: 'off', die, di, bearOff:true });
-        }
-        if (player===-1 && to > 23) {
-          let lower = false;
-          for (let i = 18; i < source; i++) if (state.points[i] < 0) lower = true;
-          if (to === 24 || !lower) moves.push({ from, to: 'off', die, di, bearOff:true });
-        }
-      }
-    }
-    return moves;
-  }
-
-  function allSources() {
-    if (state.bar[state.current] > 0) return ['bar'];
-    const arr = [];
-    for (let i=0;i<24;i++) if (sourceHasChecker(i)) arr.push(i);
-    return arr;
-  }
-
-  function hasAnyLegalMove() {
-    return allSources().some(s => legalMovesForSource(s).length > 0);
-  }
-
-  function applyMove(m) {
-    pushHistory();
-    const p = state.current;
-    let wasHit = false;
-    startMoveAnimation(m, p);
-    if (m.from === 'bar') state.bar[p]--;
-    else state.points[m.from] += p===1 ? -1 : 1;
-
-    if (m.to === 'off') {
-      state.borneOff[p]++;
-    } else {
-      const destVal = state.points[m.to];
-      if (p===1 && destVal === -1) { state.points[m.to] = 0; state.bar[-1]++; wasHit = true; }
-      if (p===-1 && destVal === 1) { state.points[m.to] = 0; state.bar[1]++; wasHit = true; }
-      state.points[m.to] += p;
-    }
-
-    if (m.to === 'off') playSound('bearOff');
-    else if (wasHit) playSound('hit');
-    else playSound('move');
-
-    if (m.to === 'off') {
-      const t = offTargetPos(p);
-      spawnPulse(t.x, t.y, 'rgba(255, 214, 130, 0.95)');
-    } else {
-      const t = checkerPos(m.to, Math.abs(state.points[m.to]) - 1);
-      spawnPulse(t.x, t.y, wasHit ? 'rgba(255, 120, 180, 0.95)' : 'rgba(125, 245, 255, 0.9)');
-    }
-
-    state.dice.splice(m.di, 1);
-    state.selected = null;
-    state.legalForSelected = [];
-
-    if (state.borneOff[p] >= 15) {
-      state.winner = p;
-      setStatus(`🔥 ${playerName(p)} wins the blitz! Hit New Match for another round.`);
-      playSound('win');
-      syncUi();
-      scheduleDraw();
-      return;
-    }
-
-    if (!state.dice.length || !hasAnyLegalMove()) {
-      if (state.dice.length && !hasAnyLegalMove()) {
-        setStatus('No remaining legal moves. Turn passes.');
-      }
-      endTurn();
-    }
-    syncUi();
-    scheduleDraw();
-  }
-
-  function endTurn() {
-    state.current *= -1;
-    state.dice = [];
-    state.selected = null;
-    state.legalForSelected = [];
-    syncUi();
-    scheduleDraw();
-    maybeRunBotTurn();
-  }
-
-  function cloneBoard(board) {
-    return {
-      points: board.points.slice(),
-      bar: { 1: board.bar[1], [-1]: board.bar[-1] },
-      borneOff: { 1: board.borneOff[1], [-1]: board.borneOff[-1] }
-    };
-  }
-
-  function isHomeOnBoard(board, player, idx) { return player===1 ? idx >= 0 && idx <= 5 : idx >= 18 && idx <= 23; }
-
-  function allInHomeOnBoard(board, player) {
-    if (board.bar[player] > 0) return false;
-    for (let i = 0; i < 24; i++) {
-      const v = board.points[i];
-      if ((player===1 && v>0 && !isHomeOnBoard(board, 1, i)) || (player===-1 && v<0 && !isHomeOnBoard(board, -1, i))) return false;
-    }
-    return true;
-  }
-
-  function canLandOnBoard(board, player, idx) {
-    const v = board.points[idx];
-    return player===1 ? v >= -1 : v <= 1;
-  }
-
-  function legalMovesForSourceOnBoard(board, player, dice, source) {
-    const moves = [];
-    for (let di = 0; di < dice.length; di++) {
-      const die = dice[di];
-      if (board.bar[player] > 0 && source !== 'bar') continue;
-      const from = source;
-      const to = source === 'bar' ? (player===1 ? 24 - die : die - 1) : source + (player===1 ? -die : die);
-
-      if (to >= 0 && to <= 23) {
-        if (canLandOnBoard(board, player, to)) moves.push({ from, to, die, di, bearOff:false });
-      } else {
-        if (source === 'bar') continue;
-        if (!allInHomeOnBoard(board, player) || !isHomeOnBoard(board, player, source)) continue;
-        if (player===1 && to < 0) {
-          let higher = false;
-          for (let i = source + 1; i <= 5; i++) if (board.points[i] > 0) higher = true;
-          if (to === -1 || !higher) moves.push({ from, to: 'off', die, di, bearOff:true });
-        }
-        if (player===-1 && to > 23) {
-          let lower = false;
-          for (let i = 18; i < source; i++) if (board.points[i] < 0) lower = true;
-          if (to === 24 || !lower) moves.push({ from, to: 'off', die, di, bearOff:true });
-        }
-      }
-    }
-    return moves;
-  }
-
-  function allSourcesOnBoard(board, player) {
-    if (board.bar[player] > 0) return ['bar'];
-    const arr = [];
-    for (let i = 0; i < 24; i++) {
-      const v = board.points[i];
-      if ((player===1 && v > 0) || (player===-1 && v < 0)) arr.push(i);
-    }
-    return arr;
-  }
-
-  function applyMoveToBoard(board, player, move) {
-    const next = cloneBoard(board);
-    if (move.from === 'bar') next.bar[player]--;
-    else next.points[move.from] += player===1 ? -1 : 1;
-
-    if (move.to === 'off') {
-      next.borneOff[player]++;
-    } else {
-      const destVal = next.points[move.to];
-      if (player===1 && destVal === -1) { next.points[move.to] = 0; next.bar[-1]++; }
-      if (player===-1 && destVal === 1) { next.points[move.to] = 0; next.bar[1]++; }
-      next.points[move.to] += player;
-    }
-    return next;
-  }
-
-  function pipCount(board, player) {
-    let total = board.bar[player] * 25;
-    for (let i = 0; i < 24; i++) {
-      const count = player===1 ? Math.max(0, board.points[i]) : Math.max(0, -board.points[i]);
-      if (!count) continue;
-      const dist = player===1 ? i + 1 : 24 - i;
-      total += count * dist;
-    }
-    return total;
-  }
-
-  function blotsExposed(board, player) {
-    let blots = 0;
-    for (let i = 0; i < 24; i++) {
-      if ((player===1 && board.points[i] === 1) || (player===-1 && board.points[i] === -1)) blots++;
-    }
-    return blots;
-  }
-
-  function madePoints(board, player) {
-    let made = 0;
-    for (let i = 0; i < 24; i++) {
-      const v = board.points[i];
-      if ((player===1 && v >= 2) || (player===-1 && v <= -2)) made++;
-    }
-    return made;
-  }
-
-  function anchoredPoints(board, player) {
-    const start = player===1 ? 18 : 0;
-    const end = player===1 ? 23 : 5;
-    let anchors = 0;
-    for (let i = start; i <= end; i++) {
-      const v = board.points[i];
-      if ((player===1 && v >= 2) || (player===-1 && v <= -2)) anchors++;
-    }
-    return anchors;
-  }
-
-  function homeBoardStrength(board, player) {
-    const start = player===1 ? 0 : 18;
-    const end = player===1 ? 5 : 23;
-    let strength = 0;
-    for (let i = start; i <= end; i++) {
-      const v = board.points[i];
-      if ((player===1 && v >= 2) || (player===-1 && v <= -2)) strength++;
-    }
-    return strength;
-  }
-
-  function boardPhase(board, player) {
-    const myPip = pipCount(board, player);
-    const oppPip = pipCount(board, -player);
-    if (board.borneOff[player] >= 8 || myPip < 70) return 'race';
-    if (board.bar[-player] > 0 || homeBoardStrength(board, player) >= 4) return 'attack';
-    if (oppPip - myPip > 25) return 'prime';
-    return 'contact';
-  }
-
-  function evaluateBoard(board, player) {
-    const phase = boardPhase(board, player);
-    const myPip = pipCount(board, player);
-    const oppPip = pipCount(board, -player);
-    const myBlots = blotsExposed(board, player);
-    const oppBlots = blotsExposed(board, -player);
-    const myPoints = madePoints(board, player);
-    const myAnchors = anchoredPoints(board, player);
-    const myHome = homeBoardStrength(board, player);
-    const pipEdge = oppPip - myPip;
-
-    let score = 0;
-    score += (board.borneOff[player] - board.borneOff[-player]) * 75;
-    score += (board.bar[-player] - board.bar[player]) * 55;
-    score += pipEdge * 1.2;
-    score += (oppBlots - myBlots) * 11;
-    score += myPoints * 8;
-    score += myAnchors * 7;
-    score += myHome * 10;
-
-    if (phase === 'race') {
-      score += pipEdge * 1.6;
-      score += board.borneOff[player] * 25;
-      score -= myBlots * 6;
-    } else if (phase === 'attack') {
-      score += board.bar[-player] * 35;
-      score += myHome * 14;
-      score += oppBlots * 16;
-    } else if (phase === 'prime') {
-      score += myPoints * 14;
-      score += myAnchors * 12;
-      score -= myBlots * 8;
-    } else {
-      score += myAnchors * 8;
-      score += oppBlots * 8;
-    }
-
-    return score;
-  }
-
-  function bestBoardMove(board, player, dice) {
-    const all = [];
-    for (const src of allSourcesOnBoard(board, player)) {
-      for (const move of legalMovesForSourceOnBoard(board, player, dice, src)) all.push(move);
-    }
-    if (!all.length) return null;
-
-    let bestMove = all[0];
-    let bestScore = -Infinity;
-    for (const move of all) {
-      const next = applyMoveToBoard(board, player, move);
-      const remainingDice = dice.filter((_, i) => i !== move.di);
-      let score = evaluateBoard(next, player);
-      if (remainingDice.length) {
-        const follow = bestBoardMove(next, player, remainingDice);
-        if (follow) score += follow.score * 0.55;
-      }
-      if (score > bestScore) {
-        bestScore = score;
-        bestMove = move;
-      }
-    }
-    return { move: bestMove, score: bestScore };
-  }
-
-  function bestBotMove() {
-    const pick = bestBoardMove(cloneBoard(state), state.current, state.dice);
-    return pick ? pick.move : null;
-  }
-
-  function runBotTurnStep() {
-    if (!isBotTurn() || state.winner) return;
-    if (!state.dice.length) {
-      rollDice();
-      if (!state.dice.length || !isBotTurn() || state.winner) return;
-    }
-
-    const move = bestBotMove();
-    if (!move) {
-      setStatus('Bot has no legal move. Turn passes.');
-      endTurn();
-      return;
-    }
-
-    state.selected = move.from;
-    state.legalForSelected = [move];
-    scheduleDraw();
-    setTimeout(() => {
-      if (isBotTurn() && !state.winner) applyMove(move);
-      if (isBotTurn() && state.dice.length && !state.winner) setTimeout(runBotTurnStep, 420);
-    }, 400);
-  }
-
-  function maybeRunBotTurn() {
-    if (!isBotTurn() || state.winner) return;
-    setStatus('Bot is thinking...');
-    setTimeout(runBotTurnStep, 500);
-  }
-
-  function syncUi() {
-    ui.turn.textContent = `Turn: ${playerName(state.current)}${state.winner ? ` — ${playerName(state.winner)} won` : ''}`;
-    ui.dice.textContent = state.dice.length ? state.dice.join(', ') : `Last roll: ${state.lastRoll[0] || '-'} / ${state.lastRoll[1] || '-'}`;
-    ui.barW.textContent = state.bar[1]; ui.barB.textContent = state.bar[-1];
-    ui.offW.textContent = state.borneOff[1]; ui.offB.textContent = state.borneOff[-1];
-    ui.undoBtn.disabled = !state.history.length || isBotTurn();
-  }
-  function setStatus(s){ ui.status.textContent = s; }
-
-  function drawBoardBase() {
-    ctx.clearRect(0,0,W,H);
-    const margin = 34;
-    const boardX = margin, boardY = margin, boardW = W - margin*2, boardH = H - margin*2;
-    const mid = boardX + boardW/2;
-
-    const glow = ctx.createLinearGradient(boardX, boardY, boardX + boardW, boardY + boardH);
-    glow.addColorStop(0, 'rgba(255, 196, 130, 0.17)');
-    glow.addColorStop(1, 'rgba(118, 185, 226, 0.18)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(boardX, boardY, boardW, boardH);
-
-    const wood = ctx.createLinearGradient(boardX, boardY, boardX, boardY + boardH);
-    wood.addColorStop(0, '#a26f47');
-    wood.addColorStop(0.5, '#755036');
-    wood.addColorStop(1, '#3b2a1d');
-    ctx.fillStyle = wood;
-    ctx.globalAlpha = 0.7;
-    ctx.fillRect(boardX + 8, boardY + 8, boardW - 16, boardH - 16);
-    ctx.globalAlpha = 1;
-
-    for (let i = 0; i < 26; i++) {
-      const y = boardY + 10 + i * ((boardH - 20) / 26);
-      ctx.strokeStyle = `rgba(255,255,255,${i % 2 ? 0.03 : 0.015})`;
-      ctx.lineWidth = i % 2 ? 2 : 1;
-      ctx.beginPath();
-      ctx.moveTo(boardX + 10, y);
-      ctx.lineTo(boardX + boardW - 10, y + (i % 3) * 2);
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = 'rgba(0,0,0,.25)';
-    ctx.fillRect(mid - 25, boardY, 50, boardH);
-    ctx.strokeStyle = 'rgba(179, 213, 236, .78)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(mid - 25, boardY, 50, boardH);
-
-    const triangleW = (boardW - 50) / 12;
-    pointRects.length = 24;
-
-    const pointAt = (half, idxInHalf, top) => {
-      const xBase = half===0
-        ? boardX + idxInHalf * triangleW
-        : mid + 25 + idxInHalf * triangleW;
-      const pIdx = top
-        ? (half===0 ? 12 + idxInHalf : 18 + idxInHalf)
-        : (half===0 ? 11 - idxInHalf : 5 - idxInHalf);
-      pointRects[pIdx] = { x:xBase, y:boardY, w:triangleW, h:boardH/2, top };
-      const color = (idxInHalf % 2 === 0) ? '#d9ac7a' : '#6ea8d1';
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      if (top) {
-        ctx.moveTo(xBase + 1, boardY + 1);
-        ctx.lineTo(xBase + triangleW - 1, boardY + 1);
-        ctx.lineTo(xBase + triangleW/2, boardY + boardH/2 - 8);
-      } else {
-        ctx.moveTo(xBase + 1, boardY + boardH - 1);
-        ctx.lineTo(xBase + triangleW - 1, boardY + boardH - 1);
-        ctx.lineTo(xBase + triangleW/2, boardY + boardH/2 + 8);
-      }
-      ctx.closePath();
-      ctx.globalAlpha = 0.78;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-
-      ctx.strokeStyle = 'rgba(0,0,0,.28)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    };
-
-    for (let i=0;i<6;i++) pointAt(0,i,true);
-    for (let i=0;i<6;i++) pointAt(1,i,true);
-    for (let i=0;i<6;i++) pointAt(0,i,false);
-    for (let i=0;i<6;i++) pointAt(1,i,false);
-
-    ctx.fillStyle = 'rgba(255,255,255,.75)';
-    ctx.font = '14px Inter, sans-serif';
-    for (let i=0;i<24;i++) {
-      const pr = pointRects[i];
-      const text = String(i+1);
-      ctx.fillText(text, pr.x + pr.w/2 - 6, pr.top ? boardY + boardH/2 + 22 : boardY + boardH/2 - 14);
-    }
-  }
-
-  function stackMetrics(point, count) {
-    const pr = pointRects[point];
-    const r = Math.min(24, pr.w * 0.42);
-    const available = pr.h - 64;
-    const idealStep = r * 2 + 2;
-    const step = count <= 1
-      ? 0
-      : ((count - 1) * idealStep <= available ? idealStep : available / (count - 1));
-    return { pr, r, step };
-  }
-
-  function checkerPos(point, stackIndex, count = Math.abs(state.points[point])) {
-    const { pr, r, step } = stackMetrics(point, Math.max(1, count));
-    const x = pr.x + pr.w / 2;
-    const y = pr.top
-      ? (pr.y + 32 + stackIndex * step)
-      : (pr.y + pr.h * 2 - 32 - stackIndex * step);
-    return { x, y, r };
-  }
-
-  function drawCheckers() {
-    for (let i=0;i<24;i++) {
-      const n = Math.abs(state.points[i]);
-      const owner = Math.sign(state.points[i]);
-      if (!owner) continue;
-      for (let s=0;s<n;s++) {
-        const p = checkerPos(i,s);
-        drawChecker(p.x,p.y,p.r,owner);
-      }
-      const { step, r } = stackMetrics(i, n);
-      const noOverlapStep = r * 2 + 2;
-      if (n > 1 && step < noOverlapStep) {
-        const p = checkerPos(i, n - 1, n);
-        ctx.fillStyle = owner===1 ? '#0f1120' : '#f0f5ff';
-        ctx.font = 'bold 16px Inter';
-        ctx.fillText(`×${n}`, p.x-11, p.y+6);
-      }
-    }
-
-    const barX = W/2;
-    if (state.bar[1]) {
-      for (let i=0;i<Math.min(state.bar[1],5);i++) drawChecker(barX, H/2 + 36 + i*26, 20, 1);
-    }
-    if (state.bar[-1]) {
-      for (let i=0;i<Math.min(state.bar[-1],5);i++) drawChecker(barX, H/2 - 36 - i*26, 20, -1);
-    }
-  }
-
-  function drawChecker(x,y,r,owner){
-    ctx.beginPath();
-    ctx.ellipse(x + 3, y + r * 0.7, r * 0.86, r * 0.42, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,.28)';
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(x,y,r,0,Math.PI*2);
-    const g = ctx.createRadialGradient(x-r*0.35,y-r*0.35,2,x,y,r);
-    if (owner===1) { g.addColorStop(0,'#ffffff'); g.addColorStop(1,'#c8e5ff'); }
-    else { g.addColorStop(0,'#525872'); g.addColorStop(1,'#090b16'); }
-    ctx.fillStyle = g; ctx.fill();
-    ctx.strokeStyle = owner===1 ? 'rgba(88,235,255,.9)' : 'rgba(255,116,186,.9)';
-    ctx.lineWidth = 3; ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(x - r * 0.2, y - r * 0.2, r * 0.24, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,.22)';
-    ctx.fill();
-  }
-
-
-  function drawPulses() {
-    if (!state.anim.pulses.length) return false;
-    const now = performance.now();
-    state.anim.pulses = state.anim.pulses.filter((pulse) => {
-      const t = (now - pulse.start) / pulse.duration;
-      if (t >= 1) return false;
-      const radius = 14 + t * 34;
-      ctx.beginPath();
-      ctx.arc(pulse.x, pulse.y, radius, 0, Math.PI * 2);
-      ctx.strokeStyle = pulse.color.replace('0.9', String(Math.max(0.08, 0.9 - t * 0.9))).replace('0.95', String(Math.max(0.08, 0.95 - t * 0.9)));
-      ctx.lineWidth = 4.6 - t * 3;
-      ctx.stroke();
-      return true;
-    });
-    return state.anim.pulses.length > 0;
-  }
-
-  function drawTrail() {
-    if (!state.anim.trail.length) return false;
-    const now = performance.now();
-    state.anim.trail = state.anim.trail.filter((spark) => {
-      const t = (now - spark.start) / spark.duration;
-      if (t >= 1) return false;
-      const fade = 1 - t;
-      const x = spark.x + spark.driftX * t;
-      const y = spark.y + spark.driftY * t;
-      ctx.beginPath();
-      ctx.arc(x, y, spark.size * fade, 0, Math.PI * 2);
-      ctx.fillStyle = spark.owner === 1
-        ? `rgba(136, 225, 255, ${Math.max(0, fade * 0.75)})`
-        : `rgba(255, 147, 194, ${Math.max(0, fade * 0.72)})`;
-      ctx.fill();
-      return true;
-    });
-    return state.anim.trail.length > 0;
-  }
-
-  function drawMoveAnimation() {
-    if (!state.anim.move) return false;
-    const now = performance.now();
-    const m = state.anim.move;
-    const tRaw = (now - m.startedAt) / m.duration;
-    if (tRaw >= 1) {
-      state.anim.move = null;
-      return false;
-    }
-    const clamped = Math.max(0, Math.min(1, tRaw));
-    const ease = clamped < 0.5
-      ? 4 * clamped * clamped * clamped
-      : 1 - Math.pow(-2 * clamped + 2, 3) / 2;
-    const arc = Math.sin(ease * Math.PI) * m.lift;
-    const x = m.startX + (m.endX - m.startX) * ease;
-    const y = m.startY + (m.endY - m.startY) * ease - arc;
-    if (Math.random() < 0.45) spawnTrailSpark(x, y, m.owner);
-    drawChecker(x, y, m.r, m.owner);
-    return true;
-  }
-
-  function drawSelectionHints() {
-    if (state.selected === 'bar') {
-      ctx.strokeStyle = '#ffe78d';
-      ctx.lineWidth = 4;
-      ctx.strokeRect(W/2 - 28, H/2 - 86, 56, 172);
-    } else if (Number.isInteger(state.selected)) {
-      const n = Math.abs(state.points[state.selected]);
-      const p = checkerPos(state.selected, n-1);
-      ctx.beginPath(); ctx.arc(p.x,p.y,p.r+6,0,Math.PI*2);
-      ctx.strokeStyle = '#ffe78d'; ctx.lineWidth = 4; ctx.stroke();
-    }
-
-    state.legalForSelected.forEach((m, idx) => {
-      let x,y;
-      if (m.to === 'off') {
-        x = state.current===1 ? W - 55 : 55;
-        y = H/2;
-      } else {
-        const p = checkerPos(m.to, Math.abs(state.points[m.to]) + 1);
-        x=p.x; y=p.y;
-      }
-      ctx.beginPath(); ctx.arc(x,y,18 + idx*2,0,Math.PI*2);
-      ctx.strokeStyle = 'rgba(255,210,105,.95)';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(255,210,105,.18)';
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 14px Inter';
-      ctx.fillText(String(m.die), x - 4, y + 5);
-    });
-  }
-
-  function draw() {
-    drawBoardBase();
-    drawCheckers();
-    const pulseActive = drawPulses();
-    const trailActive = drawTrail();
-    drawSelectionHints();
-    const moveActive = drawMoveAnimation();
-    if (state.drag) drawChecker(state.drag.mx, state.drag.my, state.drag.r, state.current);
-    if (pulseActive || trailActive || moveActive) requestAnimationFrame(draw);
-  }
-
-  function scheduleDraw() {
-    if (drawQueued) return;
-    drawQueued = true;
-    requestAnimationFrame(() => {
-      drawQueued = false;
-      draw();
-    });
-  }
-
-  function getBoardPos(e) {
-    const rect = canvas.getBoundingClientRect();
-    return {
-      mx: (e.clientX - rect.left) * (W / rect.width),
-      my: (e.clientY - rect.top) * (H / rect.height),
-    };
-  }
-
-  function pickSource(mx,my) {
-    if (state.bar[state.current] > 0) {
-      if (mx > W/2 - 45 && mx < W/2 + 45 && my > H/2 - 120 && my < H/2 + 120) return 'bar';
-      return null;
-    }
-    for (let i=0;i<24;i++) {
-      const pr = pointRects[i];
-      if (mx < pr.x || mx > pr.x + pr.w) continue;
-      if (pr.top && my > H/2) continue;
-      if (!pr.top && my < H/2) continue;
-      if (sourceHasChecker(i)) return i;
-    }
-    return null;
-  }
-
-
-  function moveProgressForPlayer(move, player) {
-    if (move.to === 'off') return 999;
-    return player === 1 ? move.from - move.to : move.to - move.from;
-  }
-
-  function furthestMove(moves = state.legalForSelected) {
-    if (!moves.length) return null;
-    const player = state.current;
-    return moves.reduce((best, candidate) => {
-      if (!best) return candidate;
-      const candidateScore = moveProgressForPlayer(candidate, player);
-      const bestScore = moveProgressForPlayer(best, player);
-      if (candidateScore > bestScore) return candidate;
-      if (candidateScore < bestScore) return best;
-      if (candidate.to === 'off' && best.to !== 'off') return candidate;
-      if (candidate.to !== 'off' && best.to === 'off') return best;
-      return candidate.die >= best.die ? candidate : best;
-    }, null);
-  }
-
-  function pickMove(mx,my) {
-    for (const m of state.legalForSelected) {
-      if (m.to === 'off') {
-        const x = state.current===1 ? W - 55 : 55;
-        const y = H/2;
-        if (Math.hypot(mx-x,my-y) < 32 + hitRadiusBoost) return m;
-      } else {
-        const p = checkerPos(m.to, Math.abs(state.points[m.to]) + 1);
-        if (Math.hypot(mx-p.x,my-p.y) < p.r + 20 + hitRadiusBoost) return m;
-      }
-    }
-    return null;
-  }
-
-  function beginDrag(mx, my) {
-    if (state.winner || isBotTurn()) return false;
-    if (!state.dice.length) {
-      setStatus('Roll dice first.');
-      playSound('denied');
-      return false;
-    }
-    const src = pickSource(mx, my);
-    if (src === null) return false;
-    const legal = legalMovesForSource(src);
-    if (!legal.length) {
-      setStatus('No legal move from that source with current dice.');
-      playSound('denied');
-      return false;
-    }
-
-    state.selected = src;
-    state.legalForSelected = legal;
-    state.drag = { source: src, mx, my, r: 24 };
-    setStatus(`Dragging ${src === 'bar' ? 'BAR' : 'point ' + (src+1)} checker — drop onto a glowing ring.`);
-    playSound('select');
-    scheduleDraw();
-    return true;
-  }
-
-  function updateDrag(mx, my) {
-    if (!state.drag) return;
-    state.drag.mx = mx;
-    state.drag.my = my;
-    scheduleDraw();
-  }
-
-  function finishDrag(mx, my) {
-    if (!state.drag) return;
-    const mv = pickMove(mx, my);
-    state.drag = null;
-    if (mv) {
-      applyMove(mv);
-      return;
-    }
-    setStatus('Drop on a glowing destination to move the checker.');
-    scheduleDraw();
-  }
-
-  canvas.addEventListener('click', (e) => {
-    if (state.winner) return;
-    if (isBotTurn()) return setStatus('Bot is taking its turn...');
-    if (!state.dice.length) return setStatus('Roll dice first.');
-    const { mx, my } = getBoardPos(e);
-
-    if (state.selected !== null) {
-      const mv = pickMove(mx,my);
-      if (mv) return applyMove(mv);
-    }
-
-    const src = pickSource(mx,my);
-    if (src === null) {
-      state.selected = null;
-      state.legalForSelected = [];
-      scheduleDraw();
-      return;
-    }
-
-    const legal = legalMovesForSource(src);
-    if (!legal.length) {
-      setStatus('No legal move from that source with current dice.');
-      playSound('denied');
-      return;
-    }
-    state.selected = src;
-    state.legalForSelected = legal;
-    setStatus(`Selected ${src === 'bar' ? 'BAR' : 'point ' + (src+1)}. Choose a glowing destination ring.`);
-    playSound('select');
-    scheduleDraw();
-  });
-
-
-  canvas.addEventListener('dblclick', (e) => {
-    if (state.winner) return;
-    if (isBotTurn()) return setStatus('Bot is taking its turn...');
-    if (!state.dice.length) {
-      setStatus('Roll dice first.');
-      playSound('denied');
-      return;
-    }
-    const { mx, my } = getBoardPos(e);
-    const src = pickSource(mx, my);
-    if (src === null) {
-      setStatus('Double-click one of your checkers to auto-move.');
-      return;
-    }
-    const legal = legalMovesForSource(src);
-    if (!legal.length) {
-      setStatus('No legal move from that checker with current dice.');
-      playSound('denied');
-      return;
-    }
-    state.selected = src;
-    state.legalForSelected = legal;
-    const mv = furthestMove(legal);
-    if (mv) {
-      setStatus('Auto-moving checker to furthest legal destination.');
-      applyMove(mv);
-    }
-  });
-
-  canvas.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'touch') e.preventDefault();
-    canvas.setPointerCapture(e.pointerId);
-    const { mx, my } = getBoardPos(e);
-    beginDrag(mx, my);
-  });
-
-  canvas.addEventListener('pointermove', (e) => {
-    if (!state.drag) return;
-    if (e.pointerType === 'touch') e.preventDefault();
-    const { mx, my } = getBoardPos(e);
-    updateDrag(mx, my);
-  });
-
-  function endPointerDrag(e) {
-    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
-    const { mx, my } = getBoardPos(e);
-    finishDrag(mx, my);
-  }
-
-  canvas.addEventListener('pointerup', endPointerDrag);
-  canvas.addEventListener('pointercancel', () => {
-    if (!state.drag) return;
-    state.drag = null;
-    scheduleDraw();
-  });
-  canvas.addEventListener('pointerleave', () => {
-    if (!state.drag) return;
-    state.drag = null;
-    scheduleDraw();
-  });
-
-  document.getElementById('rollBtn').addEventListener('click', () => {
-    if (isBotTurn()) return setStatus('Wait for the bot to finish its turn.');
-    rollDice();
-    maybeRunBotTurn();
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.code !== 'Space') return;
-    const tag = (document.activeElement?.tagName || '').toLowerCase();
-    if (tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable) return;
-    e.preventDefault();
-    if (state.winner || isBotTurn()) return;
-    if (state.dice.length) {
-      setStatus('Use your remaining dice first.');
-      return;
-    }
-    rollDice();
-    maybeRunBotTurn();
-  });
-  document.getElementById('newBtn').addEventListener('click', () => {
-    reset();
-    setStatus('New match ready. White starts. Roll dice!');
-  });
-  ui.undoBtn.addEventListener('click', undoLastAction);
-  ui.autoBtn.addEventListener('click', () => {
-    if (state.winner) return;
-    if (isBotTurn()) return setStatus('Bot is taking its turn...');
-    if (!state.dice.length) {
-      setStatus('Roll dice first.');
-      playSound('denied');
-      return;
-    }
-    const sources = allSources();
-    let best = null;
-    for (const source of sources) {
-      const legal = legalMovesForSource(source);
-      const candidate = furthestMove(legal);
-      if (!candidate) continue;
-      if (!best || moveProgressForPlayer(candidate, state.current) > moveProgressForPlayer(best, state.current)) {
-        best = candidate;
-      }
-    }
-    if (!best) {
-      setStatus('No legal move available to auto-play.');
-      playSound('denied');
-      return;
-    }
-    state.selected = best.from;
-    state.legalForSelected = [best];
-    setStatus('Auto-moving to the furthest legal destination.');
-    applyMove(best);
-  });
-
-  initDiceVisuals();
-  reset();
-})();
-</script>
+    <main class="layout">
+      <section class="setup-column">
+        <section class="hero panel">
+          <p class="eyebrow">Internet-ready backgammon</p>
+          <h1>Neon Backgammon Blitz</h1>
+          <p class="lede">Race, hit, re-enter, and bear off with quick room hosting, smooth dice animation, and a sharper solo bot while you wait for another player.</p>
+
+          <div class="step-strip">
+            <div class="step-card" id="stepOne">
+              <span class="step-number">1</span>
+              <div>
+                <strong>Choose a name</strong>
+                <p>Names make remote matches much easier to follow.</p>
+              </div>
+            </div>
+            <div class="step-card" id="stepTwo">
+              <span class="step-number">2</span>
+              <div>
+                <strong>Host or join</strong>
+                <p>Hosting makes a room instantly. Joining works by code or invite link.</p>
+              </div>
+            </div>
+            <div class="step-card" id="stepThree">
+              <span class="step-number">3</span>
+              <div>
+                <strong>Roll and race</strong>
+                <p>Tap a checker, drag it, or let Auto Move finish the clearest legal play.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>Name</span>
+              <input id="nameInput" maxlength="18" placeholder="Nova" autocomplete="nickname" />
+            </label>
+            <label>
+              <span>Room code</span>
+              <input id="roomInput" maxlength="12" placeholder="Auto-created when hosting" />
+            </label>
+          </div>
+
+          <div class="hero-actions">
+            <button id="hostBtn" class="primary">Host match</button>
+            <button id="joinBtn">Join match</button>
+            <button id="soloBtn">Play solo</button>
+          </div>
+
+          <div class="invite-panel">
+            <div class="invite-header">
+              <div>
+                <p class="label">Invite link</p>
+                <p class="invite-help">Host first, then copy this link or just send the room code.</p>
+              </div>
+              <button id="copyCodeBtn" class="secondary">Copy room code</button>
+            </div>
+            <div class="invite-row">
+              <input id="inviteInput" readonly value="" />
+              <button id="copyBtn" class="primary">Copy invite</button>
+            </div>
+          </div>
+
+          <details class="advanced-panel">
+            <summary>Advanced connection settings</summary>
+            <label class="advanced-field">
+              <span>Server WS URL</span>
+              <input id="serverUrlInput" placeholder="wss://backend-ujaa.onrender.com" />
+            </label>
+          </details>
+
+          <p class="status-text" id="statusText">Host a room to invite a friend, join with a room code, or play a solo warm-up against the bot.</p>
+        </section>
+
+        <section class="panel sidebar-panel">
+          <div class="sidebar-header">
+            <div>
+              <p class="label">How it works</p>
+              <h2>Fast setup</h2>
+            </div>
+          </div>
+          <div class="guide-list">
+            <div class="guide-item">
+              <strong>Quickest remote start</strong>
+              <p>Press <em>Host match</em>, copy the invite link, and send it to the other player.</p>
+            </div>
+            <div class="guide-item">
+              <strong>Smooth controls</strong>
+              <p>Click a checker, drag it to a glowing landing spot, or press <em>Auto Move</em> for the clearest legal push.</p>
+            </div>
+            <div class="guide-item">
+              <strong>Same live backend</strong>
+              <p>This page uses the same multiplayer WebSocket service as the chess game, so your room flow stays consistent.</p>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="board-column">
+        <section class="board-panel panel">
+          <div class="board-header">
+            <div>
+              <p class="label">Room</p>
+              <p class="room-code" id="roomCodeLabel">-</p>
+            </div>
+            <div>
+              <p class="label">Turn</p>
+              <p class="turn-text" id="turnText">White to roll</p>
+            </div>
+            <div>
+              <p class="label">Status</p>
+              <p class="turn-text" id="phaseText">Start a match to begin.</p>
+            </div>
+          </div>
+
+          <div class="score-row">
+            <div class="hud-row">
+              <p class="label">Dice</p>
+              <p class="turn-text" id="diceLabel">Roll to start</p>
+            </div>
+            <div class="hud-row">
+              <p class="label">White bar</p>
+              <p class="turn-text" id="barWhite">0</p>
+            </div>
+            <div class="hud-row">
+              <p class="label">Black bar</p>
+              <p class="turn-text" id="barBlack">0</p>
+            </div>
+            <div class="hud-row">
+              <p class="label">Race</p>
+              <p class="turn-text" id="raceLabel">White 0 / Black 0</p>
+            </div>
+          </div>
+
+          <div class="board-stage">
+            <canvas id="board" width="1240" height="760" aria-label="Backgammon board"></canvas>
+          </div>
+
+          <div class="board-footer">
+            <div class="dice-panel">
+              <div class="dice-copy">
+                <p class="label">Dice tray</p>
+                <div class="dice-value" id="diceText">Roll to start</div>
+              </div>
+              <div class="dice-visuals" id="diceVisuals" aria-hidden="true">
+                <span class="die" id="die1"></span>
+                <span class="die" id="die2"></span>
+              </div>
+            </div>
+            <div class="action-bar">
+              <button id="rollBtn" class="primary">Roll Dice</button>
+              <button id="autoBtn">Auto Move</button>
+              <button id="restartBtn">New Match</button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <aside class="sidebar">
+        <section class="panel sidebar-panel">
+          <div class="sidebar-header">
+            <div>
+              <p class="label">Players</p>
+              <h2>Seats</h2>
+            </div>
+            <p class="mini-status" id="presenceText">Waiting for players...</p>
+          </div>
+          <div class="player-cards" id="playerCards"></div>
+        </section>
+
+        <section class="panel sidebar-panel">
+          <div class="sidebar-header">
+            <div>
+              <p class="label">Turn help</p>
+              <h2>Hints</h2>
+            </div>
+          </div>
+          <div class="facts">
+            <div class="fact">
+              <strong>Roll first</strong>
+              <p>Each turn starts with a roll. Doubles give you four moves.</p>
+            </div>
+            <div class="fact">
+              <strong>Re-enter from the bar</strong>
+              <p>If one of your checkers gets hit, you must bring it back before moving anything else.</p>
+            </div>
+            <div class="fact">
+              <strong>Auto Move is safe</strong>
+              <p>It picks the furthest legal destination from your current roll, which is great on phones.</p>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast" aria-live="polite"></div>
+  </div>
+
+  <script src="games/star-sprint/backgammon-core.js"></script>
+  <script src="games/backgammon-blitz/game.js"></script>
 </body>
 </html>
