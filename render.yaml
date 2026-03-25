@@ -2,8 +2,8 @@ services:
   - type: web
     name: star-sprint-backend
     runtime: node
+    autoDeploy: false
     rootDir: games/star-sprint
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /healthz
-
