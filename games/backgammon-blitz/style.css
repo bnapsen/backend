@@ -18,6 +18,10 @@
   box-sizing: border-box;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -278,6 +282,25 @@ button:disabled {
   line-height: 1.45;
 }
 
+.mini-status,
+.status-text,
+#phaseText,
+#diceText {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mini-status,
+#phaseText {
+  -webkit-line-clamp: 2;
+}
+
+.status-text,
+#diceText {
+  -webkit-line-clamp: 2;
+}
+
 .board-column {
   min-width: 0;
 }
@@ -309,6 +332,10 @@ button:disabled {
   font-weight: 700;
   line-height: 1.25;
   font-variant-numeric: tabular-nums;
+}
+
+#phaseText {
+  min-height: 44px;
 }
 
 .board-stage {
@@ -358,6 +385,7 @@ button:disabled {
   font-weight: 800;
   line-height: 1.2;
   min-height: 44px;
+  max-height: 44px;
   display: flex;
   align-items: center;
   color: #fff6d8;
@@ -430,6 +458,7 @@ button:disabled {
 
 .status-text {
   min-height: 44px;
+  max-height: 44px;
 }
 
 .toast {
