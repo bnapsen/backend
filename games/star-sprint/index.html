@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Astral Dominion</title>
+  <title>Neon Crown Chess</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -19,30 +19,30 @@
     <main class="layout">
       <section class="setup-column">
         <section class="hero panel">
-          <p class="eyebrow">Large-form strategy duel</p>
-          <h1>Astral Dominion</h1>
-          <p class="lede">A 10x10 chess-like tactics game with custom pieces, long-form battles, online rooms, and a solo bot when you want to play alone.</p>
+          <p class="eyebrow">Internet-ready multiplayer chess</p>
+          <h1>Neon Crown Chess</h1>
+          <p class="lede">Classic chess with smooth board motion, one-click room hosting, quick invite links, and a solo bot for practice while you wait for a friend.</p>
 
           <div class="step-strip">
             <div class="step-card" id="stepOne">
               <span class="step-number">1</span>
               <div>
-                <strong>Choose your mode</strong>
-                <p>Host a duel, join a duel, or launch a solo match instantly.</p>
+                <strong>Enter a name</strong>
+                <p>Use any display name so your opponent sees who joined.</p>
               </div>
             </div>
             <div class="step-card" id="stepTwo">
               <span class="step-number">2</span>
               <div>
-                <strong>Claim a side</strong>
-                <p>The host plays White, the joiner plays Black, and solo pits you against a bot.</p>
+                <strong>Host or join</strong>
+                <p>Hosting creates a room instantly. Joining works by code or shared link.</p>
               </div>
             </div>
             <div class="step-card" id="stepThree">
               <span class="step-number">3</span>
               <div>
-                <strong>Capture the Crown</strong>
-                <p>Outmaneuver the opposing Crown using a bigger roster of pieces than standard chess.</p>
+                <strong>Play proper chess</strong>
+                <p>Castling, en passant, promotion, check, checkmate, and stalemate all work.</p>
               </div>
             </div>
           </div>
@@ -59,16 +59,16 @@
           </div>
 
           <div class="hero-actions">
-            <button id="hostBtn" class="primary">Host online duel</button>
-            <button id="joinBtn">Join online duel</button>
-            <button id="soloBtn">Play solo vs bot</button>
+            <button id="hostBtn" class="primary">Host match</button>
+            <button id="joinBtn">Join match</button>
+            <button id="soloBtn">Play solo</button>
           </div>
 
           <div class="invite-panel">
             <div class="invite-header">
               <div>
                 <p class="label">Invite link</p>
-                <p class="invite-help">Host a duel, then send this link to your opponent so they land in the correct room.</p>
+                <p class="invite-help">Host first, then copy this link and send it to the other player. They will land in the right room automatically.</p>
               </div>
               <button id="copyCodeBtn" class="secondary">Copy room code</button>
             </div>
@@ -86,26 +86,26 @@
             </label>
           </details>
 
-          <p class="status-text" id="statusText">Host a duel to create an invite, join an existing room, or play solo against the bot.</p>
+          <p class="status-text" id="statusText">Host a match to create an invite link, join with a code from a friend, or play solo against the practice bot.</p>
         </section>
 
         <section class="panel guide-panel">
           <div class="guide-header">
-            <p class="label">New Piece Set</p>
-            <h2>How Astral Dominion differs from chess</h2>
+            <p class="label">How to play</p>
+            <h2>Easy remote setup</h2>
           </div>
           <div class="guide-list">
             <div class="guide-item">
-              <strong>10x10 battlefield</strong>
-              <p>Longer lanes and more unit density make board control matter more.</p>
+              <strong>Fastest host flow</strong>
+              <p>Press <em>Host match</em>, wait for the room to appear, and then copy the invite link.</p>
             </div>
             <div class="guide-item">
-              <strong>Custom units</strong>
-              <p>Sentinels leap exactly two squares, Vanguards move up to two in any direction, and Wardens promote into advanced units.</p>
+              <strong>Fastest join flow</strong>
+              <p>Open the invite link, type a name, and press <em>Join match</em>.</p>
             </div>
             <div class="guide-item">
-              <strong>Faster objective</strong>
-              <p>You win by capturing the opposing Crown. There is no checkmate lock; tactics are direct and aggressive.</p>
+              <strong>Proper chess rules</strong>
+              <p>The backend validates every move, so both players always stay in sync.</p>
             </div>
           </div>
         </section>
@@ -115,7 +115,7 @@
         <section class="board-panel panel">
           <div class="board-header">
             <div>
-              <p class="label">Battle room</p>
+              <p class="label">Room</p>
               <p class="room-code" id="roomCodeLabel">-</p>
             </div>
             <div>
@@ -123,31 +123,34 @@
               <p class="turn-text" id="turnText">Waiting to begin</p>
             </div>
             <div>
-              <p class="label">Objective</p>
-              <p class="turn-text" id="phaseText">Capture the enemy Crown</p>
+              <p class="label">Status</p>
+              <p class="turn-text" id="phaseText">Start a match to begin.</p>
             </div>
           </div>
 
-          <div class="board-frame">
-            <div class="board-grid" id="boardGrid"></div>
+          <div class="board-stage">
+            <div class="board-grid" id="boardGrid" aria-label="Chess board"></div>
           </div>
 
           <div class="board-footer">
             <div>
-              <p class="label">Round status</p>
-              <p class="winner-text" id="winnerText">No match running yet.</p>
+              <p class="label">Result</p>
+              <p class="winner-text" id="winnerText">No game running yet.</p>
             </div>
-            <button id="restartBtn" class="primary">Restart battle</button>
+            <div class="board-actions">
+              <button id="flipBtn" class="secondary">Flip board</button>
+              <button id="restartBtn" class="primary">New game</button>
+            </div>
           </div>
         </section>
 
         <section class="battle-strip panel">
           <div>
-            <p class="label">White capture tray</p>
+            <p class="label">White captures</p>
             <div class="capture-row" id="whiteCaptured"></div>
           </div>
           <div>
-            <p class="label">Black capture tray</p>
+            <p class="label">Black captures</p>
             <div class="capture-row" id="blackCaptured"></div>
           </div>
         </section>
@@ -160,7 +163,7 @@
               <p class="label">Players</p>
               <h2>Seats</h2>
             </div>
-            <p class="mini-status" id="presenceText">Waiting for commanders...</p>
+            <p class="mini-status" id="presenceText">Waiting for players...</p>
           </div>
           <div class="player-cards" id="playerCards"></div>
         </section>
@@ -168,8 +171,8 @@
         <section class="panel sidebar-panel">
           <div class="sidebar-header">
             <div>
-              <p class="label">Move log</p>
-              <h2>Battle history</h2>
+              <p class="label">Move list</p>
+              <h2>History</h2>
             </div>
             <p class="mini-status" id="historyStatus">No moves yet.</p>
           </div>
@@ -179,8 +182,8 @@
         <section class="panel sidebar-panel">
           <div class="sidebar-header">
             <div>
-              <p class="label">Piece guide</p>
-              <h2>Roster</h2>
+              <p class="label">Rules</p>
+              <h2>What is included</h2>
             </div>
           </div>
           <div class="legend-list" id="legendList"></div>
@@ -191,7 +194,7 @@
     <div class="promotion-modal hidden" id="promotionModal">
       <div class="promotion-card">
         <p class="label">Promotion</p>
-        <h2>Choose a new unit</h2>
+        <h2>Choose a piece</h2>
         <div class="promotion-options" id="promotionOptions"></div>
       </div>
     </div>
@@ -199,6 +202,7 @@
     <div class="toast" id="toast" aria-live="polite"></div>
   </div>
 
+  <script src="chess-core.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

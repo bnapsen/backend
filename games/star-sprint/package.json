@@ -1,8 +1,8 @@
 {
-  "name": "star-sprint-server",
+  "name": "neon-crown-chess-server",
   "version": "1.0.0",
   "private": true,
-  "description": "Minimal WebSocket server for Star Sprint multiplayer",
+  "description": "WebSocket backend for Neon Crown Chess multiplayer",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -11,4 +11,3 @@
     "ws": "^8.18.0"
   }
 }
-

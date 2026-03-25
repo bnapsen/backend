@@ -2,63 +2,34 @@
 'use strict';
 
 const http = require('http');
-const { WebSocketServer } = require('ws');
 const crypto = require('crypto');
+const { WebSocketServer } = require('ws');
+const Chess = require('./chess-core.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
-const BOARD_SIZE = 10;
 const MAX_PLAYERS = 2;
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const COLORS = ['white', 'black'];
-const BACK_RANK = ['bastion', 'knight', 'seer', 'sentinel', 'crown', 'vanguard', 'sentinel', 'seer', 'knight', 'bastion'];
-const PROMOTIONS = ['vanguard', 'bastion', 'seer', 'knight', 'sentinel'];
-const PIECE_NAMES = {
-  crown: 'Crown',
-  bastion: 'Bastion',
-  seer: 'Seer',
-  knight: 'Knight',
-  sentinel: 'Sentinel',
-  vanguard: 'Vanguard',
-  warden: 'Warden',
-};
-const files = 'abcdefghij';
 const rooms = new Map();
 
-function createPiece(type, color) {
-  return {
-    id: crypto.randomUUID(),
-    type,
-    color,
-    moved: false,
-  };
-}
-
-function createInitialBoard() {
-  const board = Array.from({ length: BOARD_SIZE }, () => Array.from({ length: BOARD_SIZE }, () => null));
-
-  for (let x = 0; x < BOARD_SIZE; x += 1) {
-    board[0][x] = createPiece(BACK_RANK[x], 'black');
-    board[1][x] = createPiece('warden', 'black');
-    board[BOARD_SIZE - 2][x] = createPiece('warden', 'white');
-    board[BOARD_SIZE - 1][x] = createPiece(BACK_RANK[x], 'white');
+function send(socket, payload) {
+  if (!socket || socket.readyState !== 1) {
+    return;
   }
-
-  return board;
+  socket.send(JSON.stringify(payload));
 }
 
-function createGameState() {
-  return {
-    board: createInitialBoard(),
-    turn: 'white',
-    winner: null,
-    moveCount: 1,
-    captured: {
-      white: [],
-      black: [],
-    },
-    history: [],
-  };
+function sendError(socket, message) {
+  send(socket, {
+    type: 'error',
+    message,
+  });
+}
+
+function sanitizeName(raw) {
+  const value = String(raw || '').trim().replace(/\s+/g, ' ');
+  return value.slice(0, 18) || 'Guest';
 }
 
 function sanitizeRoomCode(raw) {
@@ -82,7 +53,7 @@ function createRoom(code) {
     code,
     maxPlayers: MAX_PLAYERS,
     players: new Map(),
-    game: createGameState(),
+    game: Chess.createGameState(),
   };
   rooms.set(code, room);
   return room;
@@ -108,134 +79,6 @@ function getOpenColor(room) {
   return COLORS.find((color) => !used.has(color)) || null;
 }
 
-function insideBoard(x, y) {
-  return x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE;
-}
-
-function getPiece(board, x, y) {
-  if (!insideBoard(x, y)) return null;
-  return board[y][x];
-}
-
-function coordToNotation(x, y) {
-  return `${files[x]}${BOARD_SIZE - y}`;
-}
-
-function cloneMove(x, y) {
-  return { x, y };
-}
-
-function pushStepMove(board, piece, moves, x, y) {
-  if (!insideBoard(x, y)) return;
-  const target = getPiece(board, x, y);
-  if (!target || target.color !== piece.color) {
-    moves.push(cloneMove(x, y));
-  }
-}
-
-function pushSlidingMoves(board, piece, x, y, directions, maxSteps = BOARD_SIZE) {
-  const moves = [];
-  for (const [dx, dy] of directions) {
-    for (let step = 1; step <= maxSteps; step += 1) {
-      const nextX = x + (dx * step);
-      const nextY = y + (dy * step);
-      if (!insideBoard(nextX, nextY)) break;
-      const target = getPiece(board, nextX, nextY);
-      if (!target) {
-        moves.push(cloneMove(nextX, nextY));
-        continue;
-      }
-      if (target.color !== piece.color) {
-        moves.push(cloneMove(nextX, nextY));
-      }
-      break;
-    }
-  }
-  return moves;
-}
-
-function getLegalMoves(board, x, y) {
-  const piece = getPiece(board, x, y);
-  if (!piece) return [];
-
-  const moves = [];
-  switch (piece.type) {
-    case 'crown':
-      for (let dx = -1; dx <= 1; dx += 1) {
-        for (let dy = -1; dy <= 1; dy += 1) {
-          if (dx === 0 && dy === 0) continue;
-          pushStepMove(board, piece, moves, x + dx, y + dy);
-        }
-      }
-      return moves;
-
-    case 'bastion':
-      return pushSlidingMoves(board, piece, x, y, [[1, 0], [-1, 0], [0, 1], [0, -1]]);
-
-    case 'seer':
-      return pushSlidingMoves(board, piece, x, y, [[1, 1], [1, -1], [-1, 1], [-1, -1]]);
-
-    case 'vanguard':
-      return pushSlidingMoves(
-        board,
-        piece,
-        x,
-        y,
-        [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]],
-        2
-      );
-
-    case 'knight': {
-      const deltas = [
-        [1, 2], [2, 1], [2, -1], [1, -2],
-        [-1, -2], [-2, -1], [-2, 1], [-1, 2],
-      ];
-      for (const [dx, dy] of deltas) {
-        pushStepMove(board, piece, moves, x + dx, y + dy);
-      }
-      return moves;
-    }
-
-    case 'sentinel': {
-      const deltas = [
-        [2, 0], [-2, 0], [0, 2], [0, -2],
-        [2, 2], [2, -2], [-2, 2], [-2, -2],
-      ];
-      for (const [dx, dy] of deltas) {
-        pushStepMove(board, piece, moves, x + dx, y + dy);
-      }
-      return moves;
-    }
-
-    case 'warden': {
-      const forward = piece.color === 'white' ? -1 : 1;
-      const startRow = piece.color === 'white' ? BOARD_SIZE - 2 : 1;
-      const nextY = y + forward;
-
-      if (insideBoard(x, nextY) && !getPiece(board, x, nextY)) {
-        moves.push(cloneMove(x, nextY));
-        const jumpY = y + (forward * 2);
-        if (y === startRow && !getPiece(board, x, jumpY)) {
-          moves.push(cloneMove(x, jumpY));
-        }
-      }
-
-      for (const dx of [-1, 1]) {
-        const targetX = x + dx;
-        const target = getPiece(board, targetX, nextY);
-        if (target && target.color !== piece.color) {
-          moves.push(cloneMove(targetX, nextY));
-        }
-      }
-
-      return moves;
-    }
-
-    default:
-      return [];
-  }
-}
-
 function listPlayers(room) {
   return Array.from(room.players.values()).map((player) => ({
     id: player.id,
@@ -245,225 +88,218 @@ function listPlayers(room) {
 }
 
 function snapshot(room) {
-  const board = room.game.board.map((row) => row.map((piece) => {
-    if (!piece) return null;
-    return {
-      id: piece.id,
-      type: piece.type,
-      color: piece.color,
-      moved: piece.moved,
-    };
-  }));
-
+  const game = Chess.cloneState(room.game);
   return {
-    title: 'Astral Dominion',
+    ...game,
     roomCode: room.code,
-    boardSize: BOARD_SIZE,
-    board,
-    maxPlayers: room.maxPlayers,
     players: listPlayers(room),
-    turn: room.game.turn,
-    winner: room.game.winner,
-    moveCount: room.game.moveCount,
-    captured: room.game.captured,
-    history: room.game.history.slice(-18),
-    promotions: PROMOTIONS,
-    pieceInfo: PIECE_NAMES,
+    maxPlayers: room.maxPlayers,
+    service: 'neon-crown-chess',
   };
 }
 
-function formatMove(piece, from, to, captured, promotion, turnColor) {
-  const prefix = turnColor === 'white' ? `${Math.ceil(from.moveNumber / 2)}.` : '...';
-  const captureMark = captured ? 'x' : '-';
-  const promoText = promotion ? `=${PIECE_NAMES[promotion]}` : '';
-  return `${prefix} ${PIECE_NAMES[piece.type]} ${coordToNotation(from.x, from.y)}${captureMark}${coordToNotation(to.x, to.y)}${promoText}`;
-}
-
-function applyMove(room, player, move) {
-  const board = room.game.board;
-  const from = move?.from || {};
-  const to = move?.to || {};
-
-  if (!insideBoard(from.x, from.y) || !insideBoard(to.x, to.y)) {
-    return { ok: false, error: 'That move is out of bounds.' };
+function broadcastState(room, message) {
+  const payload = {
+    type: 'state',
+    snapshot: snapshot(room),
+  };
+  if (message) {
+    payload.message = message;
   }
 
-  if (room.game.turn !== player.color) {
-    return { ok: false, error: 'It is not your turn.' };
-  }
-
-  const piece = getPiece(board, from.x, from.y);
-  if (!piece || piece.color !== player.color) {
-    return { ok: false, error: 'Choose one of your own pieces.' };
-  }
-
-  const legal = getLegalMoves(board, from.x, from.y);
-  const selectedMove = legal.find((entry) => entry.x === to.x && entry.y === to.y);
-  if (!selectedMove) {
-    return { ok: false, error: 'That move is not legal for this piece.' };
-  }
-
-  const target = getPiece(board, to.x, to.y);
-  board[to.y][to.x] = piece;
-  board[from.y][from.x] = null;
-  piece.moved = true;
-
-  let promotion = null;
-  if (piece.type === 'warden' && (to.y === 0 || to.y === BOARD_SIZE - 1)) {
-    promotion = PROMOTIONS.includes(move.promotion) ? move.promotion : 'vanguard';
-    piece.type = promotion;
-  }
-
-  if (target) {
-    room.game.captured[player.color].push(target.type);
-    if (target.type === 'crown') {
-      room.game.winner = {
-        color: player.color,
-        name: player.name,
-        reason: 'crown-captured',
-      };
-    }
-  }
-
-  room.game.history.push(
-    formatMove(
-      piece,
-      { x: from.x, y: from.y, moveNumber: room.game.moveCount },
-      { x: to.x, y: to.y },
-      target,
-      promotion,
-      player.color
-    )
-  );
-
-  if (!room.game.winner) {
-    room.game.turn = player.color === 'white' ? 'black' : 'white';
-    room.game.moveCount += 1;
-  }
-
-  return { ok: true };
-}
-
-function restartGame(room) {
-  room.game = createGameState();
-}
-
-function broadcastSnapshot(room) {
-  const state = snapshot(room);
   for (const player of room.players.values()) {
-    send(player.ws, { type: 'state', state });
+    send(player.socket, payload);
   }
 }
 
-const server = http.createServer((req, res) => {
-  if (req.url === '/' || req.url === '/healthz') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ ok: true, service: 'astral-dominion', rooms: rooms.size }));
+function handleJoin(socket, payload) {
+  const mode = payload && payload.mode === 'join' ? 'join' : 'host';
+  const room = getRoomForJoin(payload.roomCode, mode);
+  if (!room) {
+    sendError(socket, 'That room does not exist yet. Ask the host to start it first.');
     return;
   }
 
-  res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify({ error: 'Not found' }));
+  if (room.players.size >= room.maxPlayers) {
+    sendError(socket, 'That room is already full.');
+    return;
+  }
+
+  const color = getOpenColor(room);
+  if (!color) {
+    sendError(socket, 'No seat is available in that room.');
+    return;
+  }
+
+  const player = {
+    id: crypto.randomUUID(),
+    name: sanitizeName(payload.name),
+    color,
+    socket,
+  };
+
+  room.players.set(player.id, player);
+  socket.playerId = player.id;
+  socket.roomCode = room.code;
+
+  send(socket, {
+    type: 'welcome',
+    playerId: player.id,
+    roomCode: room.code,
+    color: player.color,
+    title: room.game.title,
+  });
+
+  const message = room.players.size === 1
+    ? `${player.name} is ready. Share the invite to start playing.`
+    : `${player.name} joined. Match ready.`;
+
+  broadcastState(room, message);
+}
+
+function requirePlayer(socket) {
+  const room = rooms.get(socket.roomCode);
+  if (!room) {
+    sendError(socket, 'Room not found.');
+    return null;
+  }
+
+  const player = room.players.get(socket.playerId);
+  if (!player) {
+    sendError(socket, 'You are not seated in this room.');
+    return null;
+  }
+
+  return { room, player };
+}
+
+function handleMove(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.game.turn !== player.color) {
+    sendError(socket, `It is ${room.game.turn}'s turn.`);
+    return;
+  }
+
+  const result = Chess.applyMove(room.game, {
+    from: payload.from,
+    to: payload.to,
+    promotion: payload.promotion,
+  });
+
+  if (!result.ok) {
+    sendError(socket, result.error || 'That move could not be played.');
+    return;
+  }
+
+  broadcastState(room);
+}
+
+function handleRestart(socket) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  room.game = Chess.createGameState();
+  broadcastState(room, `${player.name} reset the board.`);
+}
+
+function handleDisconnect(socket) {
+  const roomCode = socket.roomCode;
+  const playerId = socket.playerId;
+  if (!roomCode || !playerId) {
+    return;
+  }
+
+  const room = rooms.get(roomCode);
+  if (!room) {
+    return;
+  }
+
+  const player = room.players.get(playerId);
+  room.players.delete(playerId);
+
+  if (room.players.size === 0) {
+    rooms.delete(roomCode);
+    return;
+  }
+
+  const message = player
+    ? `${player.name} disconnected. The room stays open for a new opponent.`
+    : 'A player disconnected.';
+  broadcastState(room, message);
+}
+
+const server = http.createServer((req, res) => {
+  if (req.url === '/healthz') {
+    const body = JSON.stringify({
+      ok: true,
+      service: 'neon-crown-chess',
+      rooms: rooms.size,
+    });
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    res.end(body);
+    return;
+  }
+
+  const body = JSON.stringify({
+    ok: true,
+    service: 'neon-crown-chess',
+    websocket: true,
+  });
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
 });
 
 const wss = new WebSocketServer({ server });
 
-wss.on('connection', (ws) => {
-  ws.meta = { roomCode: null, playerId: null };
-
-  ws.on('message', (raw) => {
-    let msg;
+wss.on('connection', (socket) => {
+  socket.on('message', (buffer) => {
+    let payload;
     try {
-      msg = JSON.parse(String(raw));
-    } catch {
+      payload = JSON.parse(String(buffer));
+    } catch (error) {
+      sendError(socket, 'That message was not valid JSON.');
       return;
     }
 
-    if (msg.type === 'join') {
-      const mode = msg.mode === 'join' ? 'join' : 'host';
-      const room = getRoomForJoin(msg.room, mode);
-
-      if (!room) {
-        send(ws, { type: 'error', message: 'That room does not exist yet. Ask the host to start it first.' });
-        return;
-      }
-
-      if (room.players.size >= MAX_PLAYERS) {
-        send(ws, { type: 'error', message: 'This tactics room is already full.' });
-        return;
-      }
-
-      const color = getOpenColor(room);
-      if (!color) {
-        send(ws, { type: 'error', message: 'No color slot is available in this room.' });
-        return;
-      }
-
-      const player = {
-        id: crypto.randomUUID(),
-        name: String(msg.name || 'Player').trim().slice(0, 18) || 'Player',
-        color,
-        ws,
-      };
-
-      room.players.set(player.id, player);
-      ws.meta = { roomCode: room.code, playerId: player.id };
-
-      send(ws, {
-        type: 'welcome',
-        roomCode: room.code,
-        playerId: player.id,
-        yourColor: color,
-        message: mode === 'host'
-          ? 'Room created. Send the invite link so the second player can claim the opposing side.'
-          : `Joined as ${color}.`,
-        state: snapshot(room),
-      });
-
-      broadcastSnapshot(room);
-      return;
-    }
-
-    if (!ws.meta.roomCode || !ws.meta.playerId) return;
-
-    const room = rooms.get(ws.meta.roomCode);
-    if (!room) return;
-    const player = room.players.get(ws.meta.playerId);
-    if (!player) return;
-
-    if (msg.type === 'move') {
-      const result = applyMove(room, player, msg);
-      if (!result.ok) {
-        send(ws, { type: 'error', message: result.error });
-        return;
-      }
-      broadcastSnapshot(room);
-      return;
-    }
-
-    if (msg.type === 'restart') {
-      restartGame(room);
-      broadcastSnapshot(room);
+    switch (payload.action) {
+      case 'join':
+        handleJoin(socket, payload);
+        break;
+      case 'move':
+        handleMove(socket, payload);
+        break;
+      case 'restart':
+        handleRestart(socket);
+        break;
+      default:
+        sendError(socket, 'Unknown action.');
+        break;
     }
   });
 
-  ws.on('close', () => {
-    const { roomCode, playerId } = ws.meta;
-    if (!roomCode || !playerId) return;
+  socket.on('close', () => {
+    handleDisconnect(socket);
+  });
 
-    const room = rooms.get(roomCode);
-    if (!room) return;
-
-    room.players.delete(playerId);
-    if (!room.players.size) {
-      rooms.delete(roomCode);
-      return;
-    }
-
-    broadcastSnapshot(room);
+  socket.on('error', () => {
+    handleDisconnect(socket);
   });
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Astral Dominion backend listening on http://${HOST}:${PORT}`);
+  console.log(`Neon Crown Chess server running at ws://${HOST}:${PORT}`);
 });

@@ -1,27 +1,36 @@
-# Star Sprint
+# Neon Crown Chess
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/bnapsen/backend)
 
-Star Sprint is a room-based multiplayer browser game for Nova Arcade. Players join the same room, move across a shared grid, and race to collect five stars before anyone else.
+Neon Crown Chess is a browser chess game for Nova Arcade with:
 
-## Run the frontend
+- real chess rules
+- room-based online multiplayer over WebSockets
+- copy-and-share invite links
+- solo practice against a lightweight bot
 
-The game page is served as static files from `games/star-sprint/`.
+## Frontend
 
-## Run the multiplayer server
+The public game page is served statically from `games/star-sprint/`.
+
+## Backend
 
 ```bash
 npm install
 npm start
 ```
 
-By default the WebSocket server listens on port `8081`. In production you can override that with the `PORT` environment variable.
+The multiplayer backend listens on port `8081` by default and respects the `PORT` environment variable in production.
 
-The server also exposes `GET /healthz` so it can be used on platforms like Render that require an HTTP health check.
+Health check:
+
+```text
+GET /healthz
+```
 
 ## Deploy notes
 
-- Frontend path: `/games/star-sprint/`
-- WebSocket backend: separate Node process or service
-- Update the in-game server URL field to match your deployed `wss://` endpoint if needed
-- This repo includes a root `render.yaml` for deploying the backend from `games/star-sprint/`
+- Public page path: `/games/star-sprint/`
+- Backend root directory: `games/star-sprint`
+- Render blueprint lives at the repo root in `render.yaml`
+- Production WebSocket URL is configured in `game.js`
