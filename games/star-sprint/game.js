@@ -73,6 +73,7 @@
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
     soloBtn: document.getElementById('soloBtn'),
+    engineMoveBtn: document.getElementById('engineMoveBtn'),
     copyBtn: document.getElementById('copyBtn'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     restartBtn: document.getElementById('restartBtn'),
@@ -642,6 +643,7 @@
     const pendingConnection = Boolean(state.socket && state.socket.readyState === WebSocket.CONNECTING);
     ui.hostBtn.disabled = pendingConnection;
     ui.joinBtn.disabled = pendingConnection || !sanitizeRoomCode(ui.roomInput.value);
+    ui.engineMoveBtn.disabled = state.mode !== 'solo' || !state.snapshot || Boolean(state.snapshot.winner || state.snapshot.drawReason);
     ui.restartBtn.disabled = !state.snapshot;
     ui.flipBtn.disabled = !state.snapshot;
     ui.copyBtn.disabled = !hasRoom;
@@ -858,6 +860,12 @@
     state.engineInitReject = null;
   }
 
+  function resetEngineBridge() {
+    teardownEngineWorker();
+    state.engineFallback = false;
+    state.engineStatus = 'Engine idle.';
+  }
+
   function resolveEngineInit(ok, value) {
     const resolver = ok ? state.engineInitResolve : state.engineInitReject;
     state.engineInitResolve = null;
@@ -1001,6 +1009,49 @@
       clearSelection();
       render();
     }, 260);
+  }
+
+  async function forceEngineMoveNow() {
+    if (state.mode !== 'solo' || !state.snapshot || state.snapshot.winner || state.snapshot.drawReason) {
+      return;
+    }
+
+    cancelEngineThinking();
+    const fenAtStart = snapshotToFen(state.snapshot);
+    const sideToMove = state.snapshot.turn;
+    let move = null;
+
+    if (state.engineFallback) {
+      resetEngineBridge();
+    }
+
+    try {
+      const engineReady = await ensureEngineReady();
+      move = engineReady
+        ? await requestEngineMove(Core.cloneState(state.snapshot))
+        : chooseFallbackMove(state.snapshot, sideToMove);
+    } catch (error) {
+      move = chooseFallbackMove(state.snapshot, sideToMove);
+    }
+
+    if (!move || !state.snapshot || snapshotToFen(state.snapshot) !== fenAtStart) {
+      return;
+    }
+
+    const sandbox = Core.cloneState(state.snapshot);
+    const result = Core.applyMove(sandbox, move);
+    if (!result.ok) {
+      showToast(result.error || 'Engine move failed.');
+      return;
+    }
+
+    state.snapshot = decorateSoloSnapshot(sandbox);
+    setStatusMessage(state.snapshot.status);
+    if (state.engineReady) {
+      setEngineStatus(`Stockfish ready - ${engineLevelProfile().label}`);
+    }
+    clearSelection();
+    render();
   }
 
   function submitMove(move) {
@@ -1317,6 +1368,7 @@
     disconnectSocket();
     cancelEngineThinking();
     cleanupDrag();
+    resetEngineBridge();
     closePromotion();
     state.mode = 'solo';
     state.yourColor = 'white';
@@ -1336,6 +1388,8 @@
       }
       if (ready) {
         updateSoloEngineLabel();
+      } else {
+        setEngineStatus('Stockfish unavailable, using fallback engine.');
       }
       render();
     });
@@ -1391,6 +1445,9 @@
     ui.hostBtn.addEventListener('click', () => connectOnline('host'));
     ui.joinBtn.addEventListener('click', () => connectOnline('join'));
     ui.soloBtn.addEventListener('click', startSolo);
+    ui.engineMoveBtn.addEventListener('click', () => {
+      forceEngineMoveNow();
+    });
     ui.copyBtn.addEventListener('click', () => copyText(inviteUrl(), 'Invite link copied.'));
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
     ui.restartBtn.addEventListener('click', () => {
