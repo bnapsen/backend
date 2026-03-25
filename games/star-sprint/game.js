@@ -2,25 +2,40 @@
   'use strict';
 
   const STORAGE_KEYS = {
-    serverUrl: 'starSprint.serverUrl',
-    name: 'starSprint.playerName',
+    name: 'astralDominion.name',
+    serverUrl: 'astralDominion.serverUrl',
   };
-  const BOARD_SIZE = 12;
-  const GOAL = 5;
+  const query = new URLSearchParams(window.location.search);
+  const BOARD_SIZE = 10;
+  const MAX_PLAYERS = 2;
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const query = new URLSearchParams(window.location.search);
+  const BACK_RANK = ['bastion', 'knight', 'seer', 'sentinel', 'crown', 'vanguard', 'sentinel', 'seer', 'knight', 'bastion'];
+  const PROMOTIONS = ['vanguard', 'bastion', 'seer', 'knight', 'sentinel'];
+  const PIECES = {
+    crown: { name: 'Crown', mark: 'C', mini: 'KR', value: 1000, desc: 'Moves 1 square in any direction. Lose it and the battle ends.' },
+    bastion: { name: 'Bastion', mark: 'B', mini: 'RO', value: 9, desc: 'Slides any number of squares orthogonally.' },
+    seer: { name: 'Seer', mark: 'S', mini: 'BI', value: 7, desc: 'Slides any number of squares diagonally.' },
+    knight: { name: 'Knight', mark: 'K', mini: 'LN', value: 5, desc: 'Leaps in an L shape and ignores blockers.' },
+    sentinel: { name: 'Sentinel', mark: 'T', mini: 'JP', value: 5, desc: 'Jumps exactly 2 squares orthogonally or diagonally.' },
+    vanguard: { name: 'Vanguard', mark: 'V', mini: 'VG', value: 8, desc: 'Moves up to 2 squares in any direction without jumping.' },
+    warden: { name: 'Warden', mark: 'W', mini: 'PN', value: 2, desc: 'Marches forward, captures diagonally, and promotes on the far rank.' },
+  };
+  const files = 'abcdefghij';
 
   const state = {
-    roomCode: '',
-    playerId: '',
+    mode: 'idle',
     socket: null,
     snapshot: null,
-    serverUrl: '',
+    roomCode: '',
+    yourColor: null,
     isHost: false,
-    localMode: false,
-    botTimer: null,
+    serverUrl: '',
+    selected: null,
+    legalMoves: [],
+    promotionContext: null,
     toastTimer: null,
+    botTimer: null,
   };
 
   const ui = {
@@ -30,24 +45,31 @@
     inviteInput: document.getElementById('inviteInput'),
     statusText: document.getElementById('statusText'),
     roomCodeLabel: document.getElementById('roomCodeLabel'),
-    goalText: document.getElementById('goalText'),
-    presenceText: document.getElementById('presenceText'),
-    scoreboard: document.getElementById('scoreboard'),
-    raceSummary: document.getElementById('raceSummary'),
-    arena: document.getElementById('arena'),
+    turnText: document.getElementById('turnText'),
+    phaseText: document.getElementById('phaseText'),
     winnerText: document.getElementById('winnerText'),
+    presenceText: document.getElementById('presenceText'),
     networkStatus: document.getElementById('networkStatus'),
-    playerCountPill: document.getElementById('playerCountPill'),
+    modePill: document.getElementById('modePill'),
+    boardGrid: document.getElementById('boardGrid'),
+    playerCards: document.getElementById('playerCards'),
+    historyList: document.getElementById('historyList'),
+    historyStatus: document.getElementById('historyStatus'),
+    legendList: document.getElementById('legendList'),
+    whiteCaptured: document.getElementById('whiteCaptured'),
+    blackCaptured: document.getElementById('blackCaptured'),
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
     soloBtn: document.getElementById('soloBtn'),
     copyBtn: document.getElementById('copyBtn'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
-    resetBtn: document.getElementById('resetBtn'),
+    restartBtn: document.getElementById('restartBtn'),
+    promotionModal: document.getElementById('promotionModal'),
+    promotionOptions: document.getElementById('promotionOptions'),
     toast: document.getElementById('toast'),
-    stepHost: document.getElementById('stepHost'),
-    stepShare: document.getElementById('stepShare'),
-    stepJoin: document.getElementById('stepJoin'),
+    stepOne: document.getElementById('stepOne'),
+    stepTwo: document.getElementById('stepTwo'),
+    stepThree: document.getElementById('stepThree'),
   };
 
   function sanitizeRoomCode(value) {
@@ -61,24 +83,323 @@
     return `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${trimmed}`;
   }
 
-  function generateRoomCode(length = 6) {
-    let output = '';
-    for (let index = 0; index < length; index += 1) {
-      output += ROOM_CHARS[Math.floor(Math.random() * ROOM_CHARS.length)];
+  function generateRoomCode() {
+    let code = '';
+    for (let index = 0; index < 6; index += 1) {
+      code += ROOM_CHARS[Math.floor(Math.random() * ROOM_CHARS.length)];
     }
-    return output;
+    return code;
   }
 
-  function getCurrentName() {
-    const name = (ui.nameInput.value || '').trim().slice(0, 18);
-    return name || 'Player';
+  function insideBoard(x, y) {
+    return x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE;
   }
 
-  function getCurrentRoom({ host = false } = {}) {
-    const typed = sanitizeRoomCode(ui.roomInput.value);
-    if (typed) return typed;
-    if (host) return generateRoomCode();
-    return '';
+  function getPiece(board, x, y) {
+    if (!insideBoard(x, y)) return null;
+    return board[y][x];
+  }
+
+  function clonePiece(piece) {
+    return piece ? { ...piece } : null;
+  }
+
+  function cloneSnapshot(snapshot) {
+    return {
+      ...snapshot,
+      players: snapshot.players.map((player) => ({ ...player })),
+      captured: {
+        white: [...snapshot.captured.white],
+        black: [...snapshot.captured.black],
+      },
+      history: [...snapshot.history],
+      board: snapshot.board.map((row) => row.map((piece) => clonePiece(piece))),
+    };
+  }
+
+  function createPiece(type, color) {
+    return {
+      id: `${color}-${type}-${Math.random().toString(16).slice(2, 10)}`,
+      type,
+      color,
+      moved: false,
+    };
+  }
+
+  function createInitialBoard() {
+    const board = Array.from({ length: BOARD_SIZE }, () => Array.from({ length: BOARD_SIZE }, () => null));
+    for (let x = 0; x < BOARD_SIZE; x += 1) {
+      board[0][x] = createPiece(BACK_RANK[x], 'black');
+      board[1][x] = createPiece('warden', 'black');
+      board[BOARD_SIZE - 2][x] = createPiece('warden', 'white');
+      board[BOARD_SIZE - 1][x] = createPiece(BACK_RANK[x], 'white');
+    }
+    return board;
+  }
+
+  function createSoloSnapshot(name) {
+    return {
+      title: 'Astral Dominion',
+      roomCode: 'SOLO',
+      boardSize: BOARD_SIZE,
+      board: createInitialBoard(),
+      maxPlayers: MAX_PLAYERS,
+      players: [
+        { id: 'solo-white', name, color: 'white' },
+        { id: 'solo-bot', name: 'Void Regent', color: 'black' },
+      ],
+      turn: 'white',
+      winner: null,
+      moveCount: 1,
+      captured: { white: [], black: [] },
+      history: [],
+      promotions: [...PROMOTIONS],
+      pieceInfo: Object.fromEntries(Object.entries(PIECES).map(([key, value]) => [key, value.name])),
+    };
+  }
+
+  function pushStepMove(board, piece, moves, x, y) {
+    if (!insideBoard(x, y)) return;
+    const target = getPiece(board, x, y);
+    if (!target || target.color !== piece.color) {
+      moves.push({ x, y });
+    }
+  }
+
+  function pushSlidingMoves(board, piece, x, y, directions, maxSteps = BOARD_SIZE) {
+    const moves = [];
+    for (const [dx, dy] of directions) {
+      for (let step = 1; step <= maxSteps; step += 1) {
+        const nextX = x + (dx * step);
+        const nextY = y + (dy * step);
+        if (!insideBoard(nextX, nextY)) break;
+        const target = getPiece(board, nextX, nextY);
+        if (!target) {
+          moves.push({ x: nextX, y: nextY });
+          continue;
+        }
+        if (target.color !== piece.color) {
+          moves.push({ x: nextX, y: nextY });
+        }
+        break;
+      }
+    }
+    return moves;
+  }
+
+  function getLegalMoves(board, x, y) {
+    const piece = getPiece(board, x, y);
+    if (!piece) return [];
+    const moves = [];
+
+    switch (piece.type) {
+      case 'crown':
+        for (let dx = -1; dx <= 1; dx += 1) {
+          for (let dy = -1; dy <= 1; dy += 1) {
+            if (dx === 0 && dy === 0) continue;
+            pushStepMove(board, piece, moves, x + dx, y + dy);
+          }
+        }
+        return moves;
+
+      case 'bastion':
+        return pushSlidingMoves(board, piece, x, y, [[1, 0], [-1, 0], [0, 1], [0, -1]]);
+
+      case 'seer':
+        return pushSlidingMoves(board, piece, x, y, [[1, 1], [1, -1], [-1, 1], [-1, -1]]);
+
+      case 'vanguard':
+        return pushSlidingMoves(
+          board,
+          piece,
+          x,
+          y,
+          [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]],
+          2
+        );
+
+      case 'knight': {
+        const deltas = [
+          [1, 2], [2, 1], [2, -1], [1, -2],
+          [-1, -2], [-2, -1], [-2, 1], [-1, 2],
+        ];
+        for (const [dx, dy] of deltas) {
+          pushStepMove(board, piece, moves, x + dx, y + dy);
+        }
+        return moves;
+      }
+
+      case 'sentinel': {
+        const deltas = [
+          [2, 0], [-2, 0], [0, 2], [0, -2],
+          [2, 2], [2, -2], [-2, 2], [-2, -2],
+        ];
+        for (const [dx, dy] of deltas) {
+          pushStepMove(board, piece, moves, x + dx, y + dy);
+        }
+        return moves;
+      }
+
+      case 'warden': {
+        const forward = piece.color === 'white' ? -1 : 1;
+        const startRow = piece.color === 'white' ? BOARD_SIZE - 2 : 1;
+        const nextY = y + forward;
+
+        if (insideBoard(x, nextY) && !getPiece(board, x, nextY)) {
+          moves.push({ x, y: nextY });
+          const jumpY = y + (forward * 2);
+          if (y === startRow && !getPiece(board, x, jumpY)) {
+            moves.push({ x, y: jumpY });
+          }
+        }
+
+        for (const dx of [-1, 1]) {
+          const targetX = x + dx;
+          const target = getPiece(board, targetX, nextY);
+          if (target && target.color !== piece.color) {
+            moves.push({ x: targetX, y: nextY });
+          }
+        }
+        return moves;
+      }
+
+      default:
+        return [];
+    }
+  }
+
+  function currentPlayer() {
+    return state.snapshot?.players?.find((player) => player.color === state.yourColor) || null;
+  }
+
+  function canAct() {
+    return Boolean(state.snapshot && !state.snapshot.winner && state.snapshot.turn === state.yourColor);
+  }
+
+  function coordToNotation(x, y) {
+    return `${files[x]}${BOARD_SIZE - y}`;
+  }
+
+  function promotionNeeded(piece, toY) {
+    return piece.type === 'warden' && (toY === 0 || toY === BOARD_SIZE - 1);
+  }
+
+  function formatMoveText(piece, from, to, capturedPiece, promotion, turnColor, moveCount) {
+    const prefix = turnColor === 'white' ? `${Math.ceil(moveCount / 2)}.` : '...';
+    const captureMark = capturedPiece ? 'x' : '-';
+    const promotionText = promotion ? `=${PIECES[promotion].name}` : '';
+    return `${prefix} ${PIECES[piece.type].name} ${coordToNotation(from.x, from.y)}${captureMark}${coordToNotation(to.x, to.y)}${promotionText}`;
+  }
+
+  function applyMoveLocally(snapshot, payload, actingColor) {
+    const from = payload.from;
+    const to = payload.to;
+    const board = snapshot.board;
+    const piece = getPiece(board, from.x, from.y);
+    if (!piece || piece.color !== actingColor) return false;
+
+    const legal = getLegalMoves(board, from.x, from.y);
+    if (!legal.some((move) => move.x === to.x && move.y === to.y)) return false;
+
+    const target = getPiece(board, to.x, to.y);
+    board[to.y][to.x] = piece;
+    board[from.y][from.x] = null;
+    piece.moved = true;
+
+    let promotion = null;
+    if (promotionNeeded(piece, to.y)) {
+      promotion = PROMOTIONS.includes(payload.promotion) ? payload.promotion : 'vanguard';
+      piece.type = promotion;
+    }
+
+    if (target) {
+      snapshot.captured[actingColor].push(target.type);
+      if (target.type === 'crown') {
+        const winner = snapshot.players.find((player) => player.color === actingColor);
+        snapshot.winner = {
+          color: actingColor,
+          name: winner?.name || actingColor,
+          reason: 'crown-captured',
+        };
+      }
+    }
+
+    snapshot.history.push(
+      formatMoveText(piece, from, to, target, promotion, actingColor, snapshot.moveCount)
+    );
+
+    if (!snapshot.winner) {
+      snapshot.turn = actingColor === 'white' ? 'black' : 'white';
+      snapshot.moveCount += 1;
+    }
+
+    return true;
+  }
+
+  function getAllMovesForColor(snapshot, color) {
+    const moves = [];
+    for (let y = 0; y < BOARD_SIZE; y += 1) {
+      for (let x = 0; x < BOARD_SIZE; x += 1) {
+        const piece = getPiece(snapshot.board, x, y);
+        if (!piece || piece.color !== color) continue;
+        for (const move of getLegalMoves(snapshot.board, x, y)) {
+          moves.push({
+            from: { x, y },
+            to: { x: move.x, y: move.y },
+          });
+        }
+      }
+    }
+    return moves;
+  }
+
+  function pieceValue(type) {
+    return PIECES[type]?.value || 0;
+  }
+
+  function chooseBotMove(snapshot) {
+    const moves = getAllMovesForColor(snapshot, 'black');
+    if (!moves.length) return null;
+
+    let bestScore = -Infinity;
+    const bestMoves = [];
+
+    for (const move of moves) {
+      const target = getPiece(snapshot.board, move.to.x, move.to.y);
+      const piece = getPiece(snapshot.board, move.from.x, move.from.y);
+      let score = Math.random() * 0.2;
+      if (target) {
+        score += pieceValue(target.type) * 12;
+      }
+      if (promotionNeeded(piece, move.to.y)) {
+        score += 9;
+        move.promotion = 'vanguard';
+      }
+
+      const centerDistance = Math.abs(4.5 - move.to.x) + Math.abs(4.5 - move.to.y);
+      score += (10 - centerDistance);
+
+      if (target?.type === 'crown') {
+        score += 10000;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMoves.length = 0;
+        bestMoves.push(move);
+      } else if (score === bestScore) {
+        bestMoves.push(move);
+      }
+    }
+
+    return bestMoves[Math.floor(Math.random() * bestMoves.length)];
+  }
+
+  function stopBot() {
+    if (state.botTimer) {
+      window.clearTimeout(state.botTimer);
+      state.botTimer = null;
+    }
   }
 
   function showToast(message) {
@@ -99,14 +420,26 @@
     ui.networkStatus.dataset.tone = tone;
   }
 
+  function setModePill() {
+    if (state.mode === 'solo') {
+      ui.modePill.textContent = 'Solo vs Void Regent';
+      return;
+    }
+    if (state.mode === 'online' && state.yourColor) {
+      ui.modePill.textContent = `Online as ${state.yourColor}`;
+      return;
+    }
+    ui.modePill.textContent = 'No match running';
+  }
+
   function setBusy(isBusy) {
     ui.hostBtn.disabled = isBusy;
     ui.joinBtn.disabled = isBusy;
     ui.soloBtn.disabled = isBusy;
   }
 
-  function updateInviteLink() {
-    if (state.localMode) {
+  function updateInvite() {
+    if (state.mode === 'solo') {
       ui.inviteInput.value = 'Solo mode does not use invite links.';
       return '';
     }
@@ -119,351 +452,363 @@
     return invite;
   }
 
-  function updateStepStrip() {
-    if (state.localMode) {
-      ui.stepHost.classList.remove('active');
-      ui.stepShare.classList.remove('active');
-      ui.stepJoin.classList.add('active');
-      return;
-    }
-    const hasRoom = Boolean(state.roomCode || sanitizeRoomCode(ui.roomInput.value));
+  function updateSteps() {
     const playerCount = state.snapshot?.players?.length || 0;
-    ui.stepHost.classList.toggle('active', !state.snapshot && !hasRoom);
-    ui.stepShare.classList.toggle('active', hasRoom && playerCount < 2);
-    ui.stepJoin.classList.toggle('active', playerCount >= 2);
-  }
+    const hasRoom = Boolean(state.roomCode || sanitizeRoomCode(ui.roomInput.value));
 
-  function updateHeaderStats(snapshot = state.snapshot) {
-    const count = snapshot?.playerCount || snapshot?.players?.length || 0;
-    const maxPlayers = snapshot?.maxPlayers || 6;
-    ui.playerCountPill.textContent = `${count} / ${maxPlayers} racers`;
-
-    if (!snapshot) {
-      ui.presenceText.textContent = 'Waiting for racers...';
-      ui.goalText.textContent = `First to ${GOAL} stars`;
-      ui.raceSummary.textContent = 'No racers connected yet.';
+    if (state.mode === 'solo') {
+      ui.stepOne.classList.add('active');
+      ui.stepTwo.classList.add('active');
+      ui.stepThree.classList.add('active');
       return;
     }
 
-    if (state.localMode) {
-      ui.presenceText.textContent = 'Solo race vs bot';
-      ui.goalText.textContent = 'Beat the bot to 5 stars';
-      ui.raceSummary.textContent = 'Solo mode live.';
-      return;
-    }
+    ui.stepOne.classList.toggle('active', !hasRoom || !state.snapshot);
+    ui.stepTwo.classList.toggle('active', hasRoom && playerCount < 2);
+    ui.stepThree.classList.toggle('active', playerCount >= 2);
+  }
 
-    ui.presenceText.textContent = count < 2 ? `${count} racer connected` : `${count} racers connected`;
-
-    const leader = snapshot.players
-      .slice()
-      .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name))[0];
-
-    if (leader) {
-      const starsNeeded = Math.max(0, snapshot.goal - leader.score);
-      ui.goalText.textContent = starsNeeded === 0
-        ? `${leader.name} reached the goal`
-        : `${leader.name} leads, ${starsNeeded} to win`;
-      ui.raceSummary.textContent = `${leader.name} leads on ${leader.score} star${leader.score === 1 ? '' : 's'}.`;
+  function renderLegend() {
+    ui.legendList.innerHTML = '';
+    for (const type of ['crown', 'bastion', 'seer', 'vanguard', 'knight', 'sentinel', 'warden']) {
+      const piece = PIECES[type];
+      const item = document.createElement('div');
+      item.className = 'legend-item';
+      item.innerHTML = `
+        <div class="legend-head">
+          <span class="piece-badge white">${piece.mark}</span>
+          <strong>${piece.name}</strong>
+        </div>
+        <p class="legend-copy">${piece.desc}</p>
+      `;
+      ui.legendList.appendChild(item);
     }
   }
 
-  function render(snapshot) {
-    state.snapshot = snapshot;
-    state.roomCode = snapshot.roomCode;
-    ui.roomCodeLabel.textContent = snapshot.roomCode;
-    ui.roomInput.value = snapshot.roomCode;
-    updateInviteLink();
-    updateHeaderStats(snapshot);
-    updateStepStrip();
+  function renderPlayers(snapshot) {
+    ui.playerCards.innerHTML = '';
+    if (!snapshot.players.length) {
+      ui.presenceText.textContent = 'Waiting for commanders...';
+      return;
+    }
 
-    ui.arena.style.gridTemplateColumns = `repeat(${snapshot.width}, minmax(0, 1fr))`;
-    ui.arena.innerHTML = '';
+    ui.presenceText.textContent = state.mode === 'solo'
+      ? 'Solo duel active'
+      : `${snapshot.players.length} / ${snapshot.maxPlayers} commanders seated`;
 
-    for (let y = 0; y < snapshot.height; y += 1) {
-      for (let x = 0; x < snapshot.width; x += 1) {
-        const cell = document.createElement('div');
-        cell.className = 'cell';
+    for (const player of snapshot.players) {
+      const card = document.createElement('div');
+      card.className = 'player-card';
+      if (player.color === snapshot.turn && !snapshot.winner) {
+        card.classList.add('active-turn');
+      }
+      if (player.color === state.yourColor) {
+        card.classList.add('you');
+      }
+      card.innerHTML = `
+        <div class="player-head">
+          <strong>${player.name}${player.color === state.yourColor ? ' (you)' : ''}</strong>
+          <span class="piece-badge ${player.color}">${player.color}</span>
+        </div>
+        <p class="player-color-label">${player.color === 'white' ? 'Moves first' : 'Responds second'}</p>
+      `;
+      ui.playerCards.appendChild(card);
+    }
+  }
 
-        if (snapshot.star.x === x && snapshot.star.y === y) {
-          cell.classList.add('star');
+  function renderHistory(snapshot) {
+    ui.historyList.innerHTML = '';
+    if (!snapshot.history.length) {
+      ui.historyStatus.textContent = 'No moves yet.';
+      return;
+    }
+
+    ui.historyStatus.textContent = `${snapshot.history.length} moves recorded.`;
+    snapshot.history.slice().reverse().forEach((entry, index) => {
+      const item = document.createElement('li');
+      item.innerHTML = `
+        <span class="history-turn">${snapshot.history.length - index}</span>
+        <span>${entry}</span>
+      `;
+      ui.historyList.appendChild(item);
+    });
+  }
+
+  function renderCaptured(snapshot) {
+    for (const side of ['white', 'black']) {
+      const row = side === 'white' ? ui.whiteCaptured : ui.blackCaptured;
+      row.innerHTML = '';
+      const captures = snapshot.captured[side];
+      if (!captures.length) {
+        row.textContent = 'No captures yet.';
+        continue;
+      }
+
+      captures.forEach((type) => {
+        const badge = document.createElement('span');
+        badge.className = `capture-chip ${side}`;
+        badge.textContent = PIECES[type].name;
+        row.appendChild(badge);
+      });
+    }
+  }
+
+  function renderBoard(snapshot) {
+    ui.boardGrid.innerHTML = '';
+    for (let y = 0; y < BOARD_SIZE; y += 1) {
+      for (let x = 0; x < BOARD_SIZE; x += 1) {
+        const cell = document.createElement('button');
+        cell.type = 'button';
+        cell.className = `board-cell ${(x + y) % 2 === 0 ? 'light' : 'dark'}`;
+        cell.dataset.x = String(x);
+        cell.dataset.y = String(y);
+        if (y === BOARD_SIZE - 1) {
+          cell.classList.add('file-label');
+          cell.dataset.file = files[x];
+        }
+        if (x === 0) {
+          cell.classList.add('rank-label');
+          cell.dataset.rank = String(BOARD_SIZE - y);
         }
 
-        const player = snapshot.players.find((entry) => entry.x === x && entry.y === y);
-        if (player) {
-          if (player.id === state.playerId) {
-            cell.classList.add('you');
-          }
+        const piece = getPiece(snapshot.board, x, y);
+        if (state.selected && state.selected.x === x && state.selected.y === y) {
+          cell.classList.add('selected');
+        }
 
+        const legal = state.legalMoves.find((move) => move.x === x && move.y === y);
+        if (legal) {
+          cell.classList.add('legal');
+          if (getPiece(snapshot.board, x, y)) {
+            cell.classList.add('capture');
+          }
+        }
+
+        if (piece) {
           const token = document.createElement('div');
-          token.className = 'token';
-          token.style.background = player.color;
-          token.textContent = player.name.slice(0, 1).toUpperCase();
-          token.title = `${player.name}: ${player.score}`;
+          token.className = `piece-token ${piece.color}`;
+          token.innerHTML = `
+            <span class="piece-mark">${PIECES[piece.type].mark}</span>
+            <span class="piece-mini">${PIECES[piece.type].mini}</span>
+          `;
           cell.appendChild(token);
         }
 
-        ui.arena.appendChild(cell);
+        cell.addEventListener('click', () => handleBoardClick(x, y));
+        ui.boardGrid.appendChild(cell);
       }
     }
+  }
 
-    const players = [...snapshot.players].sort((left, right) => right.score - left.score || left.name.localeCompare(right.name));
-    ui.scoreboard.innerHTML = '';
+  function renderSnapshot(snapshot) {
+    state.snapshot = snapshot;
+    state.roomCode = snapshot.roomCode;
+    state.promotionContext = null;
+    ui.promotionModal.classList.add('hidden');
 
-    if (!players.length) {
-      const empty = document.createElement('li');
-      empty.textContent = 'No racers connected.';
-      ui.scoreboard.appendChild(empty);
+    if (
+      state.selected &&
+      (!canAct() ||
+        !getPiece(snapshot.board, state.selected.x, state.selected.y) ||
+        getPiece(snapshot.board, state.selected.x, state.selected.y).color !== state.yourColor)
+    ) {
+      state.selected = null;
+      state.legalMoves = [];
     }
 
-    const leaderId = players[0]?.id || '';
-    for (const player of players) {
-      const item = document.createElement('li');
-      const progress = Math.min(100, (player.score / snapshot.goal) * 100);
-      const starsNeeded = Math.max(0, snapshot.goal - player.score);
+    ui.roomCodeLabel.textContent = snapshot.roomCode;
+    ui.roomInput.value = snapshot.roomCode === 'SOLO' ? '' : snapshot.roomCode;
 
-      if (player.id === state.playerId) {
-        item.classList.add('you-card');
-      }
-      if (player.id === leaderId) {
-        item.classList.add('leading-card');
-      }
-
-      item.innerHTML = `
-        <div class="player-row">
-          <span class="player-badge">
-            <span class="player-dot" style="background:${player.color}"></span>
-            <span class="player-name-block">
-              <span class="player-name">${player.name}${player.id === state.playerId ? ' (you)' : ''}</span>
-              <span class="player-subline">${starsNeeded === 0 ? 'Goal reached' : `${starsNeeded} star${starsNeeded === 1 ? '' : 's'} to win`}</span>
-            </span>
-          </span>
-          <span class="score-pill">${player.score}</span>
-        </div>
-        <div class="progress-track">
-          <div class="progress-bar" style="width:${progress}%"></div>
-        </div>
-      `;
-      ui.scoreboard.appendChild(item);
-    }
-
-    if (snapshot.winnerName) {
-      ui.winnerText.textContent = `${snapshot.winnerName} wins the round. Hit New round for an instant rematch.`;
-    } else if (state.localMode) {
-      ui.winnerText.textContent = 'Solo mode live. Race the bot to five stars and cut it off from the next spawn.';
-    } else if (snapshot.playerCount < 2) {
-      ui.winnerText.textContent = state.isHost
-        ? 'Your room is live. Copy the invite link and send it to the second player.'
-        : 'Connected. Waiting for another racer to join the room.';
+    if (snapshot.winner) {
+      ui.turnText.textContent = `${snapshot.winner.name} won`;
+      ui.phaseText.textContent = 'Enemy Crown captured';
+      ui.winnerText.textContent = `${snapshot.winner.name} captured the Crown and won the battle.`;
     } else {
-      ui.winnerText.textContent = 'Live race active. Block routes, cut corners, and grab the next star first.';
+      ui.turnText.textContent = `${snapshot.turn} to move`;
+      ui.phaseText.textContent = state.yourColor ? `You control ${state.yourColor}` : 'Capture the enemy Crown';
+      ui.winnerText.textContent = state.mode === 'solo'
+        ? 'Defeat the Void Regent by taking the black Crown.'
+        : snapshot.players.length < 2
+          ? 'Waiting for the opposing commander to join.'
+          : 'Choose a piece, highlight legal moves, and attack the enemy Crown.';
+    }
+
+    updateInvite();
+    updateSteps();
+    setModePill();
+    renderPlayers(snapshot);
+    renderHistory(snapshot);
+    renderCaptured(snapshot);
+    renderBoard(snapshot);
+  }
+
+  function clearSelection() {
+    state.selected = null;
+    state.legalMoves = [];
+    state.promotionContext = null;
+    ui.promotionModal.classList.add('hidden');
+    if (state.snapshot) renderBoard(state.snapshot);
+  }
+
+  function openPromotionDialog(move) {
+    state.promotionContext = move;
+    ui.promotionOptions.innerHTML = '';
+    for (const type of PROMOTIONS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'secondary';
+      button.textContent = PIECES[type].name;
+      button.addEventListener('click', () => {
+        ui.promotionModal.classList.add('hidden');
+        const nextMove = { ...move, promotion: type };
+        state.promotionContext = null;
+        executeMove(nextMove);
+      });
+      ui.promotionOptions.appendChild(button);
+    }
+    ui.promotionModal.classList.remove('hidden');
+  }
+
+  function executeMove(move) {
+    const piece = getPiece(state.snapshot.board, move.from.x, move.from.y);
+    if (!piece) return;
+
+    if (promotionNeeded(piece, move.to.y) && !move.promotion) {
+      openPromotionDialog(move);
+      return;
+    }
+
+    clearSelection();
+
+    if (state.mode === 'online') {
+      if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return;
+      state.socket.send(JSON.stringify({ type: 'move', ...move }));
+      return;
+    }
+
+    if (state.mode === 'solo') {
+      const snapshot = cloneSnapshot(state.snapshot);
+      if (!applyMoveLocally(snapshot, move, state.yourColor)) return;
+      renderSnapshot(snapshot);
+      maybeRunBotTurn();
     }
   }
 
-  function send(payload) {
-    if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return;
-    state.socket.send(JSON.stringify(payload));
-  }
+  function handleBoardClick(x, y) {
+    if (!state.snapshot || !canAct()) return;
+    const board = state.snapshot.board;
+    const piece = getPiece(board, x, y);
 
-  function stopBotLoop() {
-    if (state.botTimer) {
-      window.clearInterval(state.botTimer);
-      state.botTimer = null;
+    if (state.selected) {
+      const legal = state.legalMoves.find((move) => move.x === x && move.y === y);
+      if (legal) {
+        executeMove({
+          from: { ...state.selected },
+          to: { x, y },
+        });
+        return;
+      }
     }
+
+    if (!piece || piece.color !== state.yourColor) {
+      clearSelection();
+      return;
+    }
+
+    state.selected = { x, y };
+    state.legalMoves = getLegalMoves(board, x, y);
+    renderBoard(state.snapshot);
   }
 
-  function leaveCurrentSession() {
-    stopBotLoop();
-    state.localMode = false;
+  function chooseBotMove(snapshot) {
+    const moves = getAllMovesForColor(snapshot, 'black');
+    if (!moves.length) return null;
+
+    let bestScore = -Infinity;
+    const bestMoves = [];
+
+    for (const move of moves) {
+      const piece = getPiece(snapshot.board, move.from.x, move.from.y);
+      const target = getPiece(snapshot.board, move.to.x, move.to.y);
+      let score = Math.random() * 0.25;
+
+      if (target) score += pieceValue(target.type) * 12;
+      if (promotionNeeded(piece, move.to.y)) {
+        move.promotion = 'vanguard';
+        score += 10;
+      }
+      if (target?.type === 'crown') score += 10000;
+
+      const centerDistance = Math.abs(4.5 - move.to.x) + Math.abs(4.5 - move.to.y);
+      score += 10 - centerDistance;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMoves.length = 0;
+        bestMoves.push(move);
+      } else if (score === bestScore) {
+        bestMoves.push(move);
+      }
+    }
+
+    return bestMoves[Math.floor(Math.random() * bestMoves.length)];
+  }
+
+  function stopCurrentSession() {
+    stopBot();
     if (state.socket) {
       state.socket.close();
       state.socket = null;
     }
+    clearSelection();
   }
 
-  function getRandomOpenCell(snapshot, excluded = new Set()) {
-    const occupied = new Set(excluded);
-    for (const player of snapshot.players) {
-      occupied.add(`${player.x},${player.y}`);
+  function stopBot() {
+    if (state.botTimer) {
+      window.clearTimeout(state.botTimer);
+      state.botTimer = null;
     }
+  }
 
-    const cells = [];
-    for (let y = 0; y < snapshot.height; y += 1) {
-      for (let x = 0; x < snapshot.width; x += 1) {
-        cells.push({ x, y });
+  function maybeRunBotTurn() {
+    stopBot();
+    if (state.mode !== 'solo' || !state.snapshot || state.snapshot.winner || state.snapshot.turn !== 'black') return;
+    state.botTimer = window.setTimeout(() => {
+      const move = chooseBotMove(state.snapshot);
+      if (!move) return;
+      const snapshot = cloneSnapshot(state.snapshot);
+      if (applyMoveLocally(snapshot, move, 'black')) {
+        renderSnapshot(snapshot);
       }
-    }
-
-    for (let index = cells.length - 1; index > 0; index -= 1) {
-      const swap = Math.floor(Math.random() * (index + 1));
-      const temp = cells[index];
-      cells[index] = cells[swap];
-      cells[swap] = temp;
-    }
-
-    return cells.find((cell) => !occupied.has(`${cell.x},${cell.y}`)) || { x: 0, y: 0 };
+    }, 650);
   }
 
-  function createSoloSnapshot(name) {
-    const snapshot = {
-      roomCode: 'SOLO',
-      width: BOARD_SIZE,
-      height: BOARD_SIZE,
-      goal: GOAL,
-      maxPlayers: 2,
-      playerCount: 2,
-      leaderId: null,
-      leaderName: null,
-      winnerId: null,
-      winnerName: null,
-      star: { x: 0, y: 0 },
-      players: [],
-    };
-
-    const you = {
-      id: 'solo-player',
-      name,
-      x: 0,
-      y: 0,
-      score: 0,
-      color: '#68d9ff',
-    };
-    snapshot.players.push(you);
-
-    const botCell = getRandomOpenCell(snapshot);
-    const bot = {
-      id: 'solo-bot',
-      name: 'Comet Bot',
-      x: botCell.x,
-      y: botCell.y,
-      score: 0,
-      color: '#ff7c57',
-    };
-    snapshot.players.push(bot);
-
-    const starCell = getRandomOpenCell(snapshot);
-    snapshot.star = starCell;
-    return snapshot;
-  }
-
-  function refreshSoloMeta() {
-    if (!state.snapshot) return;
-    state.snapshot.playerCount = state.snapshot.players.length;
-    const leader = state.snapshot.players
-      .slice()
-      .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name))[0] || null;
-    state.snapshot.leaderId = leader?.id || null;
-    state.snapshot.leaderName = leader?.name || null;
-  }
-
-  function applySoloMove(playerId, direction) {
-    if (!state.localMode || !state.snapshot || state.snapshot.winnerId) return false;
-    const player = state.snapshot.players.find((entry) => entry.id === playerId);
-    if (!player) return false;
-
-    let nextX = player.x;
-    let nextY = player.y;
-    if (direction === 'up') nextY -= 1;
-    if (direction === 'down') nextY += 1;
-    if (direction === 'left') nextX -= 1;
-    if (direction === 'right') nextX += 1;
-
-    if (nextX < 0 || nextY < 0 || nextX >= state.snapshot.width || nextY >= state.snapshot.height) {
-      return false;
-    }
-
-    const occupied = state.snapshot.players.some(
-      (other) => other.id !== playerId && other.x === nextX && other.y === nextY
-    );
-    if (occupied) return false;
-
-    player.x = nextX;
-    player.y = nextY;
-
-    if (state.snapshot.star.x === player.x && state.snapshot.star.y === player.y) {
-      player.score += 1;
-      if (player.score >= state.snapshot.goal) {
-        state.snapshot.winnerId = player.id;
-        state.snapshot.winnerName = player.name;
-        stopBotLoop();
-      } else {
-        state.snapshot.star = getRandomOpenCell(state.snapshot);
-      }
-    }
-
-    refreshSoloMeta();
-    render(state.snapshot);
-    return true;
-  }
-
-  function getBotDirection() {
-    const snapshot = state.snapshot;
-    const bot = snapshot.players.find((entry) => entry.id === 'solo-bot');
-    const human = snapshot.players.find((entry) => entry.id === state.playerId);
-    if (!bot || !human) return null;
-
-    const candidates = [];
-    if (snapshot.star.x < bot.x) candidates.push('left');
-    if (snapshot.star.x > bot.x) candidates.push('right');
-    if (snapshot.star.y < bot.y) candidates.push('up');
-    if (snapshot.star.y > bot.y) candidates.push('down');
-
-    const fallback = ['up', 'down', 'left', 'right'];
-    for (const direction of fallback) {
-      if (!candidates.includes(direction)) candidates.push(direction);
-    }
-
-    for (const direction of candidates) {
-      let nextX = bot.x;
-      let nextY = bot.y;
-      if (direction === 'up') nextY -= 1;
-      if (direction === 'down') nextY += 1;
-      if (direction === 'left') nextX -= 1;
-      if (direction === 'right') nextX += 1;
-      if (nextX < 0 || nextY < 0 || nextX >= snapshot.width || nextY >= snapshot.height) continue;
-      if (nextX === human.x && nextY === human.y) continue;
-      return direction;
-    }
-
-    return null;
-  }
-
-  function startBotLoop() {
-    stopBotLoop();
-    state.botTimer = window.setInterval(() => {
-      if (!state.localMode || !state.snapshot || state.snapshot.winnerId) return;
-      const direction = getBotDirection();
-      if (direction) {
-        applySoloMove('solo-bot', direction);
-      }
-    }, 520);
-  }
-
-  function startSoloGame() {
-    const name = getCurrentName();
-    leaveCurrentSession();
-    state.localMode = true;
+  function startSolo() {
+    stopCurrentSession();
+    state.mode = 'solo';
     state.isHost = false;
-    state.playerId = 'solo-player';
+    state.yourColor = 'white';
     state.roomCode = 'SOLO';
-    ui.roomInput.value = 'SOLO';
-    updateInviteLink();
     setBusy(false);
     setConnectionState('Solo mode', 'online');
-    setStatus('Solo mode started. Race Comet Bot to five stars.');
-    state.snapshot = createSoloSnapshot(name);
-    refreshSoloMeta();
-    render(state.snapshot);
-    startBotLoop();
-    showToast('Solo race started.');
+    setStatus('Solo battle started. You command White against the Void Regent.');
+    const snapshot = createSoloSnapshot(getPlayerName());
+    renderSnapshot(snapshot);
+    showToast('Solo match ready.');
   }
 
-  function connect(mode) {
-    const name = getCurrentName();
-    const room = getCurrentRoom({ host: mode === 'host' });
+  function getPlayerName() {
+    const name = (ui.nameInput.value || '').trim().slice(0, 18);
+    return name || 'Player';
+  }
+
+  function beginOnline(mode) {
+    const name = getPlayerName();
+    const room = sanitizeRoomCode(ui.roomInput.value) || (mode === 'host' ? generateRoomCode() : '');
     const serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
 
     if (!room) {
-      setStatus('Enter a room code to join, or host a new room to generate one.');
+      setStatus('Enter a room code to join, or host a duel to generate one automatically.');
       setConnectionState('Needs room', 'error');
       return;
     }
@@ -471,52 +816,50 @@
     window.localStorage.setItem(STORAGE_KEYS.name, name);
     window.localStorage.setItem(STORAGE_KEYS.serverUrl, serverUrl);
 
-    leaveCurrentSession();
-
+    stopCurrentSession();
+    state.mode = 'online';
     state.isHost = mode === 'host';
+    state.yourColor = null;
     state.roomCode = room;
-    state.snapshot = null;
+    state.serverUrl = serverUrl;
     ui.roomInput.value = room;
-    ui.serverUrlInput.value = serverUrl;
-    updateInviteLink();
-    updateStepStrip();
+    updateInvite();
+    updateSteps();
     setBusy(true);
-    setStatus(mode === 'host' ? `Creating room ${room}...` : `Joining room ${room}...`);
     setConnectionState('Connecting...', 'connecting');
+    setStatus(mode === 'host' ? `Creating duel room ${room}...` : `Joining duel room ${room}...`);
 
     const socket = new WebSocket(serverUrl);
     state.socket = socket;
 
     socket.addEventListener('open', () => {
       if (state.socket !== socket) return;
-      send({ type: 'join', room, name, mode });
+      socket.send(JSON.stringify({ type: 'join', room, name, mode }));
     });
 
     socket.addEventListener('message', (event) => {
       if (state.socket !== socket) return;
-      let message = null;
+      let message;
       try {
         message = JSON.parse(event.data);
-      } catch (_) {
+      } catch {
         return;
       }
 
       if (message.type === 'welcome') {
-        state.playerId = message.playerId;
-        state.roomCode = message.roomCode;
+        state.yourColor = message.yourColor;
         setBusy(false);
-        setConnectionState(`Live in ${message.roomCode}`, 'online');
+        setConnectionState(`Online as ${message.yourColor}`, 'online');
         setStatus(message.message || 'Connected.');
-        render(message.state);
+        renderSnapshot(message.state);
         if (state.isHost) {
-          showToast('Room live. Copy the invite and send it.');
+          showToast('Duel room created. Copy the invite and send it.');
         }
         return;
       }
 
       if (message.type === 'state') {
-        render(message.state);
-        setConnectionState(`Live in ${message.state.roomCode}`, 'online');
+        renderSnapshot(message.state);
         setBusy(false);
         return;
       }
@@ -533,47 +876,48 @@
       if (state.socket !== socket) return;
       setBusy(false);
       setConnectionState('Offline', 'offline');
-      setStatus('Disconnected from the game server.');
+      setStatus('Disconnected from the tactics server.');
     });
 
     socket.addEventListener('error', () => {
       if (state.socket !== socket) return;
       setBusy(false);
       setConnectionState('Connection issue', 'error');
-      setStatus('Could not reach the game server. Check the connection settings.');
+      setStatus('Could not reach the tactics server.');
     });
   }
 
-  async function copyText(text, successMessage, emptyMessage) {
+  async function copyText(text, success, empty) {
     if (!text) {
-      showToast(emptyMessage);
+      showToast(empty);
       return;
     }
-
     try {
       await navigator.clipboard.writeText(text);
-      showToast(successMessage);
-    } catch (_) {
-      showToast('Clipboard access was blocked in this browser.');
+      showToast(success);
+    } catch {
+      showToast('Clipboard access is blocked in this browser.');
     }
   }
 
-  ui.hostBtn.addEventListener('click', () => connect('host'));
-  ui.joinBtn.addEventListener('click', () => connect('join'));
-  ui.soloBtn.addEventListener('click', startSoloGame);
-  ui.resetBtn.addEventListener('click', () => {
-    if (state.localMode) {
-      startSoloGame();
-      return;
-    }
-    send({ type: 'reset' });
-  });
+  ui.hostBtn.addEventListener('click', () => beginOnline('host'));
+  ui.joinBtn.addEventListener('click', () => beginOnline('join'));
+  ui.soloBtn.addEventListener('click', startSolo);
   ui.copyBtn.addEventListener('click', async () => {
-    await copyText(updateInviteLink(), 'Invite link copied.', 'Host or join a room first.');
+    await copyText(updateInvite(), 'Invite link copied.', 'No invite available yet.');
   });
   ui.copyCodeBtn.addEventListener('click', async () => {
-    const room = state.roomCode || sanitizeRoomCode(ui.roomInput.value);
-    await copyText(room, `Room code ${room} copied.`, 'No room code yet.');
+    await copyText(state.roomCode || sanitizeRoomCode(ui.roomInput.value), 'Room code copied.', 'No room code available.');
+  });
+  ui.restartBtn.addEventListener('click', () => {
+    if (!state.snapshot) return;
+    if (state.mode === 'solo') {
+      startSolo();
+      return;
+    }
+    if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+      state.socket.send(JSON.stringify({ type: 'restart' }));
+    }
   });
 
   ui.nameInput.addEventListener('input', () => {
@@ -582,67 +926,35 @@
 
   ui.roomInput.addEventListener('input', () => {
     ui.roomInput.value = sanitizeRoomCode(ui.roomInput.value);
-    updateInviteLink();
-    updateStepStrip();
-  });
-
-  document.querySelectorAll('[data-direction]').forEach((button) => {
-    button.addEventListener('click', () => {
-      if (state.localMode) {
-        applySoloMove(state.playerId, button.dataset.direction);
-        return;
-      }
-      send({ type: 'move', direction: button.dataset.direction });
-    });
+    updateInvite();
+    updateSteps();
   });
 
   window.addEventListener('keydown', (event) => {
-    const mapping = {
-      ArrowUp: 'up',
-      ArrowDown: 'down',
-      ArrowLeft: 'left',
-      ArrowRight: 'right',
-      w: 'up',
-      a: 'left',
-      s: 'down',
-      d: 'right',
-    };
-
-    const direction = mapping[event.key];
-    if (!direction) return;
-    event.preventDefault();
-    if (state.localMode) {
-      applySoloMove(state.playerId, direction);
-      return;
+    if (event.key === 'Escape') {
+      clearSelection();
     }
-    send({ type: 'move', direction });
   });
 
-  const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const rememberedName = window.localStorage.getItem(STORAGE_KEYS.name) || '';
   const rememberedServer = window.localStorage.getItem(STORAGE_KEYS.serverUrl) || '';
-  const defaultServerUrl = isLocal
+  const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  const defaultServer = isLocal
     ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname || 'localhost'}:8081`
     : PROD_SERVER_URL;
 
-  state.serverUrl = sanitizeServerUrl(query.get('server') || rememberedServer || defaultServerUrl);
-
+  state.serverUrl = sanitizeServerUrl(query.get('server') || rememberedServer || defaultServer);
   ui.nameInput.value = rememberedName;
   ui.roomInput.value = sanitizeRoomCode(query.get('room') || '');
   ui.serverUrlInput.value = state.serverUrl;
-  updateInviteLink();
-  updateHeaderStats();
-  updateStepStrip();
+
+  renderLegend();
+  updateInvite();
+  updateSteps();
   setConnectionState('Offline', 'offline');
+  setModePill();
 
   if (query.get('room')) {
-    setStatus(`Invite loaded for room ${ui.roomInput.value}. Enter a name, then press Join existing room.`);
-  }
-
-  ui.arena.style.gridTemplateColumns = `repeat(${BOARD_SIZE}, minmax(0, 1fr))`;
-  for (let index = 0; index < BOARD_SIZE * BOARD_SIZE; index += 1) {
-    const cell = document.createElement('div');
-    cell.className = 'cell';
-    ui.arena.appendChild(cell);
+    setStatus(`Invite loaded for room ${ui.roomInput.value}. Enter your name, then join the duel.`);
   }
 })();

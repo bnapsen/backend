@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-labelledby="title desc">
-  <title id="title">Star Sprint cover art</title>
-  <desc id="desc">A neon multiplayer arena with colorful player tokens racing toward a glowing star.</desc>
+  <title id="title">Astral Dominion cover art</title>
+  <desc id="desc">A neon strategy battlefield with glowing tactical pieces and a radiant crown in the center.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#07111f"/>
@@ -26,9 +26,21 @@
     <path d="M460 90V390"/>
     <path d="M540 90V390"/>
   </g>
-  <circle cx="320" cy="220" r="52" fill="url(#glow)"/>
-  <circle cx="208" cy="312" r="28" fill="#4dabf7"/>
-  <circle cx="438" cy="292" r="28" fill="#ff6b6b"/>
-  <circle cx="270" cy="162" r="20" fill="#69db7c"/>
-  <text x="320" y="430" fill="#edf4ff" text-anchor="middle" font-family="Arial, sans-serif" font-size="44" font-weight="700">STAR SPRINT</text>
+  <rect x="154" y="114" width="332" height="220" rx="26" fill="rgba(4,17,31,0.72)" stroke="rgba(158,216,255,0.45)"/>
+  <g opacity="0.3">
+    <rect x="184" y="144" width="60" height="60" fill="#173056"/>
+    <rect x="244" y="144" width="60" height="60" fill="#0c1d35"/>
+    <rect x="304" y="144" width="60" height="60" fill="#173056"/>
+    <rect x="364" y="144" width="60" height="60" fill="#0c1d35"/>
+    <rect x="184" y="204" width="60" height="60" fill="#0c1d35"/>
+    <rect x="244" y="204" width="60" height="60" fill="#173056"/>
+    <rect x="304" y="204" width="60" height="60" fill="#0c1d35"/>
+    <rect x="364" y="204" width="60" height="60" fill="#173056"/>
+  </g>
+  <path d="M320 146l14 26 28-18 10 30 34 4-22 24 14 30-32-8-18 28-18-28-32 8 14-30-22-24 34-4 10-30 28 18z" fill="url(#glow)"/>
+  <circle cx="222" cy="276" r="24" fill="#4dabf7"/>
+  <circle cx="418" cy="274" r="24" fill="#ff7c57"/>
+  <circle cx="270" cy="214" r="18" fill="#c8f4ff"/>
+  <circle cx="370" cy="214" r="18" fill="#ffcfbd"/>
+  <text x="320" y="430" fill="#edf4ff" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" font-weight="700">ASTRAL DOMINION</text>
 </svg>
