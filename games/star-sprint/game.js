@@ -4,7 +4,7 @@
   const STORAGE_KEY = 'starSprint.serverUrl';
   const query = new URLSearchParams(window.location.search);
   const BOARD_SIZE = 12;
-  const PROD_SERVER_URL = 'wss://star-sprint-backend.onrender.com';
+  const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const state = {
     roomCode: '',
     playerId: '',
