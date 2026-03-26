@@ -8,6 +8,7 @@
     serverUrl: 'neonBackgammon.serverUrl',
     setupCollapsed: 'neonBackgammon.setupCollapsed',
     infoCollapsed: 'neonBackgammon.infoCollapsed',
+    soundEnabled: 'neonBackgammon.soundEnabled',
   };
   const query = new URLSearchParams(window.location.search);
   const canvas = document.getElementById('board');
@@ -26,6 +27,7 @@
     soloBtn: document.getElementById('soloBtn'),
     toggleSetupBtn: document.getElementById('toggleSetupBtn'),
     toggleSidebarBtn: document.getElementById('toggleSidebarBtn'),
+    soundToggleBtn: document.getElementById('soundToggleBtn'),
     rollBtn: document.getElementById('rollBtn'),
     autoBtn: document.getElementById('autoBtn'),
     restartBtn: document.getElementById('restartBtn'),
@@ -88,6 +90,11 @@
     panels: {
       setupCollapsed: false,
       infoCollapsed: false,
+    },
+    audio: {
+      enabled: true,
+      ctx: null,
+      noiseBuffer: null,
     },
   };
 
@@ -152,6 +159,7 @@
     localStorage.setItem(STORAGE_KEYS.serverUrl, state.serverUrl);
     localStorage.setItem(STORAGE_KEYS.setupCollapsed, state.panels.setupCollapsed ? '1' : '0');
     localStorage.setItem(STORAGE_KEYS.infoCollapsed, state.panels.infoCollapsed ? '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.soundEnabled, state.audio.enabled ? '1' : '0');
   }
 
   function showToast(message) {
@@ -355,6 +363,34 @@
     ui.boardStage.classList.toggle('throwing', Boolean(state.diceGrab));
   }
 
+  function audioSupported() {
+    return Boolean(window.AudioContext || window.webkitAudioContext);
+  }
+
+  function renderSoundToggle() {
+    const supported = audioSupported();
+    ui.soundToggleBtn.disabled = !supported;
+    ui.soundToggleBtn.dataset.state = supported && state.audio.enabled ? 'on' : 'off';
+    ui.soundToggleBtn.textContent = supported
+      ? (state.audio.enabled ? 'Sound on' : 'Sound off')
+      : 'No audio';
+  }
+
+  function setSoundEnabled(enabled, options = {}) {
+    const supported = audioSupported();
+    state.audio.enabled = Boolean(enabled) && supported;
+    persistSettings();
+    renderSoundToggle();
+    if (state.audio.enabled) {
+      withAudio(() => {});
+    } else if (state.audio.ctx && state.audio.ctx.state === 'running') {
+      state.audio.ctx.suspend().catch(() => {});
+    }
+    if (!options.silent) {
+      showToast(state.audio.enabled ? 'Backgammon sound on.' : 'Backgammon sound off.');
+    }
+  }
+
   function render() {
     renderPills();
     renderStatus();
@@ -362,7 +398,249 @@
     renderSummary();
     renderPlayers();
     renderControls();
+    renderSoundToggle();
     scheduleDraw();
+  }
+
+  function getAudioContext() {
+    if (!audioSupported()) {
+      return null;
+    }
+    if (!state.audio.ctx) {
+      const AudioCtor = window.AudioContext || window.webkitAudioContext;
+      state.audio.ctx = new AudioCtor();
+    }
+    return state.audio.ctx;
+  }
+
+  function withAudio(callback) {
+    if (!state.audio.enabled) {
+      return;
+    }
+    const ctx = getAudioContext();
+    if (!ctx) {
+      return;
+    }
+    const run = () => {
+      try {
+        callback(ctx, ctx.currentTime + 0.01);
+      } catch (error) {
+        // Ignore isolated audio failures.
+      }
+    };
+    if (ctx.state === 'running') {
+      run();
+      return;
+    }
+    ctx.resume().then(run).catch(() => {});
+  }
+
+  function getNoiseBuffer(ctx) {
+    if (state.audio.noiseBuffer && state.audio.noiseBuffer.sampleRate === ctx.sampleRate) {
+      return state.audio.noiseBuffer;
+    }
+    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.26), ctx.sampleRate);
+    const channel = buffer.getChannelData(0);
+    for (let index = 0; index < channel.length; index += 1) {
+      channel[index] = (Math.random() * 2 - 1) * (1 - index / channel.length);
+    }
+    state.audio.noiseBuffer = buffer;
+    return buffer;
+  }
+
+  function connectOutput(node, volume, pan = 0) {
+    const ctx = node.context;
+    const gain = ctx.createGain();
+    gain.gain.value = volume;
+    node.connect(gain);
+    if (typeof ctx.createStereoPanner === 'function') {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = pan;
+      gain.connect(panner);
+      panner.connect(ctx.destination);
+      return gain;
+    }
+    gain.connect(ctx.destination);
+    return gain;
+  }
+
+  function playTone(ctx, when, options) {
+    const {
+      freq,
+      endFreq = freq,
+      type = 'triangle',
+      duration = 0.14,
+      volume = 0.02,
+      attack = 0.003,
+      pan = 0,
+      startOffset = 0,
+    } = options;
+    const startAt = when + startOffset;
+    const osc = ctx.createOscillator();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, startAt);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(40, endFreq), startAt + duration);
+    const gain = connectOutput(osc, volume, pan);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume), startAt + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+    osc.start(startAt);
+    osc.stop(startAt + duration + 0.04);
+  }
+
+  function playNoise(ctx, when, options) {
+    const {
+      duration = 0.12,
+      volume = 0.018,
+      pan = 0,
+      startOffset = 0,
+      highpass = 1200,
+      lowpass = 5200,
+    } = options;
+    const startAt = when + startOffset;
+    const source = ctx.createBufferSource();
+    source.buffer = getNoiseBuffer(ctx);
+    const high = ctx.createBiquadFilter();
+    high.type = 'highpass';
+    high.frequency.value = highpass;
+    const low = ctx.createBiquadFilter();
+    low.type = 'lowpass';
+    low.frequency.value = lowpass;
+    source.connect(high);
+    high.connect(low);
+    const gain = connectOutput(low, volume, pan);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume), startAt + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+    source.start(startAt);
+    source.stop(startAt + duration + 0.04);
+  }
+
+  function playRollStartSound() {
+    withAudio((ctx, when) => {
+      playNoise(ctx, when, { duration: 0.18, volume: 0.022, highpass: 900, lowpass: 3600 });
+      playTone(ctx, when, { freq: 210, endFreq: 132, type: 'triangle', duration: 0.19, volume: 0.028, pan: -0.16 });
+      playTone(ctx, when, { freq: 280, endFreq: 180, type: 'triangle', duration: 0.17, volume: 0.022, pan: 0.18, startOffset: 0.015 });
+    });
+  }
+
+  function playRollSettleSound(first, second) {
+    const notes = [294, 330, 370, 415, 494, 554];
+    withAudio((ctx, when) => {
+      playTone(ctx, when, { freq: notes[first - 1] || 330, endFreq: notes[first - 1] || 330, type: 'sine', duration: 0.11, volume: 0.021, pan: -0.2 });
+      playTone(ctx, when, { freq: notes[second - 1] || 392, endFreq: notes[second - 1] || 392, type: 'sine', duration: 0.11, volume: 0.021, pan: 0.2, startOffset: 0.035 });
+    });
+  }
+
+  function playMoveSound(player) {
+    withAudio((ctx, when) => {
+      const base = player === Core.WHITE ? 250 : 212;
+      playTone(ctx, when, { freq: base, endFreq: base * 0.82, type: 'triangle', duration: 0.08, volume: 0.028, pan: player === Core.WHITE ? -0.08 : 0.08 });
+      playTone(ctx, when, { freq: base * 1.92, endFreq: base * 1.48, type: 'triangle', duration: 0.06, volume: 0.013, startOffset: 0.01 });
+    });
+  }
+
+  function playHitSound(player) {
+    withAudio((ctx, when) => {
+      const base = player === Core.WHITE ? 330 : 252;
+      playNoise(ctx, when, { duration: 0.08, volume: 0.028, highpass: 1100, lowpass: 4600 });
+      playTone(ctx, when, { freq: base, endFreq: base * 0.52, type: 'sawtooth', duration: 0.12, volume: 0.024 });
+      playTone(ctx, when, { freq: base * 1.5, endFreq: base * 0.74, type: 'triangle', duration: 0.13, volume: 0.016, startOffset: 0.014 });
+    });
+  }
+
+  function playBearOffSound(player) {
+    withAudio((ctx, when) => {
+      const chord = player === Core.WHITE ? [440, 554, 659] : [392, 494, 587];
+      chord.forEach((freq, index) => {
+        playTone(ctx, when, {
+          freq,
+          endFreq: freq * 1.02,
+          type: 'sine',
+          duration: 0.18,
+          volume: 0.016,
+          startOffset: index * 0.04,
+          pan: -0.16 + index * 0.16,
+        });
+      });
+    });
+  }
+
+  function playWinSound(player) {
+    withAudio((ctx, when) => {
+      const fanfare = player === Core.WHITE
+        ? [392, 494, 587, 784]
+        : [370, 466, 554, 740];
+      fanfare.forEach((freq, index) => {
+        playTone(ctx, when, {
+          freq,
+          endFreq: freq,
+          type: index < 2 ? 'triangle' : 'sine',
+          duration: 0.26,
+          volume: 0.018,
+          startOffset: index * 0.07,
+          pan: -0.22 + index * 0.14,
+        });
+      });
+    });
+  }
+
+  function playMoveResultSound(result, player) {
+    if (!result || !result.ok) {
+      return;
+    }
+    if (result.winner) {
+      playWinSound(player);
+      return;
+    }
+    if (result.hit) {
+      playHitSound(player);
+      return;
+    }
+    if (result.move?.to === 'off' || result.move?.bearOff) {
+      playBearOffSound(player);
+      return;
+    }
+    playMoveSound(player);
+  }
+
+  function pointsChanged(previous, next) {
+    if (!previous || !next) {
+      return false;
+    }
+    for (let index = 0; index < 24; index += 1) {
+      if (previous.points[index] !== next.points[index]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function playSnapshotDeltaSound(previous, next) {
+    if (!previous || !next) {
+      return;
+    }
+    if (next.winner && next.winner !== previous.winner) {
+      playWinSound(next.winner);
+      return;
+    }
+    const whiteBarDelta = next.bar[Core.WHITE] - previous.bar[Core.WHITE];
+    const blackBarDelta = next.bar[Core.BLACK] - previous.bar[Core.BLACK];
+    const whiteOffDelta = next.borneOff[Core.WHITE] - previous.borneOff[Core.WHITE];
+    const blackOffDelta = next.borneOff[Core.BLACK] - previous.borneOff[Core.BLACK];
+    const actor = previous.current;
+    if (!pointsChanged(previous, next) && whiteBarDelta <= 0 && blackBarDelta <= 0 && whiteOffDelta <= 0 && blackOffDelta <= 0) {
+      return;
+    }
+    if (whiteBarDelta > 0 || blackBarDelta > 0) {
+      playHitSound(actor);
+      return;
+    }
+    if (whiteOffDelta > 0 || blackOffDelta > 0) {
+      playBearOffSound(whiteOffDelta > 0 ? Core.WHITE : Core.BLACK);
+      return;
+    }
+    playMoveSound(actor);
   }
 
   function syncDieFace(die, value) {
@@ -457,6 +735,7 @@
     state.throwIntent = null;
     ui.boardStage.classList.add('is-rolling');
     ui.diceStageLabel.textContent = 'Board roll live';
+    playRollStartSound();
 
     const setups = [
       {
@@ -510,6 +789,7 @@
     }, 60);
     state.diceTimer = window.setTimeout(() => {
       stopDiceAnimation(first, second);
+      playRollSettleSound(first, second);
       shells.forEach((shell) => {
         shell.style.transform = `translate3d(${shell.style.getPropertyValue('--end-x')}, ${shell.style.getPropertyValue('--end-y')}, 0) rotate(${shell.style.getPropertyValue('--end-rot')})`;
       });
@@ -612,11 +892,13 @@
   }
 
   function applyIncomingSnapshot(snapshot, message) {
+    const previousSnapshot = state.snapshot;
     const previousRoll = state.snapshot?.lastRoll?.join('-') || '';
     const nextRoll = snapshot?.lastRoll?.join('-') || '';
     if (nextRoll && nextRoll !== '0-0' && nextRoll !== previousRoll) {
       animateDiceRoll(snapshot.lastRoll[0], snapshot.lastRoll[1]);
     }
+    playSnapshotDeltaSound(previousSnapshot, snapshot);
     state.snapshot = snapshot;
     clearSelection();
     cleanupDrag();
@@ -782,6 +1064,7 @@
         const result = Core.applyMove(state.snapshot, move);
         if (result.ok) {
           startMoveAnimation(result.move, Core.BLACK);
+          playMoveResultSound(result, Core.BLACK);
           setStatusMessage(state.snapshot.status);
           clearSelection();
           render();
@@ -817,6 +1100,7 @@
       return;
     }
     startMoveAnimation(result.move, controlledSide() || Core.WHITE);
+    playMoveResultSound(result, controlledSide() || Core.WHITE);
     setStatusMessage(state.snapshot.status);
     clearSelection();
     render();
@@ -1362,6 +1646,15 @@
   }
 
   function bindEvents() {
+    const wakeAudio = () => {
+      if (state.audio.enabled) {
+        withAudio(() => {});
+      }
+    };
+
+    document.addEventListener('pointerdown', wakeAudio, { passive: true });
+    document.addEventListener('keydown', wakeAudio);
+
     ui.nameInput.addEventListener('input', () => {
       persistSettings();
       render();
@@ -1381,6 +1674,7 @@
     ui.soloBtn.addEventListener('click', startSolo);
     ui.toggleSetupBtn.addEventListener('click', () => setPanelCollapse('setupCollapsed', !state.panels.setupCollapsed));
     ui.toggleSidebarBtn.addEventListener('click', () => setPanelCollapse('infoCollapsed', !state.panels.infoCollapsed));
+    ui.soundToggleBtn.addEventListener('click', () => setSoundEnabled(!state.audio.enabled));
     ui.rollBtn.addEventListener('click', rollTurn);
     ui.autoBtn.addEventListener('click', autoMove);
     ui.restartBtn.addEventListener('click', restartMatch);
@@ -1498,8 +1792,10 @@
     ui.roomInput.value = sanitizeRoomCode(query.get('room') || '');
     state.panels.setupCollapsed = localStorage.getItem(STORAGE_KEYS.setupCollapsed) === '1';
     state.panels.infoCollapsed = localStorage.getItem(STORAGE_KEYS.infoCollapsed) === '1';
+    state.audio.enabled = audioSupported() && localStorage.getItem(STORAGE_KEYS.soundEnabled) !== '0';
     setPanelCollapse('setupCollapsed', state.panels.setupCollapsed);
     setPanelCollapse('infoCollapsed', state.panels.infoCollapsed);
+    renderSoundToggle();
   }
 
   function bootFromQuery() {

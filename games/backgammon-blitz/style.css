@@ -79,6 +79,16 @@ input {
   padding-inline: 12px;
 }
 
+.ui-toggle[data-state="on"] {
+  border-color: rgba(140, 255, 199, 0.34);
+  background: linear-gradient(135deg, rgba(140, 255, 199, 0.16), rgba(140, 228, 255, 0.08));
+  color: #dffff1;
+}
+
+.ui-toggle[data-state="off"] {
+  color: var(--muted);
+}
+
 .topbar-status {
   display: flex;
   gap: 10px;
