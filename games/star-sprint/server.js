@@ -7,10 +7,11 @@ const { WebSocketServer } = require('ws');
 const Chess = require('./chess-core.js');
 const Backgammon = require('./backgammon-core.js');
 const Shooter = require('./space-shooter-core.js');
+const Poker = require('./poker-core.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
-const MAX_PLAYERS = 2;
+const DEFAULT_MAX_PLAYERS = 2;
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const COLORS = ['white', 'black'];
 const TICK_MS = 50;
@@ -31,8 +32,16 @@ const GAME_DEFS = {
   'space-shooter': {
     id: 'space-shooter',
     title: 'Starline Defense Co-Op',
+    maxPlayers: 2,
     createGameState: () => Shooter.createGameState(),
     cloneState: (game) => Shooter.cloneState(game),
+  },
+  poker: {
+    id: 'poker',
+    title: 'Orbit Holdem Live',
+    maxPlayers: 5,
+    createGameState: () => Poker.createGameState(),
+    cloneState: (game, viewerId) => Poker.cloneState(game, viewerId),
   },
 };
 
@@ -67,6 +76,9 @@ function normalizeGameType(raw) {
   if (raw === 'backgammon') {
     return 'backgammon';
   }
+  if (raw === 'poker') {
+    return 'poker';
+  }
   if (raw === 'space-shooter') {
     return 'space-shooter';
   }
@@ -87,7 +99,7 @@ function createRoom(code, gameType) {
     code,
     gameType: gameDef.id,
     gameDef,
-    maxPlayers: MAX_PLAYERS,
+    maxPlayers: gameDef.maxPlayers || DEFAULT_MAX_PLAYERS,
     players: new Map(),
     game: gameDef.createGameState(),
     lastTickAt: Date.now(),
@@ -138,11 +150,12 @@ function listPlayers(room) {
     id: player.id,
     name: player.name,
     color: player.color,
+    seat: player.seat,
   }));
 }
 
-function snapshot(room) {
-  const game = room.gameDef.cloneState(room.game);
+function snapshot(room, viewerId) {
+  const game = room.gameDef.cloneState(room.game, viewerId);
   const base = {
     ...game,
     roomCode: room.code,
@@ -157,6 +170,9 @@ function snapshot(room) {
       roster: listPlayers(room),
     };
   }
+  if (room.gameType === 'poker') {
+    return base;
+  }
   return {
     ...base,
     players: listPlayers(room),
@@ -164,29 +180,50 @@ function snapshot(room) {
 }
 
 function broadcastState(room, message) {
-  const payload = {
-    type: 'state',
-    snapshot: snapshot(room),
-  };
-  if (message) {
-    payload.message = message;
-  }
-
   for (const player of room.players.values()) {
+    const payload = {
+      type: 'state',
+      snapshot: snapshot(room, player.id),
+    };
+    if (message) {
+      payload.message = message;
+    }
     send(player.socket, payload);
   }
 }
 
 function addPlayerToGame(room, player) {
-  if (room.gameType !== 'space-shooter') {
-    return true;
+  if (room.gameType === 'space-shooter') {
+    const result = Shooter.addPlayer(room.game, {
+      id: player.id,
+      name: player.name,
+    });
+    if (result) {
+      player.color = result.color;
+      player.seat = result.seat;
+    }
+    return result;
   }
 
-  const result = Shooter.addPlayer(room.game, {
-    id: player.id,
-    name: player.name,
-  });
-  return Boolean(result);
+  if (room.gameType === 'poker') {
+    const result = Poker.addPlayer(room.game, {
+      id: player.id,
+      name: player.name,
+    });
+    if (result) {
+      player.seat = result.seat;
+    }
+    return result;
+  }
+
+  return true;
+}
+
+function seatIdentityForRoom(room) {
+  if (!(room.gameType === 'chess' || room.gameType === 'backgammon')) {
+    return true;
+  }
+  return getOpenColor(room);
 }
 
 function handleJoin(socket, payload) {
@@ -204,8 +241,8 @@ function handleJoin(socket, payload) {
     return;
   }
 
-  const color = getOpenColor(room);
-  if (!color) {
+  const identity = seatIdentityForRoom(room);
+  if (!identity) {
     sendError(socket, 'No seat is available in that room.');
     return;
   }
@@ -213,12 +250,16 @@ function handleJoin(socket, payload) {
   const player = {
     id: crypto.randomUUID(),
     name: sanitizeName(payload.name),
-    color,
+    color: identity === true ? null : identity,
     socket,
   };
 
   if (!addPlayerToGame(room, player)) {
-    sendError(socket, 'That squad room is full.');
+    sendError(socket, room.gameType === 'poker'
+      ? 'That table is full.'
+      : room.gameType === 'space-shooter'
+        ? 'That squad room is full.'
+        : 'No seat is available in that room.');
     return;
   }
 
@@ -232,13 +273,18 @@ function handleJoin(socket, payload) {
     playerId: player.id,
     roomCode: room.code,
     color: player.color,
+    seat: player.seat,
     title: room.game.title,
     gameType: room.gameType,
   });
 
-  const message = room.players.size === 1
-    ? `${player.name} is ready. Share the invite to start playing.`
-    : `${player.name} joined. Match ready.`;
+  const message = room.gameType === 'poker'
+    ? room.players.size === 1
+      ? `${player.name} took the first seat. Invite more players to start the table.`
+      : `${player.name} joined the table.`
+    : room.players.size === 1
+      ? `${player.name} is ready. Share the invite to start playing.`
+      : `${player.name} joined. Match ready.`;
 
   broadcastState(room, message);
 }
@@ -274,6 +320,10 @@ function handleMove(socket, payload) {
     sendError(socket, 'Movement in Starline Defense uses realtime input, not turn-based moves.');
     return;
   }
+  if (room.gameType === 'poker') {
+    sendError(socket, 'Poker uses table actions instead of board moves.');
+    return;
+  }
   let result;
 
   if (room.gameType === 'backgammon') {
@@ -305,6 +355,51 @@ function handleMove(socket, payload) {
   }
 
   broadcastState(room);
+}
+
+function handleTableAction(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'poker') {
+    sendError(socket, 'Table actions are only used in poker rooms.');
+    return;
+  }
+
+  const result = Poker.applyAction(room.game, player.id, {
+    type: payload.type,
+    amount: payload.amount,
+  });
+  if (!result.ok) {
+    sendError(socket, result.error || 'That action could not be played.');
+    return;
+  }
+
+  broadcastState(room, result.message);
+}
+
+function handleStartHand(socket) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'poker') {
+    sendError(socket, 'Starting a hand is only used in poker rooms.');
+    return;
+  }
+
+  const result = Poker.startHand(room.game, player.id);
+  if (!result.ok) {
+    sendError(socket, result.error || 'The hand could not be started.');
+    return;
+  }
+
+  broadcastState(room, result.message || `${player.name} started a new hand.`);
 }
 
 function handleInput(socket, payload) {
@@ -358,13 +453,20 @@ function handleRestart(socket) {
   if (room.gameType === 'space-shooter') {
     Shooter.resetMatch(room.game);
     room.lastTickAt = Date.now();
+  } else if (room.gameType === 'poker') {
+    Poker.resetTable(room.game);
   } else {
     room.game = room.gameDef.createGameState();
     room.game.roomCode = room.code;
   }
-  broadcastState(room, room.gameType === 'space-shooter'
-    ? `${player.name} launched a fresh squad run.`
-    : `${player.name} reset the board.`);
+  broadcastState(
+    room,
+    room.gameType === 'space-shooter'
+      ? `${player.name} launched a fresh squad run.`
+      : room.gameType === 'poker'
+        ? `${player.name} reset the table.`
+        : `${player.name} reset the board.`
+  );
 }
 
 function handleDisconnect(socket) {
@@ -390,11 +492,15 @@ function handleDisconnect(socket) {
   if (room.gameType === 'space-shooter') {
     Shooter.removePlayer(room.game, playerId);
     room.lastTickAt = Date.now();
+  } else if (room.gameType === 'poker') {
+    Poker.removePlayer(room.game, playerId);
   }
 
   const message = player
     ? room.gameType === 'space-shooter'
       ? `${player.name} disconnected. The room stays open for a new wingmate.`
+      : room.gameType === 'poker'
+        ? `${player.name} disconnected. The table stays open.`
       : `${player.name} disconnected. The room stays open for a new opponent.`
     : 'A player disconnected.';
   broadcastState(room, message);
@@ -464,6 +570,12 @@ wss.on('connection', (socket) => {
         break;
       case 'move':
         handleMove(socket, payload);
+        break;
+      case 'act':
+        handleTableAction(socket, payload);
+        break;
+      case 'start-hand':
+        handleStartHand(socket);
         break;
       case 'input':
         handleInput(socket, payload);

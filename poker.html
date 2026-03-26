@@ -1,771 +1,218 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SuperSplash Poker Royale</title>
-  <style>
-    :root {
-      --bg-1: #0f0528;
-      --bg-2: #06233d;
-      --felt: #0e8f7a;
-      --felt-dark: #07584c;
-      --gold: #ffd86b;
-      --pink: #ff62c8;
-      --cyan: #46f2ff;
-      --panel: rgba(8, 12, 24, 0.7);
-      --text: #f7fbff;
-      --danger: #ff6b7a;
-      --ok: #7dff9f;
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-      color: var(--text);
-      background:
-        radial-gradient(circle at 15% 15%, rgba(255, 98, 200, 0.28), transparent 35%),
-        radial-gradient(circle at 80% 0%, rgba(70, 242, 255, 0.25), transparent 35%),
-        linear-gradient(140deg, var(--bg-1), var(--bg-2));
-      padding: 1rem;
-    }
-
-    .layout {
-      width: min(1200px, 100%);
-      margin: 0 auto;
-      display: grid;
-      gap: 1rem;
-      grid-template-columns: 1fr 320px;
-    }
-
-    .table-wrap {
-      position: relative;
-      background: var(--panel);
-      border: 1px solid rgba(70, 242, 255, 0.35);
-      border-radius: 24px;
-      padding: 1rem;
-      backdrop-filter: blur(8px);
-      box-shadow: 0 0 30px rgba(70, 242, 255, 0.2), inset 0 0 40px rgba(255, 216, 107, 0.16);
-    }
-
-    .title-row {
-      display: flex;
-      justify-content: space-between;
-      gap: 1rem;
-      align-items: center;
-      margin-bottom: 0.8rem;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: clamp(1.3rem, 2.6vw, 2rem);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--gold);
-      text-shadow: 0 0 14px rgba(255, 216, 107, 0.5);
-    }
-
-    .home-link {
-      text-decoration: none;
-      color: #060913;
-      font-weight: 800;
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      background: linear-gradient(90deg, var(--gold), var(--pink));
-      border-radius: 999px;
-      padding: 0.5rem 1rem;
-    }
-
-    .table {
-      background:
-        radial-gradient(circle at 50% 40%, rgba(14, 143, 122, 0.95), rgba(7, 88, 76, 0.98)),
-        repeating-radial-gradient(circle at center, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06) 2px, transparent 2px, transparent 7px);
-      border: 8px solid #3f2410;
-      box-shadow: inset 0 0 36px rgba(0, 0, 0, 0.35), 0 0 20px rgba(0, 0, 0, 0.35);
-      border-radius: 48px;
-      min-height: 520px;
-      position: relative;
-      padding: 1rem;
-      overflow: hidden;
-    }
-
-    .player {
-      position: absolute;
-      width: 30%;
-      min-width: 170px;
-      background: rgba(3, 23, 30, 0.62);
-      border: 1px solid rgba(70, 242, 255, 0.3);
-      border-radius: 14px;
-      padding: 0.55rem;
-      box-shadow: 0 0 14px rgba(0, 0, 0, 0.35);
-    }
-
-    .player.active { border-color: var(--gold); box-shadow: 0 0 12px rgba(255, 216, 107, 0.6); }
-    .player.folded { opacity: 0.5; }
-
-    .p-top { display: flex; justify-content: space-between; font-size: 0.88rem; font-weight: 700; }
-    .chips { color: var(--gold); }
-    .action { font-size: 0.76rem; min-height: 1rem; color: var(--cyan); margin-top: 0.2rem; }
-
-    .seat-top { top: 8%; left: 35%; }
-    .seat-left { top: 34%; left: 5%; }
-    .seat-right { top: 34%; right: 5%; }
-    .seat-bottom { bottom: 5%; left: 35%; }
-
-    .cards { display: flex; gap: 0.3rem; margin-top: 0.35rem; }
-    .card {
-      width: 42px;
-      height: 58px;
-      border-radius: 8px;
-      background: linear-gradient(170deg, #fff, #f0f0f0);
-      color: #141a22;
-      border: 1px solid rgba(16, 20, 28, 0.25);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: 1rem;
-    }
-
-    .card.red { color: #d31943; }
-    .card.back {
-      background: repeating-linear-gradient(45deg, #2826a8 0 6px, #574ff1 6px 12px);
-      color: transparent;
-      border-color: rgba(255, 255, 255, 0.3);
-      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
-    }
-
-    .center-area {
-      position: absolute;
-      top: 39%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: min(470px, 90%);
-      text-align: center;
-    }
-
-    .pot {
-      font-size: 1.2rem;
-      font-weight: 800;
-      color: var(--gold);
-      text-shadow: 0 0 12px rgba(255, 216, 107, 0.5);
-      margin-bottom: 0.45rem;
-    }
-
-    .community { display: flex; justify-content: center; gap: 0.35rem; min-height: 60px; }
-    .chip-chip {
-      margin: 0.4rem auto 0;
-      width: 84px;
-      background: radial-gradient(circle at 30% 30%, #fff8cb, #f9ba30 60%, #d18105);
-      border-radius: 999px;
-      color: #452702;
-      font-weight: 800;
-      padding: 0.24rem 0.4rem;
-      font-size: 0.75rem;
-    }
-
-    .side {
-      background: var(--panel);
-      border: 1px solid rgba(255, 98, 200, 0.35);
-      border-radius: 20px;
-      padding: 0.9rem;
-      backdrop-filter: blur(8px);
-      display: flex;
-      flex-direction: column;
-      gap: 0.8rem;
-      box-shadow: 0 0 24px rgba(255, 98, 200, 0.15);
-    }
-
-    .round { font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: var(--pink); }
-    #log {
-      margin: 0;
-      min-height: 90px;
-      font-size: 0.92rem;
-      line-height: 1.35;
-      background: rgba(0, 0, 0, 0.26);
-      border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      padding: 0.55rem;
-    }
-
-    .actions { display: grid; gap: 0.45rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-
-    button {
-      border: none;
-      border-radius: 10px;
-      padding: 0.62rem;
-      font-weight: 800;
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      cursor: pointer;
-      background: linear-gradient(90deg, var(--cyan), var(--pink));
-      color: #081018;
-      box-shadow: 0 4px 14px rgba(70, 242, 255, 0.35);
-    }
-
-    button:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-      box-shadow: none;
-    }
-
-    .small-note { font-size: 0.8rem; opacity: 0.86; }
-    .good { color: var(--ok); }
-    .bad { color: var(--danger); }
-
-    @media (max-width: 980px) {
-      .layout { grid-template-columns: 1fr; }
-      .table { min-height: 540px; }
-      .seat-bottom { left: 30%; }
-      .seat-top { left: 30%; }
-    }
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orbit Holdem Live</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="games/poker-live/style.css" />
 </head>
 <body>
-  <main class="layout">
-    <section class="table-wrap">
-      <div class="title-row">
-        <h1>SuperSplash Poker Royale</h1>
-        <a class="home-link" href="index.html">Back To Arcade</a>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="back-link" href="index.html">Back to Nova Arcade</a>
+      <div class="topbar-status">
+        <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
+        <div class="status-pill ghost" id="modePill">No table connected</div>
       </div>
-      <div class="table">
-        <article id="player-1" class="player seat-top"></article>
-        <article id="player-2" class="player seat-left"></article>
-        <article id="player-3" class="player seat-right"></article>
-        <article id="player-0" class="player seat-bottom"></article>
-
-        <div class="center-area">
-          <div class="pot" id="pot">Pot: 0</div>
-          <div class="community" id="community"></div>
-          <div class="chip-chip" id="bet-info">Current Bet: 0</div>
-        </div>
-      </div>
-    </section>
-
-    <aside class="side">
-      <div class="round" id="round-label">Round: Waiting</div>
-      <p id="log">Welcome to SuperSplash Poker Royale. Beat three AI bots and stack chips.</p>
-
-      <div class="actions">
-        <button id="check-call">Check / Call</button>
-        <button id="raise">Raise +40</button>
-        <button id="fold">Fold</button>
-        <button id="next-hand">New Hand</button>
-      </div>
-
-      <p class="small-note">Bots run quick Monte Carlo simulations each turn to choose between folding, calling, checking, and pressuring with raises.</p>
-      <p class="small-note">Blinds: 10 / 20. Each player starts with 1000 chips.</p>
-    </aside>
-  </main>
-
-  <script>
-    const SUITS = ['♠', '♥', '♦', '♣'];
-    const VALUES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
-    const PLAYER_NAMES = ['You', 'Bot Vega', 'Bot Lux', 'Bot Orion'];
-
-    const state = {
-      players: PLAYER_NAMES.map((name, index) => ({
-        id: index,
-        name,
-        chips: 1000,
-        cards: [],
-        folded: false,
-        allIn: false,
-        contribution: 0,
-        action: ''
-      })),
-      deck: [],
-      community: [],
-      pot: 0,
-      currentBet: 0,
-      dealer: 0,
-      stage: 'idle',
-      handActive: false,
-      turnLocked: true,
-      raisesUsed: 0
-    };
-
-    const STAGES = ['preflop', 'flop', 'turn', 'river', 'showdown'];
-    const stageLabel = { preflop: 'Pre-Flop', flop: 'Flop', turn: 'Turn', river: 'River', showdown: 'Showdown', idle: 'Waiting' };
-
-    const roundEl = document.getElementById('round-label');
-    const logEl = document.getElementById('log');
-    const potEl = document.getElementById('pot');
-    const betInfoEl = document.getElementById('bet-info');
-    const communityEl = document.getElementById('community');
-    const checkCallBtn = document.getElementById('check-call');
-    const raiseBtn = document.getElementById('raise');
-    const foldBtn = document.getElementById('fold');
-    const nextHandBtn = document.getElementById('next-hand');
-
-    checkCallBtn.addEventListener('click', () => playerAction('call'));
-    raiseBtn.addEventListener('click', () => playerAction('raise'));
-    foldBtn.addEventListener('click', () => playerAction('fold'));
-    nextHandBtn.addEventListener('click', () => startHand(true));
-
-    function setLog(msg, tone = '') {
-      logEl.className = tone ? tone : '';
-      logEl.textContent = msg;
-    }
-
-    function createDeck() {
-      const deck = [];
-      for (const suit of SUITS) {
-        for (const value of VALUES) deck.push({ value, suit });
-      }
-      for (let i = deck.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [deck[i], deck[j]] = [deck[j], deck[i]];
-      }
-      return deck;
-    }
-
-    function activePlayers() {
-      return state.players.filter(p => !p.folded && (p.cards.length || p.chips > 0));
-    }
-
-    function cardHTML(card, hide = false) {
-      if (!card || hide) return '<div class="card back">?</div>';
-      const labels = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
-      const rank = labels[card.value] || card.value;
-      const red = card.suit === '♥' || card.suit === '♦' ? 'red' : '';
-      return `<div class="card ${red}">${rank}${card.suit}</div>`;
-    }
-
-    function renderPlayers(activeIndex = -1) {
-      state.players.forEach((p, i) => {
-        const seat = document.getElementById(`player-${i}`);
-        seat.className = `player ${seat.className.replace(' active', '').replace(' folded', '')}`;
-        if (i === 0 && state.handActive && activeIndex === 0 && !state.turnLocked) seat.classList.add('active');
-        if (p.folded) seat.classList.add('folded');
-
-        const hideCards = i !== 0 && state.stage !== 'showdown';
-        const cardsMarkup = p.cards.length
-          ? p.cards.map(c => cardHTML(c, hideCards)).join('')
-          : '<div class="card back">?</div><div class="card back">?</div>';
-
-        seat.innerHTML = `
-          <div class="p-top"><span>${p.name}</span><span class="chips">${p.chips}</span></div>
-          <div class="cards">${cardsMarkup}</div>
-          <div class="action">${p.action || '&nbsp;'}</div>
-        `;
-      });
-    }
-
-    function renderCenter() {
-      potEl.textContent = `Pot: ${state.pot}`;
-      betInfoEl.textContent = `Current Bet: ${state.currentBet}`;
-      communityEl.innerHTML = '';
-      const shownCards = state.community.map(card => cardHTML(card, false)).join('');
-      const hiddenCount = 5 - state.community.length;
-      communityEl.innerHTML = shownCards + Array(hiddenCount).fill('<div class="card back">?</div>').join('');
-      roundEl.textContent = `Round: ${stageLabel[state.stage]}`;
-    }
-
-    function resetForNewHand() {
-      state.players.forEach((p) => {
-        p.cards = [];
-        p.folded = p.chips <= 0;
-        p.allIn = false;
-        p.contribution = 0;
-        p.action = '';
-      });
-      state.deck = createDeck();
-      state.community = [];
-      state.pot = 0;
-      state.currentBet = 0;
-      state.raisesUsed = 0;
-      state.handActive = true;
-      state.turnLocked = true;
-      state.stage = 'preflop';
-    }
-
-    function postBlinds() {
-      const sb = nextLiveSeat(state.dealer);
-      const bb = nextLiveSeat(sb);
-      takeBet(sb, 10);
-      state.players[sb].action = 'Small Blind 10';
-      takeBet(bb, 20);
-      state.players[bb].action = 'Big Blind 20';
-      state.currentBet = 20;
-    }
-
-    function nextLiveSeat(from) {
-      let idx = from;
-      for (let n = 0; n < state.players.length; n++) {
-        idx = (idx + 1) % state.players.length;
-        if (state.players[idx].chips > 0) return idx;
-      }
-      return 0;
-    }
-
-    function takeBet(playerIndex, amount) {
-      const p = state.players[playerIndex];
-      const paid = Math.min(amount, p.chips);
-      p.chips -= paid;
-      p.contribution += paid;
-      state.pot += paid;
-      if (p.chips === 0) p.allIn = true;
-      return paid;
-    }
-
-    function dealHoleCards() {
-      for (let r = 0; r < 2; r++) {
-        state.players.forEach((p) => {
-          if (p.chips > 0 || p.contribution > 0) p.cards.push(state.deck.pop());
-        });
-      }
-    }
-
-    function revealCommunity(stage) {
-      state.deck.pop();
-      if (stage === 'flop') state.community.push(state.deck.pop(), state.deck.pop(), state.deck.pop());
-      if (stage === 'turn' || stage === 'river') state.community.push(state.deck.pop());
-    }
-
-    function aliveInHand() {
-      return state.players.filter(p => !p.folded && (p.cards.length > 0));
-    }
-
-    function onlyOneLeft() {
-      return aliveInHand().length <= 1;
-    }
-
-    async function bettingRound() {
-      const order = [];
-      let idx = nextLiveSeat(state.dealer);
-      for (let i = 0; i < state.players.length; i++) {
-        order.push(idx);
-        idx = (idx + 1) % state.players.length;
-      }
-
-      for (const seat of order) {
-        const p = state.players[seat];
-        if (p.folded || p.cards.length === 0 || p.allIn) continue;
-        if (onlyOneLeft()) return;
-
-        renderPlayers(seat);
-        renderCenter();
-
-        if (seat === 0) {
-          await waitForHuman();
-        } else {
-          await botTakeAction(seat);
-        }
-      }
-    }
-
-    function waitForHuman() {
-      const you = state.players[0];
-      const toCall = Math.max(0, state.currentBet - you.contribution);
-      checkCallBtn.textContent = toCall > 0 ? `Call ${toCall}` : 'Check';
-      raiseBtn.disabled = state.raisesUsed >= 2 || you.chips <= toCall;
-      foldBtn.disabled = false;
-      state.turnLocked = false;
-      setLog(toCall > 0 ? `Your turn: call ${toCall}, raise, or fold.` : 'Your turn: check or raise.', '');
-
-      return new Promise(resolve => {
-        state._resolveHuman = resolve;
-      });
-    }
-
-    function playerAction(type) {
-      if (state.turnLocked || !state._resolveHuman) return;
-      const you = state.players[0];
-      const toCall = Math.max(0, state.currentBet - you.contribution);
-
-      if (type === 'fold') {
-        you.folded = true;
-        you.action = 'Fold';
-        setLog('You folded this hand.', 'bad');
-      } else if (type === 'raise' && state.raisesUsed < 2 && you.chips > toCall) {
-        const raiseAmount = Math.min(40, you.chips - toCall);
-        takeBet(0, toCall + raiseAmount);
-        state.currentBet = you.contribution;
-        state.raisesUsed += 1;
-        you.action = `Raise +${raiseAmount}`;
-        setLog(`You raise to ${state.currentBet}.`, 'good');
-      } else {
-        takeBet(0, toCall);
-        you.action = toCall > 0 ? `Call ${toCall}` : 'Check';
-        setLog(toCall > 0 ? `You call ${toCall}.` : 'You check.', '');
-      }
-
-      finalizeHumanTurn();
-    }
-
-    function finalizeHumanTurn() {
-      state.turnLocked = true;
-      checkCallBtn.textContent = 'Check / Call';
-      raiseBtn.disabled = true;
-      foldBtn.disabled = true;
-      const resolver = state._resolveHuman;
-      state._resolveHuman = null;
-      renderPlayers();
-      renderCenter();
-      resolver();
-    }
-
-    async function botTakeAction(seat) {
-      const p = state.players[seat];
-      const toCall = Math.max(0, state.currentBet - p.contribution);
-      const activeOpponents = aliveInHand().length - 1;
-      const winRate = estimateWinRate(p, state.community, activeOpponents, 140);
-      const potOdds = toCall > 0 ? toCall / (state.pot + toCall) : 0;
-
-      let move = 'check';
-      if (toCall > 0) {
-        if (winRate > potOdds + 0.25 && state.raisesUsed < 2 && p.chips > toCall) move = 'raise';
-        else if (winRate > potOdds + 0.04) move = 'call';
-        else move = Math.random() < 0.18 ? 'call' : 'fold';
-      } else {
-        move = (winRate > 0.67 && state.raisesUsed < 2 && p.chips > 25) ? 'raise' : 'check';
-      }
-
-      await pause(420 + Math.random() * 420);
-
-      if (move === 'fold') {
-        p.folded = true;
-        p.action = 'Fold';
-      } else if (move === 'raise') {
-        const raiseAmount = Math.min(40, Math.max(10, p.chips - toCall));
-        takeBet(seat, toCall + raiseAmount);
-        state.currentBet = p.contribution;
-        p.action = `Raise +${raiseAmount}`;
-        state.raisesUsed += 1;
-      } else if (toCall > 0) {
-        takeBet(seat, toCall);
-        p.action = `Call ${toCall}`;
-      } else {
-        p.action = 'Check';
-      }
-
-      setLog(`${p.name} (${Math.round(winRate * 100)}% est.) chooses: ${p.action}.`);
-      renderPlayers();
-      renderCenter();
-    }
-
-    function pause(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-    function estimateWinRate(player, knownCommunity, opponentCount, samples = 120) {
-      if (opponentCount <= 0) return 1;
-      let wins = 0;
-      let ties = 0;
-
-      const known = [...player.cards, ...knownCommunity];
-      const deadSet = new Set(known.map(c => `${c.value}${c.suit}`));
-      const available = [];
-      for (const s of SUITS) {
-        for (const v of VALUES) {
-          const key = `${v}${s}`;
-          if (!deadSet.has(key)) available.push({ value: v, suit: s });
-        }
-      }
-
-      for (let i = 0; i < samples; i++) {
-        const deck = [...available];
-        for (let j = deck.length - 1; j > 0; j--) {
-          const k = Math.floor(Math.random() * (j + 1));
-          [deck[j], deck[k]] = [deck[k], deck[j]];
-        }
-
-        const board = [...knownCommunity];
-        while (board.length < 5) board.push(deck.pop());
-
-        const opponents = [];
-        for (let o = 0; o < opponentCount; o++) opponents.push([deck.pop(), deck.pop()]);
-
-        const heroRank = bestOfSeven([...player.cards, ...board]);
-        let bestOpp = null;
-        let oppTies = false;
-
-        for (const cards of opponents) {
-          const rank = bestOfSeven([...cards, ...board]);
-          if (!bestOpp || compareRank(rank, bestOpp) > 0) {
-            bestOpp = rank;
-            oppTies = false;
-          } else if (compareRank(rank, bestOpp) === 0) {
-            oppTies = true;
-          }
-        }
-
-        const cmp = compareRank(heroRank, bestOpp);
-        if (cmp > 0) wins += 1;
-        else if (cmp === 0) ties += oppTies ? 0.5 : 1;
-      }
-
-      return (wins + ties) / samples;
-    }
-
-    function bestOfSeven(cards) {
-      let best = null;
-      const n = cards.length;
-      for (let a = 0; a < n - 4; a++) {
-        for (let b = a + 1; b < n - 3; b++) {
-          for (let c = b + 1; c < n - 2; c++) {
-            for (let d = c + 1; d < n - 1; d++) {
-              for (let e = d + 1; e < n; e++) {
-                const rank = evaluateFive([cards[a], cards[b], cards[c], cards[d], cards[e]]);
-                if (!best || compareRank(rank, best) > 0) best = rank;
-              }
-            }
-          }
-        }
-      }
-      return best;
-    }
-
-    function evaluateFive(hand) {
-      const values = hand.map(c => c.value).sort((a, b) => b - a);
-      const suits = hand.map(c => c.suit);
-      const count = {};
-      values.forEach(v => { count[v] = (count[v] || 0) + 1; });
-
-      const groups = Object.entries(count)
-        .map(([v, c]) => ({ v: Number(v), c }))
-        .sort((x, y) => y.c - x.c || y.v - x.v);
-
-      const flush = suits.every(s => s === suits[0]);
-      const uniqueVals = [...new Set(values)].sort((a, b) => b - a);
-      const straightHigh = detectStraight(uniqueVals);
-      const straightFlush = flush ? detectStraight(values) : null;
-
-      if (straightFlush) return [8, straightFlush];
-      if (groups[0].c === 4) return [7, groups[0].v, groups[1].v];
-      if (groups[0].c === 3 && groups[1].c === 2) return [6, groups[0].v, groups[1].v];
-      if (flush) return [5, ...values];
-      if (straightHigh) return [4, straightHigh];
-      if (groups[0].c === 3) {
-        const kickers = groups.filter(g => g.c === 1).map(g => g.v).sort((a, b) => b - a);
-        return [3, groups[0].v, ...kickers];
-      }
-      if (groups[0].c === 2 && groups[1].c === 2) {
-        const hiPair = Math.max(groups[0].v, groups[1].v);
-        const loPair = Math.min(groups[0].v, groups[1].v);
-        const kicker = groups.find(g => g.c === 1).v;
-        return [2, hiPair, loPair, kicker];
-      }
-      if (groups[0].c === 2) {
-        const kickers = groups.filter(g => g.c === 1).map(g => g.v).sort((a, b) => b - a);
-        return [1, groups[0].v, ...kickers];
-      }
-      return [0, ...values];
-    }
-
-    function detectStraight(valsDesc) {
-      const vals = [...new Set(valsDesc)].sort((a, b) => b - a);
-      if (vals.includes(14)) vals.push(1);
-      let streak = 1;
-      for (let i = 1; i < vals.length; i++) {
-        if (vals[i] === vals[i - 1] - 1) {
-          streak += 1;
-          if (streak >= 5) return vals[i - 4];
-        } else if (vals[i] !== vals[i - 1]) {
-          streak = 1;
-        }
-      }
-      return null;
-    }
-
-    function compareRank(a, b) {
-      for (let i = 0; i < Math.max(a.length, b.length); i++) {
-        const av = a[i] || 0;
-        const bv = b[i] || 0;
-        if (av > bv) return 1;
-        if (av < bv) return -1;
-      }
-      return 0;
-    }
-
-    function resetBetsForStreet() {
-      state.currentBet = 0;
-      state.raisesUsed = 0;
-      state.players.forEach(p => {
-        p.contribution = 0;
-        if (!p.folded) p.action = '';
-      });
-    }
-
-    function distributePot() {
-      const contenders = aliveInHand();
-      if (contenders.length === 1) {
-        contenders[0].chips += state.pot;
-        setLog(`${contenders[0].name} wins ${state.pot} chips by default.`, contenders[0].id === 0 ? 'good' : 'bad');
-        state.pot = 0;
-        return;
-      }
-
-      const scored = contenders.map(p => ({ player: p, rank: bestOfSeven([...p.cards, ...state.community]) }));
-      scored.sort((a, b) => compareRank(b.rank, a.rank));
-      const topRank = scored[0].rank;
-      const winners = scored.filter(s => compareRank(s.rank, topRank) === 0).map(s => s.player);
-      const payout = Math.floor(state.pot / winners.length);
-      winners.forEach(w => { w.chips += payout; });
-      const rem = state.pot - payout * winners.length;
-      if (rem > 0) winners[0].chips += rem;
-
-      const names = winners.map(w => w.name).join(', ');
-      setLog(`${names} win ${state.pot} chips in showdown${winners.length > 1 ? ' (split pot)' : ''}.`, winners.some(w => w.id === 0) ? 'good' : 'bad');
-      state.pot = 0;
-    }
-
-    async function playHand() {
-      resetForNewHand();
-      dealHoleCards();
-      postBlinds();
-      renderPlayers();
-      renderCenter();
-
-      const phases = ['preflop', 'flop', 'turn', 'river'];
-      for (const phase of phases) {
-        state.stage = phase;
-        if (phase !== 'preflop') revealCommunity(phase);
-        resetBetsForStreet();
-        renderPlayers();
-        renderCenter();
-
-        await bettingRound();
-        if (onlyOneLeft()) break;
-      }
-
-      state.stage = 'showdown';
-      distributePot();
-      state.handActive = false;
-      state.turnLocked = true;
-      state.dealer = nextLiveSeat(state.dealer);
-      renderPlayers();
-      renderCenter();
-
-      const alive = state.players.filter(p => p.chips > 0);
-      if (alive.length === 1) {
-        setLog(`${alive[0].name} is the final champion. Press New Hand to reset match.`, alive[0].id === 0 ? 'good' : 'bad');
-      }
-    }
-
-    function resetMatchIfNeeded() {
-      const bustedCount = state.players.filter(p => p.chips <= 0).length;
-      if (bustedCount >= state.players.length - 1) {
-        state.players.forEach(p => p.chips = 1000);
-      }
-    }
-
-    async function startHand(force = false) {
-      if (state.handActive && !force) return;
-      if (!force && state.players[0].chips <= 0) {
-        setLog('You are busted. Press New Hand to restart full table.', 'bad');
-        return;
-      }
-      if (force) resetMatchIfNeeded();
-      await playHand();
-    }
-
-    renderPlayers();
-    renderCenter();
-    setLog('Press New Hand to begin. Outsmart the bots with timing and pressure.');
-  </script>
+    </header>
+
+    <main class="layout">
+      <section class="setup-column">
+        <section class="hero panel">
+          <p class="eyebrow">Five-seat multiplayer Hold'em</p>
+          <h1>Orbit Holdem Live</h1>
+          <p class="lede">A rebuilt multiplayer poker table with private hole cards, real betting order, live showdown resolution, quick invite links, and space for up to five players on the same backend as the rest of the arcade.</p>
+
+          <div class="step-strip">
+            <div class="step-card">
+              <span class="step-number">1</span>
+              <div>
+                <strong>Enter a name</strong>
+                <p>Everyone at the table sees your table name and action feed.</p>
+              </div>
+            </div>
+            <div class="step-card">
+              <span class="step-number">2</span>
+              <div>
+                <strong>Host or join</strong>
+                <p>Hosting creates a room instantly. Joining works by code or direct invite link.</p>
+              </div>
+            </div>
+            <div class="step-card">
+              <span class="step-number">3</span>
+              <div>
+                <strong>Play real hands</strong>
+                <p>Betting, blinds, turn order, hidden cards, and showdowns are handled by the backend.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>Name</span>
+              <input id="nameInput" maxlength="18" placeholder="Nova" autocomplete="nickname" />
+            </label>
+            <label>
+              <span>Room code</span>
+              <input id="roomInput" maxlength="12" placeholder="Auto-created when hosting" />
+            </label>
+          </div>
+
+          <div class="hero-actions">
+            <button id="hostBtn" class="primary">Host table</button>
+            <button id="joinBtn">Join table</button>
+          </div>
+
+          <div class="invite-panel">
+            <div class="invite-header">
+              <div>
+                <p class="label">Invite link</p>
+                <p class="invite-help">Host once, then copy this link or the room code and send it to the other players.</p>
+              </div>
+              <button id="copyCodeBtn" class="secondary">Copy room code</button>
+            </div>
+            <div class="invite-row">
+              <input id="inviteInput" readonly value="" />
+              <button id="copyBtn" class="primary">Copy invite</button>
+            </div>
+          </div>
+
+          <details class="advanced-panel">
+            <summary>Advanced connection settings</summary>
+            <label class="advanced-field">
+              <span>Server WS URL</span>
+              <input id="serverUrlInput" placeholder="wss://backend-ujaa.onrender.com" />
+            </label>
+          </details>
+
+          <p class="status-text" id="statusText">Host a table and share the invite link, or join an existing room code to sit down immediately.</p>
+        </section>
+
+        <section class="panel guide-panel">
+          <div class="panel-heading">
+            <p class="label">Quick guide</p>
+            <h2>Easy multiplayer setup</h2>
+          </div>
+          <div class="guide-list">
+            <div class="guide-item">
+              <strong>Start fast</strong>
+              <p>Get two players seated, then hit <em>Start hand</em>. More players can join empty seats between hands.</p>
+            </div>
+            <div class="guide-item">
+              <strong>Bet clearly</strong>
+              <p>Use the quick buttons for fast decisions, or enter a custom total bet size when you want a specific raise.</p>
+            </div>
+            <div class="guide-item">
+              <strong>Built for real rooms</strong>
+              <p>The backend sends each player a private snapshot, so your hole cards stay hidden while the table still stays in sync.</p>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="table-column">
+        <section class="table-panel panel">
+          <div class="table-header">
+            <div class="hud-card">
+              <p class="label">Room</p>
+              <p class="hud-value room-code" id="roomCodeLabel">-</p>
+            </div>
+            <div class="hud-card">
+              <p class="label">Street</p>
+              <p class="hud-value" id="stageLabel">Waiting</p>
+            </div>
+            <div class="hud-card">
+              <p class="label">Pot</p>
+              <p class="hud-value" id="potLabel">0</p>
+            </div>
+            <div class="hud-card">
+              <p class="label">Action</p>
+              <p class="hud-value" id="turnLabel">Waiting for players</p>
+            </div>
+          </div>
+
+          <div class="felt-shell">
+            <div class="table-felt">
+              <div class="table-center">
+                <div class="board-copy">
+                  <p class="mini-label">Community board</p>
+                  <h2 id="boardHeadline">Orbit Holdem Live</h2>
+                  <p id="boardSubline">Seat at least two players to begin.</p>
+                </div>
+                <div class="community-row" id="communityRow"></div>
+                <div class="pot-cluster">
+                  <div class="pot-chip">Pot <span id="potAmount">0</span></div>
+                  <div class="pot-chip alt">Current bet <span id="betAmount">0</span></div>
+                </div>
+              </div>
+
+              <div class="seat-layer" id="seatLayer"></div>
+            </div>
+          </div>
+
+          <div class="action-tray">
+            <div class="tray-copy">
+              <p class="label">Your controls</p>
+              <p class="tray-line" id="actionPrompt">Join a table to sit down. Once a hand is live, your actions light up only when it is your turn.</p>
+            </div>
+            <div class="table-buttons">
+              <button id="startHandBtn" class="primary">Start hand</button>
+              <button id="resetTableBtn">Reset table</button>
+              <button id="checkCallBtn">Check</button>
+              <button id="foldBtn">Fold</button>
+            </div>
+            <div class="raise-strip">
+              <button id="minRaiseBtn" class="secondary">Min raise</button>
+              <button id="potRaiseBtn" class="secondary">Pot raise</button>
+              <button id="allInBtn" class="secondary">All in</button>
+              <label class="raise-input">
+                <span>Total bet</span>
+                <input id="raiseAmountInput" type="number" min="0" step="10" />
+              </label>
+              <button id="customRaiseBtn" class="primary">Send raise</button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <aside class="sidebar">
+        <section class="panel sidebar-panel">
+          <div class="panel-heading">
+            <p class="label">Table feed</p>
+            <h2>Recent action</h2>
+          </div>
+          <div class="log-list" id="logList"></div>
+        </section>
+
+        <section class="panel sidebar-panel">
+          <div class="panel-heading">
+            <p class="label">Table rules</p>
+            <h2>What is live</h2>
+          </div>
+          <div class="facts">
+            <div class="fact">
+              <strong>Format</strong>
+              <p>Texas Hold'em with 1500 starting chips and blinds at 10 / 20.</p>
+            </div>
+            <div class="fact">
+              <strong>Seats</strong>
+              <p>Up to five players can share one table. Empty seats stay open until someone joins.</p>
+            </div>
+            <div class="fact">
+              <strong>Privacy</strong>
+              <p>The backend sends each seat its own private snapshot, so only your cards are visible before showdown.</p>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast" aria-live="polite"></div>
+  </div>
+
+  <script src="games/poker-live/game.js"></script>
 </body>
 </html>
