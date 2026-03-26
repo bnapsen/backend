@@ -1176,7 +1176,7 @@
     if (window.innerWidth <= 820) {
       return state.focusMode ? 82 : 60;
     }
-    return state.focusMode ? 132 : 118;
+    return state.focusMode ? 140 : 126;
   }
 
   function syncResponsiveBoardSize() {
@@ -1193,7 +1193,13 @@
     const stageStyles = window.getComputedStyle(ui.boardStage);
     const paddingX = parseFloat(stageStyles.paddingLeft || '0') + parseFloat(stageStyles.paddingRight || '0');
     const paddingY = parseFloat(stageStyles.paddingTop || '0') + parseFloat(stageStyles.paddingBottom || '0');
-    const widthBudget = Math.max(0, ui.boardStage.clientWidth - paddingX);
+    const panelStyles = ui.boardPanel ? window.getComputedStyle(ui.boardPanel) : null;
+    const panelPaddingX = panelStyles
+      ? parseFloat(panelStyles.paddingLeft || '0') + parseFloat(panelStyles.paddingRight || '0')
+      : 0;
+    const widthBudget = ui.boardPanel
+      ? Math.max(0, ui.boardPanel.clientWidth - panelPaddingX - 4)
+      : Math.max(0, ui.boardStage.clientWidth - paddingX);
 
     let heightBudget = 0;
     if (state.focusMode) {
@@ -1203,7 +1209,6 @@
       const columnStyles = window.getComputedStyle(ui.boardColumn);
       const columnGap = parseFloat(columnStyles.rowGap || columnStyles.gap || '0');
       const battleStripHeight = ui.battleStrip ? ui.battleStrip.getBoundingClientRect().height : 0;
-      const panelStyles = window.getComputedStyle(ui.boardPanel);
       const panelPaddingY = parseFloat(panelStyles.paddingTop || '0') + parseFloat(panelStyles.paddingBottom || '0');
       const boardHeaderHeight = ui.boardHeader ? ui.boardHeader.getBoundingClientRect().height : 0;
       const clockStripHeight = ui.clockStrip ? ui.clockStrip.getBoundingClientRect().height : 0;
@@ -1211,7 +1216,7 @@
       const boardFooterHeight = ui.boardFooter ? ui.boardFooter.getBoundingClientRect().height : 0;
       const boardFooterMarginTop = ui.boardFooter ? parseFloat(window.getComputedStyle(ui.boardFooter).marginTop || '0') : 0;
       const stageMarginTop = parseFloat(stageStyles.marginTop || '0');
-      const viewportBottomReserve = window.innerWidth <= 820 ? 16 : 22;
+      const viewportBottomReserve = window.innerWidth <= 820 ? 14 : 14;
       const boardColumnHeightBudget = Math.max(
         0,
         window.innerHeight - columnRect.top - battleStripHeight - (battleStripHeight ? columnGap : 0) - viewportBottomReserve
@@ -1378,6 +1383,9 @@
       : null;
 
     ui.timeControlBadge.textContent = profile.shortLabel;
+    if (ui.clockStrip) {
+      ui.clockStrip.dataset.timed = timed ? 'true' : 'false';
+    }
 
     if (!timed) {
       ui.whiteClockValue.textContent = '--:--';

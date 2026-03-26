@@ -198,6 +198,16 @@
               <p class="label">Result</p>
               <p class="winner-text" id="winnerText">No game running yet.</p>
             </div>
+            <div class="footer-captures">
+              <div class="capture-lane">
+                <p class="label">White Captures</p>
+                <div class="capture-row compact" id="whiteCaptured"></div>
+              </div>
+              <div class="capture-lane">
+                <p class="label">Black Captures</p>
+                <div class="capture-row compact" id="blackCaptured"></div>
+              </div>
+            </div>
             <div class="board-actions">
               <button id="retryEngineBtn" class="secondary">Retry Stockfish</button>
               <button id="engineMoveBtn" class="secondary">Force engine move</button>
@@ -205,17 +215,6 @@
               <button id="focusBtn" class="secondary" type="button">Focus mode</button>
               <button id="restartBtn" class="primary">New game</button>
             </div>
-          </div>
-        </section>
-
-        <section class="battle-strip panel">
-          <div>
-            <p class="label">White captures</p>
-            <div class="capture-row" id="whiteCaptured"></div>
-          </div>
-          <div>
-            <p class="label">Black captures</p>
-            <div class="capture-row" id="blackCaptured"></div>
           </div>
         </section>
       </section>
