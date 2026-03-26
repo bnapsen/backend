@@ -25,6 +25,10 @@
       title: 'Starline Defense Co-Op',
       path: 'space-shooter.html',
     },
+    'car-soccer': {
+      title: 'Car Soccer Mini - Turbo Arena Live',
+      path: 'games/car-soccer-mini/',
+    },
     blackjack: {
       title: 'Royal SuperSplash Blackjack Live',
       path: 'blackjack.html',

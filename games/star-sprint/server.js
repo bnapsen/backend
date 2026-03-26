@@ -11,6 +11,7 @@ const Blackjack = require('./blackjack-core.js');
 const Poker = require('./poker-core.js');
 const MiniPool = require('./mini-pool-core.js');
 const ArcadeChat = require('./arcade-chat-core.js');
+const CarSoccer = require('./car-soccer-core.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
@@ -109,6 +110,13 @@ const GAME_DEFS = {
     createGameState: () => MiniPool.createGameState(),
     cloneState: (game) => MiniPool.cloneState(game),
   },
+  'car-soccer': {
+    id: 'car-soccer',
+    title: 'Car Soccer Mini - Turbo Arena Live',
+    maxPlayers: CarSoccer.MAX_PLAYERS,
+    createGameState: () => CarSoccer.createGameState(),
+    cloneState: (game) => CarSoccer.cloneState(game),
+  },
   'arcade-chat': {
     id: 'arcade-chat',
     title: 'Nova Arcade Lounge',
@@ -160,6 +168,9 @@ function normalizeGameType(raw) {
   }
   if (raw === 'mini-pool' || raw === 'pool') {
     return 'mini-pool';
+  }
+  if (raw === 'car-soccer' || raw === 'car-soccer-mini' || raw === 'soccer') {
+    return 'car-soccer';
   }
   if (raw === 'arcade-chat' || raw === 'chat' || raw === 'lounge') {
     return 'arcade-chat';
@@ -398,6 +409,12 @@ function snapshot(room, viewerId) {
       roster: listPlayers(room),
     };
   }
+  if (room.gameType === 'car-soccer') {
+    return {
+      ...base,
+      roster: listPlayers(room),
+    };
+  }
   if (room.gameType === 'arcade-chat') {
     return {
       ...base,
@@ -467,6 +484,18 @@ function addPlayerToGame(room, player) {
       name: player.name,
     });
     if (result) {
+      player.seat = result.seat;
+    }
+    return result;
+  }
+
+  if (room.gameType === 'car-soccer') {
+    const result = CarSoccer.addPlayer(room.game, {
+      id: player.id,
+      name: player.name,
+    });
+    if (result) {
+      player.color = result.team;
       player.seat = result.seat;
     }
     return result;
@@ -597,6 +626,10 @@ function handleMove(socket, payload) {
   const { room, player } = context;
   if (room.gameType === 'space-shooter') {
     sendError(socket, 'Movement in Starline Defense uses realtime input, not turn-based moves.');
+    return;
+  }
+  if (room.gameType === 'car-soccer') {
+    sendError(socket, 'Turbo Arena uses realtime driving input, not turn-based moves.');
     return;
   }
   if (room.gameType === 'mini-pool') {
@@ -799,12 +832,15 @@ function handleInput(socket, payload) {
   }
 
   const { room, player } = context;
-  if (room.gameType !== 'space-shooter') {
-    sendError(socket, 'Realtime input is only used in Starline Defense rooms.');
+  if (room.gameType === 'space-shooter') {
+    Shooter.setPlayerInput(room.game, player.id, payload && payload.input);
     return;
   }
-
-  Shooter.setPlayerInput(room.game, player.id, payload && payload.input);
+  if (room.gameType === 'car-soccer') {
+    CarSoccer.setPlayerInput(room.game, player.id, payload && payload.input);
+    return;
+  }
+  sendError(socket, 'Realtime input is only used in live action rooms.');
 }
 
 function handleShot(socket, payload) {
@@ -875,6 +911,9 @@ function handleRestart(socket) {
   if (room.gameType === 'space-shooter') {
     Shooter.resetMatch(room.game);
     room.lastTickAt = Date.now();
+  } else if (room.gameType === 'car-soccer') {
+    CarSoccer.resetMatch(room.game);
+    room.lastTickAt = Date.now();
   } else if (room.gameType === 'poker') {
     Poker.resetTable(room.game);
   } else if (room.gameType === 'blackjack') {
@@ -893,6 +932,8 @@ function handleRestart(socket) {
     room,
     room.gameType === 'space-shooter'
       ? `${player.name} launched a fresh squad run.`
+      : room.gameType === 'car-soccer'
+        ? `${player.name} reset the arena kickoff.`
       : room.gameType === 'poker'
         ? `${player.name} reset the table.`
         : room.gameType === 'blackjack'
@@ -929,6 +970,9 @@ function handleDisconnect(socket) {
   if (room.gameType === 'space-shooter') {
     Shooter.removePlayer(room.game, playerId);
     room.lastTickAt = Date.now();
+  } else if (room.gameType === 'car-soccer') {
+    CarSoccer.removePlayer(room.game, playerId);
+    room.lastTickAt = Date.now();
   } else if (room.gameType === 'poker') {
     Poker.removePlayer(room.game, playerId);
   } else if (room.gameType === 'blackjack') {
@@ -944,6 +988,8 @@ function handleDisconnect(socket) {
   const message = player
     ? room.gameType === 'space-shooter'
       ? `${player.name} disconnected. The room stays open for a new wingmate.`
+      : room.gameType === 'car-soccer'
+        ? `${player.name} disconnected. The Turbo Arena room stays open for a new driver.`
       : room.gameType === 'poker'
         ? `${player.name} disconnected. The table stays open.`
         : room.gameType === 'blackjack'
@@ -968,6 +1014,13 @@ function tickRealtimeRooms() {
       const elapsed = Math.max(16, Math.min(120, now - room.lastTickAt));
       room.lastTickAt = now;
       Shooter.step(room.game, elapsed / 1000);
+      broadcastState(room);
+      continue;
+    }
+    if (room.gameType === 'car-soccer' && room.players.size > 0) {
+      const elapsed = Math.max(16, Math.min(120, now - room.lastTickAt));
+      room.lastTickAt = now;
+      CarSoccer.step(room.game, elapsed / 1000);
       broadcastState(room);
       continue;
     }

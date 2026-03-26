@@ -1,97 +1,172 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Car Soccer Mini</title>
-  <link rel="stylesheet" href="style.css" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Ccircle cx=%2732%27 cy=%2732%27 r=%2730%27 fill=%27%230b1c2c%27/%3E%3Ccircle cx=%2732%27 cy=%2732%27 r=%2716%27 fill=%27%23ffffff%27/%3E%3C/svg%3E" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Car Soccer Mini - Turbo Arena Live</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css?v=20260326a" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Ccircle cx=%2732%27 cy=%2732%27 r=%2730%27 fill=%27%23081a2b%27/%3E%3Cpath d=%27M16 32c0-8.8 7.2-16 16-16s16 7.2 16 16-7.2 16-16 16S16 40.8 16 32Z%27 fill=%27%23f2f7ff%27/%3E%3Cpath d=%27M32 18 40 26 32 34 24 26Z%27 fill=%27%234ec9ff%27/%3E%3C/svg%3E" />
 </head>
 <body>
   <div class="game-shell">
-    <canvas id="gameCanvas" aria-label="Car Soccer Mini"></canvas>
+    <canvas id="gameCanvas" aria-label="Car Soccer Mini Turbo Arena"></canvas>
 
-    <div class="hud" id="hud">
-      <div class="score-line">
-        <span class="team" id="leftTeamLabel">You</span>
-        <span id="score">0 - 0</span>
-        <span class="team" id="rightTeamLabel">Bot</span>
+    <header class="topbar">
+      <a class="back-link" href="../../index.html">Back to Nova Arcade</a>
+      <div class="brand-block">
+        <p class="eyebrow">Realtime turbo arena</p>
+        <strong>Car Soccer Mini</strong>
       </div>
-      <div class="sub-line">
-        <span>Time: <strong id="time">03:00</strong></span>
-        <span>Boost: <strong id="boost">100</strong>%</span>
-        <span>Graphics: <strong id="graphicsLabel">High</strong></span>
-        <span>Mode: <strong id="networkStatus">Local vs Bot</strong></span>
+      <div class="topbar-actions">
+        <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
+        <div class="status-pill ghost" id="modePill">No arena live</div>
+        <button id="toggleSetupBtn" class="ghost-btn" type="button">Hide setup</button>
+        <button id="toggleInfoBtn" class="ghost-btn" type="button">Hide info</button>
       </div>
-      <div class="controls-line">
-        <span>WASD drive</span>
-        <span>Shift boost</span>
-        <span>Space drift</span>
-        <span>R reset</span>
-        <span>P pause</span>
+    </header>
+
+    <section class="hud-band">
+      <div class="score-chip">
+        <span class="team blue" id="leftTeamLabel">Blue</span>
+        <strong id="score">0 - 0</strong>
+        <span class="team orange" id="rightTeamLabel">Orange</span>
       </div>
-    </div>
+      <div class="hud-strip">
+        <span>Clock <strong id="time">03:00</strong></span>
+        <span>Boost <strong id="boost">100%</strong></span>
+        <span>Phase <strong id="phaseLabel">Stand by</strong></span>
+        <span>Room <strong id="roomCodeLabel">-</strong></span>
+      </div>
+      <p id="statusText" class="status-copy">Host a room, invite another driver, or launch solo against Turbo Bot.</p>
+    </section>
 
-    <div class="overlay hidden" id="pauseMenu">
-      <div class="panel">
-        <h1>Car Soccer Mini</h1>
-        <p id="menuStatus">Paused</p>
-
-        <div class="menu-row">
-          <label for="graphicsToggle">Graphics</label>
-          <button id="graphicsToggle" class="btn">High</button>
+    <aside class="panel setup-panel" id="setupPanel">
+      <div class="panel-head">
+        <div>
+          <p class="label">Garage</p>
+          <h1>Launch a live match fast</h1>
         </div>
+      </div>
 
-        <div class="menu-row">
-          <label for="volumeSlider">Volume</label>
-          <input id="volumeSlider" type="range" min="0" max="1" step="0.05" value="0.3" />
-        </div>
+      <div class="field-grid">
+        <label>
+          <span>Driver name</span>
+          <input id="nameInput" maxlength="18" placeholder="Turbo Ben" autocomplete="nickname" />
+        </label>
+        <label>
+          <span>Room code</span>
+          <input id="roomInput" maxlength="12" placeholder="Leave blank to host new" />
+        </label>
+      </div>
 
-        <div class="menu-row">
-          <label for="fullscreenToggle">Fullscreen Preference</label>
-          <button id="fullscreenToggle" class="btn">Off</button>
-        </div>
+      <div class="action-cluster">
+        <button id="hostBtn" class="primary" type="button">Host arena</button>
+        <button id="joinBtn" type="button">Join arena</button>
+        <button id="soloBtn" type="button">Solo vs Turbo Bot</button>
+        <button id="restartBtn" type="button">Restart match</button>
+      </div>
 
-        <div class="menu-row">
-          <button id="resumeBtn" class="btn primary">Resume</button>
-          <button id="restartBtn" class="btn">Restart Match</button>
-        </div>
-
-        <div class="network-panel">
-          <h2>Online Multiplayer</h2>
-          <div class="menu-row">
-            <label for="roomCodeInput">Room</label>
-            <input id="roomCodeInput" type="text" maxlength="12" placeholder="PUBLIC" />
+      <div class="invite-panel">
+        <div class="invite-head">
+          <div>
+            <p class="label">Invite link</p>
+            <p class="helper-copy">Share one clean link that lands the other driver in your room.</p>
           </div>
-          <div class="menu-row">
-            <label for="serverUrlInput">Server</label>
-            <input id="serverUrlInput" type="text" placeholder="ws://localhost:8080" />
-          </div>
-          <div class="menu-row">
-            <button id="hostOnlineBtn" class="btn">Host</button>
-            <button id="joinOnlineBtn" class="btn">Join</button>
-            <button id="copyInviteBtn" class="btn">Copy Invite</button>
+        </div>
+        <div class="invite-row">
+          <input id="inviteInput" readonly value="" />
+        </div>
+        <div class="invite-row">
+          <button id="copyInviteBtn" class="secondary" type="button">Copy invite</button>
+          <button id="copyCodeBtn" class="secondary" type="button">Copy room code</button>
+        </div>
+      </div>
+
+      <div class="invite-panel">
+        <div class="invite-head">
+          <div>
+            <p class="label">Arcade Lounge</p>
+            <p class="helper-copy">Open the shared lounge in a new tab or drop this arena there so someone can jump straight into your match.</p>
           </div>
         </div>
-
-        <p class="help-text">First to 5 goals or leader at 3:00 wins.</p>
+        <div class="invite-row">
+          <button id="openLoungeBtn" class="secondary" type="button">Open Lounge tab</button>
+          <button id="shareLoungeBtn" class="primary" type="button">Share arena to Lounge</button>
+        </div>
       </div>
-    </div>
+
+      <div class="settings-grid">
+        <label class="toggle-field">
+          <span>Graphics</span>
+          <button id="graphicsToggle" class="secondary" type="button">High</button>
+        </label>
+        <label class="toggle-field">
+          <span>Sound</span>
+          <button id="soundToggle" class="secondary" type="button">On</button>
+        </label>
+      </div>
+
+      <label class="slider-field">
+        <span>Volume</span>
+        <input id="volumeSlider" type="range" min="0" max="1" step="0.05" value="0.3" />
+      </label>
+
+      <details class="advanced-panel">
+        <summary>Advanced connection settings</summary>
+        <label>
+          <span>Server WS URL</span>
+          <input id="serverUrlInput" placeholder="wss://backend-ujaa.onrender.com" />
+        </label>
+      </details>
+    </aside>
+
+    <aside class="panel info-panel" id="infoPanel">
+      <div class="panel-head">
+        <div>
+          <p class="label">Match room</p>
+          <h2 id="conditionLabel">Stand by</h2>
+        </div>
+        <p class="mini-status" id="presenceText">Waiting for a launch.</p>
+      </div>
+
+      <div class="player-cards" id="playerCards"></div>
+
+      <div class="panel-head">
+        <div>
+          <p class="label">Arena feed</p>
+          <h2>Recent moments</h2>
+        </div>
+      </div>
+      <div class="event-list" id="eventList"></div>
+
+      <div class="help-block">
+        <p class="label">Controls</p>
+        <p>WASD or arrows to drive, Shift to boost, Space to powerslide, and R to restart the kickoff.</p>
+        <p>Touch controls appear automatically on phones. Boost pads keep your tank full, and overtime goes to the next goal.</p>
+      </div>
+    </aside>
 
     <div id="touchControls" class="touch-controls hidden" aria-hidden="true">
       <div class="left-pad">
-        <button data-key="w">▲</button>
-        <button data-key="a">◀</button>
-        <button data-key="s">▼</button>
-        <button data-key="d">▶</button>
+        <button data-key="w" aria-label="Accelerate">▲</button>
+        <button data-key="a" aria-label="Steer left">◀</button>
+        <button data-key="s" aria-label="Brake or reverse">▼</button>
+        <button data-key="d" aria-label="Steer right">▶</button>
       </div>
       <div class="right-pad">
         <button data-key="shift">Boost</button>
         <button data-key="space">Drift</button>
       </div>
     </div>
+
+    <div class="toast" id="toast" aria-live="polite"></div>
   </div>
 
-  <script src="game.js"></script>
+  <script src="../shared/lounge-bridge.js?v=20260326b"></script>
+  <script src="../star-sprint/car-soccer-core.js?v=20260326a"></script>
+  <script src="game.js?v=20260326a"></script>
 </body>
 </html>
