@@ -391,11 +391,46 @@ input:focus {
   margin-bottom: 16px;
 }
 
+.combat-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) repeat(2, minmax(180px, 0.8fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 .hud-card {
   padding: 14px 16px;
   border-radius: 18px;
   background: rgba(5, 12, 24, 0.68);
   border: 1px solid rgba(145, 204, 255, 0.12);
+}
+
+.feed-card,
+.feed-mini {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(5, 12, 24, 0.68);
+  border: 1px solid rgba(145, 204, 255, 0.12);
+}
+
+.feed-card {
+  background:
+    linear-gradient(135deg, rgba(89, 216, 255, 0.08), rgba(255, 209, 102, 0.08)),
+    rgba(5, 12, 24, 0.74);
+}
+
+.feed-text,
+.mini-copy {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.feed-text {
+  color: var(--text);
+}
+
+.mini-copy {
+  color: var(--muted);
 }
 
 .hud-value {
@@ -425,7 +460,6 @@ input:focus {
 }
 
 #gameCanvas,
-.stage-banner,
 .mobile-controls {
   position: absolute;
   inset: 0;
@@ -435,22 +469,6 @@ input:focus {
   width: 100%;
   height: 100%;
   display: block;
-}
-
-.stage-banner {
-  inset: 18px auto auto 18px;
-  width: min(420px, calc(100% - 36px));
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(145, 204, 255, 0.14);
-  background: rgba(4, 10, 20, 0.66);
-  backdrop-filter: blur(12px);
-  pointer-events: none;
-}
-
-.banner-copy {
-  margin: 0;
-  line-height: 1.45;
 }
 
 .arena-footer {
@@ -535,6 +553,10 @@ input:focus {
 
 .meter-fill.boost {
   background: linear-gradient(90deg, #ffd166, #fff2a6);
+}
+
+.meter-fill.xp {
+  background: linear-gradient(90deg, #9a7dff, #59d8ff);
 }
 
 .mobile-controls {
@@ -669,6 +691,10 @@ input:focus {
 
   .arena-header {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .combat-strip {
+    grid-template-columns: 1fr;
   }
 
   .hero,

@@ -104,7 +104,7 @@
             </div>
             <div class="feature-item">
               <strong>Playable survival loop</strong>
-              <p>Waves escalate, enemies pressure both pilots, pickups matter, and downed teammates can come back if someone keeps the run alive.</p>
+              <p>Waves escalate, pilots level up mid-run, boss dreadnoughts arrive on milestone waves, and downed teammates can come back if someone keeps the run alive.</p>
             </div>
             <div class="feature-item">
               <strong>Cleaner controls</strong>
@@ -135,13 +135,23 @@
             </div>
           </div>
 
+          <div class="combat-strip">
+            <div class="feed-card">
+              <p class="label">Mission feed</p>
+              <p class="feed-text" id="missionText">Spin up a room and launch the squad.</p>
+            </div>
+            <div class="feed-mini">
+              <p class="label">Objective</p>
+              <p class="mini-copy" id="objectiveText">Survive the first surge and build squad momentum.</p>
+            </div>
+            <div class="feed-mini">
+              <p class="label">Squad level</p>
+              <p class="mini-copy" id="squadLevelLabel">Lv 1</p>
+            </div>
+          </div>
+
           <div class="arena-stage" id="arenaStage">
             <canvas id="gameCanvas" width="1600" height="900" aria-label="Starline Defense arena"></canvas>
-
-            <div class="stage-banner" id="stageBanner">
-              <p class="label">Mission feed</p>
-              <p class="banner-copy" id="missionText">Spin up a room and launch the squad.</p>
-            </div>
 
             <div class="mobile-controls">
               <div class="touch-pad move-pad" id="movePad">
