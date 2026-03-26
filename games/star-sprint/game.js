@@ -8,17 +8,61 @@
     engineLevel: 'neonCrownChess.engineLevel',
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
-  const ENGINE_WORKER_VERSION = '20260325e';
+  const ENGINE_WORKER_VERSION = '20260325f';
   const ENGINE_INIT_TIMEOUT_MS = 12000;
   const ENGINE_MOVE_TIMEOUT_MS = 9000;
   const query = new URLSearchParams(window.location.search);
   const FILES = Core.FILES;
   const DIRECT_STOCKFISH_WORKER = `vendor/stockfish/stockfish-18-lite-single.js?v=${ENGINE_WORKER_VERSION}`;
   const ENGINE_LEVELS = {
-    6: { label: 'Relaxed', movetime: 320 },
-    10: { label: 'Club', movetime: 640 },
-    14: { label: 'Sharp', movetime: 1100 },
-    18: { label: 'Tough', movetime: 1700 },
+    2: {
+      label: 'Rookie',
+      skill: 2,
+      elo: 700,
+      movetime: 180,
+      meter: 16,
+      summary: 'Gentle and forgiving, with fast replies and simple plans.',
+    },
+    6: {
+      label: 'Casual',
+      skill: 6,
+      elo: 950,
+      movetime: 340,
+      meter: 32,
+      summary: 'Good for new players who want a little pressure without brutal tactics.',
+    },
+    10: {
+      label: 'Club',
+      skill: 10,
+      elo: 1300,
+      movetime: 680,
+      meter: 50,
+      summary: 'Balanced club-strength games with solid tactics and quick replies.',
+    },
+    14: {
+      label: 'Tournament',
+      skill: 14,
+      elo: 1750,
+      movetime: 1300,
+      meter: 68,
+      summary: 'Sharper calculation, stronger opening play, and fewer tactical misses.',
+    },
+    18: {
+      label: 'Master',
+      skill: 18,
+      elo: null,
+      movetime: 2200,
+      meter: 86,
+      summary: 'Uncapped strength with fast, accurate middlegame pressure.',
+    },
+    20: {
+      label: 'Grandmaster',
+      skill: 20,
+      elo: null,
+      movetime: 3400,
+      meter: 100,
+      summary: 'The toughest solo setting here, with the deepest search and strongest tactics.',
+    },
   };
 
   const state = {
@@ -60,6 +104,8 @@
     roomInput: document.getElementById('roomInput'),
     serverUrlInput: document.getElementById('serverUrlInput'),
     engineLevelSelect: document.getElementById('engineLevelSelect'),
+    engineLevelHint: document.getElementById('engineLevelHint'),
+    engineLevelMeter: document.getElementById('engineLevelMeter'),
     inviteInput: document.getElementById('inviteInput'),
     statusText: document.getElementById('statusText'),
     engineStatus: document.getElementById('engineStatus'),
@@ -127,6 +173,11 @@
     return ENGINE_LEVELS[state.engineLevel] || ENGINE_LEVELS[10];
   }
 
+  function normalizeEngineLevel(value) {
+    const numeric = Number(value);
+    return ENGINE_LEVELS[numeric] ? numeric : 10;
+  }
+
   function engineReadyMessage() {
     return `Stockfish 18 ready - ${engineLevelProfile().label}`;
   }
@@ -139,10 +190,17 @@
   }
 
   function syncEngineOptions() {
+    const profile = engineLevelProfile();
     sendEngineCommand('setoption name UCI_Chess960 value false');
     sendEngineCommand('setoption name MultiPV value 1');
     sendEngineCommand('setoption name Ponder value false');
-    sendEngineCommand(`setoption name Skill Level value ${clamp(state.engineLevel, 0, 20)}`);
+    sendEngineCommand(`setoption name Skill Level value ${clamp(profile.skill || state.engineLevel, 0, 20)}`);
+    if (profile.elo) {
+      sendEngineCommand('setoption name UCI_LimitStrength value true');
+      sendEngineCommand(`setoption name UCI_Elo value ${profile.elo}`);
+    } else {
+      sendEngineCommand('setoption name UCI_LimitStrength value false');
+    }
   }
 
   function setEngineStatus(message) {
@@ -320,6 +378,18 @@
     }
   }
 
+  function renderDifficultyInfo() {
+    const profile = engineLevelProfile();
+    if (ui.engineLevelHint) {
+      ui.engineLevelHint.textContent = profile.elo
+        ? `${profile.summary} About ${profile.elo} Elo with human-style mistakes left in.`
+        : `${profile.summary} Full-strength Stockfish search with no Elo cap.`;
+    }
+    if (ui.engineLevelMeter) {
+      ui.engineLevelMeter.style.width = `${profile.meter}%`;
+    }
+  }
+
   function renderHistory() {
     const history = state.snapshot && Array.isArray(state.snapshot.history) ? state.snapshot.history : [];
     if (!history.length) {
@@ -356,7 +426,7 @@
       },
       {
         title: 'Real engine support',
-        body: 'Solo mode loads a bundled Stockfish 18 browser worker and falls back to a local move chooser only if the engine cannot wake up.',
+        body: 'Solo mode has six Stockfish 18 tiers, from Rookie through Grandmaster, and only falls back to a local move chooser if the engine cannot wake up.',
         token: '\u2699',
       },
       {
@@ -692,6 +762,7 @@
   function render() {
     renderPills();
     renderStatus();
+    renderDifficultyInfo();
     updateInviteUi();
     renderSummary();
     renderPlayers();
@@ -1565,7 +1636,7 @@
     state.selected = null;
     state.legalMoves = [];
     setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
-    setStatusMessage('Stockfish 18 match started. You control White. Mouse, touch, and keyboard controls are all enabled.');
+    setStatusMessage(`Stockfish 18 ${engineLevelProfile().label} match started. You control White. Mouse, touch, and keyboard controls are all enabled.`);
     setEngineStatus('Warming up local Stockfish 18...');
     render();
     ensureEngineReady().then((ready) => {
@@ -1617,9 +1688,10 @@
     });
 
     ui.engineLevelSelect.addEventListener('change', () => {
-      state.engineLevel = Number(ui.engineLevelSelect.value) || 10;
+      state.engineLevel = normalizeEngineLevel(ui.engineLevelSelect.value);
       persistSettings();
       if (state.engineReady) {
+        syncEngineOptions();
         setEngineStatus(engineReadyMessage());
       } else if (state.mode === 'solo') {
         setEngineStatus('Warming up local Stockfish 18...');
@@ -1677,7 +1749,7 @@
     ui.nameInput.value = localStorage.getItem(STORAGE_KEYS.name) || '';
     state.serverUrl = sanitizeServerUrl(query.get('server') || localStorage.getItem(STORAGE_KEYS.serverUrl) || PROD_SERVER_URL);
     ui.serverUrlInput.value = state.serverUrl;
-    state.engineLevel = Number(localStorage.getItem(STORAGE_KEYS.engineLevel) || '10') || 10;
+    state.engineLevel = normalizeEngineLevel(localStorage.getItem(STORAGE_KEYS.engineLevel) || '10');
     ui.engineLevelSelect.value = String(state.engineLevel);
     setEngineStatus('Stockfish 18 idle.');
     const inviteRoom = sanitizeRoomCode(query.get('room'));

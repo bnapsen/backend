@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Neon Crown Chess</title>
-  <link rel="stylesheet" href="style.css?v=20260325e" />
+  <link rel="stylesheet" href="style.css?v=20260325f" />
 </head>
 <body>
   <div class="page-shell">
@@ -21,7 +21,7 @@
         <section class="hero panel">
           <p class="eyebrow">Internet-ready multiplayer chess</p>
           <h1>Neon Crown Chess</h1>
-          <p class="lede">Classic chess with smooth board motion, one-click room hosting, quick invite links, drag controls on phone and desktop, and a local Stockfish 18 solo mode that loads right in the browser.</p>
+          <p class="lede">Classic chess with a richer table-style board, one-click room hosting, quick invite links, drag controls on phone and desktop, and six Stockfish 18 solo difficulty levels right in the browser.</p>
 
           <div class="step-strip">
             <div class="step-card" id="stepOne">
@@ -65,14 +65,20 @@
           </div>
 
           <div class="field-grid">
-            <label>
-              <span>Stockfish strength</span>
+            <label class="difficulty-field">
+              <span>Stockfish difficulty</span>
               <select id="engineLevelSelect">
-                <option value="6">Relaxed</option>
+                <option value="2">Rookie</option>
+                <option value="6">Casual</option>
                 <option value="10" selected>Club</option>
-                <option value="14">Sharp</option>
-                <option value="18">Tough</option>
+                <option value="14">Tournament</option>
+                <option value="18">Master</option>
+                <option value="20">Grandmaster</option>
               </select>
+              <p class="field-note" id="engineLevelHint">Balanced club-strength games with solid tactics and quick replies.</p>
+              <div class="difficulty-meter" aria-hidden="true">
+                <span id="engineLevelMeter"></span>
+              </div>
             </label>
             <div class="control-card">
               <span class="label">Controls</span>
@@ -221,7 +227,7 @@
     <div class="toast" id="toast" aria-live="polite"></div>
   </div>
 
-  <script src="chess-core.js?v=20260325e"></script>
-  <script src="game.js?v=20260325e"></script>
+  <script src="chess-core.js?v=20260325f"></script>
+  <script src="game.js?v=20260325f"></script>
 </body>
 </html>
