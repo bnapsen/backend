@@ -39,10 +39,15 @@
     },
   };
   const VOICE_MODEL_CONFIG = {
-    modelId: 'Xenova/whisper-tiny.en',
+    primaryModelId: 'onnx-community/moonshine-base-ONNX',
+    fallbackModelId: 'onnx-community/moonshine-tiny-ONNX',
     libraryUrl: 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1',
     sampleRate: 16000,
-    maxDurationMs: 18000,
+    maxDurationMs: 14000,
+    modelLoadTimeoutMs: 60000,
+    transcriptionTimeoutMs: 30000,
+    chunkLengthS: 8,
+    strideLengthS: 2,
   };
   const query = new URLSearchParams(window.location.search);
   const state = {
@@ -61,8 +66,10 @@
     voiceTranscribing: false,
     voiceEngineLoading: false,
     voiceStopTimer: 0,
+    voiceModelId: '',
     voiceTranscriber: null,
     voiceTranscriberPromise: null,
+    voiceLibraryPromise: null,
   };
 
   const ui = {
@@ -190,22 +197,87 @@
 
   function describeVoiceLoadProgress(progress) {
     if (!progress || !progress.status) {
-      return 'Loading the free speech model in your browser...';
+      return 'Loading the sharper local speech model...';
     }
     if (progress.status === 'progress' && Number.isFinite(progress.progress)) {
-      return `Loading the free speech model... ${Math.round(progress.progress)}%`;
+      return `Loading local speech tools... ${Math.round(progress.progress)}%`;
     }
     if ((progress.status === 'initiate' || progress.status === 'download' || progress.status === 'done') && progress.file) {
       return `Loading ${progress.file}...`;
     }
     if (progress.status === 'ready') {
-      return 'Open-source speech model ready.';
+      return 'Local speech model ready.';
     }
-    return 'Loading the free speech model in your browser...';
+    return 'Loading the sharper local speech model...';
+  }
+
+  function withTimeout(promise, timeoutMs, message) {
+    return new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        reject(new Error(message));
+      }, timeoutMs);
+
+      Promise.resolve(promise)
+        .then((value) => {
+          window.clearTimeout(timer);
+          resolve(value);
+        })
+        .catch((error) => {
+          window.clearTimeout(timer);
+          reject(error);
+        });
+    });
+  }
+
+  function currentVoiceModelLabel() {
+    if (state.voiceModelId === VOICE_MODEL_CONFIG.fallbackModelId) {
+      return 'Fast local speech';
+    }
+    return 'Sharper local speech';
+  }
+
+  function disposeVoiceTranscriber(transcriber) {
+    if (!transcriber || typeof transcriber.dispose !== 'function') {
+      return;
+    }
+    const disposeResult = transcriber.dispose();
+    if (disposeResult && typeof disposeResult.catch === 'function') {
+      disposeResult.catch(() => {});
+    }
+  }
+
+  function loadVoiceLibrary() {
+    if (!state.voiceLibraryPromise) {
+      state.voiceLibraryPromise = import(VOICE_MODEL_CONFIG.libraryUrl);
+    }
+    return state.voiceLibraryPromise;
+  }
+
+  async function createVoiceTranscriber(modelId, progress_callback) {
+    const module = await loadVoiceLibrary();
+    const { pipeline } = module;
+    const buildTranscriber = (options = {}) => withTimeout(
+      pipeline('automatic-speech-recognition', modelId, {
+        progress_callback,
+        ...options,
+      }),
+      VOICE_MODEL_CONFIG.modelLoadTimeoutMs,
+      'The local speech model took too long to load.'
+    );
+
+    if (navigator.gpu) {
+      try {
+        return await buildTranscriber({ device: 'webgpu' });
+      } catch (error) {
+        return buildTranscriber();
+      }
+    }
+
+    return buildTranscriber();
   }
 
   async function loadVoiceTranscriber() {
-    if (state.voiceTranscriber) {
+    if (state.voiceTranscriber && state.voiceModelId) {
       return state.voiceTranscriber;
     }
     if (state.voiceTranscriberPromise) {
@@ -214,12 +286,10 @@
 
     state.voiceEngineLoading = true;
     updateVoiceUi();
-    setVoiceStatus('Loading the free speech model in your browser...', 'processing');
-    setStatus('Downloading the free open-source speech model for lounge chat. The first run can take a bit.');
+    setVoiceStatus('Loading the sharper local speech model...', 'processing');
+    setStatus('Downloading a stronger free speech model for lounge chat. The first run can take a bit.');
 
     state.voiceTranscriberPromise = (async () => {
-      const module = await import(VOICE_MODEL_CONFIG.libraryUrl);
-      const { pipeline } = module;
       const progress_callback = (progress) => {
         if (!state.voiceEngineLoading) {
           return;
@@ -228,30 +298,34 @@
       };
 
       if (navigator.gpu) {
-        try {
-          return await pipeline('automatic-speech-recognition', VOICE_MODEL_CONFIG.modelId, {
-            device: 'webgpu',
-            progress_callback,
-          });
-        } catch (error) {
-          return pipeline('automatic-speech-recognition', VOICE_MODEL_CONFIG.modelId, {
-            progress_callback,
-          });
-        }
+        progress_callback({ status: 'initiate', file: 'webgpu' });
       }
 
-      return pipeline('automatic-speech-recognition', VOICE_MODEL_CONFIG.modelId, {
-        progress_callback,
-      });
+      try {
+        const transcriber = await createVoiceTranscriber(VOICE_MODEL_CONFIG.primaryModelId, progress_callback);
+        state.voiceModelId = VOICE_MODEL_CONFIG.primaryModelId;
+        return transcriber;
+      } catch (primaryError) {
+        setVoiceStatus('The sharper model was heavy for this device. Trying a lighter local model...', 'processing');
+        setStatus('Trying a lighter local speech model so voice-to-text still works smoothly.');
+        const transcriber = await createVoiceTranscriber(VOICE_MODEL_CONFIG.fallbackModelId, progress_callback);
+        state.voiceModelId = VOICE_MODEL_CONFIG.fallbackModelId;
+        return transcriber;
+      }
     })();
 
     try {
       state.voiceTranscriber = await state.voiceTranscriberPromise;
-      setVoiceStatus('Open-source speech model ready.', 'ready');
+      setVoiceStatus(`${currentVoiceModelLabel()} ready.`, 'ready');
       return state.voiceTranscriber;
     } catch (error) {
       state.voiceTranscriberPromise = null;
-      const message = 'The open-source speech model could not load on this device.';
+      state.voiceModelId = '';
+      disposeVoiceTranscriber(state.voiceTranscriber);
+      state.voiceTranscriber = null;
+      const message = error && error.message
+        ? error.message
+        : 'The local speech model could not load on this device.';
       setVoiceStatus(message, 'error');
       setStatus(message);
       throw new Error(message);
@@ -319,6 +393,86 @@
     return output;
   }
 
+  function preprocessVoiceWaveform(waveform) {
+    if (!waveform || !waveform.length) {
+      throw new Error('The voice note was empty.');
+    }
+
+    let mean = 0;
+    for (let index = 0; index < waveform.length; index += 1) {
+      mean += waveform[index];
+    }
+    mean /= waveform.length;
+
+    const centered = new Float32Array(waveform.length);
+    let peak = 0;
+    for (let index = 0; index < waveform.length; index += 1) {
+      const value = waveform[index] - mean;
+      centered[index] = value;
+      const abs = Math.abs(value);
+      if (abs > peak) {
+        peak = abs;
+      }
+    }
+
+    if (peak < 0.01) {
+      throw new Error('The recording was too quiet. Try moving closer to the mic.');
+    }
+
+    const windowSize = 320;
+    const totalWindows = Math.max(1, Math.ceil(centered.length / windowSize));
+    let maxRms = 0;
+    const rmsValues = new Float32Array(totalWindows);
+    for (let windowIndex = 0; windowIndex < totalWindows; windowIndex += 1) {
+      const start = windowIndex * windowSize;
+      const end = Math.min(centered.length, start + windowSize);
+      let energy = 0;
+      for (let index = start; index < end; index += 1) {
+        energy += centered[index] * centered[index];
+      }
+      const rms = Math.sqrt(energy / Math.max(1, end - start));
+      rmsValues[windowIndex] = rms;
+      if (rms > maxRms) {
+        maxRms = rms;
+      }
+    }
+
+    const threshold = Math.max(0.01, maxRms * 0.16);
+    let startWindow = 0;
+    while (startWindow < rmsValues.length && rmsValues[startWindow] < threshold) {
+      startWindow += 1;
+    }
+    let endWindow = rmsValues.length - 1;
+    while (endWindow > startWindow && rmsValues[endWindow] < threshold) {
+      endWindow -= 1;
+    }
+
+    const padding = Math.round(VOICE_MODEL_CONFIG.sampleRate * 0.18);
+    const startSample = Math.max(0, startWindow * windowSize - padding);
+    const endSample = Math.min(centered.length, (endWindow + 1) * windowSize + padding);
+    const trimmed = centered.subarray(startSample, endSample);
+
+    if (trimmed.length < VOICE_MODEL_CONFIG.sampleRate * 0.2) {
+      throw new Error('The recording was too short to understand. Try a slightly longer note.');
+    }
+
+    let trimmedPeak = 0;
+    for (let index = 0; index < trimmed.length; index += 1) {
+      const abs = Math.abs(trimmed[index]);
+      if (abs > trimmedPeak) {
+        trimmedPeak = abs;
+      }
+    }
+
+    const gain = trimmedPeak > 0 ? Math.min(4.5, 0.88 / trimmedPeak) : 1;
+    const normalized = new Float32Array(trimmed.length);
+    for (let index = 0; index < trimmed.length; index += 1) {
+      const amplified = trimmed[index] * gain;
+      normalized[index] = Math.tanh(amplified * 1.15);
+    }
+    return normalized;
+  }
+
   function stopVoiceTracks() {
     if (!state.voiceStream) {
       return;
@@ -370,23 +524,23 @@
   async function transcribeVoiceBlob(blob) {
     state.voiceTranscribing = true;
     updateVoiceUi();
-    setVoiceStatus(state.voiceTranscriber ? 'Transcribing voice note locally...' : 'Loading the free speech model...', 'processing');
+    setVoiceStatus(state.voiceTranscriber ? 'Transcribing voice note locally...' : 'Loading the sharper local speech model...', 'processing');
     setStatus(state.voiceTranscriber
-      ? 'Transcribing your voice note locally in the browser...'
-      : 'Loading the free open-source speech model for your first transcription...');
+      ? `Transcribing your voice note with ${currentVoiceModelLabel().toLowerCase()}...`
+      : 'Loading the sharper free speech model for your first transcription...');
     try {
       const transcriber = await loadVoiceTranscriber();
-      const waveform = await decodeVoiceBlob(blob);
-      const payload = await transcriber(waveform, {
-        chunk_length_s: 12,
-        stride_length_s: 2,
-      });
+      const waveform = preprocessVoiceWaveform(await decodeVoiceBlob(blob));
+      const payload = await withTimeout(transcriber(waveform, {
+        chunk_length_s: VOICE_MODEL_CONFIG.chunkLengthS,
+        stride_length_s: VOICE_MODEL_CONFIG.strideLengthS,
+      }), VOICE_MODEL_CONFIG.transcriptionTimeoutMs, 'The voice note took too long to transcribe. Try a shorter, clearer note.');
       const transcript = sanitizeText(payload && payload.text, 360);
       if (!transcript) {
         throw new Error('The voice note came back empty.');
       }
       mergeTranscriptIntoComposer(transcript);
-      setVoiceStatus('Transcript ready. Review it and send.', 'ready');
+      setVoiceStatus(`Transcript ready with ${currentVoiceModelLabel().toLowerCase()}.`, 'ready');
       setStatus('Voice note transcribed in your browser and added to the chat box.');
     } catch (error) {
       const message = error && error.message ? error.message : 'Voice transcription failed.';
@@ -465,8 +619,8 @@
       updateVoiceUi();
       setVoiceStatus('Recording... tap Stop mic when done.', 'recording');
       setStatus(state.voiceTranscriber
-        ? 'Recording a short voice note for local chat transcription.'
-        : 'Recording a short voice note. The first transcription downloads a free open-source model.');
+        ? 'Recording a short voice note for sharper local transcription.'
+        : 'Recording a short voice note. The first transcription downloads a stronger free speech model.');
       updateControlState();
     } catch (error) {
       stopVoiceTracks();
@@ -815,17 +969,17 @@
     } else if (state.voiceRecording) {
       setVoiceStatus('Recording... tap Stop mic when done.', 'recording');
     } else if (state.voiceEngineLoading) {
-      setVoiceStatus('Loading the free speech model in your browser...', 'processing');
+      setVoiceStatus('Loading the sharper local speech model...', 'processing');
     } else if (state.voiceTranscribing) {
       setVoiceStatus('Transcribing voice note locally...', 'processing');
     } else if (!connected) {
-      setVoiceStatus('Voice to text runs in your browser after you join a lounge.', 'idle');
+      setVoiceStatus('Sharper local voice-to-text runs in your browser after you join a lounge.', 'idle');
     } else if (
       ui.voiceStatus
       && ui.voiceStatus.dataset.tone !== 'error'
       && ui.voiceStatus.dataset.tone !== 'ready'
     ) {
-      setVoiceStatus('Voice to text is ready. First use downloads a free open-source speech model.', 'idle');
+      setVoiceStatus('Voice to text is ready. First use downloads a stronger free local speech model.', 'idle');
     }
     updateVoiceUi();
     updateInvitePreview();
