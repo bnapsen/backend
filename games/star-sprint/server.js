@@ -862,6 +862,7 @@ function handleShot(socket, payload) {
   const result = MiniPool.applyShot(room.game, player.color, {
     vectorX: payload && payload.vectorX,
     vectorY: payload && payload.vectorY,
+    power: payload && payload.power,
   });
   if (!result.ok) {
     sendError(socket, result.error || 'That shot could not be played.');

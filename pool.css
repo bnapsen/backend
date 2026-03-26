@@ -427,6 +427,7 @@ button:disabled {
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
     inset 0 -12px 24px rgba(21, 9, 2, 0.38),
     0 24px 60px rgba(0, 0, 0, 0.34);
+  border: 1px solid rgba(255, 235, 208, 0.08);
 }
 
 #poolTable {
@@ -436,6 +437,7 @@ button:disabled {
   height: calc(100% - 24px);
   display: block;
   touch-action: none;
+  cursor: crosshair;
 }
 
 .table-meta {
@@ -502,7 +504,8 @@ button:disabled {
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  transition: width 90ms linear;
+  box-shadow: 0 0 18px rgba(113, 241, 209, 0.34);
+  transition: width 70ms linear;
 }
 
 #powerText {

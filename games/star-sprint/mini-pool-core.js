@@ -6,9 +6,11 @@ const TABLE = Object.freeze({
   height: 560,
   rail: 46,
   pocketR: 28,
-  friction: 0.98,
-  cushionBounce: 0.92,
-  ballBounce: 0.985,
+  friction: 0.977,
+  cushionBounce: 0.88,
+  ballBounce: 0.96,
+  tangentBounce: 0.992,
+  railGrip: 0.985,
 });
 
 const COLORS = ['white', 'black'];
@@ -16,13 +18,19 @@ const MAX_EVENTS = 8;
 const MAX_RACKS = 3;
 const RACK_BONUS = 14;
 const SHOT_MAX_DISTANCE = 220;
-const SHOT_SPEED = 13.5;
+const SHOT_MIN_POWER = 0.04;
+const SHOT_MIN_SPEED = 0.85;
+const SHOT_SPEED = 12.1;
 const SCRATCH_PENALTY = 6;
 const BLOCKER_PENALTY = 8;
-const STOP_EPSILON = 0.03;
-const SOFT_SETTLE_SPEED = 0.18;
+const STOP_EPSILON = 0.018;
+const SOFT_SETTLE_SPEED = 0.11;
 const TARGET_VALUE = 10;
 const CROWN_VALUE = 18;
+const TARGET_SUBSTEP_SECONDS = 1 / 120;
+const LOW_SPEED_BRAKE_THRESHOLD = 1.15;
+const LOW_SPEED_BRAKE = 0.93;
+const POCKET_PULL = 0.3;
 
 function capitalize(value) {
   return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
@@ -270,6 +278,129 @@ function zeroAllVelocity(game) {
   }
 }
 
+function resolveRailBounce(ball, normalX, normalY) {
+  const tangentX = -normalY;
+  const tangentY = normalX;
+  const normalVelocity = ball.vx * normalX + ball.vy * normalY;
+  const tangentVelocity = ball.vx * tangentX + ball.vy * tangentY;
+  if (normalVelocity >= 0) {
+    return;
+  }
+  const bouncedNormal = -normalVelocity * TABLE.cushionBounce;
+  const slowedTangent = tangentVelocity * TABLE.railGrip;
+  ball.vx = normalX * bouncedNormal + tangentX * slowedTangent;
+  ball.vy = normalY * bouncedNormal + tangentY * slowedTangent;
+}
+
+function resolveBallCollisions(game) {
+  for (let i = 0; i < game.balls.length; i += 1) {
+    for (let j = i + 1; j < game.balls.length; j += 1) {
+      const a = game.balls[i];
+      const b = game.balls[j];
+      if (a.sunk || b.sunk) {
+        continue;
+      }
+
+      let dx = b.x - a.x;
+      let dy = b.y - a.y;
+      let dist = Math.hypot(dx, dy);
+      const minDist = a.r + b.r;
+      if (dist >= minDist) {
+        continue;
+      }
+
+      if (dist < 0.0001) {
+        dx = 1;
+        dy = 0;
+        dist = 1;
+      }
+
+      const nx = dx / dist;
+      const ny = dy / dist;
+      const overlap = minDist - dist;
+      const separation = overlap / 2 + 0.02;
+      a.x -= nx * separation;
+      a.y -= ny * separation;
+      b.x += nx * separation;
+      b.y += ny * separation;
+
+      const relativeNormalVelocity = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+      if (relativeNormalVelocity >= 0) {
+        continue;
+      }
+
+      const tx = -ny;
+      const ty = nx;
+      const aNormal = a.vx * nx + a.vy * ny;
+      const bNormal = b.vx * nx + b.vy * ny;
+      const aTangent = a.vx * tx + a.vy * ty;
+      const bTangent = b.vx * tx + b.vy * ty;
+
+      const nextANormal = ((1 - TABLE.ballBounce) * aNormal + (1 + TABLE.ballBounce) * bNormal) / 2;
+      const nextBNormal = ((1 + TABLE.ballBounce) * aNormal + (1 - TABLE.ballBounce) * bNormal) / 2;
+      const nextATangent = aTangent * TABLE.tangentBounce;
+      const nextBTangent = bTangent * TABLE.tangentBounce;
+
+      a.vx = nx * nextANormal + tx * nextATangent;
+      a.vy = ny * nextANormal + ty * nextATangent;
+      b.vx = nx * nextBNormal + tx * nextBTangent;
+      b.vy = ny * nextBNormal + ty * nextBTangent;
+    }
+  }
+}
+
+function stepBall(ball, timeScale, bounds, pockets, pocketCaptureR, pocketSinkR, hasPocketClearanceOnTopBottom, hasPocketClearanceOnLeftRight) {
+  ball.x += ball.vx * timeScale;
+  ball.y += ball.vy * timeScale;
+
+  let frictionFactor = Math.pow(TABLE.friction, timeScale);
+  const speed = Math.hypot(ball.vx, ball.vy);
+  if (speed < LOW_SPEED_BRAKE_THRESHOLD) {
+    frictionFactor *= Math.pow(LOW_SPEED_BRAKE, timeScale);
+  }
+  ball.vx *= frictionFactor;
+  ball.vy *= frictionFactor;
+
+  if (Math.abs(ball.vx) < 0.006) {
+    ball.vx = 0;
+  }
+  if (Math.abs(ball.vy) < 0.006) {
+    ball.vy = 0;
+  }
+
+  for (const pocket of pockets) {
+    const dx = ball.x - pocket.x;
+    const dy = ball.y - pocket.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < pocketCaptureR && dist > 0.001) {
+      const pull = ((pocketCaptureR - dist) / pocketCaptureR) * POCKET_PULL * timeScale;
+      ball.vx -= (dx / dist) * pull;
+      ball.vy -= (dy / dist) * pull;
+    }
+    if (dist < pocketSinkR) {
+      return true;
+    }
+  }
+
+  if (ball.x - ball.r < bounds.minX && !hasPocketClearanceOnLeftRight(ball.y, bounds.minX)) {
+    ball.x = bounds.minX + ball.r;
+    resolveRailBounce(ball, 1, 0);
+  } else if (ball.x + ball.r > bounds.maxX && !hasPocketClearanceOnLeftRight(ball.y, bounds.maxX)) {
+    ball.x = bounds.maxX - ball.r;
+    resolveRailBounce(ball, -1, 0);
+  }
+
+  if (ball.y - ball.r < bounds.minY && !hasPocketClearanceOnTopBottom(ball.x, bounds.minY)) {
+    ball.y = bounds.minY + ball.r;
+    resolveRailBounce(ball, 0, 1);
+  } else if (ball.y + ball.r > bounds.maxY && !hasPocketClearanceOnTopBottom(ball.x, bounds.maxY)) {
+    ball.y = bounds.maxY - ball.r;
+    resolveRailBounce(ball, 0, -1);
+  }
+
+  return false;
+}
+
 function resolvePocket(game, ball) {
   if (ball.sunk) {
     return;
@@ -405,15 +536,19 @@ function applyShot(game, color, payload) {
   }
 
   const magnitude = Math.hypot(rawX, rawY);
-  if (magnitude < 4) {
+  const explicitPower = Number(payload && payload.power);
+  const normalizedPower = Number.isFinite(explicitPower)
+    ? clamp(explicitPower, 0, 1)
+    : clamp(magnitude / SHOT_MAX_DISTANCE, 0, 1);
+  if (normalizedPower < SHOT_MIN_POWER || magnitude < 0.0001) {
     return {
       ok: false,
-      error: 'Pull back farther to take a shot.',
+      error: 'Line up the cue and drag farther to load the shot.',
     };
   }
 
-  const normalizedDistance = clamp(magnitude, 0, SHOT_MAX_DISTANCE);
-  const speed = (normalizedDistance / SHOT_MAX_DISTANCE) * SHOT_SPEED;
+  const easedPower = Math.pow(normalizedPower, 1.28);
+  const speed = SHOT_MIN_SPEED + easedPower * (SHOT_SPEED - SHOT_MIN_SPEED);
   cue.vx = (rawX / magnitude) * speed;
   cue.vy = (rawY / magnitude) * speed;
   game.shotCount += 1;
@@ -427,7 +562,9 @@ function step(game, deltaSeconds) {
     return false;
   }
 
-  const timeScale = clamp(deltaSeconds * 60, 0.7, 2.2);
+  const boundedDelta = clamp(deltaSeconds, TARGET_SUBSTEP_SECONDS, 0.12);
+  const substeps = Math.max(1, Math.ceil(boundedDelta / TARGET_SUBSTEP_SECONDS));
+  const substepSeconds = boundedDelta / substeps;
   const bounds = feltBounds();
   const pockets = pocketCoords();
   const pocketCaptureR = TABLE.pocketR + 4;
@@ -441,96 +578,32 @@ function step(game, deltaSeconds) {
     (pocket) => Math.abs(pocket.x - boundaryX) < 1 && Math.abs(y - pocket.y) < mouthClearance
   );
 
-  for (const ball of game.balls) {
-    if (ball.sunk) {
-      continue;
-    }
+  for (let stepIndex = 0; stepIndex < substeps; stepIndex += 1) {
+    const timeScale = clamp(substepSeconds * 60, 0.4, 1.1);
 
-    ball.x += ball.vx * timeScale;
-    ball.y += ball.vy * timeScale;
-    ball.vx *= Math.pow(TABLE.friction, timeScale);
-    ball.vy *= Math.pow(TABLE.friction, timeScale);
-
-    if (Math.abs(ball.vx) < 0.01) {
-      ball.vx = 0;
-    }
-    if (Math.abs(ball.vy) < 0.01) {
-      ball.vy = 0;
-    }
-
-    for (const pocket of pockets) {
-      const dx = ball.x - pocket.x;
-      const dy = ball.y - pocket.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < pocketCaptureR && dist > 0.001) {
-        const pull = ((pocketCaptureR - dist) / pocketCaptureR) * 0.45 * timeScale;
-        ball.vx -= (dx / dist) * pull;
-        ball.vy -= (dy / dist) * pull;
+    for (const ball of game.balls) {
+      if (ball.sunk) {
+        continue;
       }
-      if (dist < pocketSinkR) {
+      if (stepBall(
+        ball,
+        timeScale,
+        bounds,
+        pockets,
+        pocketCaptureR,
+        pocketSinkR,
+        hasPocketClearanceOnTopBottom,
+        hasPocketClearanceOnLeftRight
+      )) {
         resolvePocket(game, ball);
       }
     }
 
-    if (ball.sunk) {
-      continue;
-    }
+    resolveBallCollisions(game);
+    resolveBallCollisions(game);
 
-    if (ball.x - ball.r < bounds.minX && !hasPocketClearanceOnLeftRight(ball.y, bounds.minX)) {
-      ball.x = bounds.minX + ball.r;
-      ball.vx *= -TABLE.cushionBounce;
-      ball.vy *= TABLE.ballBounce;
-    } else if (ball.x + ball.r > bounds.maxX && !hasPocketClearanceOnLeftRight(ball.y, bounds.maxX)) {
-      ball.x = bounds.maxX - ball.r;
-      ball.vx *= -TABLE.cushionBounce;
-      ball.vy *= TABLE.ballBounce;
-    }
-
-    if (ball.y - ball.r < bounds.minY && !hasPocketClearanceOnTopBottom(ball.x, bounds.minY)) {
-      ball.y = bounds.minY + ball.r;
-      ball.vy *= -TABLE.cushionBounce;
-      ball.vx *= TABLE.ballBounce;
-    } else if (ball.y + ball.r > bounds.maxY && !hasPocketClearanceOnTopBottom(ball.x, bounds.maxY)) {
-      ball.y = bounds.maxY - ball.r;
-      ball.vy *= -TABLE.cushionBounce;
-      ball.vx *= TABLE.ballBounce;
-    }
-  }
-
-  for (let i = 0; i < game.balls.length; i += 1) {
-    for (let j = i + 1; j < game.balls.length; j += 1) {
-      const a = game.balls[i];
-      const b = game.balls[j];
-      if (a.sunk || b.sunk) {
-        continue;
-      }
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.hypot(dx, dy);
-      const minDist = a.r + b.r;
-      if (!dist || dist >= minDist) {
-        continue;
-      }
-
-      const nx = dx / dist;
-      const ny = dy / dist;
-      const overlap = minDist - dist;
-      a.x -= (overlap * nx) / 2;
-      a.y -= (overlap * ny) / 2;
-      b.x += (overlap * nx) / 2;
-      b.y += (overlap * ny) / 2;
-
-      const tx = -ny;
-      const ty = nx;
-      const tanA = a.vx * tx + a.vy * ty;
-      const tanB = b.vx * tx + b.vy * ty;
-      const normA = a.vx * nx + a.vy * ny;
-      const normB = b.vx * nx + b.vy * ny;
-
-      a.vx = (tx * tanA + nx * normB) * TABLE.ballBounce;
-      a.vy = (ty * tanA + ny * normB) * TABLE.ballBounce;
-      b.vx = (tx * tanB + nx * normA) * TABLE.ballBounce;
-      b.vy = (ty * tanB + ny * normA) * TABLE.ballBounce;
+    if (!areBallsMoving(game)) {
+      break;
     }
   }
 

@@ -60,6 +60,8 @@
     pointerId: null,
     pointer: { x: 0, y: 0 },
     power: 0,
+    aimAngle: 0,
+    aimAnchorDistance: 0,
     view: {
       width: 0,
       height: 0,
@@ -69,6 +71,17 @@
       dpr: 1,
     },
   };
+
+  const CUE_UI = Object.freeze({
+    anchorCap: 128,
+    powerRange: 178,
+    minPower: 0.04,
+    cuePullback: 86,
+    cueLength: 248,
+    guideLength: 640,
+    guideBounceLength: 110,
+    gripRadius: 30,
+  });
 
   function capitalize(value) {
     return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
@@ -239,6 +252,125 @@
     return state.snapshot.balls.find((ball) => ball.kind === 'cue' && !ball.sunk) || null;
   }
 
+  function feltBounds(table = activeTable()) {
+    return {
+      minX: table.rail,
+      minY: table.rail,
+      maxX: table.width - table.rail,
+      maxY: table.height - table.rail,
+    };
+  }
+
+  function cueDirection() {
+    return {
+      x: Math.cos(state.aimAngle),
+      y: Math.sin(state.aimAngle),
+    };
+  }
+
+  function reflectDirection(direction, normal) {
+    const dot = direction.x * normal.x + direction.y * normal.y;
+    return {
+      x: direction.x - 2 * dot * normal.x,
+      y: direction.y - 2 * dot * normal.y,
+    };
+  }
+
+  function rayCircleIntersection(origin, direction, center, radius) {
+    const offsetX = origin.x - center.x;
+    const offsetY = origin.y - center.y;
+    const projection = offsetX * direction.x + offsetY * direction.y;
+    const discriminant = projection * projection - (offsetX * offsetX + offsetY * offsetY - radius * radius);
+    if (discriminant < 0) {
+      return null;
+    }
+    const distance = -projection - Math.sqrt(discriminant);
+    if (distance <= 0) {
+      return null;
+    }
+    return distance;
+  }
+
+  function projectAimGuide(cue, direction) {
+    const bounds = feltBounds();
+    const maxDistance = CUE_UI.guideLength;
+    let bestHit = {
+      type: 'open',
+      distance: maxDistance,
+      point: {
+        x: cue.x + direction.x * maxDistance,
+        y: cue.y + direction.y * maxDistance,
+      },
+      normal: null,
+    };
+
+    const candidates = [];
+    if (direction.x > 0.0001) {
+      const distance = (bounds.maxX - cue.r - cue.x) / direction.x;
+      candidates.push({ distance, normal: { x: -1, y: 0 } });
+    } else if (direction.x < -0.0001) {
+      const distance = (bounds.minX + cue.r - cue.x) / direction.x;
+      candidates.push({ distance, normal: { x: 1, y: 0 } });
+    }
+    if (direction.y > 0.0001) {
+      const distance = (bounds.maxY - cue.r - cue.y) / direction.y;
+      candidates.push({ distance, normal: { x: 0, y: -1 } });
+    } else if (direction.y < -0.0001) {
+      const distance = (bounds.minY + cue.r - cue.y) / direction.y;
+      candidates.push({ distance, normal: { x: 0, y: 1 } });
+    }
+
+    for (const candidate of candidates) {
+      if (!Number.isFinite(candidate.distance) || candidate.distance <= 0 || candidate.distance >= bestHit.distance) {
+        continue;
+      }
+      const hitX = cue.x + direction.x * candidate.distance;
+      const hitY = cue.y + direction.y * candidate.distance;
+      if (hitX < bounds.minX || hitX > bounds.maxX || hitY < bounds.minY || hitY > bounds.maxY) {
+        continue;
+      }
+      bestHit = {
+        type: 'rail',
+        distance: candidate.distance,
+        point: { x: hitX, y: hitY },
+        normal: candidate.normal,
+      };
+    }
+
+    if (!state.snapshot || !Array.isArray(state.snapshot.balls)) {
+      return bestHit;
+    }
+
+    for (const ball of state.snapshot.balls) {
+      if (ball.sunk || ball.kind === 'cue') {
+        continue;
+      }
+      const distance = rayCircleIntersection(cue, direction, ball, cue.r + ball.r);
+      if (!distance || distance >= bestHit.distance) {
+        continue;
+      }
+      const cueImpact = {
+        x: cue.x + direction.x * distance,
+        y: cue.y + direction.y * distance,
+      };
+      const normalX = ball.x - cueImpact.x;
+      const normalY = ball.y - cueImpact.y;
+      const normalLength = Math.hypot(normalX, normalY) || 1;
+      bestHit = {
+        type: 'ball',
+        distance,
+        point: cueImpact,
+        objectBall: ball,
+        normal: {
+          x: normalX / normalLength,
+          y: normalY / normalLength,
+        },
+      };
+    }
+
+    return bestHit;
+  }
+
   function resizeCanvas() {
     const stageRect = ui.tableStage.getBoundingClientRect();
     const canvasRect = canvas.getBoundingClientRect();
@@ -275,11 +407,11 @@
   function updatePowerUi() {
     ui.powerFill.style.width = `${Math.round(state.power * 100)}%`;
     if (state.aiming && canShoot()) {
-      ui.powerText.textContent = `Release to shoot at ${Math.max(5, Math.round(state.power * 100))}% power.`;
+      ui.powerText.textContent = `Release to fire at ${Math.max(5, Math.round(state.power * 100))}% power. Drag farther through the shot line to load more cue speed.`;
       return;
     }
     if (!state.snapshot) {
-      ui.powerText.textContent = 'Open a live table to aim the cue.';
+      ui.powerText.textContent = 'Open a live table to bring the cue online.';
       return;
     }
     if (state.snapshot.winner || state.snapshot.drawReason) {
@@ -291,7 +423,7 @@
       return;
     }
     if (canShoot()) {
-      ui.powerText.textContent = 'Drag back from the cue ball, then release to shoot.';
+      ui.powerText.textContent = 'Click or touch the table to aim, drag farther down the shot line to load the cue, then release to shoot.';
       return;
     }
     ui.powerText.textContent = 'Watch the live table until it is your turn.';
@@ -407,7 +539,7 @@
       ui.turnNote.textContent = 'One player is at the table. Share the invite to bring in a second cue.';
       ui.modePill.textContent = 'Waiting for opponent';
     } else if (canShoot()) {
-      ui.turnNote.textContent = 'You have the cue. Pull back on the canvas and release to shoot.';
+      ui.turnNote.textContent = 'You have the cue. Aim on the table, drag outward to load the stick, and release to shoot.';
       ui.modePill.textContent = 'Your turn';
     } else {
       ui.turnNote.textContent = `${capitalize(snapshot.turn)} is lining up the next shot.`;
@@ -564,44 +696,118 @@
     }
   }
 
-  function drawAimLine() {
-    if (!state.aiming || !canShoot()) {
-      return;
-    }
+  function drawCueAndGuide() {
     const cue = activeCue();
-    if (!cue) {
+    if (!cue || !canShoot()) {
       return;
     }
-    const dx = state.pointer.x - cue.x;
-    const dy = state.pointer.y - cue.y;
-    const distance = Math.min(Math.hypot(dx, dy), 220);
-    if (distance < 2) {
-      return;
-    }
+
+    const direction = cueDirection();
+    const guide = projectAimGuide(cue, direction);
+    const power = state.aiming ? state.power : 0;
+    const cueTipDistance = cue.r + 6 + power * CUE_UI.cuePullback;
+    const cueTip = {
+      x: cue.x - direction.x * cueTipDistance,
+      y: cue.y - direction.y * cueTipDistance,
+    };
+    const cueButt = {
+      x: cueTip.x - direction.x * CUE_UI.cueLength,
+      y: cueTip.y - direction.y * CUE_UI.cueLength,
+    };
+    const grip = {
+      x: cueButt.x + direction.x * 42,
+      y: cueButt.y + direction.y * 42,
+    };
+    const cueGhost = {
+      x: cue.x + direction.x * Math.min(guide.distance, CUE_UI.guideLength),
+      y: cue.y + direction.y * Math.min(guide.distance, CUE_UI.guideLength),
+    };
+
+    ctx.beginPath();
+    ctx.arc(cue.x, cue.y, cue.r + 16, 0, Math.PI * 2);
+    ctx.strokeStyle = state.aiming ? 'rgba(113, 241, 209, 0.65)' : 'rgba(131, 181, 255, 0.34)';
+    ctx.lineWidth = state.aiming ? 3.4 : 2;
+    ctx.stroke();
 
     ctx.beginPath();
     ctx.moveTo(cue.x, cue.y);
-    ctx.lineTo(cue.x - dx, cue.y - dy);
-    ctx.strokeStyle = 'rgba(255,255,255,0.78)';
-    ctx.lineWidth = 2.4;
-    ctx.setLineDash([9, 7]);
+    ctx.lineTo(guide.point.x, guide.point.y);
+    ctx.strokeStyle = state.aiming ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.58)';
+    ctx.lineWidth = state.aiming ? 2.5 : 1.8;
+    ctx.setLineDash(state.aiming ? [12, 8] : [8, 8]);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    const magnitude = Math.hypot(dx, dy) || 1;
-    const ux = dx / magnitude;
-    const uy = dy / magnitude;
-    const cueLength = 158;
-    const cueStartX = cue.x + ux * (24 + distance * 0.15);
-    const cueStartY = cue.y + uy * (24 + distance * 0.15);
+    if (guide.type === 'ball' && guide.objectBall) {
+      ctx.beginPath();
+      ctx.arc(cueGhost.x, cueGhost.y, cue.r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+      ctx.lineWidth = 1.7;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(guide.objectBall.x, guide.objectBall.y);
+      ctx.lineTo(
+        guide.objectBall.x + guide.normal.x * 120,
+        guide.objectBall.y + guide.normal.y * 120
+      );
+      ctx.strokeStyle = 'rgba(255, 213, 124, 0.78)';
+      ctx.lineWidth = 1.7;
+      ctx.setLineDash([7, 7]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (guide.type === 'rail' && guide.normal) {
+      const bounce = reflectDirection(direction, guide.normal);
+      ctx.beginPath();
+      ctx.moveTo(guide.point.x, guide.point.y);
+      ctx.lineTo(
+        guide.point.x + bounce.x * CUE_UI.guideBounceLength,
+        guide.point.y + bounce.y * CUE_UI.guideBounceLength
+      );
+      ctx.strokeStyle = 'rgba(113, 241, 209, 0.6)';
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([7, 8]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    const cueGradient = ctx.createLinearGradient(cueButt.x, cueButt.y, cueTip.x, cueTip.y);
+    cueGradient.addColorStop(0, '#4c2411');
+    cueGradient.addColorStop(0.24, '#24130c');
+    cueGradient.addColorStop(0.62, '#e5c28c');
+    cueGradient.addColorStop(0.9, '#f1ddbd');
+    cueGradient.addColorStop(1, '#8cc7ff');
 
     ctx.beginPath();
-    ctx.moveTo(cueStartX, cueStartY);
-    ctx.lineTo(cueStartX + ux * cueLength, cueStartY + uy * cueLength);
-    ctx.strokeStyle = '#f0b870';
-    ctx.lineWidth = 6;
+    ctx.moveTo(cueButt.x, cueButt.y);
+    ctx.lineTo(cueTip.x, cueTip.y);
+    ctx.strokeStyle = cueGradient;
+    ctx.lineWidth = 8;
     ctx.lineCap = 'round';
     ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(cueButt.x, cueButt.y);
+    ctx.lineTo(grip.x, grip.y);
+    ctx.strokeStyle = '#11161d';
+    ctx.lineWidth = 11;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(cueTip.x, cueTip.y);
+    ctx.lineTo(cueTip.x + direction.x * 14, cueTip.y + direction.y * 14);
+    ctx.strokeStyle = '#eef7ff';
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+
+    if (state.aiming) {
+      ctx.beginPath();
+      ctx.arc(grip.x, grip.y, CUE_UI.gripRadius * (0.56 + power * 0.22), 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(113, 241, 209, 0.34)';
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+    }
   }
 
   function drawOverlay() {
@@ -653,7 +859,7 @@
     setDrawTransform();
     drawTable();
     drawBalls();
-    drawAimLine();
+    drawCueAndGuide();
     drawOverlay();
     requestAnimationFrame(drawFrame);
   }
@@ -761,12 +967,20 @@
       return;
     }
     const point = boardPointFromClient(event.clientX, event.clientY);
-    if (!point) {
+    const cue = activeCue();
+    if (!point || !cue) {
       return;
     }
+    const dx = point.x - cue.x;
+    const dy = point.y - cue.y;
+    const distance = Math.hypot(dx, dy);
     state.aiming = true;
     state.pointerId = event.pointerId;
     state.pointer = point;
+    state.aimAnchorDistance = Math.min(distance, CUE_UI.anchorCap);
+    if (distance > 0.0001) {
+      state.aimAngle = Math.atan2(dy, dx);
+    }
     state.power = 0;
     updatePowerUi();
     try {
@@ -787,7 +1001,13 @@
     state.pointer = point;
     const cue = activeCue();
     if (cue) {
-      state.power = clamp(Math.hypot(cue.x - point.x, cue.y - point.y) / 220, 0, 1);
+      const dx = point.x - cue.x;
+      const dy = point.y - cue.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance > 0.0001) {
+        state.aimAngle = Math.atan2(dy, dx);
+      }
+      state.power = clamp(Math.max(0, distance - state.aimAnchorDistance) / CUE_UI.powerRange, 0, 1);
     }
     updatePowerUi();
   }
@@ -796,8 +1016,9 @@
     if (!state.aiming || event.pointerId !== state.pointerId) {
       return;
     }
-    const point = boardPointFromClient(event.clientX, event.clientY);
+    const point = boardPointFromClient(event.clientX, event.clientY) || state.pointer;
     const cue = activeCue();
+    const power = state.power;
     state.aiming = false;
     state.pointerId = null;
     state.power = 0;
@@ -807,17 +1028,17 @@
       return;
     }
 
-    const vectorX = cue.x - point.x;
-    const vectorY = cue.y - point.y;
-    if (Math.hypot(vectorX, vectorY) < 6) {
+    if (power < CUE_UI.minPower) {
       updatePowerUi();
       return;
     }
 
+    const direction = cueDirection();
     if (sendJson({
       action: 'shoot',
-      vectorX,
-      vectorY,
+      vectorX: direction.x,
+      vectorY: direction.y,
+      power,
     })) {
       setStatus('Shot sent. Waiting for the table physics to resolve.');
     }
