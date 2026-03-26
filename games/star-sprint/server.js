@@ -6,12 +6,14 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const Chess = require('./chess-core.js');
 const Backgammon = require('./backgammon-core.js');
+const Shooter = require('./space-shooter-core.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
 const MAX_PLAYERS = 2;
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const COLORS = ['white', 'black'];
+const TICK_MS = 50;
 const rooms = new Map();
 const GAME_DEFS = {
   chess: {
@@ -25,6 +27,12 @@ const GAME_DEFS = {
     title: 'Neon Backgammon Blitz',
     createGameState: () => Backgammon.createGameState(),
     cloneState: (game) => Backgammon.cloneState(game),
+  },
+  'space-shooter': {
+    id: 'space-shooter',
+    title: 'Starline Defense Co-Op',
+    createGameState: () => Shooter.createGameState(),
+    cloneState: (game) => Shooter.cloneState(game),
   },
 };
 
@@ -56,7 +64,13 @@ function sanitizeRoomCode(raw) {
 }
 
 function normalizeGameType(raw) {
-  return raw === 'backgammon' ? 'backgammon' : 'chess';
+  if (raw === 'backgammon') {
+    return 'backgammon';
+  }
+  if (raw === 'space-shooter') {
+    return 'space-shooter';
+  }
+  return 'chess';
 }
 
 function generateRoomCode() {
@@ -76,7 +90,9 @@ function createRoom(code, gameType) {
     maxPlayers: MAX_PLAYERS,
     players: new Map(),
     game: gameDef.createGameState(),
+    lastTickAt: Date.now(),
   };
+  room.game.roomCode = code;
   rooms.set(code, room);
   return room;
 }
@@ -127,14 +143,23 @@ function listPlayers(room) {
 
 function snapshot(room) {
   const game = room.gameDef.cloneState(room.game);
-  return {
+  const base = {
     ...game,
     roomCode: room.code,
-    players: listPlayers(room),
     maxPlayers: room.maxPlayers,
     service: 'nova-arcade-realtime',
     gameType: room.gameType,
     title: room.game.title,
+  };
+  if (room.gameType === 'space-shooter') {
+    return {
+      ...base,
+      roster: listPlayers(room),
+    };
+  }
+  return {
+    ...base,
+    players: listPlayers(room),
   };
 }
 
@@ -150,6 +175,18 @@ function broadcastState(room, message) {
   for (const player of room.players.values()) {
     send(player.socket, payload);
   }
+}
+
+function addPlayerToGame(room, player) {
+  if (room.gameType !== 'space-shooter') {
+    return true;
+  }
+
+  const result = Shooter.addPlayer(room.game, {
+    id: player.id,
+    name: player.name,
+  });
+  return Boolean(result);
 }
 
 function handleJoin(socket, payload) {
@@ -180,9 +217,15 @@ function handleJoin(socket, payload) {
     socket,
   };
 
+  if (!addPlayerToGame(room, player)) {
+    sendError(socket, 'That squad room is full.');
+    return;
+  }
+
   room.players.set(player.id, player);
   socket.playerId = player.id;
   socket.roomCode = room.code;
+  room.lastTickAt = Date.now();
 
   send(socket, {
     type: 'welcome',
@@ -227,6 +270,10 @@ function handleMove(socket, payload) {
   }
 
   const { room, player } = context;
+  if (room.gameType === 'space-shooter') {
+    sendError(socket, 'Movement in Starline Defense uses realtime input, not turn-based moves.');
+    return;
+  }
   let result;
 
   if (room.gameType === 'backgammon') {
@@ -258,6 +305,21 @@ function handleMove(socket, payload) {
   }
 
   broadcastState(room);
+}
+
+function handleInput(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'space-shooter') {
+    sendError(socket, 'Realtime input is only used in Starline Defense rooms.');
+    return;
+  }
+
+  Shooter.setPlayerInput(room.game, player.id, payload && payload.input);
 }
 
 function handleRoll(socket) {
@@ -293,8 +355,16 @@ function handleRestart(socket) {
   }
 
   const { room, player } = context;
-  room.game = room.gameDef.createGameState();
-  broadcastState(room, `${player.name} reset the board.`);
+  if (room.gameType === 'space-shooter') {
+    Shooter.resetMatch(room.game);
+    room.lastTickAt = Date.now();
+  } else {
+    room.game = room.gameDef.createGameState();
+    room.game.roomCode = room.code;
+  }
+  broadcastState(room, room.gameType === 'space-shooter'
+    ? `${player.name} launched a fresh squad run.`
+    : `${player.name} reset the board.`);
 }
 
 function handleDisconnect(socket) {
@@ -317,10 +387,31 @@ function handleDisconnect(socket) {
     return;
   }
 
+  if (room.gameType === 'space-shooter') {
+    Shooter.removePlayer(room.game, playerId);
+    room.lastTickAt = Date.now();
+  }
+
   const message = player
-    ? `${player.name} disconnected. The room stays open for a new opponent.`
+    ? room.gameType === 'space-shooter'
+      ? `${player.name} disconnected. The room stays open for a new wingmate.`
+      : `${player.name} disconnected. The room stays open for a new opponent.`
     : 'A player disconnected.';
   broadcastState(room, message);
+}
+
+function tickRealtimeRooms() {
+  const now = Date.now();
+  for (const room of rooms.values()) {
+    if (room.gameType !== 'space-shooter' || room.players.size === 0) {
+      continue;
+    }
+
+    const elapsed = Math.max(16, Math.min(120, now - room.lastTickAt));
+    room.lastTickAt = now;
+    Shooter.step(room.game, elapsed / 1000);
+    broadcastState(room);
+  }
 }
 
 const server = http.createServer((req, res) => {
@@ -374,6 +465,9 @@ wss.on('connection', (socket) => {
       case 'move':
         handleMove(socket, payload);
         break;
+      case 'input':
+        handleInput(socket, payload);
+        break;
       case 'restart':
         handleRestart(socket);
         break;
@@ -392,6 +486,8 @@ wss.on('connection', (socket) => {
   });
 });
 
+setInterval(tickRealtimeRooms, TICK_MS);
+
 server.listen(PORT, HOST, () => {
-  console.log(`Neon Crown Chess server running at ws://${HOST}:${PORT}`);
+  console.log(`Nova Arcade realtime server running at ws://${HOST}:${PORT}`);
 });
