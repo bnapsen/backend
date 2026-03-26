@@ -1200,11 +1200,9 @@
     const viewportHeightBudget = Math.max(0, window.innerHeight - stageRect.top - paddingY - viewportBottomReserve);
     let heightBudget = viewportHeightBudget;
 
-    if (state.focusMode) {
-      const stageHeightBudget = Math.max(0, ui.boardStage.clientHeight - paddingY);
-      if (stageHeightBudget) {
-        heightBudget = Math.min(heightBudget, stageHeightBudget);
-      }
+    const stageHeightBudget = Math.max(0, ui.boardStage.clientHeight - paddingY);
+    if (stageHeightBudget) {
+      heightBudget = Math.min(heightBudget, stageHeightBudget);
     }
 
     const widthSquareBudget = widthBudget / 8;
