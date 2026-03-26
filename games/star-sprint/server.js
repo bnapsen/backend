@@ -8,6 +8,7 @@ const Chess = require('./chess-core.js');
 const Backgammon = require('./backgammon-core.js');
 const Shooter = require('./space-shooter-core.js');
 const Poker = require('./poker-core.js');
+const MiniPool = require('./mini-pool-core.js');
 const ArcadeChat = require('./arcade-chat-core.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
@@ -94,6 +95,12 @@ const GAME_DEFS = {
     createGameState: () => Poker.createGameState(),
     cloneState: (game, viewerId) => Poker.cloneState(game, viewerId),
   },
+  'mini-pool': {
+    id: 'mini-pool',
+    title: 'Mini Pool Showdown',
+    createGameState: () => MiniPool.createGameState(),
+    cloneState: (game) => MiniPool.cloneState(game),
+  },
   'arcade-chat': {
     id: 'arcade-chat',
     title: 'Nova Arcade Lounge',
@@ -139,6 +146,9 @@ function normalizeGameType(raw) {
   }
   if (raw === 'space-shooter') {
     return 'space-shooter';
+  }
+  if (raw === 'mini-pool' || raw === 'pool') {
+    return 'mini-pool';
   }
   if (raw === 'arcade-chat' || raw === 'chat' || raw === 'lounge') {
     return 'arcade-chat';
@@ -444,7 +454,7 @@ function addPlayerToGame(room, player) {
 }
 
 function seatIdentityForRoom(room) {
-  if (!(room.gameType === 'chess' || room.gameType === 'backgammon')) {
+  if (!(room.gameType === 'chess' || room.gameType === 'backgammon' || room.gameType === 'mini-pool')) {
     return true;
   }
   return getOpenColor(room);
@@ -561,6 +571,10 @@ function handleMove(socket, payload) {
   const { room, player } = context;
   if (room.gameType === 'space-shooter') {
     sendError(socket, 'Movement in Starline Defense uses realtime input, not turn-based moves.');
+    return;
+  }
+  if (room.gameType === 'mini-pool') {
+    sendError(socket, 'Mini Pool uses shots instead of board moves.');
     return;
   }
   if (room.gameType === 'poker') {
@@ -722,6 +736,34 @@ function handleInput(socket, payload) {
   Shooter.setPlayerInput(room.game, player.id, payload && payload.input);
 }
 
+function handleShot(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'mini-pool') {
+    sendError(socket, 'Shots are only used in Mini Pool rooms.');
+    return;
+  }
+  if (room.players.size < 2) {
+    sendError(socket, 'Wait for a second player before breaking the rack.');
+    return;
+  }
+
+  const result = MiniPool.applyShot(room.game, player.color, {
+    vectorX: payload && payload.vectorX,
+    vectorY: payload && payload.vectorY,
+  });
+  if (!result.ok) {
+    sendError(socket, result.error || 'That shot could not be played.');
+    return;
+  }
+
+  broadcastState(room, `${player.name} takes the shot.`);
+}
+
 function handleRoll(socket) {
   const context = requirePlayer(socket);
   if (!context) {
@@ -780,6 +822,8 @@ function handleRestart(socket) {
       ? `${player.name} launched a fresh squad run.`
       : room.gameType === 'poker'
         ? `${player.name} reset the table.`
+        : room.gameType === 'mini-pool'
+          ? `${player.name} reset the rack.`
         : `${player.name} reset the board.`
   );
 }
@@ -825,6 +869,8 @@ function handleDisconnect(socket) {
       ? `${player.name} disconnected. The room stays open for a new wingmate.`
       : room.gameType === 'poker'
         ? `${player.name} disconnected. The table stays open.`
+      : room.gameType === 'mini-pool'
+        ? `${player.name} disconnected. The table stays open for a new challenger.`
       : room.gameType === 'arcade-chat'
         ? null
       : `${player.name} disconnected. The room stays open for a new opponent.`
@@ -844,6 +890,14 @@ function tickRealtimeRooms() {
       room.lastTickAt = now;
       Shooter.step(room.game, elapsed / 1000);
       broadcastState(room);
+      continue;
+    }
+    if (room.gameType === 'mini-pool' && room.players.size > 0) {
+      const elapsed = Math.max(16, Math.min(120, now - room.lastTickAt));
+      room.lastTickAt = now;
+      if (MiniPool.step(room.game, elapsed / 1000)) {
+        broadcastState(room);
+      }
       continue;
     }
     if (room.gameType === 'chess' && maybeExpireChessClock(room, now)) {
@@ -902,6 +956,9 @@ wss.on('connection', (socket) => {
         break;
       case 'share-invite':
         handleShareInvite(socket, payload);
+        break;
+      case 'shoot':
+        handleShot(socket, payload);
         break;
       case 'roll':
         handleRoll(socket);

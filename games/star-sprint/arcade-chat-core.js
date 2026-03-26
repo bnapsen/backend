@@ -13,6 +13,7 @@ const GAME_TITLES = Object.freeze({
   backgammon: 'Neon Backgammon Blitz',
   'space-shooter': 'Starline Defense Co-Op',
   poker: 'Orbit Holdem Live',
+  'mini-pool': 'Mini Pool Showdown',
 });
 
 function sanitizeText(raw, maxLength) {

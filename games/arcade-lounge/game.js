@@ -17,6 +17,10 @@
       title: 'Neon Backgammon Blitz',
       path: 'backgammon.html',
     },
+    'mini-pool': {
+      title: 'Mini Pool Showdown',
+      path: 'pool.html',
+    },
     'space-shooter': {
       title: 'Starline Defense Co-Op',
       path: 'space-shooter.html',

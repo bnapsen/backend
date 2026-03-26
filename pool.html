@@ -1,42 +1,180 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pool Rush Challenge</title>
-  <link rel="stylesheet" href="pool.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mini Pool Showdown</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="pool.css?v=20260325a" />
 </head>
 <body>
-  <main class="game-wrap">
-    <canvas id="poolTable" aria-label="pool game canvas"></canvas>
-
-    <button id="hudToggle" class="hud-toggle" type="button" aria-expanded="true" aria-controls="gameHud">Hide menu</button>
-
-    <section id="gameHud" class="hud" aria-live="polite">
-      <h1>Pool Rush</h1>
-      <p>Clear all SuperSplash targets before you run out of shots. Chain pockets to build combos.</p>
-      <label class="mode-picker" for="gameMode">
-        Game mode
-        <select id="gameMode" aria-label="Select pool game mode">
-          <option value="eightBall">8-Ball</option>
-          <option value="nineBall">9-Ball</option>
-          <option value="straightPool">Straight Pool</option>
-        </select>
-      </label>
-      <div class="stats">
-        <span id="score">Score: 0</span>
-        <span id="level">Mode: 8-Ball</span>
-        <span id="shots">Shots Taken: 0</span>
-        <span id="combo">Combo: x1</span>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="back-link" href="index.html">Back to Nova Arcade</a>
+      <div class="brand-block">
+        <p class="eyebrow">Realtime multiplayer mini-pool</p>
+        <strong>Mini Pool Showdown</strong>
       </div>
-      <p class="status" id="status">Sink all target balls to start your run.</p>
-      <div class="controls">
-        <button id="resetBtn" type="button">Restart Run</button>
-        <a class="back-link" href="index.html">← Back to home</a>
+      <div class="topbar-status">
+        <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
+        <div class="status-pill ghost" id="modePill">No table running</div>
       </div>
-    </section>
-  </main>
+    </header>
 
-  <script src="pool.js"></script>
+    <main class="layout">
+      <aside class="setup-column">
+        <section class="panel hero-panel">
+          <p class="eyebrow">Arcade duel pool</p>
+          <h1>Race the score, dodge the jammers, and hold the table.</h1>
+          <p class="lede">Mini Pool now runs on the same live backend as chess, backgammon, poker, and the shooter. Host a room, send the invite, and take turns on one shared table.</p>
+
+          <div class="rule-strip">
+            <article class="rule-card">
+              <strong>Pocket the flares</strong>
+              <p>Colored flare balls score points, and the gold crown ball scores even more.</p>
+            </article>
+            <article class="rule-card">
+              <strong>Avoid the jammers</strong>
+              <p>Grey jammer balls cost points if you sink them, and scratches still hurt.</p>
+            </article>
+            <article class="rule-card">
+              <strong>Clear three racks</strong>
+              <p>Each match runs three racks, with a rack bonus for the player who clears the table.</p>
+            </article>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>Name</span>
+              <input id="nameInput" maxlength="18" placeholder="Nova" autocomplete="nickname" />
+            </label>
+            <label>
+              <span>Room code</span>
+              <input id="roomInput" maxlength="12" placeholder="Auto-created when hosting" />
+            </label>
+          </div>
+
+          <div class="action-row">
+            <button id="hostBtn" class="primary" type="button">Host duel</button>
+            <button id="joinBtn" type="button">Join duel</button>
+          </div>
+
+          <div class="invite-panel">
+            <div class="invite-head">
+              <div>
+                <p class="label">Invite link</p>
+                <p class="helper-text">Host first, then send this straight to the other player.</p>
+              </div>
+              <button id="copyCodeBtn" class="secondary" type="button">Copy room code</button>
+            </div>
+            <div class="invite-row">
+              <input id="inviteInput" readonly value="" />
+              <button id="copyBtn" class="primary" type="button">Copy invite</button>
+            </div>
+          </div>
+
+          <details class="advanced-panel">
+            <summary>Advanced connection settings</summary>
+            <label>
+              <span>Server WS URL</span>
+              <input id="serverUrlInput" placeholder="wss://backend-ujaa.onrender.com" />
+            </label>
+          </details>
+
+          <p class="status-text" id="statusText">Host a duel or join by room code. The first player to arrive waits at the live table for a challenger.</p>
+        </section>
+      </aside>
+
+      <section class="board-column">
+        <section class="panel board-panel">
+          <div class="board-header">
+            <div>
+              <p class="label">Room</p>
+              <p class="metric-text" id="roomCodeLabel">-</p>
+            </div>
+            <div>
+              <p class="label">Rack</p>
+              <p class="metric-text" id="rackLabel">1 / 3</p>
+            </div>
+            <div>
+              <p class="label">Turn</p>
+              <p class="metric-text" id="turnLabel">Waiting to start</p>
+            </div>
+            <div>
+              <p class="label">Status</p>
+              <p class="metric-text" id="phaseLabel">Open a table to begin.</p>
+            </div>
+          </div>
+
+          <div class="score-strip">
+            <article class="score-card white" id="whiteCard">
+              <p class="label">White score</p>
+              <strong id="whiteScore">0</strong>
+              <p id="whiteMeta">Waiting for seat</p>
+            </article>
+            <article class="score-card center">
+              <p class="label">Match</p>
+              <strong id="shotCount">0 shots</strong>
+              <p id="matchMeta">Three-rack showdown</p>
+            </article>
+            <article class="score-card black" id="blackCard">
+              <p class="label">Black score</p>
+              <strong id="blackScore">0</strong>
+              <p id="blackMeta">Waiting for seat</p>
+            </article>
+          </div>
+
+          <div class="table-stage" id="tableStage">
+            <canvas id="poolTable" aria-label="Mini Pool Showdown table"></canvas>
+            <div class="table-overlay">
+              <div class="power-card">
+                <p class="label">Shot power</p>
+                <div class="power-meter"><span id="powerFill"></span></div>
+                <p id="powerText">Pull back to line up the cue.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="board-footer">
+            <div>
+              <p class="label">Turn note</p>
+              <p class="footer-text" id="turnNote">Pocket a scoring ball to stay at the table. Scratches and jammers pass control.</p>
+            </div>
+            <div class="footer-actions">
+              <button id="restartBtn" class="secondary" type="button">New match</button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <aside class="sidebar">
+        <section class="panel sidebar-panel">
+          <div class="panel-head">
+            <div>
+              <p class="label">Seats</p>
+              <h2>Players</h2>
+            </div>
+            <p class="mini-status" id="presenceText">Waiting for players...</p>
+          </div>
+          <div class="player-list" id="playerList"></div>
+        </section>
+
+        <section class="panel sidebar-panel">
+          <div class="panel-head">
+            <div>
+              <p class="label">Shot feed</p>
+              <h2>Recent events</h2>
+            </div>
+            <p class="mini-status" id="eventSummary">The latest racks and shot results will show here.</p>
+          </div>
+          <div class="event-list" id="eventList"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="pool.js?v=20260325a"></script>
 </body>
 </html>
