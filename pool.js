@@ -17,6 +17,7 @@
     serverUrlInput: document.getElementById('serverUrlInput'),
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
+    soloBtn: document.getElementById('soloBtn'),
     openLoungeBtn: document.getElementById('openLoungeBtn'),
     shareLoungeBtn: document.getElementById('shareLoungeBtn'),
     copyBtn: document.getElementById('copyBtn'),
@@ -55,6 +56,7 @@
     roomCode: '',
     playerId: '',
     serverUrl: '',
+    mode: 'online',
     statusMessage: '',
     aiming: false,
     pointerId: null,
@@ -62,6 +64,11 @@
     power: 0,
     aimAngle: 0,
     aimAnchorDistance: 0,
+    localGame: null,
+    localPlayers: [],
+    soloBotDueAt: 0,
+    lastFrameAt: 0,
+    summarySignature: '',
     view: {
       width: 0,
       height: 0,
@@ -75,6 +82,7 @@
   const CUE_UI = Object.freeze({
     anchorCap: 128,
     powerRange: 146,
+    maxPower: 1.35,
     minPower: 0.04,
     cuePullback: 104,
     cueLength: 248,
@@ -82,6 +90,7 @@
     guideBounceLength: 110,
     gripRadius: 30,
   });
+  const SOLO_BOT_NAME = 'Orbit Bot';
 
   function capitalize(value) {
     return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
@@ -130,6 +139,82 @@
     return value;
   }
 
+  function localCore() {
+    return window.NovaMiniPoolCore || null;
+  }
+
+  function isSoloMode() {
+    return state.mode === 'solo';
+  }
+
+  function resetAimState() {
+    state.aiming = false;
+    state.pointerId = null;
+    state.power = 0;
+  }
+
+  function disconnectSocket() {
+    if (state.socket && state.socket.readyState < WebSocket.CLOSING) {
+      state.socket.close();
+    }
+    state.socket = null;
+  }
+
+  function snapshotSignature(snapshot) {
+    if (!snapshot) {
+      return 'empty';
+    }
+    const latestEvent = Array.isArray(snapshot.events) && snapshot.events.length ? snapshot.events[0].id : '';
+    const players = Array.isArray(snapshot.players) ? snapshot.players.length : 0;
+    return [
+      snapshot.rackNumber,
+      snapshot.turn,
+      snapshot.shotCount,
+      snapshot.moving ? 'moving' : 'still',
+      snapshot.scores ? snapshot.scores.white : 0,
+      snapshot.scores ? snapshot.scores.black : 0,
+      snapshot.winner || '',
+      snapshot.drawReason || '',
+      latestEvent,
+      players,
+    ].join('|');
+  }
+
+  function buildSoloPlayers() {
+    const yourName = ui.nameInput.value.trim().slice(0, 18) || 'Guest';
+    return [
+      { id: 'solo-white', name: yourName, color: 'white' },
+      { id: 'solo-black', name: SOLO_BOT_NAME, color: 'black' },
+    ];
+  }
+
+  function buildSoloSnapshot() {
+    const core = localCore();
+    if (!core || !state.localGame) {
+      return null;
+    }
+    const snapshot = core.cloneState(state.localGame);
+    snapshot.players = state.localPlayers.map((player) => ({ ...player }));
+    snapshot.roomCode = state.roomCode || 'SOLO';
+    return snapshot;
+  }
+
+  function refreshLocalSnapshot(options = {}) {
+    const snapshot = buildSoloSnapshot();
+    state.snapshot = snapshot;
+    if (!snapshot) {
+      return;
+    }
+    if (options.message) {
+      setStatus(options.message);
+    }
+    const nextSignature = snapshotSignature(snapshot);
+    if (options.forceRender || nextSignature !== state.summarySignature) {
+      state.summarySignature = nextSignature;
+      renderUi();
+    }
+  }
+
   function activeTable() {
     return state.snapshot && state.snapshot.table
       ? state.snapshot.table
@@ -141,7 +226,10 @@
   }
 
   function canShoot() {
-    if (!state.snapshot || !state.yourColor || !isConnected()) {
+    if (!state.snapshot || !state.yourColor) {
+      return false;
+    }
+    if (!isSoloMode() && !isConnected()) {
       return false;
     }
     if (state.snapshot.winner || state.snapshot.drawReason) {
@@ -151,7 +239,7 @@
       return false;
     }
     const players = Array.isArray(state.snapshot.players) ? state.snapshot.players : [];
-    if (players.length < 2) {
+    if (!isSoloMode() && players.length < 2) {
       return false;
     }
     return state.snapshot.turn === state.yourColor;
@@ -201,7 +289,7 @@
   }
 
   function buildInviteUrl() {
-    if (!state.roomCode) {
+    if (!state.roomCode || isSoloMode()) {
       return '';
     }
     const url = new URL(window.location.href);
@@ -220,7 +308,7 @@
       setStatus('Arcade Lounge bridge is not available.');
       return;
     }
-    if (autoShare && !state.roomCode) {
+    if (autoShare && (isSoloMode() || !state.roomCode)) {
       setStatus('Host or join a live duel before sharing it to the lounge.');
       return;
     }
@@ -250,6 +338,145 @@
       return null;
     }
     return state.snapshot.balls.find((ball) => ball.kind === 'cue' && !ball.sunk) || null;
+  }
+
+  function normalizedShotPower(rawPower) {
+    return clamp(Number(rawPower) || 0, 0, CUE_UI.maxPower);
+  }
+
+  function startSoloGame() {
+    const core = localCore();
+    if (!core) {
+      setStatus('Solo mode is still loading. Refresh once and try again.');
+      return;
+    }
+    disconnectSocket();
+    resetAimState();
+    state.mode = 'solo';
+    state.localGame = core.createGameState();
+    state.localPlayers = buildSoloPlayers();
+    state.roomCode = 'SOLO';
+    state.playerId = state.localPlayers[0].id;
+    state.yourColor = 'white';
+    state.soloBotDueAt = 0;
+    state.lastFrameAt = performance.now();
+    ui.roomInput.value = '';
+    setNetworkStatus('online', 'Solo');
+    refreshLocalSnapshot({
+      forceRender: true,
+      message: 'Solo table is ready. Orbit Bot is waiting on the other end of the rack.',
+    });
+  }
+
+  function resetSoloGame() {
+    if (!isSoloMode()) {
+      return;
+    }
+    const core = localCore();
+    if (!core) {
+      return;
+    }
+    resetAimState();
+    state.localGame = core.createGameState();
+    state.localPlayers = buildSoloPlayers();
+    state.playerId = state.localPlayers[0].id;
+    state.yourColor = 'white';
+    state.soloBotDueAt = 0;
+    state.lastFrameAt = performance.now();
+    refreshLocalSnapshot({
+      forceRender: true,
+      message: 'Fresh solo rack ready. You break first.',
+    });
+  }
+
+  function playSoloShot(color, payload, message) {
+    const core = localCore();
+    if (!core || !state.localGame) {
+      setStatus('Solo mode is not ready yet.');
+      return false;
+    }
+    const result = core.applyShot(state.localGame, color, payload);
+    if (!result.ok) {
+      setStatus(result.error || 'That shot could not be played.');
+      refreshLocalSnapshot({ forceRender: true });
+      return false;
+    }
+    state.soloBotDueAt = 0;
+    refreshLocalSnapshot({
+      forceRender: true,
+      message: message || `${color === state.yourColor ? 'You' : SOLO_BOT_NAME} took the shot.`,
+    });
+    return true;
+  }
+
+  function chooseSoloBotShot() {
+    const cue = state.localGame && Array.isArray(state.localGame.balls)
+      ? state.localGame.balls.find((ball) => ball.kind === 'cue' && !ball.sunk)
+      : null;
+    if (!cue) {
+      return null;
+    }
+    const candidates = state.localGame.balls.filter((ball) => !ball.sunk && (ball.kind === 'target' || ball.kind === 'crown'));
+    if (!candidates.length) {
+      return {
+        vectorX: 1,
+        vectorY: 0,
+        power: 0.72,
+      };
+    }
+
+    let best = null;
+    for (const ball of candidates) {
+      const dx = ball.x - cue.x;
+      const dy = ball.y - cue.y;
+      const distance = Math.hypot(dx, dy) || 1;
+      const shotLinePenalty = Math.abs(dy) * 0.11;
+      const score = ball.points * 11 - distance * 0.24 - shotLinePenalty;
+      if (!best || score > best.score) {
+        best = { ball, score, dx, dy, distance };
+      }
+    }
+
+    if (!best) {
+      return null;
+    }
+
+    const noiseAngle = (Math.random() - 0.5) * 0.18;
+    const angle = Math.atan2(best.dy, best.dx) + noiseAngle;
+    const distancePower = 0.3 + clamp(best.distance / 340, 0, 0.68);
+    const crownBoost = best.ball.kind === 'crown' ? 0.12 : 0;
+    return {
+      vectorX: Math.cos(angle),
+      vectorY: Math.sin(angle),
+      power: normalizedShotPower(distancePower + crownBoost + Math.random() * 0.08),
+    };
+  }
+
+  function maybeTakeSoloBotTurn(now) {
+    if (!isSoloMode() || !state.localGame || !state.snapshot) {
+      return;
+    }
+    if (state.snapshot.winner || state.snapshot.drawReason || state.snapshot.moving || state.localGame.activeShot) {
+      state.soloBotDueAt = 0;
+      return;
+    }
+    if (state.localGame.turn === state.yourColor) {
+      state.soloBotDueAt = 0;
+      return;
+    }
+    if (!state.soloBotDueAt) {
+      state.soloBotDueAt = now + 720;
+      return;
+    }
+    if (now < state.soloBotDueAt) {
+      return;
+    }
+    const shot = chooseSoloBotShot();
+    if (!shot) {
+      state.soloBotDueAt = 0;
+      return;
+    }
+    playSoloShot('black', shot, `${SOLO_BOT_NAME} leans in and fires.`);
   }
 
   function feltBounds(table = activeTable()) {
@@ -405,13 +632,16 @@
   }
 
   function updatePowerUi() {
-    ui.powerFill.style.width = `${Math.round(state.power * 100)}%`;
+    ui.powerFill.style.width = `${Math.round(clamp(state.power / CUE_UI.maxPower, 0, 1) * 100)}%`;
     if (state.aiming && canShoot()) {
-      ui.powerText.textContent = `Release to fire at ${Math.max(5, Math.round(state.power * 100))}% power. Drag farther through the shot line to load more cue speed.`;
+      const percent = Math.max(5, Math.round(state.power * 100));
+      ui.powerText.textContent = percent > 100
+        ? `Release to fire at ${percent}% boost power. Drag long for a full break shot.`
+        : `Release to fire at ${percent}% power. Drag farther through the shot line to load more cue speed.`;
       return;
     }
     if (!state.snapshot) {
-      ui.powerText.textContent = 'Open a live table to bring the cue online.';
+      ui.powerText.textContent = 'Open a live table or start solo mode to bring the cue online.';
       return;
     }
     if (state.snapshot.winner || state.snapshot.drawReason) {
@@ -423,10 +653,12 @@
       return;
     }
     if (canShoot()) {
-      ui.powerText.textContent = 'Click or touch the table to aim, drag farther down the shot line to load the cue, then release to shoot.';
+      ui.powerText.textContent = 'Click or touch to aim, drag to load the cue, and pull long for boost power when you need extra break speed.';
       return;
     }
-    ui.powerText.textContent = 'Watch the live table until it is your turn.';
+    ui.powerText.textContent = isSoloMode()
+      ? `${SOLO_BOT_NAME} is at the table. You will get the cue back when the rack settles.`
+      : 'Watch the live table until it is your turn.';
   }
 
   function renderPlayers() {
@@ -487,7 +719,7 @@
     const players = Array.isArray(snapshot && snapshot.players) ? snapshot.players : [];
     const byColor = new Map(players.map((player) => [player.color, player]));
 
-    ui.roomCodeLabel.textContent = state.roomCode || '-';
+    ui.roomCodeLabel.textContent = isSoloMode() ? 'SOLO' : (state.roomCode || '-');
     ui.rackLabel.textContent = snapshot ? `${snapshot.rackNumber} / ${snapshot.maxRacks}` : '1 / 3';
     ui.turnLabel.textContent = snapshot
       ? snapshot.winner
@@ -500,6 +732,8 @@
       ? snapshot.status
       : 'Open a table to begin.';
 
+    const whitePlayer = byColor.get('white');
+    const blackPlayer = byColor.get('black');
     ui.whiteScore.textContent = snapshot ? String(snapshot.scores.white) : '0';
     ui.blackScore.textContent = snapshot ? String(snapshot.scores.black) : '0';
     ui.whiteMeta.textContent = byColor.get('white')
@@ -507,6 +741,12 @@
       : 'Waiting for seat';
     ui.blackMeta.textContent = byColor.get('black')
       ? `${byColor.get('black').name}${byColor.get('black').id === state.playerId ? ' • You' : ''}`
+      : 'Waiting for seat';
+    ui.whiteMeta.textContent = whitePlayer
+      ? `${whitePlayer.name}${whitePlayer.id === state.playerId ? ' • You' : ''}`
+      : 'Waiting for seat';
+    ui.blackMeta.textContent = blackPlayer
+      ? `${blackPlayer.name}${blackPlayer.id === state.playerId ? ' • You' : ''}`
       : 'Waiting for seat';
     ui.whiteCard.classList.toggle('active', Boolean(snapshot && snapshot.turn === 'white' && !snapshot.winner && !snapshot.drawReason));
     ui.blackCard.classList.toggle('active', Boolean(snapshot && snapshot.turn === 'black' && !snapshot.winner && !snapshot.drawReason));
@@ -517,7 +757,9 @@
         ? `Final score ${snapshot.scores.white}-${snapshot.scores.black}`
         : snapshot.drawReason
           ? `Drawn ${snapshot.scores.white}-${snapshot.scores.black}`
-          : 'Three-rack showdown'
+          : isSoloMode()
+            ? 'Solo bot showdown'
+            : 'Three-rack showdown'
       : 'Three-rack showdown';
 
     if (!snapshot) {
@@ -535,24 +777,28 @@
     } else if (snapshot.moving) {
       ui.turnNote.textContent = 'Balls are live. Wait for the table to settle before the next shot.';
       ui.modePill.textContent = 'Balls in motion';
-    } else if (players.length < 2) {
+    } else if (!isSoloMode() && players.length < 2) {
       ui.turnNote.textContent = 'One player is at the table. Share the invite to bring in a second cue.';
       ui.modePill.textContent = 'Waiting for opponent';
     } else if (canShoot()) {
-      ui.turnNote.textContent = 'You have the cue. Aim on the table, drag outward to load the stick, and release to shoot.';
-      ui.modePill.textContent = 'Your turn';
+      ui.turnNote.textContent = isSoloMode()
+        ? 'You have the cue. Aim on the table, drag outward to load the stick, and release to shoot. Pull longer for a boosted break.'
+        : 'You have the cue. Aim on the table, drag outward to load the stick, and release to shoot.';
+      ui.modePill.textContent = isSoloMode() ? 'Solo turn' : 'Your turn';
     } else {
-      ui.turnNote.textContent = `${capitalize(snapshot.turn)} is lining up the next shot.`;
-      ui.modePill.textContent = 'Live duel';
+      ui.turnNote.textContent = isSoloMode()
+        ? `${SOLO_BOT_NAME} is lining up the next shot.`
+        : `${capitalize(snapshot.turn)} is lining up the next shot.`;
+      ui.modePill.textContent = isSoloMode() ? 'Bot turn' : 'Live duel';
     }
   }
 
   function renderUi() {
     ui.inviteInput.value = state.roomCode ? buildInviteUrl() : '';
-    ui.copyBtn.disabled = !state.roomCode;
-    ui.copyCodeBtn.disabled = !state.roomCode;
-    ui.shareLoungeBtn.disabled = !state.roomCode;
-    ui.restartBtn.disabled = !isConnected();
+    ui.copyBtn.disabled = !state.roomCode || isSoloMode();
+    ui.copyCodeBtn.disabled = !state.roomCode || isSoloMode();
+    ui.shareLoungeBtn.disabled = !state.roomCode || isSoloMode();
+    ui.restartBtn.disabled = !(isConnected() || isSoloMode());
     renderSummary();
     renderPlayers();
     renderEvents();
@@ -854,7 +1100,27 @@
     ctx.fillText(subtitle, table.width / 2, boxY + 84);
   }
 
-  function drawFrame() {
+  function stepSoloMode(now) {
+    if (!isSoloMode() || !state.localGame) {
+      state.lastFrameAt = now;
+      return;
+    }
+    const core = localCore();
+    if (!core) {
+      state.lastFrameAt = now;
+      return;
+    }
+    const last = state.lastFrameAt || now;
+    const deltaSeconds = clamp((now - last) / 1000, 1 / 120, 0.08);
+    state.lastFrameAt = now;
+    if (core.step(state.localGame, deltaSeconds)) {
+      refreshLocalSnapshot();
+    }
+    maybeTakeSoloBotTurn(now);
+  }
+
+  function drawFrame(now = performance.now()) {
+    stepSoloMode(now);
     resizeCanvas();
     setDrawTransform();
     drawTable();
@@ -865,11 +1131,16 @@
   }
 
   function handleSnapshot(payload) {
+    state.mode = 'online';
+    state.localGame = null;
+    state.localPlayers = [];
+    state.soloBotDueAt = 0;
     state.snapshot = payload.snapshot || null;
     if (state.snapshot && state.snapshot.roomCode) {
       state.roomCode = sanitizeRoomCode(state.snapshot.roomCode);
       ui.roomInput.value = state.roomCode;
     }
+    state.summarySignature = snapshotSignature(state.snapshot);
     setNetworkStatus('online', 'Online');
     setStatus(payload.message || (state.snapshot && state.snapshot.status) || 'Connected to the live table.');
     renderUi();
@@ -883,6 +1154,11 @@
     }
 
     savePrefs();
+    resetAimState();
+    state.mode = 'online';
+    state.localGame = null;
+    state.localPlayers = [];
+    state.soloBotDueAt = 0;
     const socket = new WebSocket(currentServerUrl());
     const previous = state.socket;
     if (previous && previous.readyState < WebSocket.CLOSING) {
@@ -893,6 +1169,8 @@
     state.snapshot = null;
     state.playerId = '';
     state.yourColor = null;
+    state.summarySignature = snapshotSignature(null);
+    state.lastFrameAt = performance.now();
     if (mode === 'host') {
       state.roomCode = roomCode;
     }
@@ -1007,7 +1285,7 @@
       if (distance > 0.0001) {
         state.aimAngle = Math.atan2(dy, dx);
       }
-      state.power = clamp(Math.max(0, distance - state.aimAnchorDistance) / CUE_UI.powerRange, 0, 1);
+      state.power = clamp(Math.max(0, distance - state.aimAnchorDistance) / CUE_UI.powerRange, 0, CUE_UI.maxPower);
     }
     updatePowerUi();
   }
@@ -1018,7 +1296,7 @@
     }
     const point = boardPointFromClient(event.clientX, event.clientY) || state.pointer;
     const cue = activeCue();
-    const power = state.power;
+    const power = normalizedShotPower(state.power);
     state.aiming = false;
     state.pointerId = null;
     state.power = 0;
@@ -1034,14 +1312,22 @@
     }
 
     const direction = cueDirection();
-    const legacyVectorScale = power * 250;
-    if (sendJson({
-      action: 'shoot',
-      vectorX: direction.x * legacyVectorScale,
-      vectorY: direction.y * legacyVectorScale,
-      power,
-    })) {
-      setStatus('Shot sent. Waiting for the table physics to resolve.');
+    if (isSoloMode()) {
+      playSoloShot('white', {
+        vectorX: direction.x,
+        vectorY: direction.y,
+        power,
+      }, 'Shot fired. Orbit Bot is watching the table.');
+    } else {
+      const legacyVectorScale = power * 250;
+      if (sendJson({
+        action: 'shoot',
+        vectorX: direction.x * legacyVectorScale,
+        vectorY: direction.y * legacyVectorScale,
+        power,
+      })) {
+        setStatus('Shot sent. Waiting for the table physics to resolve.');
+      }
     }
     updatePowerUi();
   }
@@ -1052,21 +1338,34 @@
     ui.roomInput.value = sanitizeRoomCode(query.get('room') || '');
     state.serverUrl = ui.serverUrlInput.value;
     state.roomCode = sanitizeRoomCode(ui.roomInput.value);
+    state.summarySignature = snapshotSignature(null);
+    state.lastFrameAt = performance.now();
     setNetworkStatus('offline', 'Offline');
-    setStatus('Host a duel or join by room code. The first player to arrive waits at the live table for a challenger.');
+    setStatus('Host a duel, join by room code, or start a solo showdown against Orbit Bot.');
     renderUi();
   }
 
   ui.hostBtn.addEventListener('click', () => connect('host'));
   ui.joinBtn.addEventListener('click', () => connect('join'));
+  ui.soloBtn.addEventListener('click', startSoloGame);
   ui.openLoungeBtn.addEventListener('click', () => openArcadeLounge(false));
   ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
   ui.copyBtn.addEventListener('click', () => copyToClipboard(ui.inviteInput.value, 'Invite link copied.'));
   ui.copyCodeBtn.addEventListener('click', () => copyToClipboard(state.roomCode, 'Room code copied.'));
   ui.restartBtn.addEventListener('click', () => {
+    if (isSoloMode()) {
+      resetSoloGame();
+      return;
+    }
     sendJson({ action: 'restart' });
   });
-  ui.nameInput.addEventListener('change', savePrefs);
+  ui.nameInput.addEventListener('change', () => {
+    savePrefs();
+    if (isSoloMode()) {
+      state.localPlayers = buildSoloPlayers();
+      refreshLocalSnapshot({ forceRender: true });
+    }
+  });
   ui.serverUrlInput.addEventListener('change', () => {
     ui.serverUrlInput.value = normalizeServerUrl(ui.serverUrlInput.value);
     savePrefs();

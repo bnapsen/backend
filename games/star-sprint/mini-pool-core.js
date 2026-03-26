@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 'use strict';
 
 const TABLE = Object.freeze({
@@ -18,9 +17,11 @@ const MAX_EVENTS = 8;
 const MAX_RACKS = 3;
 const RACK_BONUS = 14;
 const SHOT_MAX_DISTANCE = 220;
+const SHOT_MAX_POWER = 1.35;
 const SHOT_MIN_POWER = 0.04;
 const SHOT_MIN_SPEED = 0.95;
 const SHOT_SPEED = 13.9;
+const SHOT_BOOST_SPEED = 16.7;
 const SCRATCH_PENALTY = 6;
 const BLOCKER_PENALTY = 8;
 const STOP_EPSILON = 0.014;
@@ -538,7 +539,7 @@ function applyShot(game, color, payload) {
   const magnitude = Math.hypot(rawX, rawY);
   const explicitPower = Number(payload && payload.power);
   const normalizedPower = Number.isFinite(explicitPower)
-    ? clamp(explicitPower, 0, 1)
+    ? clamp(explicitPower, 0, SHOT_MAX_POWER)
     : clamp(magnitude / SHOT_MAX_DISTANCE, 0, 1);
   if (normalizedPower < SHOT_MIN_POWER || magnitude < 0.0001) {
     return {
@@ -547,8 +548,12 @@ function applyShot(game, color, payload) {
     };
   }
 
-  const easedPower = Math.pow(normalizedPower, 1.08);
-  const speed = SHOT_MIN_SPEED + easedPower * (SHOT_SPEED - SHOT_MIN_SPEED);
+  const basePower = Math.min(normalizedPower, 1);
+  const boostPower = Math.max(0, normalizedPower - 1);
+  const easedPower = Math.pow(basePower, 1.04);
+  const speed = SHOT_MIN_SPEED
+    + easedPower * (SHOT_SPEED - SHOT_MIN_SPEED)
+    + boostPower * (SHOT_BOOST_SPEED - SHOT_SPEED);
   cue.vx = (rawX / magnitude) * speed;
   cue.vy = (rawY / magnitude) * speed;
   game.shotCount += 1;
@@ -618,7 +623,7 @@ function step(game, deltaSeconds) {
   return true;
 }
 
-module.exports = {
+const MiniPoolApi = {
   COLORS,
   TABLE,
   createGameState,
@@ -626,3 +631,11 @@ module.exports = {
   applyShot,
   step,
 };
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = MiniPoolApi;
+}
+
+if (typeof globalThis !== 'undefined') {
+  globalThis.NovaMiniPoolCore = MiniPoolApi;
+}
