@@ -6,6 +6,8 @@
     name: 'neonCrownChess.name',
     serverUrl: 'neonCrownChess.serverUrl',
     engineLevel: 'neonCrownChess.engineLevel',
+    boardTheme: 'neonCrownChess.boardTheme',
+    soundEnabled: 'neonCrownChess.soundEnabled',
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const ENGINE_WORKER_VERSION = '20260325f';
@@ -64,6 +66,24 @@
       summary: 'The toughest solo setting here, with the deepest search and strongest tactics.',
     },
   };
+  const BOARD_THEMES = {
+    walnut: {
+      label: 'Walnut Classic',
+      summary: 'Warm walnut tones with carved-piece contrast and a traditional table look.',
+    },
+    marble: {
+      label: 'Ivory Marble',
+      summary: 'Bright ivory squares, cool slate darks, and a polished tournament-lobby finish.',
+    },
+    midnight: {
+      label: 'Midnight Arena',
+      summary: 'Deep navy squares with steel highlights for a sharper late-night match feel.',
+    },
+    emerald: {
+      label: 'Emerald Study',
+      summary: 'Rich green felt tones with brass woodwork for a club-room table vibe.',
+    },
+  };
 
   const state = {
     mode: 'idle',
@@ -97,15 +117,23 @@
     enginePending: null,
     engineLastInfoAt: 0,
     engineNeedsNewGame: true,
+    boardTheme: 'walnut',
+    soundEnabled: true,
+    audioContext: null,
   };
 
   const ui = {
+    pageShell: document.getElementById('pageShell'),
     nameInput: document.getElementById('nameInput'),
     roomInput: document.getElementById('roomInput'),
     serverUrlInput: document.getElementById('serverUrlInput'),
     engineLevelSelect: document.getElementById('engineLevelSelect'),
     engineLevelHint: document.getElementById('engineLevelHint'),
     engineLevelMeter: document.getElementById('engineLevelMeter'),
+    boardThemeSelect: document.getElementById('boardThemeSelect'),
+    boardThemeHint: document.getElementById('boardThemeHint'),
+    soundToggleBtn: document.getElementById('soundToggleBtn'),
+    soundHint: document.getElementById('soundHint'),
     inviteInput: document.getElementById('inviteInput'),
     statusText: document.getElementById('statusText'),
     engineStatus: document.getElementById('engineStatus'),
@@ -178,8 +206,199 @@
     return ENGINE_LEVELS[numeric] ? numeric : 10;
   }
 
+  function normalizeBoardTheme(value) {
+    return BOARD_THEMES[value] ? value : 'walnut';
+  }
+
   function engineReadyMessage() {
     return `Stockfish 18 ready - ${engineLevelProfile().label}`;
+  }
+
+  function boardThemeProfile() {
+    return BOARD_THEMES[state.boardTheme] || BOARD_THEMES.walnut;
+  }
+
+  function audioSupported() {
+    return Boolean(window.AudioContext || window.webkitAudioContext);
+  }
+
+  function ensureAudioContext() {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) {
+      return null;
+    }
+    if (!state.audioContext) {
+      try {
+        state.audioContext = new AudioCtor();
+      } catch (error) {
+        return null;
+      }
+    }
+    return state.audioContext;
+  }
+
+  async function primeAudio() {
+    const context = ensureAudioContext();
+    if (!context) {
+      return false;
+    }
+    if (context.state === 'suspended') {
+      try {
+        await context.resume();
+      } catch (error) {
+        return false;
+      }
+    }
+    return context.state === 'running';
+  }
+
+  function playTone(options = {}) {
+    if (!state.soundEnabled) {
+      return;
+    }
+    const context = ensureAudioContext();
+    if (!context || context.state !== 'running') {
+      return;
+    }
+    const {
+      frequency = 440,
+      frequencyEnd = frequency,
+      type = 'triangle',
+      duration = 0.12,
+      attack = 0.005,
+      gain = 0.03,
+      startOffset = 0,
+      detune = 0,
+      q = 1.2,
+    } = options;
+    const start = context.currentTime + startOffset;
+    const oscillator = context.createOscillator();
+    const filter = context.createBiquadFilter();
+    const amp = context.createGain();
+
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(Math.max(40, frequency), start);
+    oscillator.frequency.exponentialRampToValueAtTime(Math.max(40, frequencyEnd), start + duration);
+    oscillator.detune.setValueAtTime(detune, start);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(Math.max(500, Math.max(frequency, frequencyEnd) * 4), start);
+    filter.Q.setValueAtTime(q, start);
+
+    amp.gain.setValueAtTime(0.0001, start);
+    amp.gain.linearRampToValueAtTime(gain, start + attack);
+    amp.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+    oscillator.connect(filter);
+    filter.connect(amp);
+    amp.connect(context.destination);
+
+    oscillator.start(start);
+    oscillator.stop(start + duration + 0.03);
+  }
+
+  function playSoundCue(kind) {
+    if (!state.soundEnabled) {
+      return;
+    }
+    if (!ensureAudioContext() || state.audioContext.state !== 'running') {
+      return;
+    }
+
+    switch (kind) {
+      case 'start':
+        playTone({ frequency: 392, frequencyEnd: 440, duration: 0.13, gain: 0.022 });
+        playTone({ frequency: 523.25, frequencyEnd: 659.25, duration: 0.18, gain: 0.018, startOffset: 0.07 });
+        break;
+      case 'move':
+        playTone({ frequency: 720, frequencyEnd: 600, type: 'triangle', duration: 0.06, gain: 0.02 });
+        playTone({ frequency: 980, frequencyEnd: 860, type: 'sine', duration: 0.08, gain: 0.012, startOffset: 0.025 });
+        break;
+      case 'capture':
+        playTone({ frequency: 310, frequencyEnd: 170, type: 'sawtooth', duration: 0.12, gain: 0.026, q: 2 });
+        playTone({ frequency: 680, frequencyEnd: 460, type: 'triangle', duration: 0.1, gain: 0.018, startOffset: 0.035 });
+        break;
+      case 'castle':
+        playTone({ frequency: 440, frequencyEnd: 494, duration: 0.09, gain: 0.022 });
+        playTone({ frequency: 587, frequencyEnd: 659, duration: 0.11, gain: 0.018, startOffset: 0.05 });
+        break;
+      case 'check':
+        playTone({ frequency: 830, frequencyEnd: 760, type: 'square', duration: 0.09, gain: 0.02 });
+        playTone({ frequency: 1046, frequencyEnd: 988, type: 'triangle', duration: 0.08, gain: 0.014, startOffset: 0.05 });
+        break;
+      case 'win':
+        playTone({ frequency: 392, frequencyEnd: 440, duration: 0.12, gain: 0.024 });
+        playTone({ frequency: 523.25, frequencyEnd: 659.25, duration: 0.18, gain: 0.02, startOffset: 0.08 });
+        playTone({ frequency: 783.99, frequencyEnd: 880, duration: 0.22, gain: 0.018, startOffset: 0.18 });
+        break;
+      case 'draw':
+        playTone({ frequency: 392, frequencyEnd: 370, duration: 0.16, gain: 0.018 });
+        playTone({ frequency: 523.25, frequencyEnd: 493.88, duration: 0.18, gain: 0.014, startOffset: 0.04 });
+        break;
+      default:
+        break;
+    }
+  }
+
+  function moveSoundKey(snapshot) {
+    if (!snapshot || !snapshot.lastMove) {
+      return '';
+    }
+    const move = snapshot.lastMove;
+    const historyLength = Array.isArray(snapshot.history) ? snapshot.history.length : snapshot.moveNumber || 0;
+    return [
+      historyLength,
+      move.from ? `${move.from.x},${move.from.y}` : '-',
+      move.to ? `${move.to.x},${move.to.y}` : '-',
+      move.capture ? 'x' : '-',
+      move.castleSide || '-',
+      move.promotion || '-',
+    ].join('|');
+  }
+
+  function resultSoundKey(snapshot) {
+    if (!snapshot) {
+      return '';
+    }
+    return `${snapshot.winner || '-'}|${snapshot.drawReason || '-'}`;
+  }
+
+  function setSnapshot(nextSnapshot, options = {}) {
+    const previous = state.snapshot;
+    state.snapshot = nextSnapshot;
+
+    if (options.silent) {
+      return;
+    }
+
+    if (options.startCue && nextSnapshot) {
+      playSoundCue('start');
+    }
+
+    const previousMoveKey = moveSoundKey(previous);
+    const nextMoveKey = moveSoundKey(nextSnapshot);
+    if (nextMoveKey && nextMoveKey !== previousMoveKey) {
+      if (nextSnapshot.lastMove && nextSnapshot.lastMove.castleSide) {
+        playSoundCue('castle');
+      } else if (nextSnapshot.lastMove && nextSnapshot.lastMove.capture) {
+        playSoundCue('capture');
+      } else {
+        playSoundCue('move');
+      }
+      if (nextSnapshot.check && !nextSnapshot.winner) {
+        window.setTimeout(() => playSoundCue('check'), 85);
+      }
+    }
+
+    const previousResultKey = resultSoundKey(previous);
+    const nextResultKey = resultSoundKey(nextSnapshot);
+    if (nextResultKey !== previousResultKey) {
+      if (nextSnapshot && nextSnapshot.winner) {
+        window.setTimeout(() => playSoundCue('win'), 120);
+      } else if (nextSnapshot && nextSnapshot.drawReason) {
+        window.setTimeout(() => playSoundCue('draw'), 120);
+      }
+    }
   }
 
   function sendEngineCommand(command) {
@@ -212,6 +431,8 @@
     localStorage.setItem(STORAGE_KEYS.name, ui.nameInput.value.trim());
     localStorage.setItem(STORAGE_KEYS.serverUrl, state.serverUrl);
     localStorage.setItem(STORAGE_KEYS.engineLevel, String(state.engineLevel));
+    localStorage.setItem(STORAGE_KEYS.boardTheme, state.boardTheme);
+    localStorage.setItem(STORAGE_KEYS.soundEnabled, state.soundEnabled ? '1' : '0');
   }
 
   function getPlayerName() {
@@ -390,6 +611,38 @@
     }
   }
 
+  function renderBoardThemeInfo() {
+    const profile = boardThemeProfile();
+    if (ui.pageShell) {
+      ui.pageShell.dataset.boardTheme = state.boardTheme;
+    }
+    if (ui.boardThemeSelect) {
+      ui.boardThemeSelect.value = state.boardTheme;
+    }
+    if (ui.boardThemeHint) {
+      ui.boardThemeHint.textContent = profile.summary;
+    }
+  }
+
+  function renderSoundInfo() {
+    if (!ui.soundToggleBtn || !ui.soundHint) {
+      return;
+    }
+    const supported = audioSupported();
+    ui.soundToggleBtn.disabled = !supported;
+    if (!supported) {
+      ui.soundToggleBtn.textContent = 'Unavailable';
+      ui.soundToggleBtn.dataset.enabled = 'false';
+      ui.soundHint.textContent = 'This browser does not expose Web Audio for move sounds.';
+      return;
+    }
+    ui.soundToggleBtn.textContent = state.soundEnabled ? 'Sound on' : 'Sound off';
+    ui.soundToggleBtn.dataset.enabled = state.soundEnabled ? 'true' : 'false';
+    ui.soundHint.textContent = state.soundEnabled
+      ? 'Move, capture, check, and game-end cues are enabled.'
+      : 'Audio is muted. Turn it back on any time.';
+  }
+
   function renderHistory() {
     const history = state.snapshot && Array.isArray(state.snapshot.history) ? state.snapshot.history : [];
     if (!history.length) {
@@ -410,10 +663,10 @@
   function renderCaptured() {
     const captured = state.snapshot ? state.snapshot.captured : { white: [], black: [] };
     ui.whiteCaptured.innerHTML = captured.white.length
-      ? captured.white.map((piece) => `<span class="capture-chip" title="${capitalize(piece.color)} ${Core.PIECES[piece.type].name}">${Core.getPieceGlyph(piece)}</span>`).join('')
+      ? captured.white.map((piece) => `<span class="capture-chip ${piece.color}" title="${capitalize(piece.color)} ${Core.PIECES[piece.type].name}">${Core.getPieceGlyph(piece)}</span>`).join('')
       : '<span class="mini-status">None yet.</span>';
     ui.blackCaptured.innerHTML = captured.black.length
-      ? captured.black.map((piece) => `<span class="capture-chip" title="${capitalize(piece.color)} ${Core.PIECES[piece.type].name}">${Core.getPieceGlyph(piece)}</span>`).join('')
+      ? captured.black.map((piece) => `<span class="capture-chip ${piece.color}" title="${capitalize(piece.color)} ${Core.PIECES[piece.type].name}">${Core.getPieceGlyph(piece)}</span>`).join('')
       : '<span class="mini-status">None yet.</span>';
   }
 
@@ -748,6 +1001,7 @@
     ui.copyBtn.disabled = !hasRoom;
     ui.copyCodeBtn.disabled = !hasRoom;
     ui.engineLevelSelect.disabled = state.mode === 'online';
+    ui.boardThemeSelect.disabled = false;
     ui.retryEngineBtn.textContent = state.engineInitPromise
       ? 'Loading Stockfish 18...'
       : state.engineReady
@@ -763,6 +1017,8 @@
     renderPills();
     renderStatus();
     renderDifficultyInfo();
+    renderBoardThemeInfo();
+    renderSoundInfo();
     updateInviteUi();
     renderSummary();
     renderPlayers();
@@ -1226,7 +1482,7 @@
       if (!result.ok) {
         return;
       }
-      state.snapshot = decorateSoloSnapshot(sandbox);
+      setSnapshot(decorateSoloSnapshot(sandbox));
       setStatusMessage(state.snapshot.status);
       if (state.engineReady) {
         setEngineStatus(engineReadyMessage());
@@ -1270,7 +1526,7 @@
       return;
     }
 
-    state.snapshot = decorateSoloSnapshot(sandbox);
+    setSnapshot(decorateSoloSnapshot(sandbox));
     setStatusMessage(state.snapshot.status);
     if (state.engineReady) {
       setEngineStatus(engineReadyMessage());
@@ -1337,7 +1593,7 @@
         showToast(result.error || 'That move is not legal.');
         return;
       }
-      state.snapshot = decorateSoloSnapshot(sandbox);
+      setSnapshot(decorateSoloSnapshot(sandbox));
       setStatusMessage(state.snapshot.status);
       clearSelection();
       render();
@@ -1503,13 +1759,13 @@
 
   function updateSoloEngineLabel() {
     if (state.mode === 'solo' && state.snapshot) {
-      state.snapshot = decorateSoloSnapshot(state.snapshot);
-      renderBoard();
+      setSnapshot(decorateSoloSnapshot(state.snapshot), { silent: true });
+      render();
     }
   }
 
   function updateFromServerSnapshot(snapshot, message) {
-    state.snapshot = snapshot;
+    setSnapshot(snapshot);
     state.roomCode = snapshot.roomCode;
     ui.roomInput.value = snapshot.roomCode;
     if (state.selected) {
@@ -1552,7 +1808,7 @@
     closePromotion();
     state.mode = 'online';
     state.yourColor = null;
-    state.snapshot = null;
+    setSnapshot(null, { silent: true });
     state.roomCode = roomCode;
     state.selected = null;
     state.legalMoves = [];
@@ -1632,7 +1888,7 @@
     state.roomCode = 'SOLO';
     state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
     persistSettings();
-    state.snapshot = decorateSoloSnapshot(Core.createGameState());
+    setSnapshot(decorateSoloSnapshot(Core.createGameState()), { startCue: true });
     state.selected = null;
     state.legalMoves = [];
     setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
@@ -1668,7 +1924,7 @@
     ui.nameInput.addEventListener('input', () => {
       persistSettings();
       if (state.mode === 'solo' && state.snapshot) {
-        state.snapshot = decorateSoloSnapshot(state.snapshot);
+        setSnapshot(decorateSoloSnapshot(state.snapshot), { silent: true });
         render();
         return;
       }
@@ -1700,9 +1956,59 @@
       render();
     });
 
-    ui.hostBtn.addEventListener('click', () => connectOnline('host'));
-    ui.joinBtn.addEventListener('click', () => connectOnline('join'));
-    ui.soloBtn.addEventListener('click', startSolo);
+    ui.boardThemeSelect.addEventListener('change', () => {
+      state.boardTheme = normalizeBoardTheme(ui.boardThemeSelect.value);
+      persistSettings();
+      renderBoardThemeInfo();
+      showToast(`${boardThemeProfile().label} board selected.`);
+    });
+
+    ui.soundToggleBtn.addEventListener('click', async () => {
+      if (!audioSupported()) {
+        showToast('This browser does not expose Web Audio here.');
+        return;
+      }
+      state.soundEnabled = !state.soundEnabled;
+      persistSettings();
+      renderSoundInfo();
+      if (state.soundEnabled) {
+        await primeAudio();
+        playSoundCue('move');
+        showToast('Sound enabled.');
+      } else {
+        showToast('Sound muted.');
+      }
+    });
+
+    window.addEventListener('pointerdown', () => {
+      if (state.soundEnabled) {
+        primeAudio();
+      }
+    }, { passive: true });
+    window.addEventListener('keydown', () => {
+      if (state.soundEnabled) {
+        primeAudio();
+      }
+    });
+
+    ui.hostBtn.addEventListener('click', () => {
+      if (state.soundEnabled) {
+        primeAudio();
+      }
+      connectOnline('host');
+    });
+    ui.joinBtn.addEventListener('click', () => {
+      if (state.soundEnabled) {
+        primeAudio();
+      }
+      connectOnline('join');
+    });
+    ui.soloBtn.addEventListener('click', () => {
+      if (state.soundEnabled) {
+        primeAudio();
+      }
+      startSolo();
+    });
     ui.retryEngineBtn.addEventListener('click', () => {
       retryEngineNow();
     });
@@ -1751,6 +2057,9 @@
     ui.serverUrlInput.value = state.serverUrl;
     state.engineLevel = normalizeEngineLevel(localStorage.getItem(STORAGE_KEYS.engineLevel) || '10');
     ui.engineLevelSelect.value = String(state.engineLevel);
+    state.boardTheme = normalizeBoardTheme(localStorage.getItem(STORAGE_KEYS.boardTheme) || 'walnut');
+    ui.boardThemeSelect.value = state.boardTheme;
+    state.soundEnabled = localStorage.getItem(STORAGE_KEYS.soundEnabled) !== '0';
     setEngineStatus('Stockfish 18 idle.');
     const inviteRoom = sanitizeRoomCode(query.get('room'));
     if (inviteRoom) {
