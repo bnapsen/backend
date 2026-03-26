@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nova Arcade Lounge</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="games/arcade-lounge/style.css?v=20260325a" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="back-link" href="index.html">Back to Nova Arcade</a>
+      <div class="brand-block">
+        <p class="eyebrow">Shared social hub</p>
+        <strong>Arcade Lounge</strong>
+      </div>
+      <div class="topbar-status">
+        <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
+        <div class="status-pill ghost" id="roomPill">Public lounge ready</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="control-rail">
+        <section class="panel intro-panel">
+          <p class="eyebrow">Find players across the arcade</p>
+          <h1>Talk, share, and jump into the next match faster.</h1>
+          <p class="lede">Use the public lounge to find opponents, or spin up a private side room while you organize a game. Invite cards open the exact game page with the room link already attached.</p>
+
+          <div class="step-list">
+            <article class="step-card">
+              <span>1</span>
+              <div>
+                <strong>Open the public lounge</strong>
+                <p>Start in the shared room where everyone can see fresh invites.</p>
+              </div>
+            </article>
+            <article class="step-card">
+              <span>2</span>
+              <div>
+                <strong>Share a live room</strong>
+                <p>Pick the game, enter the room code, and post a clean join link.</p>
+              </div>
+            </article>
+            <article class="step-card">
+              <span>3</span>
+              <div>
+                <strong>Jump in together</strong>
+                <p>Players can open the invite and land straight on the game page.</p>
+              </div>
+            </article>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>Name</span>
+              <input id="nameInput" maxlength="18" placeholder="Nova" autocomplete="nickname" />
+            </label>
+            <label>
+              <span>Private room code</span>
+              <input id="roomInput" maxlength="12" placeholder="Optional private room" />
+            </label>
+          </div>
+
+          <div class="action-cluster">
+            <button id="publicBtn" class="primary" type="button">Join public lounge</button>
+            <button id="hostBtn" type="button">Host private room</button>
+            <button id="joinBtn" type="button">Join private room</button>
+          </div>
+
+          <div class="invite-box">
+            <div class="invite-head">
+              <div>
+                <p class="label">Current lounge link</p>
+                <p class="helper-copy">Use this to bring someone directly into the same lounge room.</p>
+              </div>
+              <button id="copyInviteBtn" class="secondary" type="button">Copy room link</button>
+            </div>
+            <div class="invite-row">
+              <input id="inviteInput" readonly value="" />
+            </div>
+          </div>
+
+          <details class="advanced-panel">
+            <summary>Advanced connection settings</summary>
+            <label>
+              <span>Server WS URL</span>
+              <input id="serverUrlInput" placeholder="wss://backend-ujaa.onrender.com" />
+            </label>
+          </details>
+
+          <p class="status-text" id="statusText">Open the public lounge to meet players, or use a private room code for a side chat.</p>
+        </section>
+      </aside>
+
+      <section class="feed-column">
+        <section class="panel overview-panel">
+          <div class="overview-copy">
+            <p class="eyebrow">Live room</p>
+            <h2 id="roomHeadline">Public Arcade Lounge</h2>
+            <p id="roomSummary">A shared place to trade invite links, coordinate rematches, and point people at the right multiplayer game.</p>
+          </div>
+          <div class="metrics-grid">
+            <article class="metric-card">
+              <span>Players online</span>
+              <strong id="playerCount">0</strong>
+            </article>
+            <article class="metric-card">
+              <span>Active invites</span>
+              <strong id="inviteCount">0</strong>
+            </article>
+            <article class="metric-card">
+              <span>Room code</span>
+              <strong id="roomCodeLabel">-</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel chat-panel">
+          <div class="panel-head">
+            <div>
+              <p class="label">Chat feed</p>
+              <h2>Live conversation</h2>
+            </div>
+            <p class="mini-status" id="feedStatus">Join a lounge to start chatting.</p>
+          </div>
+
+          <div class="message-list" id="messageList" aria-live="polite"></div>
+
+          <form id="composerForm" class="composer">
+            <label class="composer-field">
+              <span class="sr-only">Message</span>
+              <textarea id="messageInput" rows="3" maxlength="360" placeholder="Say hello, ask who wants to play, or drop a direct invite note."></textarea>
+            </label>
+            <div class="composer-actions">
+              <p id="composerHint">Press Enter to send. Use Shift+Enter for a new line.</p>
+              <button id="sendBtn" class="primary" type="submit">Send message</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel share-panel">
+          <div class="panel-head">
+            <div>
+              <p class="label">Game invite composer</p>
+              <h2>Share a room that people can open instantly</h2>
+            </div>
+            <p class="mini-status">Best for chess, backgammon, poker, and the co-op shooter.</p>
+          </div>
+
+          <div class="field-grid share-grid">
+            <label>
+              <span>Game</span>
+              <select id="gameSelect">
+                <option value="chess">Neon Crown Chess</option>
+                <option value="backgammon">Neon Backgammon Blitz</option>
+                <option value="space-shooter">Starline Defense Co-Op</option>
+                <option value="poker">Orbit Holdem Live</option>
+              </select>
+            </label>
+            <label>
+              <span>Game room code</span>
+              <input id="gameRoomInput" maxlength="12" placeholder="Paste the room code from the game" />
+            </label>
+          </div>
+
+          <label class="note-field">
+            <span>Quick note</span>
+            <input id="inviteNoteInput" maxlength="140" placeholder="Example: Need one more for a 5 minute blitz game." />
+          </label>
+
+          <div class="invite-row preview-row">
+            <input id="gameLinkPreview" readonly value="" />
+            <button id="copyGameLinkBtn" class="secondary" type="button">Copy link</button>
+            <button id="shareInviteBtn" class="primary" type="button">Share invite</button>
+          </div>
+        </section>
+      </section>
+
+      <aside class="sidebar">
+        <section class="panel sidebar-panel">
+          <div class="panel-head">
+            <div>
+              <p class="label">People here</p>
+              <h2>Live roster</h2>
+            </div>
+            <p class="mini-status" id="presenceText">Nobody is connected yet.</p>
+          </div>
+          <div class="player-list" id="playerList"></div>
+        </section>
+
+        <section class="panel sidebar-panel">
+          <div class="panel-head">
+            <div>
+              <p class="label">Fresh game links</p>
+              <h2>Active invites</h2>
+            </div>
+            <p class="mini-status" id="inviteStatus">Shared room links will appear here.</p>
+          </div>
+          <div class="invite-list" id="inviteList"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="games/arcade-lounge/game.js?v=20260325a"></script>
+</body>
+</html>

@@ -8,6 +8,7 @@ const Chess = require('./chess-core.js');
 const Backgammon = require('./backgammon-core.js');
 const Shooter = require('./space-shooter-core.js');
 const Poker = require('./poker-core.js');
+const ArcadeChat = require('./arcade-chat-core.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
@@ -93,6 +94,13 @@ const GAME_DEFS = {
     createGameState: () => Poker.createGameState(),
     cloneState: (game, viewerId) => Poker.cloneState(game, viewerId),
   },
+  'arcade-chat': {
+    id: 'arcade-chat',
+    title: 'Nova Arcade Lounge',
+    maxPlayers: 60,
+    createGameState: () => ArcadeChat.createGameState(),
+    cloneState: (game) => ArcadeChat.cloneState(game),
+  },
 };
 
 function send(socket, payload) {
@@ -131,6 +139,9 @@ function normalizeGameType(raw) {
   }
   if (raw === 'space-shooter') {
     return 'space-shooter';
+  }
+  if (raw === 'arcade-chat' || raw === 'chat' || raw === 'lounge') {
+    return 'arcade-chat';
   }
   return 'chess';
 }
@@ -366,6 +377,12 @@ function snapshot(room, viewerId) {
       roster: listPlayers(room),
     };
   }
+  if (room.gameType === 'arcade-chat') {
+    return {
+      ...base,
+      players: listPlayers(room),
+    };
+  }
   if (room.gameType === 'poker') {
     return base;
   }
@@ -489,6 +506,20 @@ function handleJoin(socket, payload) {
     title: room.game.title,
     gameType: room.gameType,
   });
+
+  if (room.gameType === 'arcade-chat') {
+    const isFirst = room.players.size === 1;
+    ArcadeChat.addSystemMessage(
+      room.game,
+      isFirst
+        ? room.code === 'ARCADECHAT'
+          ? `${player.name} opened the public arcade lounge.`
+          : `${player.name} opened lounge ${room.code}.`
+        : `${player.name} joined lounge ${room.code}.`
+    );
+    broadcastState(room);
+    return;
+  }
 
   const message = room.gameType === 'poker'
     ? room.players.size === 1
@@ -623,6 +654,59 @@ function handleStartHand(socket) {
   broadcastState(room, result.message || `${player.name} started a new hand.`);
 }
 
+function handleChatMessage(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'arcade-chat') {
+    sendError(socket, 'Chat messages are only used in Arcade Lounge rooms.');
+    return;
+  }
+
+  const result = ArcadeChat.addChatMessage(room.game, {
+    playerId: player.id,
+    playerName: player.name,
+    text: payload && payload.text,
+  });
+  if (!result.ok) {
+    sendError(socket, result.error || 'That message could not be sent.');
+    return;
+  }
+
+  broadcastState(room);
+}
+
+function handleShareInvite(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'arcade-chat') {
+    sendError(socket, 'Invite sharing is only used in Arcade Lounge rooms.');
+    return;
+  }
+
+  const result = ArcadeChat.addInvite(room.game, {
+    playerId: player.id,
+    playerName: player.name,
+    gameType: normalizeGameType(payload && payload.gameType),
+    roomCode: payload && payload.roomCode,
+    url: payload && payload.url,
+    note: payload && payload.note,
+  });
+  if (!result.ok) {
+    sendError(socket, result.error || 'That invite could not be shared.');
+    return;
+  }
+
+  broadcastState(room);
+}
+
 function handleInput(socket, payload) {
   const context = requirePlayer(socket);
   if (!context) {
@@ -671,6 +755,10 @@ function handleRestart(socket) {
   }
 
   const { room, player } = context;
+  if (room.gameType === 'arcade-chat') {
+    sendError(socket, 'Arcade Lounge rooms do not use reset.');
+    return;
+  }
   if (room.gameType === 'space-shooter') {
     Shooter.resetMatch(room.game);
     room.lastTickAt = Date.now();
@@ -724,6 +812,10 @@ function handleDisconnect(socket) {
     room.lastTickAt = Date.now();
   } else if (room.gameType === 'poker') {
     Poker.removePlayer(room.game, playerId);
+  } else if (room.gameType === 'arcade-chat') {
+    if (player) {
+      ArcadeChat.addSystemMessage(room.game, `${player.name} left lounge ${room.code}.`);
+    }
   } else if (room.gameType === 'chess') {
     refreshChessClockTurn(room, Date.now());
   }
@@ -733,9 +825,15 @@ function handleDisconnect(socket) {
       ? `${player.name} disconnected. The room stays open for a new wingmate.`
       : room.gameType === 'poker'
         ? `${player.name} disconnected. The table stays open.`
+      : room.gameType === 'arcade-chat'
+        ? null
       : `${player.name} disconnected. The room stays open for a new opponent.`
     : 'A player disconnected.';
-  broadcastState(room, message);
+  if (room.gameType === 'arcade-chat') {
+    broadcastState(room);
+  } else {
+    broadcastState(room, message);
+  }
 }
 
 function tickRealtimeRooms() {
@@ -798,6 +896,12 @@ wss.on('connection', (socket) => {
     switch (payload.action) {
       case 'join':
         handleJoin(socket, payload);
+        break;
+      case 'chat':
+        handleChatMessage(socket, payload);
+        break;
+      case 'share-invite':
+        handleShareInvite(socket, payload);
         break;
       case 'roll':
         handleRoll(socket);
