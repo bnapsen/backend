@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/arcade-lounge/style.css?v=20260325a" />
+  <link rel="stylesheet" href="games/arcade-lounge/style.css?v=20260326d" />
 </head>
 <body>
   <div class="page-shell">
@@ -136,8 +136,14 @@
               <textarea id="messageInput" rows="3" maxlength="360" placeholder="Say hello, ask who wants to play, or drop a direct invite note."></textarea>
             </label>
             <div class="composer-actions">
-              <p id="composerHint">Press Enter to send. Use Shift+Enter for a new line.</p>
-              <button id="sendBtn" class="primary" type="submit">Send message</button>
+              <div class="composer-meta">
+                <p id="composerHint">Press Enter to send. Use Shift+Enter for a new line or the mic to dictate.</p>
+                <p id="voiceStatus" class="voice-status" data-tone="idle">Voice to text ready when you join a lounge.</p>
+              </div>
+              <div class="composer-button-row">
+                <button id="voiceBtn" class="secondary voice-btn" type="button">Voice to text</button>
+                <button id="sendBtn" class="primary" type="submit">Send message</button>
+              </div>
             </div>
           </form>
         </section>
@@ -209,6 +215,6 @@
     </main>
   </div>
 
-  <script src="games/arcade-lounge/game.js?v=20260326c"></script>
+  <script src="games/arcade-lounge/game.js?v=20260326d"></script>
 </body>
 </html>

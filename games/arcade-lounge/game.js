@@ -48,6 +48,13 @@
     lastMessageCount: 0,
     pendingShare: null,
     autoShareDone: false,
+    voiceRecorder: null,
+    voiceStream: null,
+    voiceChunks: [],
+    voiceRecording: false,
+    voiceTranscribing: false,
+    voiceStopTimer: 0,
+    voiceApiConfigured: null,
   };
 
   const ui = {
@@ -71,6 +78,8 @@
     messageList: document.getElementById('messageList'),
     composerForm: document.getElementById('composerForm'),
     messageInput: document.getElementById('messageInput'),
+    voiceBtn: document.getElementById('voiceBtn'),
+    voiceStatus: document.getElementById('voiceStatus'),
     sendBtn: document.getElementById('sendBtn'),
     composerHint: document.getElementById('composerHint'),
     gameSelect: document.getElementById('gameSelect'),
@@ -130,6 +139,277 @@
     const value = normalizeServerUrl(ui.serverUrlInput.value || state.serverUrl || defaultServerUrl());
     state.serverUrl = value;
     return value;
+  }
+
+  function currentHttpServerUrl() {
+    return currentServerUrl()
+      .replace(/^ws:\/\//i, 'http://')
+      .replace(/^wss:\/\//i, 'https://');
+  }
+
+  function transcriptionApiUrl() {
+    return new URL('/api/transcribe', currentHttpServerUrl()).toString();
+  }
+
+  function voiceCaptureSupported() {
+    return Boolean(
+      navigator.mediaDevices
+      && typeof navigator.mediaDevices.getUserMedia === 'function'
+      && typeof window.MediaRecorder === 'function'
+    );
+  }
+
+  function preferredVoiceMimeType() {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+    ];
+    for (const mimeType of candidates) {
+      if (!window.MediaRecorder || typeof window.MediaRecorder.isTypeSupported !== 'function') {
+        return '';
+      }
+      if (window.MediaRecorder.isTypeSupported(mimeType)) {
+        return mimeType;
+      }
+    }
+    return '';
+  }
+
+  function setVoiceStatus(message, tone) {
+    if (!ui.voiceStatus) {
+      return;
+    }
+    ui.voiceStatus.textContent = message;
+    ui.voiceStatus.dataset.tone = tone || 'idle';
+  }
+
+  async function checkVoiceBackendReady() {
+    if (state.voiceApiConfigured === true) {
+      return true;
+    }
+    try {
+      const response = await fetch(transcriptionApiUrl(), {
+        method: 'GET',
+      });
+      const payload = await response.json().catch(() => ({}));
+      state.voiceApiConfigured = Boolean(payload && payload.configured);
+      if (!state.voiceApiConfigured) {
+        setVoiceStatus('Voice to text needs backend speech-to-text enabled.', 'error');
+        setStatus('Voice to text is not configured on the backend yet. Add OPENAI_API_KEY on Render and redeploy.');
+        return false;
+      }
+      return true;
+    } catch (error) {
+      state.voiceApiConfigured = null;
+      setVoiceStatus('Could not reach the voice transcription service.', 'error');
+      setStatus('Could not reach the voice transcription service.');
+      return false;
+    }
+  }
+
+  function stopVoiceTracks() {
+    if (!state.voiceStream) {
+      return;
+    }
+    for (const track of state.voiceStream.getTracks()) {
+      track.stop();
+    }
+    state.voiceStream = null;
+  }
+
+  function clearVoiceStopTimer() {
+    if (state.voiceStopTimer) {
+      window.clearTimeout(state.voiceStopTimer);
+      state.voiceStopTimer = 0;
+    }
+  }
+
+  function updateVoiceUi() {
+    if (!ui.voiceBtn) {
+      return;
+    }
+    if (state.voiceRecording) {
+      ui.voiceBtn.textContent = 'Stop mic';
+      ui.voiceBtn.dataset.state = 'recording';
+    } else if (state.voiceTranscribing) {
+      ui.voiceBtn.textContent = 'Transcribing...';
+      ui.voiceBtn.dataset.state = 'processing';
+    } else {
+      ui.voiceBtn.textContent = 'Voice to text';
+      ui.voiceBtn.dataset.state = 'idle';
+    }
+  }
+
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || '');
+        const marker = result.indexOf(',');
+        resolve(marker >= 0 ? result.slice(marker + 1) : result);
+      };
+      reader.onerror = () => reject(new Error('Voice note could not be read.'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function mergeTranscriptIntoComposer(text) {
+    const transcript = sanitizeText(text, 360);
+    if (!transcript) {
+      return;
+    }
+    const existing = sanitizeText(ui.messageInput.value, 320);
+    ui.messageInput.value = sanitizeText(existing ? `${existing} ${transcript}` : transcript, 360);
+    ui.messageInput.focus();
+    const end = ui.messageInput.value.length;
+    ui.messageInput.setSelectionRange(end, end);
+  }
+
+  async function transcribeVoiceBlob(blob) {
+    state.voiceTranscribing = true;
+    updateVoiceUi();
+    setVoiceStatus('Transcribing voice note...', 'processing');
+    try {
+      const audioBase64 = await blobToBase64(blob);
+      const response = await fetch(transcriptionApiUrl(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          audioBase64,
+          mimeType: blob.type || 'audio/webm',
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Voice transcription failed.');
+      }
+      const transcript = sanitizeText(payload.text, 360);
+      if (!transcript) {
+        throw new Error('The voice note came back empty.');
+      }
+      mergeTranscriptIntoComposer(transcript);
+      setVoiceStatus('Transcript ready. Review it and send.', 'ready');
+      setStatus('Voice note transcribed into the chat box.');
+    } catch (error) {
+      const message = error && error.message ? error.message : 'Voice transcription failed.';
+      setVoiceStatus(message, 'error');
+      setStatus(message);
+    } finally {
+      state.voiceTranscribing = false;
+      updateVoiceUi();
+      updateControlState();
+    }
+  }
+
+  function finishVoiceCapture() {
+    const mimeType = state.voiceRecorder && state.voiceRecorder.mimeType
+      ? state.voiceRecorder.mimeType
+      : preferredVoiceMimeType() || 'audio/webm';
+    const blob = new Blob(state.voiceChunks, { type: mimeType });
+    state.voiceChunks = [];
+    state.voiceRecorder = null;
+    state.voiceRecording = false;
+    clearVoiceStopTimer();
+    stopVoiceTracks();
+    updateVoiceUi();
+    if (!blob.size) {
+      setVoiceStatus('No audio captured. Try again.', 'error');
+      updateControlState();
+      return;
+    }
+    transcribeVoiceBlob(blob);
+  }
+
+  async function startVoiceCapture() {
+    if (!voiceCaptureSupported()) {
+      setVoiceStatus('Voice capture needs browser recording support.', 'error');
+      setStatus('This browser does not support voice capture on the lounge page.');
+      return;
+    }
+    if (!state.snapshot) {
+      setStatus('Join a lounge room before using voice to text.');
+      return;
+    }
+    if (!(await checkVoiceBackendReady())) {
+      updateControlState();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = preferredVoiceMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+      state.voiceStream = stream;
+      state.voiceRecorder = recorder;
+      state.voiceChunks = [];
+      state.voiceRecording = true;
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size) {
+          state.voiceChunks.push(event.data);
+        }
+      });
+      recorder.addEventListener('stop', finishVoiceCapture);
+      recorder.addEventListener('error', () => {
+        state.voiceRecording = false;
+        clearVoiceStopTimer();
+        stopVoiceTracks();
+        state.voiceRecorder = null;
+        state.voiceChunks = [];
+        updateVoiceUi();
+        setVoiceStatus('The microphone hit an error.', 'error');
+        setStatus('The microphone hit an error while recording.');
+        updateControlState();
+      });
+      recorder.start();
+      clearVoiceStopTimer();
+      state.voiceStopTimer = window.setTimeout(() => {
+        if (state.voiceRecorder && state.voiceRecorder.state === 'recording') {
+          state.voiceRecorder.stop();
+        }
+      }, 18000);
+      updateVoiceUi();
+      setVoiceStatus('Recording... tap Stop mic when done.', 'recording');
+      setStatus('Recording a short voice note for chat transcription.');
+      updateControlState();
+    } catch (error) {
+      stopVoiceTracks();
+      state.voiceRecorder = null;
+      state.voiceChunks = [];
+      state.voiceRecording = false;
+      updateVoiceUi();
+      const message = error && error.name === 'NotAllowedError'
+        ? 'Microphone access was blocked.'
+        : 'Could not start the microphone.';
+      setVoiceStatus(message, 'error');
+      setStatus(message);
+      updateControlState();
+    }
+  }
+
+  function stopVoiceCapture() {
+    if (!state.voiceRecorder || state.voiceRecorder.state !== 'recording') {
+      return;
+    }
+    clearVoiceStopTimer();
+    setVoiceStatus('Stopping mic and preparing transcript...', 'processing');
+    setStatus('Processing your voice note...');
+    state.voiceRecorder.stop();
+  }
+
+  function toggleVoiceCapture() {
+    if (state.voiceTranscribing) {
+      return;
+    }
+    if (state.voiceRecording) {
+      stopVoiceCapture();
+      return;
+    }
+    startVoiceCapture();
   }
 
   function isPublicRoom(code) {
@@ -434,9 +714,28 @@
     const connected = Boolean(state.socket && state.socket.readyState === WebSocket.OPEN && state.snapshot);
     ui.messageInput.disabled = !connected;
     ui.sendBtn.disabled = !connected;
+    ui.voiceBtn.disabled = !connected || !voiceCaptureSupported() || state.voiceTranscribing;
     ui.gameSelect.disabled = !connected;
     ui.gameRoomInput.disabled = !connected;
     ui.inviteNoteInput.disabled = !connected;
+    if (!voiceCaptureSupported()) {
+      setVoiceStatus('Voice to text needs a browser with microphone recording.', 'error');
+    } else if (state.voiceApiConfigured === false) {
+      setVoiceStatus('Voice to text needs backend speech-to-text enabled.', 'error');
+    } else if (state.voiceRecording) {
+      setVoiceStatus('Recording... tap Stop mic when done.', 'recording');
+    } else if (state.voiceTranscribing) {
+      setVoiceStatus('Transcribing voice note...', 'processing');
+    } else if (!connected) {
+      setVoiceStatus('Voice to text ready when you join a lounge.', 'idle');
+    } else if (
+      ui.voiceStatus
+      && ui.voiceStatus.dataset.tone !== 'error'
+      && ui.voiceStatus.dataset.tone !== 'ready'
+    ) {
+      setVoiceStatus('Voice to text is ready for short chat notes.', 'idle');
+    }
+    updateVoiceUi();
     updateInvitePreview();
   }
 
@@ -650,6 +949,7 @@
   });
 
   ui.shareInviteBtn.addEventListener('click', () => handleInviteShare());
+  ui.voiceBtn.addEventListener('click', toggleVoiceCapture);
   ui.composerForm.addEventListener('submit', handleMessageSubmit);
   ui.messageInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -670,6 +970,7 @@
   });
   ui.serverUrlInput.addEventListener('change', () => {
     ui.serverUrlInput.value = normalizeServerUrl(ui.serverUrlInput.value);
+    state.voiceApiConfigured = null;
     savePrefs();
     updateInvitePreview();
     updateLoungeInviteUi();

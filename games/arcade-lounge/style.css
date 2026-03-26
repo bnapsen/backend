@@ -518,9 +518,51 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.composer-meta {
+  display: grid;
+  gap: 4px;
+}
+
 .composer-actions p {
   color: var(--muted);
   font-size: 0.86rem;
+}
+
+.composer-button-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.voice-status {
+  min-height: 1.25em;
+}
+
+.voice-status[data-tone="recording"] {
+  color: var(--accent-2);
+}
+
+.voice-status[data-tone="processing"] {
+  color: var(--accent);
+}
+
+.voice-status[data-tone="ready"] {
+  color: var(--good);
+}
+
+.voice-status[data-tone="error"] {
+  color: #ff9b9b;
+}
+
+.voice-btn[data-state="recording"] {
+  color: #221003;
+  background: linear-gradient(135deg, var(--accent-2), #ffdcb0);
+  box-shadow: 0 16px 34px rgba(255, 191, 114, 0.18);
+}
+
+.voice-btn[data-state="processing"] {
+  background: linear-gradient(135deg, rgba(126, 243, 220, 0.22), rgba(143, 184, 255, 0.2));
 }
 
 .share-grid,
