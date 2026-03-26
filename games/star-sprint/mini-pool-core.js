@@ -6,7 +6,7 @@ const TABLE = Object.freeze({
   height: 560,
   rail: 46,
   pocketR: 28,
-  friction: 0.977,
+  friction: 0.981,
   cushionBounce: 0.88,
   ballBounce: 0.96,
   tangentBounce: 0.992,
@@ -19,18 +19,18 @@ const MAX_RACKS = 3;
 const RACK_BONUS = 14;
 const SHOT_MAX_DISTANCE = 220;
 const SHOT_MIN_POWER = 0.04;
-const SHOT_MIN_SPEED = 0.85;
-const SHOT_SPEED = 12.1;
+const SHOT_MIN_SPEED = 0.95;
+const SHOT_SPEED = 13.9;
 const SCRATCH_PENALTY = 6;
 const BLOCKER_PENALTY = 8;
-const STOP_EPSILON = 0.018;
-const SOFT_SETTLE_SPEED = 0.11;
+const STOP_EPSILON = 0.014;
+const SOFT_SETTLE_SPEED = 0.075;
 const TARGET_VALUE = 10;
 const CROWN_VALUE = 18;
 const TARGET_SUBSTEP_SECONDS = 1 / 120;
-const LOW_SPEED_BRAKE_THRESHOLD = 1.15;
-const LOW_SPEED_BRAKE = 0.93;
-const POCKET_PULL = 0.3;
+const LOW_SPEED_BRAKE_THRESHOLD = 0.82;
+const LOW_SPEED_BRAKE = 0.972;
+const POCKET_PULL = 0.26;
 
 function capitalize(value) {
   return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
@@ -547,7 +547,7 @@ function applyShot(game, color, payload) {
     };
   }
 
-  const easedPower = Math.pow(normalizedPower, 1.28);
+  const easedPower = Math.pow(normalizedPower, 1.08);
   const speed = SHOT_MIN_SPEED + easedPower * (SHOT_SPEED - SHOT_MIN_SPEED);
   cue.vx = (rawX / magnitude) * speed;
   cue.vy = (rawY / magnitude) * speed;

@@ -74,9 +74,9 @@
 
   const CUE_UI = Object.freeze({
     anchorCap: 128,
-    powerRange: 178,
+    powerRange: 146,
     minPower: 0.04,
-    cuePullback: 86,
+    cuePullback: 104,
     cueLength: 248,
     guideLength: 640,
     guideBounceLength: 110,
@@ -1034,7 +1034,7 @@
     }
 
     const direction = cueDirection();
-    const legacyVectorScale = power * 220;
+    const legacyVectorScale = power * 250;
     if (sendJson({
       action: 'shoot',
       vectorX: direction.x * legacyVectorScale,
