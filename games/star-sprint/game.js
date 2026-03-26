@@ -7,6 +7,8 @@
     serverUrl: 'neonCrownChess.serverUrl',
     engineLevel: 'neonCrownChess.engineLevel',
     timeControlPreset: 'neonCrownChess.timeControlPreset',
+    setupCollapsed: 'neonCrownChess.setupCollapsed',
+    sidebarCollapsed: 'neonCrownChess.sidebarCollapsed',
     boardTheme: 'neonCrownChess.boardTheme',
     pieceStyle: 'neonCrownChess.pieceStyle',
     soundEnabled: 'neonCrownChess.soundEnabled',
@@ -340,6 +342,8 @@
     engineLastInfoAt: 0,
     engineNeedsNewGame: true,
     timeControlPreset: 'untimed',
+    setupCollapsed: false,
+    sidebarCollapsed: true,
     boardTheme: 'walnut',
     pieceStyle: 'auto',
     soundEnabled: true,
@@ -350,6 +354,8 @@
 
   const ui = {
     pageShell: document.getElementById('pageShell'),
+    setupColumn: document.getElementById('setupColumn'),
+    sidebarColumn: document.getElementById('sidebarColumn'),
     nameInput: document.getElementById('nameInput'),
     roomInput: document.getElementById('roomInput'),
     serverUrlInput: document.getElementById('serverUrlInput'),
@@ -389,9 +395,10 @@
     playerCards: document.getElementById('playerCards'),
     historyList: document.getElementById('historyList'),
     historyStatus: document.getElementById('historyStatus'),
-    legendList: document.getElementById('legendList'),
     whiteCaptured: document.getElementById('whiteCaptured'),
     blackCaptured: document.getElementById('blackCaptured'),
+    toggleSetupBtn: document.getElementById('toggleSetupBtn'),
+    toggleSidebarBtn: document.getElementById('toggleSidebarBtn'),
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
     soloBtn: document.getElementById('soloBtn'),
@@ -406,9 +413,6 @@
     promotionModal: document.getElementById('promotionModal'),
     promotionOptions: document.getElementById('promotionOptions'),
     toast: document.getElementById('toast'),
-    stepOne: document.getElementById('stepOne'),
-    stepTwo: document.getElementById('stepTwo'),
-    stepThree: document.getElementById('stepThree'),
   };
 
   const boardSquares = document.createElement('div');
@@ -865,6 +869,8 @@
     localStorage.setItem(STORAGE_KEYS.serverUrl, state.serverUrl);
     localStorage.setItem(STORAGE_KEYS.engineLevel, String(state.engineLevel));
     localStorage.setItem(STORAGE_KEYS.timeControlPreset, state.timeControlPreset);
+    localStorage.setItem(STORAGE_KEYS.setupCollapsed, state.setupCollapsed ? '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, state.sidebarCollapsed ? '1' : '0');
     localStorage.setItem(STORAGE_KEYS.boardTheme, state.boardTheme);
     localStorage.setItem(STORAGE_KEYS.pieceStyle, state.pieceStyle);
     localStorage.setItem(STORAGE_KEYS.soundEnabled, state.soundEnabled ? '1' : '0');
@@ -952,7 +958,7 @@
   }
 
   function renderStatus() {
-    ui.statusText.textContent = state.statusMessage || 'Host a match to create an invite link, join with a code from a friend, or play solo against Stockfish.';
+    ui.statusText.textContent = state.statusMessage || 'Host a room, join by code, or start a solo Stockfish game.';
   }
 
   function inviteUrl() {
@@ -1142,6 +1148,21 @@
     }
   }
 
+  function renderRailLayout() {
+    if (ui.pageShell) {
+      ui.pageShell.dataset.setupCollapsed = state.setupCollapsed ? 'true' : 'false';
+      ui.pageShell.dataset.sidebarCollapsed = state.sidebarCollapsed ? 'true' : 'false';
+    }
+    if (ui.toggleSetupBtn) {
+      ui.toggleSetupBtn.textContent = state.setupCollapsed ? 'Show setup' : 'Hide setup';
+      ui.toggleSetupBtn.setAttribute('aria-pressed', state.setupCollapsed ? 'true' : 'false');
+    }
+    if (ui.toggleSidebarBtn) {
+      ui.toggleSidebarBtn.textContent = state.sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar';
+      ui.toggleSidebarBtn.setAttribute('aria-pressed', state.sidebarCollapsed ? 'true' : 'false');
+    }
+  }
+
   function setFocusMode(enabled, options = {}) {
     const next = Boolean(enabled);
     if (state.focusMode === next) {
@@ -1194,6 +1215,9 @@
   }
 
   function renderLegend() {
+    if (!ui.legendList) {
+      return;
+    }
     const items = [
       {
         title: 'Mouse, touch, or keyboard',
@@ -1613,12 +1637,10 @@
         ? 'Reload Stockfish'
         : 'Retry Stockfish';
 
-    ui.stepOne.classList.toggle('active', Boolean(ui.nameInput.value.trim()));
-    ui.stepTwo.classList.toggle('active', state.mode === 'online' || state.mode === 'solo');
-    ui.stepThree.classList.toggle('active', Boolean(state.snapshot));
   }
 
   function render() {
+    renderRailLayout();
     renderPills();
     renderStatus();
     renderTimeControlInfo();
@@ -2685,6 +2707,17 @@
       }
     });
 
+    ui.toggleSetupBtn.addEventListener('click', () => {
+      state.setupCollapsed = !state.setupCollapsed;
+      persistSettings();
+      render();
+    });
+    ui.toggleSidebarBtn.addEventListener('click', () => {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      persistSettings();
+      render();
+    });
+
     ui.focusBtn.addEventListener('click', () => {
       setFocusMode(!state.focusMode);
     });
@@ -2777,6 +2810,10 @@
     ui.engineLevelSelect.value = String(state.engineLevel);
     state.timeControlPreset = normalizeTimeControlPreset(localStorage.getItem(STORAGE_KEYS.timeControlPreset) || 'untimed');
     ui.timeControlSelect.value = state.timeControlPreset;
+    state.setupCollapsed = localStorage.getItem(STORAGE_KEYS.setupCollapsed) === '1';
+    state.sidebarCollapsed = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed) === null
+      ? true
+      : localStorage.getItem(STORAGE_KEYS.sidebarCollapsed) === '1';
     state.boardTheme = normalizeBoardTheme(localStorage.getItem(STORAGE_KEYS.boardTheme) || 'walnut');
     ui.boardThemeSelect.value = state.boardTheme;
     state.pieceStyle = normalizePieceStyle(localStorage.getItem(STORAGE_KEYS.pieceStyle) || 'auto');

@@ -4,47 +4,33 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Neon Crown Chess</title>
-  <link rel="stylesheet" href="style.css?v=20260325k" />
+  <link rel="stylesheet" href="style.css?v=20260325l" />
 </head>
 <body>
   <div class="page-shell" id="pageShell">
     <header class="topbar">
       <a class="back-link" href="../../index.html">Back to Nova Arcade</a>
-      <div class="topbar-status">
-        <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
-        <div class="status-pill ghost" id="modePill">No match running</div>
+      <div class="topbar-controls">
+        <div class="rail-buttons">
+          <button id="toggleSetupBtn" class="secondary" type="button">Hide setup</button>
+          <button id="toggleSidebarBtn" class="secondary" type="button">Hide sidebar</button>
+        </div>
+        <div class="topbar-status">
+          <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
+          <div class="status-pill ghost" id="modePill">No match running</div>
+        </div>
       </div>
     </header>
 
     <main class="layout">
-      <section class="setup-column">
+      <section class="setup-column" id="setupColumn">
         <section class="hero panel">
-          <p class="eyebrow">Internet-ready multiplayer chess</p>
-          <h1>Neon Crown Chess</h1>
-          <p class="lede">Classic chess with a richer table-style board, one-click room hosting, quick invite links, drag controls on phone and desktop, and six Stockfish 18 solo difficulty levels right in the browser.</p>
-
-          <div class="step-strip">
-            <div class="step-card" id="stepOne">
-              <span class="step-number">1</span>
-              <div>
-                <strong>Enter a name</strong>
-                <p>Use any display name so your opponent sees who joined.</p>
-              </div>
+          <div class="rail-head">
+            <div>
+              <p class="eyebrow">Internet-ready multiplayer chess</p>
+              <h1>Neon Crown Chess</h1>
             </div>
-            <div class="step-card" id="stepTwo">
-              <span class="step-number">2</span>
-              <div>
-                <strong>Host or join</strong>
-                <p>Hosting creates a room instantly. Joining works by code or shared link.</p>
-              </div>
-            </div>
-            <div class="step-card" id="stepThree">
-              <span class="step-number">3</span>
-              <div>
-                <strong>Play proper chess</strong>
-                <p>Castling, en passant, promotion, check, checkmate, and stalemate all work.</p>
-              </div>
-            </div>
+            <p class="rail-copy">Host fast, join by code, or play Stockfish without leaving the page.</p>
           </div>
 
           <div class="field-grid">
@@ -77,13 +63,6 @@
               </select>
               <p class="field-note" id="timeControlHint">No countdown clock. Good for relaxed games and testing.</p>
             </label>
-            <div class="control-card">
-              <span class="label">Clock sync</span>
-              <p>Online matches use the backend clock, and solo games use the same countdown locally so blitz presets feel consistent.</p>
-            </div>
-          </div>
-
-          <div class="field-grid">
             <label class="difficulty-field">
               <span>Stockfish difficulty</span>
               <select id="engineLevelSelect">
@@ -99,10 +78,6 @@
                 <span id="engineLevelMeter"></span>
               </div>
             </label>
-            <div class="control-card">
-              <span class="label">Controls</span>
-              <p id="controlHint">Mouse: click or drag. Phone: drag pieces. Keyboard: arrows move focus, Enter selects, Escape clears.</p>
-            </div>
           </div>
 
           <div class="field-grid">
@@ -152,7 +127,7 @@
             <div class="invite-header">
               <div>
                 <p class="label">Invite link</p>
-                <p class="invite-help">Host first, then copy this link and send it to the other player. They will land in the right room automatically.</p>
+                <p class="invite-help">Host first, then copy this link or room code for the second player.</p>
               </div>
               <button id="copyCodeBtn" class="secondary">Copy room code</button>
             </div>
@@ -170,29 +145,8 @@
             </label>
           </details>
 
-          <p class="status-text" id="statusText">Host a match to create an invite link, join with a code from a friend, or play solo against Stockfish.</p>
+          <p class="status-text" id="statusText">Host a room, join by code, or start a solo Stockfish game.</p>
           <p class="engine-status" id="engineStatus">Stockfish 18 idle.</p>
-        </section>
-
-        <section class="panel guide-panel">
-          <div class="guide-header">
-            <p class="label">How to play</p>
-            <h2>Easy remote setup</h2>
-          </div>
-          <div class="guide-list">
-            <div class="guide-item">
-              <strong>Fastest host flow</strong>
-              <p>Press <em>Host match</em>, wait for the room to appear, and then copy the invite link.</p>
-            </div>
-            <div class="guide-item">
-              <strong>Fastest join flow</strong>
-              <p>Open the invite link, type a name, and press <em>Join match</em>.</p>
-            </div>
-            <div class="guide-item">
-              <strong>Proper chess rules</strong>
-              <p>The backend validates every move, and solo mode uses a bundled Stockfish 18 browser build with a backup bot if the engine cannot load.</p>
-            </div>
-          </div>
         </section>
       </section>
 
@@ -266,7 +220,7 @@
         </section>
       </section>
 
-      <aside class="sidebar">
+      <aside class="sidebar" id="sidebarColumn">
         <section class="panel sidebar-panel">
           <div class="sidebar-header">
             <div>
@@ -288,16 +242,6 @@
           </div>
           <ol class="history-list" id="historyList"></ol>
         </section>
-
-        <section class="panel sidebar-panel">
-          <div class="sidebar-header">
-            <div>
-              <p class="label">Rules</p>
-              <h2>What is included</h2>
-            </div>
-          </div>
-          <div class="legend-list" id="legendList"></div>
-        </section>
       </aside>
     </main>
 
@@ -312,7 +256,7 @@
     <div class="toast" id="toast" aria-live="polite"></div>
   </div>
 
-  <script src="chess-core.js?v=20260325k"></script>
-  <script src="game.js?v=20260325k"></script>
+  <script src="chess-core.js?v=20260325l"></script>
+  <script src="game.js?v=20260325l"></script>
 </body>
 </html>
