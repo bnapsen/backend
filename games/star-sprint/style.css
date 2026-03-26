@@ -71,11 +71,9 @@ button {
   width: min(1560px, calc(100vw - 18px));
   margin: 0 auto;
   min-height: 100vh;
-  height: 100vh;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 10px;
-  padding: 12px 0 12px;
+  height: auto;
+  display: block;
+  padding: 12px 0 24px;
 }
 
 .page-shell::after {
@@ -189,10 +187,9 @@ button {
 
 .layout {
   min-height: 0;
-  height: 100%;
-  align-items: stretch;
+  align-items: start;
   gap: 10px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .setup-column,
@@ -201,8 +198,8 @@ button {
   display: grid;
   gap: 12px;
   min-height: 0;
-  overflow: auto;
-  scrollbar-gutter: stable;
+  overflow: visible;
+  scrollbar-gutter: auto;
 }
 
 .board-column {
@@ -210,7 +207,6 @@ button {
   min-height: 0;
   flex: 1 1 auto;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
   gap: 12px;
 }
 
@@ -235,8 +231,6 @@ button {
 
 .board-panel {
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
   background:
     radial-gradient(circle at top, rgba(255, 236, 196, 0.06), transparent 42%),
     linear-gradient(180deg, rgba(8, 17, 27, 0.94), rgba(5, 10, 17, 0.96));
@@ -265,6 +259,7 @@ button {
 
 .topbar {
   flex-wrap: wrap;
+  margin-bottom: 10px;
 }
 
 .topbar-controls {
@@ -726,6 +721,7 @@ button:disabled {
   justify-content: center;
   overflow: auto;
   padding: 12px;
+  margin-top: 10px;
   border-radius: 34px;
   background:
     linear-gradient(145deg, var(--board-frame-1), var(--board-frame-mid-1) 28%, var(--board-frame-mid-2) 62%, var(--board-frame-2) 100%);
@@ -825,6 +821,7 @@ button:disabled {
 
 .page-shell[data-focus-mode="true"] .board-stage {
   min-height: 0;
+  margin-top: 0;
   padding: 16px;
   border-radius: 30px;
   box-shadow:
@@ -1369,13 +1366,13 @@ button:disabled {
 
 .player-cards {
   min-height: 0;
+  max-height: 240px;
   overflow: auto;
 }
 
 .sidebar-panel {
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: block;
 }
 
 .history-list li {
@@ -1479,12 +1476,10 @@ button:disabled {
     min-height: auto;
     height: auto;
     display: block;
-    gap: 0;
     padding-top: 14px;
   }
 
   .layout {
-    height: auto;
     overflow: visible;
   }
 
@@ -1495,7 +1490,7 @@ button:disabled {
   }
 
   .board-column {
-    grid-template-rows: none;
+    display: grid;
   }
 
   .board-panel,

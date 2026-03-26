@@ -393,6 +393,8 @@
     networkStatus: document.getElementById('networkStatus'),
     modePill: document.getElementById('modePill'),
     boardStage: document.querySelector('.board-stage'),
+    boardFooter: document.querySelector('.board-footer'),
+    battleStrip: document.querySelector('.battle-strip'),
     boardGrid: document.getElementById('boardGrid'),
     playerCards: document.getElementById('playerCards'),
     historyList: document.getElementById('historyList'),
@@ -1196,8 +1198,15 @@
     const paddingX = parseFloat(stageStyles.paddingLeft || '0') + parseFloat(stageStyles.paddingRight || '0');
     const paddingY = parseFloat(stageStyles.paddingTop || '0') + parseFloat(stageStyles.paddingBottom || '0');
     const widthBudget = Math.max(0, ui.boardStage.clientWidth - paddingX);
-    const viewportBottomReserve = window.innerWidth <= 820 ? 16 : state.focusMode ? 18 : 28;
-    const viewportHeightBudget = Math.max(0, window.innerHeight - stageRect.top - paddingY - viewportBottomReserve);
+    const footerHeight = ui.boardFooter ? ui.boardFooter.getBoundingClientRect().height : 0;
+    const battleStripHeight = state.focusMode || !ui.battleStrip
+      ? 0
+      : ui.battleStrip.getBoundingClientRect().height;
+    const viewportBottomReserve = window.innerWidth <= 820 ? 16 : state.focusMode ? 18 : 22;
+    const viewportHeightBudget = Math.max(
+      0,
+      window.innerHeight - stageRect.top - paddingY - footerHeight - battleStripHeight - viewportBottomReserve
+    );
     let heightBudget = viewportHeightBudget;
 
     const stageHeightBudget = Math.max(0, ui.boardStage.clientHeight - paddingY);
