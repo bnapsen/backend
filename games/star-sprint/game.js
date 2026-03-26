@@ -1167,18 +1167,18 @@
 
   function responsiveBoardSizeCap() {
     if (window.innerWidth <= 820) {
-      return state.focusMode ? 76 : 54;
+      return state.focusMode ? 80 : 58;
     }
     if (state.focusMode) {
-      return 112;
+      return 118;
     }
     if (state.setupCollapsed && state.sidebarCollapsed) {
-      return 104;
+      return 110;
     }
     if (state.setupCollapsed || state.sidebarCollapsed) {
-      return 96;
+      return 102;
     }
-    return 90;
+    return 96;
   }
 
   function syncResponsiveBoardSize() {
