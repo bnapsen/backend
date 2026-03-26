@@ -91,7 +91,7 @@ const GAME_DEFS = {
   poker: {
     id: 'poker',
     title: 'Orbit Holdem Live',
-    maxPlayers: 5,
+    maxPlayers: Poker.MAX_SEATS,
     createGameState: () => Poker.createGameState(),
     cloneState: (game, viewerId) => Poker.cloneState(game, viewerId),
   },

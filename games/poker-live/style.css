@@ -495,7 +495,7 @@ h2 {
 
 .table-felt {
   position: relative;
-  min-height: 860px;
+  min-height: 940px;
   border-radius: 47% / 33%;
   overflow: hidden;
   border: 12px solid rgba(53, 33, 23, 0.9);
@@ -537,8 +537,9 @@ h2 {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(660px, 76%);
+  width: min(620px, 64%);
   text-align: center;
+  z-index: 2;
 }
 
 .board-copy {
@@ -565,15 +566,6 @@ h2 {
   min-height: 144px;
 }
 
-.community-row .card:nth-child(2),
-.community-row .card:nth-child(4) {
-  transform: translateY(8px);
-}
-
-.community-row .card:nth-child(3) {
-  transform: translateY(14px);
-}
-
 .card {
   position: relative;
   width: 82px;
@@ -591,6 +583,13 @@ h2 {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  transform: translate3d(var(--card-shift-x, 0), var(--card-lift, 0), 0) rotate(var(--card-tilt, 0deg));
+  transform-origin: center bottom;
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease,
+    opacity 180ms ease;
+  will-change: transform, opacity;
 }
 
 .card::before {
@@ -602,9 +601,24 @@ h2 {
   pointer-events: none;
 }
 
+.card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.36), transparent 22%, transparent 68%, rgba(0, 0, 0, 0.08)),
+    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.18), transparent 18%);
+  mix-blend-mode: screen;
+  opacity: 0.74;
+  pointer-events: none;
+}
+
 .card.back {
   background:
-    radial-gradient(circle at 30% 26%, rgba(239, 197, 109, 0.26), transparent 22%),
+    radial-gradient(circle at 28% 24%, rgba(239, 197, 109, 0.24), transparent 18%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 16%),
+    repeating-linear-gradient(135deg, rgba(55, 94, 162, 0.18) 0 8px, rgba(15, 27, 51, 0.18) 8px 16px),
     linear-gradient(135deg, #20355e, #13203a 52%, #0d1528);
   border-color: rgba(255, 255, 255, 0.12);
   color: transparent;
@@ -634,6 +648,18 @@ h2 {
   color: #bf204a;
 }
 
+.card.animate-in {
+  animation: cardDealIn 560ms cubic-bezier(.18, .89, .32, 1.2) both;
+  animation-delay: var(--deal-delay, 0ms);
+}
+
+.card:hover {
+  transform: translate3d(var(--card-shift-x, 0), calc(var(--card-lift, 0) - 3px), 0) rotate(var(--card-tilt, 0deg));
+  box-shadow:
+    0 16px 30px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
 .pot-cluster {
   display: flex;
   justify-content: center;
@@ -661,14 +687,18 @@ h2 {
 .seat-layer {
   position: absolute;
   inset: 0;
+  z-index: 3;
 }
 
 .seat-card {
   position: absolute;
-  width: min(176px, 18%);
-  min-width: 140px;
-  padding: 10px 11px 12px;
-  border-radius: 20px;
+  left: var(--seat-x);
+  top: var(--seat-y);
+  transform: translate(-50%, -50%);
+  width: min(136px, 12.2%);
+  min-width: 108px;
+  padding: 7px 8px 9px;
+  border-radius: 18px;
   background:
     linear-gradient(180deg, rgba(33, 21, 15, 0.82), rgba(11, 8, 6, 0.88)),
     linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent);
@@ -679,6 +709,11 @@ h2 {
   backdrop-filter: blur(10px);
   color: var(--text);
   text-align: left;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
 }
 
 .seat-card::before {
@@ -717,7 +752,7 @@ h2 {
 }
 
 .seat-card.joinable:hover {
-  transform: translateY(-2px) scale(1.01);
+  transform: translate(-50%, calc(-50% - 2px)) scale(1.02);
   border-color: rgba(118, 238, 217, 0.26);
   box-shadow:
     0 18px 30px rgba(0, 0, 0, 0.3),
@@ -730,64 +765,42 @@ h2 {
   outline-offset: 3px;
 }
 
-.seat-pos-0 {
-  left: 50%;
-  bottom: 20px;
-  transform: translateX(-50%);
-}
-
-.seat-pos-1 {
-  left: 4%;
-  bottom: 19%;
-}
-
-.seat-pos-2 {
-  left: 12%;
-  top: 9%;
-}
-
-.seat-pos-3 {
-  right: 12%;
-  top: 9%;
-}
-
-.seat-pos-4 {
-  right: 4%;
-  bottom: 19%;
-}
-
 .seat-topline {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   align-items: start;
 }
 
 .seat-name {
-  font-size: 0.9rem;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.74rem;
   font-weight: 800;
   line-height: 1.15;
 }
 
 .seat-stack {
   color: var(--gold);
-  margin-top: 9px;
-  font-size: 0.82rem;
+  margin-top: 8px;
+  font-size: 0.74rem;
   font-weight: 700;
 }
 
 .seat-badges {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
   justify-content: flex-end;
-  max-width: 86px;
+  max-width: 60px;
 }
 
 .badge {
-  padding: 3px 7px;
+  padding: 2px 6px;
   border-radius: 999px;
-  font-size: 0.62rem;
+  font-size: 0.56rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   background: rgba(255, 255, 255, 0.08);
@@ -820,14 +833,16 @@ h2 {
 
 .hole-row {
   display: flex;
-  gap: 6px;
-  margin-top: 10px;
+  justify-content: center;
+  gap: 0;
+  margin-top: 8px;
+  overflow: visible;
 }
 
 .seat-card .card {
-  width: 42px;
-  height: 62px;
-  padding: 6px 7px;
+  width: 50px;
+  height: 72px;
+  padding: 7px 8px;
 }
 
 .seat-card .card::before {
@@ -835,23 +850,34 @@ h2 {
 }
 
 .seat-card .card-rank {
-  font-size: 0.82rem;
+  font-size: 0.92rem;
 }
 
 .seat-card .card-suit {
-  font-size: 0.92rem;
+  font-size: 1.06rem;
 }
 
 .seat-placeholder {
   opacity: 0.78;
 }
 
+.hole-card.left-card {
+  --card-shift-x: 8px;
+  --card-tilt: -7deg;
+}
+
+.hole-card.right-card {
+  margin-left: -16px;
+  --card-shift-x: -8px;
+  --card-tilt: 7deg;
+}
+
 .seat-cta {
-  margin-top: 10px;
+  margin-top: 8px;
   color: var(--mint);
-  font-size: 0.76rem;
+  font-size: 0.64rem;
   font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.25;
 }
 
 .action-tray {
@@ -951,7 +977,7 @@ h2 {
   }
 
   .table-felt {
-    min-height: 820px;
+    min-height: 900px;
   }
 }
 
@@ -1013,43 +1039,37 @@ h2 {
   }
 
   .table-felt {
-    min-height: 980px;
+    min-height: 1180px;
     border-radius: 50px;
   }
 
   .table-center {
-    width: min(540px, 88%);
+    top: 25%;
+    width: min(520px, 88%);
+  }
+
+  .seat-layer {
+    top: 44%;
+    left: 12px;
+    right: 12px;
+    bottom: 14px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    align-content: start;
   }
 
   .seat-card {
-    min-width: 146px;
-    width: min(220px, 62%);
+    position: relative;
+    left: auto;
+    top: auto;
+    transform: none;
+    width: auto;
+    min-width: 0;
   }
 
-  .seat-pos-0 {
-    bottom: 18px;
-  }
-
-  .seat-pos-1 {
-    left: 10px;
-    bottom: 31%;
-  }
-
-  .seat-pos-2 {
-    left: 50%;
-    top: 12px;
-    transform: translateX(-50%);
-  }
-
-  .seat-pos-3 {
-    right: 10px;
-    bottom: 31%;
-  }
-
-  .seat-pos-4 {
-    left: 50%;
-    top: 31%;
-    transform: translateX(-50%);
+  .seat-card.joinable:hover {
+    transform: translateY(-2px) scale(1.01);
   }
 }
 
@@ -1063,7 +1083,7 @@ h2 {
   }
 
   .table-felt {
-    min-height: 1040px;
+    min-height: 1240px;
     border-radius: 38px;
   }
 
@@ -1079,13 +1099,12 @@ h2 {
   }
 
   .seat-card {
-    min-width: 136px;
-    width: min(198px, 68%);
+    padding: 8px;
   }
 
   .seat-card .card {
-    width: 38px;
-    height: 56px;
+    width: 44px;
+    height: 64px;
   }
 
   .table-buttons,
@@ -1097,5 +1116,25 @@ h2 {
   .raise-input {
     min-width: 0;
     flex-basis: auto;
+  }
+}
+
+@keyframes cardDealIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(calc(var(--card-shift-x, 0) + 4px), calc(var(--card-lift, 0) - 34px), 0) rotate(calc(var(--card-tilt, 0deg) - 8deg)) scale(0.86);
+    box-shadow: 0 22px 34px rgba(0, 0, 0, 0.34);
+  }
+  62% {
+    opacity: 1;
+    transform: translate3d(var(--card-shift-x, 0), calc(var(--card-lift, 0) + 4px), 0) rotate(calc(var(--card-tilt, 0deg) + 2deg)) scale(1.03);
+    box-shadow: 0 18px 28px rgba(0, 0, 0, 0.32);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(var(--card-shift-x, 0), var(--card-lift, 0), 0) rotate(var(--card-tilt, 0deg)) scale(1);
+    box-shadow:
+      0 10px 20px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.84);
   }
 }

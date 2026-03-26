@@ -5,7 +5,7 @@ const VALUES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 const STARTING_STACK = 1500;
 const SMALL_BLIND = 10;
 const BIG_BLIND = 20;
-const MAX_SEATS = 5;
+const MAX_SEATS = 10;
 const MAX_LOG = 12;
 
 function cloneCard(card) {
@@ -78,7 +78,7 @@ function createGameState() {
     deck: [],
     log: [
       createLogEntry(
-        'Orbit Holdem Live is ready. Host a room and seat between two and five players.',
+        'Orbit Holdem Live is ready. Host a room and seat between two and ten players.',
         'info'
       ),
     ],

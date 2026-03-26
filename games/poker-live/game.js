@@ -9,7 +9,7 @@
     infoHidden: 'orbitHoldemLive.infoHidden',
   };
   const query = new URLSearchParams(window.location.search);
-  const MAX_SEATS = 5;
+  const DEFAULT_MAX_SEATS = 10;
 
   const state = {
     mode: 'idle',
@@ -23,6 +23,10 @@
     panels: {
       setupHidden: false,
       infoHidden: false,
+    },
+    renderMemo: {
+      communitySignature: '',
+      seatSignatures: new Map(),
     },
   };
 
@@ -87,6 +91,11 @@
   function formatChips(value) {
     const amount = Number.isFinite(Number(value)) ? Number(value) : 0;
     return amount.toLocaleString('en-US');
+  }
+
+  function seatCapacity() {
+    const liveCapacity = Number(state.snapshot?.maxPlayers);
+    return Number.isFinite(liveCapacity) && liveCapacity > 0 ? liveCapacity : DEFAULT_MAX_SEATS;
   }
 
   function cardRankLabel(value) {
@@ -276,22 +285,26 @@
 
   function relativeSeatPosition(seat) {
     const viewerSeat = getViewerSeat();
+    const capacity = seatCapacity();
     if (!Number.isInteger(viewerSeat)) {
       return seat;
     }
-    return (seat - viewerSeat + MAX_SEATS) % MAX_SEATS;
+    return (seat - viewerSeat + capacity) % capacity;
   }
 
   function renderCard(card, options) {
     const settings = options || {};
     const hidden = Boolean(settings.hidden);
     const extraClass = settings.extraClass ? ` ${settings.extraClass}` : '';
+    const animateClass = settings.animate ? ' animate-in' : '';
+    const style = settings.style || '';
+    const styleAttr = style ? ` style="${style}"` : '';
     if (!card || hidden) {
-      return `<div class="card back${settings.dim ? ' hidden' : ''}${extraClass}"></div>`;
+      return `<div class="card back${settings.dim ? ' hidden' : ''}${extraClass}${animateClass}"${styleAttr}></div>`;
     }
     const red = card.suit === 'H' || card.suit === 'D';
     return `
-      <div class="card${red ? ' red' : ''}${extraClass}">
+      <div class="card${red ? ' red' : ''}${extraClass}${animateClass}"${styleAttr}>
         <div class="card-rank">${cardRankLabel(card.value)}</div>
         <div class="card-suit">${suitGlyph(card.suit)}</div>
       </div>
@@ -299,16 +312,47 @@
   }
 
   function renderCommunity() {
+    const signature = state.snapshot
+      ? state.snapshot.community.map((card) => (card ? `${card.value}${card.suit}` : '--')).join('|')
+      : 'empty';
+    const animate = signature !== state.renderMemo.communitySignature;
+
     if (!state.snapshot) {
       ui.communityRow.innerHTML = Array.from({ length: 5 }, () => renderCard(null, { dim: true })).join('');
+      state.renderMemo.communitySignature = signature;
       return;
     }
     const slots = [];
     for (let index = 0; index < 5; index += 1) {
       const card = state.snapshot.community[index] || null;
-      slots.push(renderCard(card, { dim: !card }));
+      const lift = index === 2 ? 14 : index === 1 || index === 3 ? 8 : 0;
+      slots.push(renderCard(card, {
+        dim: !card,
+        extraClass: 'community-card',
+        animate: animate && Boolean(card),
+        style: `--card-lift:${lift}px;--deal-delay:${140 + index * 55}ms;`,
+      }));
     }
     ui.communityRow.innerHTML = slots.join('');
+    state.renderMemo.communitySignature = signature;
+  }
+
+  function seatSignature(player) {
+    if (!player) {
+      return 'empty';
+    }
+    const cards = player.cards.map((card) => (card ? `${card.value}${card.suit}` : 'xx')).join('|');
+    return `${player.id}|${cards}|${player.stack}|${player.folded ? 'f' : 'a'}|${player.allIn ? 'i' : 'n'}|${state.snapshot?.stage || 'waiting'}`;
+  }
+
+  function seatPlacementStyle(position, count) {
+    const seatCount = Math.max(2, count || DEFAULT_MAX_SEATS);
+    const angle = (Math.PI / 2) + ((position / seatCount) * Math.PI * 2);
+    const radiusX = seatCount >= 8 ? 38 : 35;
+    const radiusY = seatCount >= 8 ? 32 : 29;
+    const x = 50 + (Math.cos(angle) * radiusX);
+    const y = 50 + (Math.sin(angle) * radiusY);
+    return `--seat-x:${x.toFixed(2)}%;--seat-y:${y.toFixed(2)}%;`;
   }
 
   function emptySeatMarkup(seat, position) {
@@ -317,27 +361,27 @@
       ? (hasJoinTarget ? 'join' : 'host')
       : '';
     const prompt = quickAction === 'join'
-      ? 'Click to join this table.'
+      ? 'Click to join.'
       : quickAction === 'host'
-        ? 'Click to host this table.'
-        : 'Open seat for another player.';
+        ? 'Click to host.'
+        : 'Open seat.';
     const tag = quickAction ? 'button' : 'div';
     const actionAttr = quickAction ? ` type="button" data-seat-action="${quickAction}" data-seat="${seat}"` : '';
     const joinClass = quickAction ? ' joinable' : '';
     return `
-      <${tag} class="seat-card empty seat-pos-${position}${joinClass}"${actionAttr}>
+      <${tag} class="seat-card empty${joinClass}"${actionAttr} style="${seatPlacementStyle(position, seatCapacity())}">
         <div class="seat-topline">
           <div>
-            <div class="seat-name">Open seat ${seat + 1}</div>
-            <div class="seat-stack">1,500 buy-in</div>
+            <div class="seat-name">Seat ${seat + 1}</div>
+            <div class="seat-stack">Buy-in 1,500</div>
           </div>
           <div class="seat-badges">
             <span class="badge">Open</span>
           </div>
         </div>
         <div class="hole-row seat-placeholder">
-          ${renderCard(null, { dim: true })}
-          ${renderCard(null, { dim: true })}
+          ${renderCard(null, { dim: true, extraClass: 'hole-card left-card' })}
+          ${renderCard(null, { dim: true, extraClass: 'hole-card right-card' })}
         </div>
         <div class="seat-cta">${prompt}</div>
       </${tag}>
@@ -390,11 +434,19 @@
     }
 
     const cards = player.cardCount
-      ? Array.from({ length: 2 }, (_, index) => renderCard(player.cards[index], { hidden: !player.cards[index] }))
-      : [renderCard(null, { dim: true }), renderCard(null, { dim: true })];
+      ? Array.from({ length: 2 }, (_, index) => renderCard(player.cards[index], {
+        hidden: !player.cards[index],
+        extraClass: `hole-card ${index === 0 ? 'left-card' : 'right-card'}`,
+        animate: state.renderMemo.seatSignatures.get(seat) !== seatSignature(player),
+        style: `--deal-delay:${110 + index * 50}ms;`,
+      }))
+      : [
+        renderCard(null, { dim: true, extraClass: 'hole-card left-card' }),
+        renderCard(null, { dim: true, extraClass: 'hole-card right-card' }),
+      ];
 
     return `
-      <div class="${classes.join(' ')}">
+      <div class="${classes.join(' ')}" style="${seatPlacementStyle(position, seatCapacity())}">
         <div class="seat-topline">
           <div>
             <div class="seat-name">${player.name}</div>
@@ -412,18 +464,22 @@
   }
 
   function renderSeats() {
+    const nextSignatures = new Map();
     const seats = [];
-    for (let seat = 0; seat < MAX_SEATS; seat += 1) {
+    for (let seat = 0; seat < seatCapacity(); seat += 1) {
+      const player = getPlayerBySeat(seat);
+      nextSignatures.set(seat, seatSignature(player));
       seats.push({
         seat,
         position: relativeSeatPosition(seat),
-        player: getPlayerBySeat(seat),
+        player,
       });
     }
     ui.seatLayer.innerHTML = seats
       .sort((left, right) => left.position - right.position)
       .map((entry) => renderSeat(entry.player, entry.seat, entry.position))
       .join('');
+    state.renderMemo.seatSignatures = nextSignatures;
   }
 
   function renderLog() {
@@ -451,7 +507,7 @@
       ui.potLabel.textContent = '0';
       ui.turnLabel.textContent = 'Seat players to begin';
       ui.boardHeadline.textContent = 'Orbit Holdem Live';
-      ui.boardSubline.textContent = 'Five seats, private cards, and backend-driven hands.';
+      ui.boardSubline.textContent = 'Ten seats, private cards, and backend-driven hands.';
       ui.potAmount.textContent = '0';
       ui.betAmount.textContent = '0';
       return;
