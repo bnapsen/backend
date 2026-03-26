@@ -140,6 +140,18 @@
       soundProfile: 'emerald',
       summary: 'Rich green felt tones with brass woodwork for a club-room table vibe.',
     },
+    rosewood: {
+      label: 'Rosewood Salon',
+      pieceStyle: 'regal',
+      soundProfile: 'walnut',
+      summary: 'Deep wine-red woods, warm ivory lights, and a more dramatic parlor-table contrast.',
+    },
+    onyx: {
+      label: 'Onyx Slate',
+      pieceStyle: 'onyx',
+      soundProfile: 'midnight',
+      summary: 'Sharp black-and-stone tournament tones with high contrast and a colder modern feel.',
+    },
   };
   const PIECE_STYLES = {
     auto: {
@@ -161,6 +173,14 @@
     emerald: {
       label: 'Brass Study',
       summary: 'Brass-and-ivory pieces with a quieter library-table personality.',
+    },
+    regal: {
+      label: 'Royal Crown',
+      summary: 'High-polish ivory and lacquered garnet pieces with a richer ceremonial feel.',
+    },
+    onyx: {
+      label: 'Onyx Tournament',
+      summary: 'Matte monochrome pieces with crisp silver rims and stronger silhouette contrast.',
     },
   };
   const SOUND_PROFILES = {
@@ -1606,6 +1626,27 @@
     state.drag = null;
   }
 
+  function restartPieceClassAnimation(element, className, duration) {
+    if (!element) {
+      return;
+    }
+    if (!element._codexAnimTimers) {
+      element._codexAnimTimers = new Map();
+    }
+    const existingTimer = element._codexAnimTimers.get(className);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+    element.classList.remove(className);
+    void element.offsetWidth;
+    element.classList.add(className);
+    const timer = window.setTimeout(() => {
+      element.classList.remove(className);
+      element._codexAnimTimers.delete(className);
+    }, duration);
+    element._codexAnimTimers.set(className, timer);
+  }
+
   function renderPieces() {
     const seen = new Set();
     const selectedId = state.selected ? (boardPieceAt(state.selected.x, state.selected.y) || {}).id : null;
@@ -1638,16 +1679,26 @@
           state.pieceElements.set(piece.id, element);
           requestAnimationFrame(() => {
             element.classList.remove('piece-ghost');
+            restartPieceClassAnimation(element, 'spawn-animating', 320);
           });
         }
 
         const isMovedPiece = Boolean(lastMove && lastMove.to.x === x && lastMove.to.y === y);
         const isDragSource = Boolean(state.drag && state.drag.pieceId === piece.id);
+        const previousBoardX = Number(element.dataset.boardX);
+        const previousBoardY = Number(element.dataset.boardY);
+        const movedBetweenSquares = Number.isFinite(previousBoardX) && Number.isFinite(previousBoardY)
+          && (previousBoardX !== x || previousBoardY !== y);
         element.className = `board-piece ${piece.color}${piece.id === selectedId ? ' active' : ''}${isMovedPiece ? ' moved' : ''}${isDragSource ? ' drag-source' : ''}`;
         element.dataset.pieceType = piece.type;
+        element.dataset.boardX = String(x);
+        element.dataset.boardY = String(y);
         element.style.setProperty('--x', `calc(var(--square-size) * ${displayX})`);
         element.style.setProperty('--y', `calc(var(--square-size) * ${displayY})`);
         element.querySelector('.piece-face').textContent = Core.getPieceGlyph(piece);
+        if (movedBetweenSquares && !isDragSource) {
+          restartPieceClassAnimation(element, 'move-animating', 360);
+        }
         element.onpointerdown = (event) => {
           if (performance.now() < state.clickGuardUntil) {
             return;
@@ -1662,10 +1713,14 @@
       if (seen.has(id)) {
         continue;
       }
-      element.classList.add('piece-ghost');
+      if (lastMove && lastMove.capture) {
+        restartPieceClassAnimation(element, 'capture-animating', 220);
+      } else {
+        element.classList.add('piece-ghost');
+      }
       window.setTimeout(() => {
         element.remove();
-      }, 150);
+      }, lastMove && lastMove.capture ? 220 : 150);
       state.pieceElements.delete(id);
     }
   }
