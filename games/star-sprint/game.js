@@ -7,7 +7,9 @@
     serverUrl: 'neonCrownChess.serverUrl',
     engineLevel: 'neonCrownChess.engineLevel',
     boardTheme: 'neonCrownChess.boardTheme',
+    pieceStyle: 'neonCrownChess.pieceStyle',
     soundEnabled: 'neonCrownChess.soundEnabled',
+    soundProfile: 'neonCrownChess.soundProfile',
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const ENGINE_WORKER_VERSION = '20260325f';
@@ -69,19 +71,194 @@
   const BOARD_THEMES = {
     walnut: {
       label: 'Walnut Classic',
-      summary: 'Warm walnut tones with carved-piece contrast and a traditional table look.',
+      pieceStyle: 'walnut',
+      soundProfile: 'walnut',
+      summary: 'Warm walnut tones with a traditional table look and classic contrast.',
     },
     marble: {
       label: 'Ivory Marble',
+      pieceStyle: 'marble',
+      soundProfile: 'marble',
       summary: 'Bright ivory squares, cool slate darks, and a polished tournament-lobby finish.',
     },
     midnight: {
       label: 'Midnight Arena',
+      pieceStyle: 'midnight',
+      soundProfile: 'midnight',
       summary: 'Deep navy squares with steel highlights for a sharper late-night match feel.',
     },
     emerald: {
       label: 'Emerald Study',
+      pieceStyle: 'emerald',
+      soundProfile: 'emerald',
       summary: 'Rich green felt tones with brass woodwork for a club-room table vibe.',
+    },
+  };
+  const PIECE_STYLES = {
+    auto: {
+      label: 'Match board',
+      summary: 'Automatically uses the piece set paired with the active board theme.',
+    },
+    walnut: {
+      label: 'Carved Walnut',
+      summary: 'Ivory and ebony medallion pieces with a carved old-club character.',
+    },
+    marble: {
+      label: 'Marble Tournament',
+      summary: 'Polished stone pieces with silver trim and a cleaner tournament look.',
+    },
+    midnight: {
+      label: 'Neon Glass',
+      summary: 'Arena-style pieces with sharper glow, darker obsidian bodies, and brighter rims.',
+    },
+    emerald: {
+      label: 'Brass Study',
+      summary: 'Brass-and-ivory pieces with a quieter library-table personality.',
+    },
+  };
+  const SOUND_PROFILES = {
+    auto: {
+      label: 'Match board',
+      summary: 'Automatically uses the sound palette paired with the active board theme.',
+    },
+    walnut: {
+      label: 'Wood Hall',
+      summary: 'Warm wooden clicks and darker felt-table thumps.',
+    },
+    marble: {
+      label: 'Crystal Room',
+      summary: 'Clean glassy pings with crisp tournament-room definition.',
+    },
+    midnight: {
+      label: 'Synth Arena',
+      summary: 'Sharper neon synth blips and arcade-style pressure cues.',
+    },
+    emerald: {
+      label: 'Club Lounge',
+      summary: 'Soft brass notes and calmer low-end cues for longer games.',
+    },
+  };
+  const SOUND_CUE_LIBRARY = {
+    walnut: {
+      start: [
+        { frequency: 293.66, frequencyEnd: 329.63, duration: 0.12, gain: 0.018, type: 'triangle' },
+        { frequency: 392, frequencyEnd: 440, duration: 0.18, gain: 0.014, startOffset: 0.08, type: 'triangle' },
+      ],
+      move: [
+        { frequency: 460, frequencyEnd: 390, duration: 0.07, gain: 0.018, type: 'triangle' },
+      ],
+      capture: [
+        { frequency: 255, frequencyEnd: 145, duration: 0.12, gain: 0.022, type: 'sawtooth', q: 1.9 },
+        { frequency: 420, frequencyEnd: 280, duration: 0.09, gain: 0.012, startOffset: 0.03, type: 'triangle' },
+      ],
+      castle: [
+        { frequency: 392, frequencyEnd: 440, duration: 0.08, gain: 0.018, type: 'triangle' },
+        { frequency: 523.25, frequencyEnd: 587.33, duration: 0.1, gain: 0.014, startOffset: 0.05, type: 'triangle' },
+      ],
+      check: [
+        { frequency: 690, frequencyEnd: 620, duration: 0.08, gain: 0.017, type: 'square' },
+        { frequency: 880, frequencyEnd: 780, duration: 0.08, gain: 0.012, startOffset: 0.05, type: 'triangle' },
+      ],
+      win: [
+        { frequency: 392, frequencyEnd: 440, duration: 0.12, gain: 0.02, type: 'triangle' },
+        { frequency: 523.25, frequencyEnd: 659.25, duration: 0.17, gain: 0.016, startOffset: 0.08, type: 'triangle' },
+        { frequency: 659.25, frequencyEnd: 783.99, duration: 0.22, gain: 0.014, startOffset: 0.18, type: 'triangle' },
+      ],
+      draw: [
+        { frequency: 349.23, frequencyEnd: 329.63, duration: 0.14, gain: 0.015, type: 'triangle' },
+        { frequency: 440, frequencyEnd: 392, duration: 0.17, gain: 0.012, startOffset: 0.05, type: 'triangle' },
+      ],
+    },
+    marble: {
+      start: [
+        { frequency: 659.25, frequencyEnd: 783.99, duration: 0.11, gain: 0.012, type: 'sine' },
+        { frequency: 987.77, frequencyEnd: 1174.66, duration: 0.16, gain: 0.01, startOffset: 0.08, type: 'sine' },
+      ],
+      move: [
+        { frequency: 1174.66, frequencyEnd: 932.33, duration: 0.06, gain: 0.012, type: 'sine' },
+      ],
+      capture: [
+        { frequency: 622.25, frequencyEnd: 329.63, duration: 0.11, gain: 0.017, type: 'triangle' },
+        { frequency: 1244.51, frequencyEnd: 880, duration: 0.08, gain: 0.009, startOffset: 0.035, type: 'sine' },
+      ],
+      castle: [
+        { frequency: 783.99, frequencyEnd: 987.77, duration: 0.08, gain: 0.012, type: 'sine' },
+        { frequency: 1174.66, frequencyEnd: 1318.51, duration: 0.09, gain: 0.009, startOffset: 0.05, type: 'sine' },
+      ],
+      check: [
+        { frequency: 932.33, frequencyEnd: 830.61, duration: 0.08, gain: 0.012, type: 'square' },
+        { frequency: 1396.91, frequencyEnd: 1174.66, duration: 0.08, gain: 0.008, startOffset: 0.05, type: 'triangle' },
+      ],
+      win: [
+        { frequency: 783.99, frequencyEnd: 987.77, duration: 0.1, gain: 0.013, type: 'sine' },
+        { frequency: 1174.66, frequencyEnd: 1567.98, duration: 0.16, gain: 0.01, startOffset: 0.08, type: 'sine' },
+        { frequency: 1567.98, frequencyEnd: 1760, duration: 0.22, gain: 0.008, startOffset: 0.18, type: 'triangle' },
+      ],
+      draw: [
+        { frequency: 587.33, frequencyEnd: 554.37, duration: 0.13, gain: 0.011, type: 'sine' },
+        { frequency: 783.99, frequencyEnd: 739.99, duration: 0.16, gain: 0.009, startOffset: 0.04, type: 'sine' },
+      ],
+    },
+    midnight: {
+      start: [
+        { frequency: 392, frequencyEnd: 440, duration: 0.13, gain: 0.022, type: 'triangle' },
+        { frequency: 523.25, frequencyEnd: 659.25, duration: 0.18, gain: 0.018, startOffset: 0.07, type: 'triangle' },
+      ],
+      move: [
+        { frequency: 720, frequencyEnd: 600, duration: 0.06, gain: 0.02, type: 'triangle' },
+        { frequency: 980, frequencyEnd: 860, duration: 0.08, gain: 0.012, startOffset: 0.025, type: 'sine' },
+      ],
+      capture: [
+        { frequency: 310, frequencyEnd: 170, duration: 0.12, gain: 0.026, type: 'sawtooth', q: 2 },
+        { frequency: 680, frequencyEnd: 460, duration: 0.1, gain: 0.018, startOffset: 0.035, type: 'triangle' },
+      ],
+      castle: [
+        { frequency: 440, frequencyEnd: 494, duration: 0.09, gain: 0.022, type: 'triangle' },
+        { frequency: 587, frequencyEnd: 659, duration: 0.11, gain: 0.018, startOffset: 0.05, type: 'triangle' },
+      ],
+      check: [
+        { frequency: 830, frequencyEnd: 760, duration: 0.09, gain: 0.02, type: 'square' },
+        { frequency: 1046, frequencyEnd: 988, duration: 0.08, gain: 0.014, startOffset: 0.05, type: 'triangle' },
+      ],
+      win: [
+        { frequency: 392, frequencyEnd: 440, duration: 0.12, gain: 0.024, type: 'triangle' },
+        { frequency: 523.25, frequencyEnd: 659.25, duration: 0.18, gain: 0.02, startOffset: 0.08, type: 'triangle' },
+        { frequency: 783.99, frequencyEnd: 880, duration: 0.22, gain: 0.018, startOffset: 0.18, type: 'triangle' },
+      ],
+      draw: [
+        { frequency: 392, frequencyEnd: 370, duration: 0.16, gain: 0.018, type: 'triangle' },
+        { frequency: 523.25, frequencyEnd: 493.88, duration: 0.18, gain: 0.014, startOffset: 0.04, type: 'triangle' },
+      ],
+    },
+    emerald: {
+      start: [
+        { frequency: 329.63, frequencyEnd: 349.23, duration: 0.14, gain: 0.015, type: 'triangle' },
+        { frequency: 493.88, frequencyEnd: 523.25, duration: 0.18, gain: 0.012, startOffset: 0.09, type: 'sine' },
+      ],
+      move: [
+        { frequency: 520, frequencyEnd: 460, duration: 0.08, gain: 0.014, type: 'triangle' },
+      ],
+      capture: [
+        { frequency: 280, frequencyEnd: 190, duration: 0.12, gain: 0.018, type: 'triangle' },
+        { frequency: 392, frequencyEnd: 310, duration: 0.11, gain: 0.012, startOffset: 0.035, type: 'sine' },
+      ],
+      castle: [
+        { frequency: 392, frequencyEnd: 440, duration: 0.09, gain: 0.015, type: 'triangle' },
+        { frequency: 493.88, frequencyEnd: 587.33, duration: 0.11, gain: 0.011, startOffset: 0.05, type: 'sine' },
+      ],
+      check: [
+        { frequency: 740, frequencyEnd: 660, duration: 0.09, gain: 0.013, type: 'square' },
+        { frequency: 880, frequencyEnd: 784, duration: 0.08, gain: 0.01, startOffset: 0.05, type: 'triangle' },
+      ],
+      win: [
+        { frequency: 349.23, frequencyEnd: 392, duration: 0.12, gain: 0.016, type: 'triangle' },
+        { frequency: 440, frequencyEnd: 523.25, duration: 0.17, gain: 0.013, startOffset: 0.08, type: 'sine' },
+        { frequency: 659.25, frequencyEnd: 739.99, duration: 0.2, gain: 0.011, startOffset: 0.18, type: 'sine' },
+      ],
+      draw: [
+        { frequency: 329.63, frequencyEnd: 311.13, duration: 0.15, gain: 0.012, type: 'triangle' },
+        { frequency: 440, frequencyEnd: 415.3, duration: 0.18, gain: 0.01, startOffset: 0.04, type: 'sine' },
+      ],
     },
   };
 
@@ -118,7 +295,9 @@
     engineLastInfoAt: 0,
     engineNeedsNewGame: true,
     boardTheme: 'walnut',
+    pieceStyle: 'auto',
     soundEnabled: true,
+    soundProfile: 'auto',
     audioContext: null,
   };
 
@@ -132,6 +311,10 @@
     engineLevelMeter: document.getElementById('engineLevelMeter'),
     boardThemeSelect: document.getElementById('boardThemeSelect'),
     boardThemeHint: document.getElementById('boardThemeHint'),
+    pieceStyleSelect: document.getElementById('pieceStyleSelect'),
+    pieceStyleHint: document.getElementById('pieceStyleHint'),
+    soundProfileSelect: document.getElementById('soundProfileSelect'),
+    soundProfileHint: document.getElementById('soundProfileHint'),
     soundToggleBtn: document.getElementById('soundToggleBtn'),
     soundHint: document.getElementById('soundHint'),
     inviteInput: document.getElementById('inviteInput'),
@@ -210,12 +393,40 @@
     return BOARD_THEMES[value] ? value : 'walnut';
   }
 
+  function normalizePieceStyle(value) {
+    return PIECE_STYLES[value] ? value : 'auto';
+  }
+
+  function normalizeSoundProfile(value) {
+    return SOUND_PROFILES[value] ? value : 'auto';
+  }
+
   function engineReadyMessage() {
     return `Stockfish 18 ready - ${engineLevelProfile().label}`;
   }
 
   function boardThemeProfile() {
     return BOARD_THEMES[state.boardTheme] || BOARD_THEMES.walnut;
+  }
+
+  function resolvePieceStyle() {
+    return state.pieceStyle === 'auto'
+      ? boardThemeProfile().pieceStyle || state.boardTheme
+      : normalizePieceStyle(state.pieceStyle);
+  }
+
+  function resolveSoundProfile() {
+    return state.soundProfile === 'auto'
+      ? boardThemeProfile().soundProfile || state.boardTheme
+      : normalizeSoundProfile(state.soundProfile);
+  }
+
+  function pieceStyleProfile() {
+    return PIECE_STYLES[resolvePieceStyle()] || PIECE_STYLES.walnut;
+  }
+
+  function soundProfileProfile() {
+    return SOUND_PROFILES[resolveSoundProfile()] || SOUND_PROFILES.midnight;
   }
 
   function audioSupported() {
@@ -304,39 +515,10 @@
     if (!ensureAudioContext() || state.audioContext.state !== 'running') {
       return;
     }
-
-    switch (kind) {
-      case 'start':
-        playTone({ frequency: 392, frequencyEnd: 440, duration: 0.13, gain: 0.022 });
-        playTone({ frequency: 523.25, frequencyEnd: 659.25, duration: 0.18, gain: 0.018, startOffset: 0.07 });
-        break;
-      case 'move':
-        playTone({ frequency: 720, frequencyEnd: 600, type: 'triangle', duration: 0.06, gain: 0.02 });
-        playTone({ frequency: 980, frequencyEnd: 860, type: 'sine', duration: 0.08, gain: 0.012, startOffset: 0.025 });
-        break;
-      case 'capture':
-        playTone({ frequency: 310, frequencyEnd: 170, type: 'sawtooth', duration: 0.12, gain: 0.026, q: 2 });
-        playTone({ frequency: 680, frequencyEnd: 460, type: 'triangle', duration: 0.1, gain: 0.018, startOffset: 0.035 });
-        break;
-      case 'castle':
-        playTone({ frequency: 440, frequencyEnd: 494, duration: 0.09, gain: 0.022 });
-        playTone({ frequency: 587, frequencyEnd: 659, duration: 0.11, gain: 0.018, startOffset: 0.05 });
-        break;
-      case 'check':
-        playTone({ frequency: 830, frequencyEnd: 760, type: 'square', duration: 0.09, gain: 0.02 });
-        playTone({ frequency: 1046, frequencyEnd: 988, type: 'triangle', duration: 0.08, gain: 0.014, startOffset: 0.05 });
-        break;
-      case 'win':
-        playTone({ frequency: 392, frequencyEnd: 440, duration: 0.12, gain: 0.024 });
-        playTone({ frequency: 523.25, frequencyEnd: 659.25, duration: 0.18, gain: 0.02, startOffset: 0.08 });
-        playTone({ frequency: 783.99, frequencyEnd: 880, duration: 0.22, gain: 0.018, startOffset: 0.18 });
-        break;
-      case 'draw':
-        playTone({ frequency: 392, frequencyEnd: 370, duration: 0.16, gain: 0.018 });
-        playTone({ frequency: 523.25, frequencyEnd: 493.88, duration: 0.18, gain: 0.014, startOffset: 0.04 });
-        break;
-      default:
-        break;
+    const cues = SOUND_CUE_LIBRARY[resolveSoundProfile()] || SOUND_CUE_LIBRARY.midnight;
+    const sequence = Array.isArray(cues[kind]) ? cues[kind] : [];
+    for (const tone of sequence) {
+      playTone(tone);
     }
   }
 
@@ -432,7 +614,9 @@
     localStorage.setItem(STORAGE_KEYS.serverUrl, state.serverUrl);
     localStorage.setItem(STORAGE_KEYS.engineLevel, String(state.engineLevel));
     localStorage.setItem(STORAGE_KEYS.boardTheme, state.boardTheme);
+    localStorage.setItem(STORAGE_KEYS.pieceStyle, state.pieceStyle);
     localStorage.setItem(STORAGE_KEYS.soundEnabled, state.soundEnabled ? '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.soundProfile, state.soundProfile);
   }
 
   function getPlayerName() {
@@ -613,6 +797,8 @@
 
   function renderBoardThemeInfo() {
     const profile = boardThemeProfile();
+    const pairedPieces = PIECE_STYLES[profile.pieceStyle] || pieceStyleProfile();
+    const pairedSounds = SOUND_PROFILES[profile.soundProfile] || soundProfileProfile();
     if (ui.pageShell) {
       ui.pageShell.dataset.boardTheme = state.boardTheme;
     }
@@ -620,7 +806,35 @@
       ui.boardThemeSelect.value = state.boardTheme;
     }
     if (ui.boardThemeHint) {
-      ui.boardThemeHint.textContent = profile.summary;
+      ui.boardThemeHint.textContent = `${profile.summary} Best with ${pairedPieces.label} pieces and ${pairedSounds.label} cues.`;
+    }
+  }
+
+  function renderPieceStyleInfo() {
+    const activeStyle = resolvePieceStyle();
+    const activeProfile = pieceStyleProfile();
+    if (ui.pageShell) {
+      ui.pageShell.dataset.pieceStyle = activeStyle;
+    }
+    if (ui.pieceStyleSelect) {
+      ui.pieceStyleSelect.value = state.pieceStyle;
+    }
+    if (ui.pieceStyleHint) {
+      ui.pieceStyleHint.textContent = state.pieceStyle === 'auto'
+        ? `Matching ${boardThemeProfile().label} with ${activeProfile.label}. ${activeProfile.summary}`
+        : activeProfile.summary;
+    }
+  }
+
+  function renderSoundProfileInfo() {
+    const activeProfile = soundProfileProfile();
+    if (ui.soundProfileSelect) {
+      ui.soundProfileSelect.value = state.soundProfile;
+    }
+    if (ui.soundProfileHint) {
+      ui.soundProfileHint.textContent = state.soundProfile === 'auto'
+        ? `Matching ${boardThemeProfile().label} with ${activeProfile.label}. ${activeProfile.summary}`
+        : activeProfile.summary;
     }
   }
 
@@ -636,11 +850,12 @@
       ui.soundHint.textContent = 'This browser does not expose Web Audio for move sounds.';
       return;
     }
+    const activeProfile = soundProfileProfile();
     ui.soundToggleBtn.textContent = state.soundEnabled ? 'Sound on' : 'Sound off';
     ui.soundToggleBtn.dataset.enabled = state.soundEnabled ? 'true' : 'false';
     ui.soundHint.textContent = state.soundEnabled
-      ? 'Move, capture, check, and game-end cues are enabled.'
-      : 'Audio is muted. Turn it back on any time.';
+      ? `${activeProfile.label} is active for move, capture, check, and result cues.`
+      : `${activeProfile.label} is selected, but audio is muted.`;
   }
 
   function renderHistory() {
@@ -837,7 +1052,7 @@
     const ghost = document.createElement('div');
     ghost.className = `drag-ghost ${piece.color}`;
     ghost.innerHTML = `<span class="piece-face">${Core.getPieceGlyph(piece)}</span>`;
-    document.body.appendChild(ghost);
+    ui.pageShell.appendChild(ghost);
     state.dragGhost = ghost;
     positionDragGhost(clientX, clientY);
   }
@@ -901,6 +1116,7 @@
         const isMovedPiece = Boolean(lastMove && lastMove.to.x === x && lastMove.to.y === y);
         const isDragSource = Boolean(state.drag && state.drag.pieceId === piece.id);
         element.className = `board-piece ${piece.color}${piece.id === selectedId ? ' active' : ''}${isMovedPiece ? ' moved' : ''}${isDragSource ? ' drag-source' : ''}`;
+        element.dataset.pieceType = piece.type;
         element.style.setProperty('--x', `calc(var(--square-size) * ${displayX})`);
         element.style.setProperty('--y', `calc(var(--square-size) * ${displayY})`);
         element.querySelector('.piece-face').textContent = Core.getPieceGlyph(piece);
@@ -1002,6 +1218,8 @@
     ui.copyCodeBtn.disabled = !hasRoom;
     ui.engineLevelSelect.disabled = state.mode === 'online';
     ui.boardThemeSelect.disabled = false;
+    ui.pieceStyleSelect.disabled = false;
+    ui.soundProfileSelect.disabled = !audioSupported();
     ui.retryEngineBtn.textContent = state.engineInitPromise
       ? 'Loading Stockfish 18...'
       : state.engineReady
@@ -1018,6 +1236,8 @@
     renderStatus();
     renderDifficultyInfo();
     renderBoardThemeInfo();
+    renderPieceStyleInfo();
+    renderSoundProfileInfo();
     renderSoundInfo();
     updateInviteUi();
     renderSummary();
@@ -1956,11 +2176,33 @@
       render();
     });
 
-    ui.boardThemeSelect.addEventListener('change', () => {
+    ui.boardThemeSelect.addEventListener('change', async () => {
       state.boardTheme = normalizeBoardTheme(ui.boardThemeSelect.value);
       persistSettings();
-      renderBoardThemeInfo();
+      render();
+      if (state.soundEnabled && state.soundProfile === 'auto' && audioSupported()) {
+        await primeAudio();
+        playSoundCue('move');
+      }
       showToast(`${boardThemeProfile().label} board selected.`);
+    });
+
+    ui.pieceStyleSelect.addEventListener('change', () => {
+      state.pieceStyle = normalizePieceStyle(ui.pieceStyleSelect.value);
+      persistSettings();
+      render();
+      showToast(`${pieceStyleProfile().label} pieces selected.`);
+    });
+
+    ui.soundProfileSelect.addEventListener('change', async () => {
+      state.soundProfile = normalizeSoundProfile(ui.soundProfileSelect.value);
+      persistSettings();
+      render();
+      if (state.soundEnabled && audioSupported()) {
+        await primeAudio();
+        playSoundCue('move');
+      }
+      showToast(`${soundProfileProfile().label} sound style selected.`);
     });
 
     ui.soundToggleBtn.addEventListener('click', async () => {
@@ -2059,7 +2301,11 @@
     ui.engineLevelSelect.value = String(state.engineLevel);
     state.boardTheme = normalizeBoardTheme(localStorage.getItem(STORAGE_KEYS.boardTheme) || 'walnut');
     ui.boardThemeSelect.value = state.boardTheme;
+    state.pieceStyle = normalizePieceStyle(localStorage.getItem(STORAGE_KEYS.pieceStyle) || 'auto');
+    ui.pieceStyleSelect.value = state.pieceStyle;
     state.soundEnabled = localStorage.getItem(STORAGE_KEYS.soundEnabled) !== '0';
+    state.soundProfile = normalizeSoundProfile(localStorage.getItem(STORAGE_KEYS.soundProfile) || 'auto');
+    ui.soundProfileSelect.value = state.soundProfile;
     setEngineStatus('Stockfish 18 idle.');
     const inviteRoom = sanitizeRoomCode(query.get('room'));
     if (inviteRoom) {
