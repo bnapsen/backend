@@ -130,6 +130,25 @@
     }
   }
 
+  function suitEntity(suit) {
+    switch (suit) {
+      case 'S':
+        return '&spades;';
+      case 'H':
+        return '&hearts;';
+      case 'D':
+        return '&diams;';
+      case 'C':
+        return '&clubs;';
+      default:
+        return '';
+    }
+  }
+
+  function suitTone(suit) {
+    return suit === 'H' || suit === 'D' ? 'red' : 'black';
+  }
+
   function showToast(message) {
     window.clearTimeout(state.toastTimer);
     ui.toast.textContent = message;
@@ -302,11 +321,23 @@
     if (!card || hidden) {
       return `<div class="card back${settings.dim ? ' hidden' : ''}${extraClass}${animateClass}"${styleAttr}></div>`;
     }
-    const red = card.suit === 'H' || card.suit === 'D';
+    const rank = cardRankLabel(card.value);
+    const suit = suitEntity(card.suit);
+    const tone = suitTone(card.suit);
     return `
-      <div class="card${red ? ' red' : ''}${extraClass}${animateClass}"${styleAttr}>
-        <div class="card-rank">${cardRankLabel(card.value)}</div>
-        <div class="card-suit">${suitGlyph(card.suit)}</div>
+      <div class="card ${tone}${extraClass}${animateClass}"${styleAttr}>
+        <div class="card-corner top">
+          <span class="card-rank">${rank}</span>
+          <span class="card-suit">${suit}</span>
+        </div>
+        <div class="card-center">
+          <span class="card-center-rank">${rank}</span>
+          <span class="card-center-suit">${suit}</span>
+        </div>
+        <div class="card-corner bottom">
+          <span class="card-rank">${rank}</span>
+          <span class="card-suit">${suit}</span>
+        </div>
       </div>
     `;
   }
