@@ -12,15 +12,21 @@
 <body>
   <div class="page-shell">
     <header class="topbar">
-      <a class="back-link" href="index.html">Back to Nova Arcade</a>
+      <div class="topbar-main">
+        <a class="back-link" href="index.html">Back to Nova Arcade</a>
+        <div class="view-controls">
+          <button id="toggleSetupBtn" class="view-toggle" type="button">Hide setup</button>
+          <button id="toggleInfoBtn" class="view-toggle" type="button">Hide feed</button>
+        </div>
+      </div>
       <div class="topbar-status">
         <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
         <div class="status-pill ghost" id="modePill">No table connected</div>
       </div>
     </header>
 
-    <main class="layout">
-      <section class="setup-column">
+    <main class="layout" id="layoutShell">
+      <section class="setup-column" id="setupColumn">
         <section class="hero panel">
           <p class="eyebrow">Five-seat multiplayer Hold'em</p>
           <h1>Orbit Holdem Live</h1>
@@ -178,7 +184,7 @@
         </section>
       </section>
 
-      <aside class="sidebar">
+      <aside class="sidebar" id="infoSidebar">
         <section class="panel sidebar-panel">
           <div class="panel-heading">
             <p class="label">Table feed</p>

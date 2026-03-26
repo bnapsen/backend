@@ -5,6 +5,8 @@
   const STORAGE_KEYS = {
     name: 'orbitHoldemLive.name',
     serverUrl: 'orbitHoldemLive.serverUrl',
+    setupHidden: 'orbitHoldemLive.setupHidden',
+    infoHidden: 'orbitHoldemLive.infoHidden',
   };
   const query = new URLSearchParams(window.location.search);
   const MAX_SEATS = 5;
@@ -18,6 +20,10 @@
     serverUrl: '',
     statusMessage: '',
     toastTimer: 0,
+    panels: {
+      setupHidden: false,
+      infoHidden: false,
+    },
   };
 
   const ui = {
@@ -44,6 +50,8 @@
     joinBtn: document.getElementById('joinBtn'),
     copyBtn: document.getElementById('copyBtn'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
+    toggleSetupBtn: document.getElementById('toggleSetupBtn'),
+    toggleInfoBtn: document.getElementById('toggleInfoBtn'),
     startHandBtn: document.getElementById('startHandBtn'),
     resetTableBtn: document.getElementById('resetTableBtn'),
     checkCallBtn: document.getElementById('checkCallBtn'),
@@ -54,6 +62,7 @@
     raiseAmountInput: document.getElementById('raiseAmountInput'),
     customRaiseBtn: document.getElementById('customRaiseBtn'),
     toast: document.getElementById('toast'),
+    layoutShell: document.getElementById('layoutShell'),
   };
 
   function sanitizeRoomCode(value) {
@@ -134,10 +143,29 @@
   function persistSettings() {
     localStorage.setItem(STORAGE_KEYS.name, ui.nameInput.value.trim());
     localStorage.setItem(STORAGE_KEYS.serverUrl, state.serverUrl);
+    localStorage.setItem(STORAGE_KEYS.setupHidden, state.panels.setupHidden ? '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.infoHidden, state.panels.infoHidden ? '1' : '0');
   }
 
   function capitalize(value) {
     return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
+  }
+
+  function setPanelHidden(key, hidden, persist) {
+    state.panels[key] = Boolean(hidden);
+    if (persist !== false) {
+      persistSettings();
+    }
+    renderChrome();
+  }
+
+  function renderChrome() {
+    ui.layoutShell.classList.toggle('setup-hidden', state.panels.setupHidden);
+    ui.layoutShell.classList.toggle('info-hidden', state.panels.infoHidden);
+    ui.toggleSetupBtn.textContent = state.panels.setupHidden ? 'Show setup' : 'Hide setup';
+    ui.toggleInfoBtn.textContent = state.panels.infoHidden ? 'Show feed' : 'Hide feed';
+    ui.toggleSetupBtn.setAttribute('aria-pressed', state.panels.setupHidden ? 'true' : 'false');
+    ui.toggleInfoBtn.setAttribute('aria-pressed', state.panels.infoHidden ? 'true' : 'false');
   }
 
   function stageText(stage) {
@@ -484,7 +512,7 @@
           ? `${players.length}/${state.snapshot.maxPlayers} seats filled`
           : 'Table resolving';
     ui.boardHeadline.textContent = state.snapshot.handNumber
-      ? `Hand ${state.snapshot.handNumber} · ${stageText(state.snapshot.stage)}`
+      ? `Hand ${state.snapshot.handNumber} - ${stageText(state.snapshot.stage)}`
       : 'Orbit Holdem Live';
     ui.boardSubline.textContent = state.snapshot.status || 'Seat players and start a hand.';
     ui.potAmount.textContent = formatChips(state.snapshot.pot);
@@ -584,7 +612,7 @@
       ui.actionPrompt.textContent = 'Showdown is complete. Review the table feed, then deal the next hand when everyone is ready.';
       return;
     }
-    ui.actionPrompt.textContent = 'Seat at least two players with chips to begin a real Hold’em hand.';
+    ui.actionPrompt.textContent = "Seat at least two players with chips to begin a real Hold'em hand.";
   }
 
   function renderControls() {
@@ -624,6 +652,7 @@
   }
 
   function render() {
+    renderChrome();
     renderPills();
     renderStatus();
     updateInviteUi();
@@ -663,6 +692,9 @@
     state.playerId = '';
     state.roomCode = roomCode;
     state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
+    if (!state.panels.setupHidden) {
+      state.panels.setupHidden = true;
+    }
     persistSettings();
     setStatusMessage(mode === 'host'
       ? 'Opening your table and creating an invite link...'
@@ -815,6 +847,12 @@
 
     ui.hostBtn.addEventListener('click', () => connectOnline('host'));
     ui.joinBtn.addEventListener('click', () => connectOnline('join'));
+    ui.toggleSetupBtn.addEventListener('click', () => {
+      setPanelHidden('setupHidden', !state.panels.setupHidden);
+    });
+    ui.toggleInfoBtn.addEventListener('click', () => {
+      setPanelHidden('infoHidden', !state.panels.infoHidden);
+    });
     ui.copyBtn.addEventListener('click', () => copyText(inviteUrl(), 'Invite link copied.'));
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
     ui.startHandBtn.addEventListener('click', sendStartHand);
@@ -847,6 +885,9 @@
     state.serverUrl = sanitizeServerUrl(query.get('server') || localStorage.getItem(STORAGE_KEYS.serverUrl) || '');
     ui.serverUrlInput.value = state.serverUrl;
     ui.roomInput.value = sanitizeRoomCode(query.get('room') || '');
+    state.panels.setupHidden = localStorage.getItem(STORAGE_KEYS.setupHidden) === '1';
+    const savedInfoHidden = localStorage.getItem(STORAGE_KEYS.infoHidden);
+    state.panels.infoHidden = savedInfoHidden === null ? true : savedInfoHidden === '1';
   }
 
   function bootFromQuery() {
