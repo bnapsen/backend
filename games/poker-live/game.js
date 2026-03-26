@@ -263,6 +263,10 @@
     return Number.isInteger(state.snapshot.viewerSeat) ? state.snapshot.viewerSeat : null;
   }
 
+  function canQuickSeatJoin() {
+    return getViewerSeat() === null;
+  }
+
   function getActionPlayer() {
     if (!state.snapshot || !Number.isInteger(state.snapshot.actionSeat)) {
       return null;
@@ -308,79 +312,36 @@
   }
 
   function emptySeatMarkup(seat, position) {
-    const prompt = state.roomCode
-      ? `Seat ${seat + 1} is open. Send the invite to fill it.`
-      : `Seat ${seat + 1} is open. Host the table to generate an invite.`;
+    const hasJoinTarget = Boolean(sanitizeRoomCode(state.roomCode || ui.roomInput.value));
+    const quickAction = canQuickSeatJoin()
+      ? (hasJoinTarget ? 'join' : 'host')
+      : '';
+    const prompt = quickAction === 'join'
+      ? 'Click to join this table.'
+      : quickAction === 'host'
+        ? 'Click to host this table.'
+        : 'Open seat for another player.';
+    const tag = quickAction ? 'button' : 'div';
+    const actionAttr = quickAction ? ` type="button" data-seat-action="${quickAction}" data-seat="${seat}"` : '';
+    const joinClass = quickAction ? ' joinable' : '';
     return `
-      <div class="seat-card empty seat-pos-${position}">
+      <${tag} class="seat-card empty seat-pos-${position}${joinClass}"${actionAttr}>
         <div class="seat-topline">
           <div>
             <div class="seat-name">Open seat ${seat + 1}</div>
-            <div class="seat-stack">Waiting for a player</div>
+            <div class="seat-stack">1,500 buy-in</div>
           </div>
           <div class="seat-badges">
             <span class="badge">Open</span>
           </div>
         </div>
-        <div class="seat-line">
-          <span>Invite status</span>
-          <span>Ready</span>
-        </div>
-        <div class="seat-line">
-          <span>Stack</span>
-          <span>1,500 chips</span>
-        </div>
-        <div class="hole-row">
+        <div class="hole-row seat-placeholder">
           ${renderCard(null, { dim: true })}
           ${renderCard(null, { dim: true })}
         </div>
-        <div class="hand-label">${prompt}</div>
-      </div>
+        <div class="seat-cta">${prompt}</div>
+      </${tag}>
     `;
-  }
-
-  function seatSummary(player) {
-    if (!player) {
-      return '';
-    }
-    if (player.leaving) {
-      return 'Leaving after hand';
-    }
-    if (player.folded) {
-      return 'Folded';
-    }
-    if (player.allIn) {
-      return 'All-in';
-    }
-    if (player.lastAction) {
-      return player.lastAction;
-    }
-    if (state.snapshot?.stage === 'waiting') {
-      return 'Ready';
-    }
-    return player.cardCount ? 'In hand' : 'Waiting for next hand';
-  }
-
-  function handLabel(player) {
-    if (!player) {
-      return '';
-    }
-    if (player.bestHandLabel) {
-      return player.bestHandLabel;
-    }
-    if (player.cardCount === 2 && player.id === state.playerId) {
-      return 'Your hole cards are live.';
-    }
-    if (player.cardCount === 2 && state.snapshot?.stage !== 'showdown') {
-      return 'Hole cards are hidden until showdown.';
-    }
-    if (player.stack <= 0) {
-      return 'Busted. Reset the table for fresh stacks.';
-    }
-    if (state.snapshot?.stage === 'waiting') {
-      return 'Ready for the next deal.';
-    }
-    return 'Waiting for the next hand.';
   }
 
   function seatBadges(player, seat) {
@@ -399,6 +360,12 @@
     }
     if (state.snapshot?.actionSeat === seat && ['preflop', 'flop', 'turn', 'river'].includes(state.snapshot.stage)) {
       badges.push('<span class="badge turn">Acting</span>');
+    }
+    if (player.allIn) {
+      badges.push('<span class="badge all-in">All-in</span>');
+    }
+    if (player.folded && state.snapshot?.stage !== 'waiting' && state.snapshot?.stage !== 'showdown') {
+      badges.push('<span class="badge folded">Folded</span>');
     }
     if (player.leaving) {
       badges.push('<span class="badge">Disconnecting</span>');
@@ -431,24 +398,15 @@
         <div class="seat-topline">
           <div>
             <div class="seat-name">${player.name}</div>
-            <div class="seat-stack">${formatChips(player.stack)} chips</div>
           </div>
           <div class="seat-badges">
             ${seatBadges(player, seat)}
           </div>
         </div>
-        <div class="seat-line">
-          <span>Table action</span>
-          <span>${seatSummary(player)}</span>
-        </div>
-        <div class="seat-line">
-          <span>Live / total</span>
-          <span>${formatChips(player.bet)} / ${formatChips(player.totalContribution)}</span>
-        </div>
         <div class="hole-row">
           ${cards.join('')}
         </div>
-        <div class="hand-label">${handLabel(player)}</div>
+        <div class="seat-stack">${formatChips(player.stack)} chips</div>
       </div>
     `;
   }
@@ -590,7 +548,7 @@
     const controls = currentControls();
     const actor = getActionPlayer();
     if (!snapshot) {
-      ui.actionPrompt.textContent = 'Join a table to sit down. When the hand is live, only the active seat can send betting actions.';
+      ui.actionPrompt.textContent = 'Click an open seat to host or join. When the hand is live, only the active seat can send betting actions.';
       return;
     }
     if (controls.canAct) {
@@ -816,6 +774,26 @@
     sendRaiseTo(target);
   }
 
+  function handleSeatJoinRequest() {
+    if (state.socket && state.socket.readyState === WebSocket.CONNECTING) {
+      showToast('Connection already in progress.');
+      return;
+    }
+    if (state.mode === 'online' && getViewerSeat() !== null) {
+      showToast('You are already seated at this table.');
+      return;
+    }
+
+    const roomCode = sanitizeRoomCode(state.roomCode || ui.roomInput.value);
+    if (roomCode) {
+      ui.roomInput.value = roomCode;
+      connectOnline('join');
+      return;
+    }
+
+    connectOnline('host');
+  }
+
   function bindEvents() {
     ui.nameInput.addEventListener('input', () => {
       persistSettings();
@@ -863,6 +841,13 @@
     ui.potRaiseBtn.addEventListener('click', () => sendRaiseTo(potRaiseTarget()));
     ui.allInBtn.addEventListener('click', () => sendRaiseTo(currentControls().maxRaiseTo || 0));
     ui.customRaiseBtn.addEventListener('click', sendCustomRaise);
+    ui.seatLayer.addEventListener('click', (event) => {
+      const trigger = event.target.closest('[data-seat-action]');
+      if (!trigger) {
+        return;
+      }
+      handleSeatJoinRequest();
+    });
 
     window.addEventListener('keydown', (event) => {
       const tag = document.activeElement ? document.activeElement.tagName : '';

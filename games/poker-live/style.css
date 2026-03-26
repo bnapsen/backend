@@ -665,10 +665,10 @@ h2 {
 
 .seat-card {
   position: absolute;
-  width: min(214px, 23%);
-  min-width: 172px;
-  padding: 12px 13px 14px;
-  border-radius: 22px;
+  width: min(176px, 18%);
+  min-width: 140px;
+  padding: 10px 11px 12px;
+  border-radius: 20px;
   background:
     linear-gradient(180deg, rgba(33, 21, 15, 0.82), rgba(11, 8, 6, 0.88)),
     linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent);
@@ -677,6 +677,8 @@ h2 {
     0 16px 26px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 232, 186, 0.08);
   backdrop-filter: blur(10px);
+  color: var(--text);
+  text-align: left;
 }
 
 .seat-card::before {
@@ -710,30 +712,48 @@ h2 {
   opacity: 0.72;
 }
 
+.seat-card.joinable {
+  cursor: pointer;
+}
+
+.seat-card.joinable:hover {
+  transform: translateY(-2px) scale(1.01);
+  border-color: rgba(118, 238, 217, 0.26);
+  box-shadow:
+    0 18px 30px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(118, 238, 217, 0.14),
+    inset 0 1px 0 rgba(255, 232, 186, 0.1);
+}
+
+.seat-card.joinable:focus-visible {
+  outline: 3px solid rgba(118, 238, 217, 0.38);
+  outline-offset: 3px;
+}
+
 .seat-pos-0 {
   left: 50%;
-  bottom: 24px;
+  bottom: 20px;
   transform: translateX(-50%);
 }
 
 .seat-pos-1 {
   left: 4%;
-  bottom: 18%;
+  bottom: 19%;
 }
 
 .seat-pos-2 {
-  left: 13%;
-  top: 10%;
+  left: 12%;
+  top: 9%;
 }
 
 .seat-pos-3 {
-  right: 13%;
-  top: 10%;
+  right: 12%;
+  top: 9%;
 }
 
 .seat-pos-4 {
   right: 4%;
-  bottom: 18%;
+  bottom: 19%;
 }
 
 .seat-topline {
@@ -744,13 +764,15 @@ h2 {
 }
 
 .seat-name {
-  font-size: 0.98rem;
+  font-size: 0.9rem;
   font-weight: 800;
+  line-height: 1.15;
 }
 
 .seat-stack {
   color: var(--gold);
-  font-size: 0.9rem;
+  margin-top: 9px;
+  font-size: 0.82rem;
   font-weight: 700;
 }
 
@@ -759,12 +781,13 @@ h2 {
   gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  max-width: 86px;
 }
 
 .badge {
-  padding: 4px 8px;
+  padding: 3px 7px;
   border-radius: 999px;
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   background: rgba(255, 255, 255, 0.08);
@@ -785,25 +808,26 @@ h2 {
   background: rgba(242, 107, 135, 0.16);
 }
 
-.seat-line {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 9px;
-  color: var(--muted);
-  font-size: 0.82rem;
+.badge.all-in {
+  color: var(--ruby);
+  background: rgba(242, 107, 135, 0.14);
+}
+
+.badge.folded {
+  color: rgba(245, 239, 229, 0.78);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .hole-row {
   display: flex;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 6px;
+  margin-top: 10px;
 }
 
 .seat-card .card {
-  width: 54px;
-  height: 78px;
-  padding: 7px 8px;
+  width: 42px;
+  height: 62px;
+  padding: 6px 7px;
 }
 
 .seat-card .card::before {
@@ -811,18 +835,23 @@ h2 {
 }
 
 .seat-card .card-rank {
-  font-size: 0.94rem;
+  font-size: 0.82rem;
 }
 
 .seat-card .card-suit {
-  font-size: 1.04rem;
+  font-size: 0.92rem;
 }
 
-.hand-label {
+.seat-placeholder {
+  opacity: 0.78;
+}
+
+.seat-cta {
   margin-top: 10px;
-  color: rgba(245, 239, 229, 0.78);
-  font-size: 0.8rem;
-  line-height: 1.45;
+  color: var(--mint);
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .action-tray {
@@ -993,8 +1022,8 @@ h2 {
   }
 
   .seat-card {
-    min-width: 166px;
-    width: min(280px, 72%);
+    min-width: 146px;
+    width: min(220px, 62%);
   }
 
   .seat-pos-0 {
@@ -1050,13 +1079,13 @@ h2 {
   }
 
   .seat-card {
-    min-width: 158px;
-    width: min(240px, 72%);
+    min-width: 136px;
+    width: min(198px, 68%);
   }
 
   .seat-card .card {
-    width: 48px;
-    height: 70px;
+    width: 38px;
+    height: 56px;
   }
 
   .table-buttons,
