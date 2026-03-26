@@ -894,6 +894,10 @@ button:disabled {
   inset: 0;
 }
 
+.board-piece-layer {
+  pointer-events: none;
+}
+
 .board-squares {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
@@ -1015,6 +1019,7 @@ button:disabled {
   padding: 4px;
   border: none;
   background: transparent;
+  pointer-events: auto;
   transform: translate(var(--x, 0), var(--y, 0));
   transition:
     transform 220ms cubic-bezier(.22, 1, .36, 1),
