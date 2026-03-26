@@ -8,16 +8,17 @@
     engineLevel: 'neonCrownChess.engineLevel',
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
-  const ENGINE_WORKER_VERSION = '20260325b';
-  const ENGINE_INIT_TIMEOUT_MS = 4500;
-  const ENGINE_MOVE_TIMEOUT_MS = 6000;
+  const ENGINE_WORKER_VERSION = '20260325e';
+  const ENGINE_INIT_TIMEOUT_MS = 12000;
+  const ENGINE_MOVE_TIMEOUT_MS = 9000;
   const query = new URLSearchParams(window.location.search);
   const FILES = Core.FILES;
+  const DIRECT_STOCKFISH_WORKER = `vendor/stockfish/stockfish-18-lite-single.js?v=${ENGINE_WORKER_VERSION}`;
   const ENGINE_LEVELS = {
-    6: { label: 'Relaxed', movetime: 220 },
-    10: { label: 'Club', movetime: 420 },
-    14: { label: 'Sharp', movetime: 700 },
-    18: { label: 'Tough', movetime: 1000 },
+    6: { label: 'Relaxed', movetime: 320 },
+    10: { label: 'Club', movetime: 640 },
+    14: { label: 'Sharp', movetime: 1100 },
+    18: { label: 'Tough', movetime: 1700 },
   };
 
   const state = {
@@ -42,7 +43,7 @@
     engineLevel: 10,
     engineWorker: null,
     engineReady: false,
-    engineStatus: 'Engine idle.',
+    engineStatus: 'Stockfish 18 idle.',
     engineFallback: false,
     engineInitPromise: null,
     engineInitResolve: null,
@@ -50,6 +51,8 @@
     engineInitTimer: 0,
     engineRequestSeq: 0,
     enginePending: null,
+    engineLastInfoAt: 0,
+    engineNeedsNewGame: true,
   };
 
   const ui = {
@@ -77,6 +80,7 @@
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
     soloBtn: document.getElementById('soloBtn'),
+    retryEngineBtn: document.getElementById('retryEngineBtn'),
     engineMoveBtn: document.getElementById('engineMoveBtn'),
     copyBtn: document.getElementById('copyBtn'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
@@ -121,6 +125,24 @@
 
   function engineLevelProfile() {
     return ENGINE_LEVELS[state.engineLevel] || ENGINE_LEVELS[10];
+  }
+
+  function engineReadyMessage() {
+    return `Stockfish 18 ready - ${engineLevelProfile().label}`;
+  }
+
+  function sendEngineCommand(command) {
+    if (!state.engineWorker) {
+      return;
+    }
+    state.engineWorker.postMessage(command);
+  }
+
+  function syncEngineOptions() {
+    sendEngineCommand('setoption name UCI_Chess960 value false');
+    sendEngineCommand('setoption name MultiPV value 1');
+    sendEngineCommand('setoption name Ponder value false');
+    sendEngineCommand(`setoption name Skill Level value ${clamp(state.engineLevel, 0, 20)}`);
   }
 
   function setEngineStatus(message) {
@@ -215,7 +237,7 @@
   }
 
   function renderStatus() {
-    ui.statusText.textContent = state.statusMessage || 'Host a match to create an invite link, join with a code from a friend, or play solo against the engine.';
+    ui.statusText.textContent = state.statusMessage || 'Host a match to create an invite link, join with a code from a friend, or play solo against Stockfish.';
   }
 
   function inviteUrl() {
@@ -276,7 +298,9 @@
               <div class="player-color-label">${capitalize(color)} pieces</div>
             </div>
             <span class="inline-chip ${active ? 'turn-chip' : ''}">
-              ${active ? 'Turn' : player.id === 'engine-black' ? engineLevelProfile().label : 'Ready'}
+              ${active ? 'Turn' : player.id === 'engine-black'
+                ? (state.engineReady ? `Stockfish ${engineLevelProfile().label}` : state.engineFallback ? 'Backup bot' : 'Warming up')
+                : 'Ready'}
             </span>
           </div>
         </div>
@@ -287,10 +311,10 @@
 
     if (state.mode === 'solo') {
       ui.presenceText.textContent = state.engineReady
-        ? `Solo vs Stockfish - ${engineLevelProfile().label}`
+        ? `Solo vs Stockfish 18 - ${engineLevelProfile().label}`
         : state.engineFallback
-          ? 'Solo vs fallback engine'
-          : 'Solo vs engine';
+          ? 'Solo vs backup engine'
+          : 'Solo vs Stockfish 18';
     } else {
       ui.presenceText.textContent = `${players.length}/2 players connected`;
     }
@@ -332,7 +356,7 @@
       },
       {
         title: 'Real engine support',
-        body: 'Solo mode warms up a Stockfish worker in the browser and falls back to a local move chooser if the engine cannot load.',
+        body: 'Solo mode loads a bundled Stockfish 18 browser worker and falls back to a local move chooser only if the engine cannot wake up.',
         token: '\u2699',
       },
       {
@@ -612,12 +636,12 @@
   function renderPills() {
     if (state.mode === 'solo') {
       ui.networkStatus.dataset.tone = 'online';
-      ui.networkStatus.textContent = 'Engine';
+      ui.networkStatus.textContent = 'Stockfish';
       ui.modePill.textContent = state.engineReady
-        ? `Vs Stockfish - ${engineLevelProfile().label}`
+        ? `Vs Stockfish 18 - ${engineLevelProfile().label}`
         : state.engineFallback
-          ? 'Vs fallback engine'
-          : 'Engine warm-up';
+          ? 'Vs backup engine'
+          : 'Stockfish warm-up';
       return;
     }
 
@@ -647,12 +671,18 @@
     const pendingConnection = Boolean(state.socket && state.socket.readyState === WebSocket.CONNECTING);
     ui.hostBtn.disabled = pendingConnection;
     ui.joinBtn.disabled = pendingConnection || !sanitizeRoomCode(ui.roomInput.value);
+    ui.retryEngineBtn.disabled = state.mode !== 'solo' || Boolean(state.engineInitPromise);
     ui.engineMoveBtn.disabled = state.mode !== 'solo' || !state.snapshot || Boolean(state.snapshot.winner || state.snapshot.drawReason);
     ui.restartBtn.disabled = !state.snapshot;
     ui.flipBtn.disabled = !state.snapshot;
     ui.copyBtn.disabled = !hasRoom;
     ui.copyCodeBtn.disabled = !hasRoom;
     ui.engineLevelSelect.disabled = state.mode === 'online';
+    ui.retryEngineBtn.textContent = state.engineInitPromise
+      ? 'Loading Stockfish 18...'
+      : state.engineReady
+        ? 'Reload Stockfish'
+        : 'Retry Stockfish';
 
     ui.stepOne.classList.toggle('active', Boolean(ui.nameInput.value.trim()));
     ui.stepTwo.classList.toggle('active', state.mode === 'online' || state.mode === 'solo');
@@ -710,9 +740,9 @@
     soloState.maxPlayers = 2;
     soloState.players = [
       { id: 'solo-human', name: getPlayerName(), color: 'white' },
-      { id: 'engine-black', name: state.engineReady ? `Stockfish ${engineLevelProfile().label}` : 'Engine', color: 'black' },
+      { id: 'engine-black', name: state.engineReady ? `Stockfish 18 ${engineLevelProfile().label}` : state.engineFallback ? 'Backup bot' : 'Stockfish 18', color: 'black' },
     ];
-    soloState.service = state.engineReady ? 'stockfish' : 'solo';
+    soloState.service = state.engineReady ? 'stockfish-18' : 'solo';
     return soloState;
   }
 
@@ -851,7 +881,8 @@
     window.clearTimeout(state.engineInitTimer);
     if (state.engineWorker) {
       try {
-        state.engineWorker.postMessage({ type: 'stop' });
+        state.engineWorker.postMessage('stop');
+        state.engineWorker.postMessage('quit');
         state.engineWorker.terminate();
       } catch (error) {
         // Ignore engine shutdown issues.
@@ -864,12 +895,14 @@
     state.engineInitResolve = null;
     state.engineInitReject = null;
     state.engineInitTimer = 0;
+    state.engineLastInfoAt = 0;
+    state.engineNeedsNewGame = true;
   }
 
   function resetEngineBridge() {
     teardownEngineWorker();
     state.engineFallback = false;
-    state.engineStatus = 'Engine idle.';
+    state.engineStatus = 'Stockfish 18 idle.';
   }
 
   function resolveEngineInit(ok, value) {
@@ -883,21 +916,23 @@
   }
 
   function handleEngineMessage(event) {
-    const payload = event.data || {};
-    if (payload.type === 'ready') {
+    const payload = event.data;
+    if (payload && typeof payload === 'object' && payload.type === 'ready') {
       window.clearTimeout(state.engineInitTimer);
       state.engineInitTimer = 0;
       state.engineReady = true;
       state.engineFallback = false;
-      setEngineStatus(`Stockfish ready - ${engineLevelProfile().label}`);
+      state.engineLastInfoAt = 0;
+      setEngineStatus(engineReadyMessage());
       resolveEngineInit(true, true);
       render();
       return;
     }
-    if (payload.type === 'error') {
+    if (payload && typeof payload === 'object' && payload.type === 'error') {
       state.engineReady = false;
       state.engineFallback = true;
-      setEngineStatus('Stockfish unavailable, using fallback engine.');
+      state.engineLastInfoAt = 0;
+      setEngineStatus('Stockfish 18 unavailable, using backup engine.');
       if (state.enginePending) {
         window.clearTimeout(state.enginePending.timer);
         state.enginePending.reject(new Error(payload.message || 'Engine error'));
@@ -907,11 +942,82 @@
       render();
       return;
     }
-    if (payload.type === 'bestmove' && state.enginePending && payload.requestId === state.enginePending.requestId) {
+    if (payload && typeof payload === 'object' && payload.type === 'info' && state.enginePending) {
+      const now = Date.now();
+      if (now - state.engineLastInfoAt > 260) {
+        const depth = /(?:^|\s)depth\s+(\d+)/.exec(payload.line || '');
+        const pv = /(?:^|\s)pv\s+(.+)$/.exec(payload.line || '');
+        const fragments = [`Stockfish 18 thinking - ${engineLevelProfile().label}`];
+        if (depth) {
+          fragments.push(`depth ${depth[1]}`);
+        }
+        if (pv) {
+          fragments.push(pv[1].split(/\s+/).slice(0, 3).join(' '));
+        }
+        setEngineStatus(fragments.join(' | '));
+        state.engineLastInfoAt = now;
+      }
+      return;
+    }
+    if (payload && typeof payload === 'object' && payload.type === 'bestmove' && state.enginePending && payload.requestId === state.enginePending.requestId) {
       const pending = state.enginePending;
       state.enginePending = null;
       window.clearTimeout(pending.timer);
+      state.engineLastInfoAt = 0;
       pending.resolve(uciToMove(payload.move));
+      return;
+    }
+
+    const text = typeof payload === 'string' ? payload : '';
+    if (!text) {
+      return;
+    }
+
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) {
+        continue;
+      }
+      if (line === 'uciok') {
+        syncEngineOptions();
+        sendEngineCommand('isready');
+        continue;
+      }
+      if (line === 'readyok') {
+        window.clearTimeout(state.engineInitTimer);
+        state.engineInitTimer = 0;
+        state.engineReady = true;
+        state.engineFallback = false;
+        state.engineLastInfoAt = 0;
+        setEngineStatus(engineReadyMessage());
+        resolveEngineInit(true, true);
+        render();
+        continue;
+      }
+      if (line.startsWith('info ') && state.enginePending) {
+        const now = Date.now();
+        if (now - state.engineLastInfoAt > 260) {
+          const depth = /(?:^|\s)depth\s+(\d+)/.exec(line);
+          const pv = /(?:^|\s)pv\s+(.+)$/.exec(line);
+          const fragments = [`Stockfish 18 thinking - ${engineLevelProfile().label}`];
+          if (depth) {
+            fragments.push(`depth ${depth[1]}`);
+          }
+          if (pv) {
+            fragments.push(pv[1].split(/\s+/).slice(0, 3).join(' '));
+          }
+          setEngineStatus(fragments.join(' | '));
+          state.engineLastInfoAt = now;
+        }
+        continue;
+      }
+      if (line.startsWith('bestmove ') && state.enginePending) {
+        const pending = state.enginePending;
+        state.enginePending = null;
+        window.clearTimeout(pending.timer);
+        state.engineLastInfoAt = 0;
+        pending.resolve(uciToMove(line.split(/\s+/)[1] || '(none)'));
+      }
     }
   }
 
@@ -930,18 +1036,18 @@
       state.engineInitResolve = resolve;
       state.engineInitReject = reject;
     });
-    setEngineStatus('Loading Stockfish engine...');
+    setEngineStatus('Loading local Stockfish 18...');
 
     try {
       if (!state.engineWorker) {
-        state.engineWorker = new Worker(`engine-worker.js?v=${ENGINE_WORKER_VERSION}`);
+        state.engineWorker = new Worker(DIRECT_STOCKFISH_WORKER);
         state.engineWorker.onmessage = handleEngineMessage;
         state.engineWorker.onerror = () => {
           window.clearTimeout(state.engineInitTimer);
           state.engineInitTimer = 0;
           state.engineFallback = true;
           state.engineReady = false;
-          setEngineStatus('Stockfish failed to load, using fallback engine.');
+          setEngineStatus('Stockfish 18 failed to load, using backup engine.');
           resolveEngineInit(false, new Error('Engine worker failed to load.'));
           render();
         };
@@ -953,7 +1059,7 @@
         }
         state.engineFallback = true;
         state.engineReady = false;
-        setEngineStatus('Stockfish took too long to load, using fallback engine.');
+        setEngineStatus('Stockfish 18 took too long to load, using backup engine.');
         if (state.engineWorker) {
           try {
             state.engineWorker.terminate();
@@ -965,12 +1071,12 @@
         resolveEngineInit(false, new Error('Engine init timed out.'));
         render();
       }, ENGINE_INIT_TIMEOUT_MS);
-      state.engineWorker.postMessage({ type: 'init' });
+      state.engineWorker.postMessage('uci');
     } catch (error) {
       window.clearTimeout(state.engineInitTimer);
       state.engineInitTimer = 0;
       state.engineFallback = true;
-      setEngineStatus('Stockfish failed to start, using fallback engine.');
+      setEngineStatus('Stockfish 18 failed to start, using backup engine.');
       resolveEngineInit(false, error);
     }
 
@@ -983,7 +1089,8 @@
     }
     const requestId = ++state.engineRequestSeq;
     const profile = engineLevelProfile();
-    setEngineStatus(`Stockfish thinking - ${profile.label}`);
+    state.engineLastInfoAt = 0;
+    setEngineStatus(`Stockfish 18 thinking - ${profile.label}`);
     return new Promise((resolve, reject) => {
       if (state.enginePending) {
         window.clearTimeout(state.enginePending.timer);
@@ -996,25 +1103,26 @@
         state.enginePending = null;
         state.engineFallback = true;
         state.engineReady = false;
-        setEngineStatus('Stockfish stalled, using fallback engine.');
+        setEngineStatus('Stockfish 18 stalled, using backup engine.');
         reject(new Error('Engine move timed out.'));
         render();
       }, ENGINE_MOVE_TIMEOUT_MS);
       state.enginePending = { requestId, resolve, reject, timer };
-      state.engineWorker.postMessage({
-        type: 'analyze',
-        requestId,
-        fen: snapshotToFen(snapshot),
-        skill: state.engineLevel,
-        movetime: profile.movetime,
-      });
+      sendEngineCommand('stop');
+      syncEngineOptions();
+      if (state.engineNeedsNewGame) {
+        sendEngineCommand('ucinewgame');
+        state.engineNeedsNewGame = false;
+      }
+      sendEngineCommand(`position fen ${snapshotToFen(snapshot)}`);
+      sendEngineCommand(`go movetime ${profile.movetime}`);
     });
   }
 
   function cancelEngineThinking() {
     window.clearTimeout(state.botTimer);
     if (state.engineWorker && state.enginePending) {
-      state.engineWorker.postMessage({ type: 'stop' });
+      sendEngineCommand('stop');
       window.clearTimeout(state.enginePending.timer);
       state.enginePending.reject(new Error('Engine request cancelled.'));
       state.enginePending = null;
@@ -1050,7 +1158,7 @@
       state.snapshot = decorateSoloSnapshot(sandbox);
       setStatusMessage(state.snapshot.status);
       if (state.engineReady) {
-        setEngineStatus(`Stockfish ready - ${engineLevelProfile().label}`);
+        setEngineStatus(engineReadyMessage());
       }
       clearSelection();
       render();
@@ -1094,9 +1202,41 @@
     state.snapshot = decorateSoloSnapshot(sandbox);
     setStatusMessage(state.snapshot.status);
     if (state.engineReady) {
-      setEngineStatus(`Stockfish ready - ${engineLevelProfile().label}`);
+      setEngineStatus(engineReadyMessage());
     }
     clearSelection();
+    render();
+  }
+
+  async function retryEngineNow() {
+    if (state.mode !== 'solo') {
+      return;
+    }
+
+    cancelEngineThinking();
+    resetEngineBridge();
+    updateSoloEngineLabel();
+    setEngineStatus('Reloading Stockfish 18...');
+    render();
+
+    const ready = await ensureEngineReady();
+    if (state.mode !== 'solo') {
+      return;
+    }
+
+    updateSoloEngineLabel();
+    if (ready) {
+      setEngineStatus(engineReadyMessage());
+      showToast('Stockfish 18 is ready.');
+      render();
+      if (state.snapshot && state.snapshot.turn === 'black' && !state.snapshot.winner && !state.snapshot.drawReason) {
+        queueEngineTurn();
+      }
+      return;
+    }
+
+    setEngineStatus('Stockfish 18 is still unavailable, using backup engine.');
+    showToast('Still using the backup engine.');
     render();
   }
 
@@ -1425,8 +1565,8 @@
     state.selected = null;
     state.legalMoves = [];
     setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
-    setStatusMessage('Engine match started. You control White. Mouse, touch, and keyboard controls are all enabled.');
-    setEngineStatus('Warming up Stockfish...');
+    setStatusMessage('Stockfish 18 match started. You control White. Mouse, touch, and keyboard controls are all enabled.');
+    setEngineStatus('Warming up local Stockfish 18...');
     render();
     ensureEngineReady().then((ready) => {
       if (state.mode !== 'solo') {
@@ -1435,7 +1575,7 @@
       if (ready) {
         updateSoloEngineLabel();
       } else {
-        setEngineStatus('Stockfish unavailable, using fallback engine.');
+        setEngineStatus('Stockfish 18 unavailable, using backup engine.');
       }
       render();
     });
@@ -1480,9 +1620,9 @@
       state.engineLevel = Number(ui.engineLevelSelect.value) || 10;
       persistSettings();
       if (state.engineReady) {
-        setEngineStatus(`Stockfish ready - ${engineLevelProfile().label}`);
+        setEngineStatus(engineReadyMessage());
       } else if (state.mode === 'solo') {
-        setEngineStatus('Warming up Stockfish...');
+        setEngineStatus('Warming up local Stockfish 18...');
       }
       updateSoloEngineLabel();
       render();
@@ -1491,6 +1631,9 @@
     ui.hostBtn.addEventListener('click', () => connectOnline('host'));
     ui.joinBtn.addEventListener('click', () => connectOnline('join'));
     ui.soloBtn.addEventListener('click', startSolo);
+    ui.retryEngineBtn.addEventListener('click', () => {
+      retryEngineNow();
+    });
     ui.engineMoveBtn.addEventListener('click', () => {
       forceEngineMoveNow();
     });
@@ -1536,7 +1679,7 @@
     ui.serverUrlInput.value = state.serverUrl;
     state.engineLevel = Number(localStorage.getItem(STORAGE_KEYS.engineLevel) || '10') || 10;
     ui.engineLevelSelect.value = String(state.engineLevel);
-    setEngineStatus('Engine idle.');
+    setEngineStatus('Stockfish 18 idle.');
     const inviteRoom = sanitizeRoomCode(query.get('room'));
     if (inviteRoom) {
       ui.roomInput.value = inviteRoom;

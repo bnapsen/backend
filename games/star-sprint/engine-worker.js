@@ -1,16 +1,20 @@
 'use strict';
 
-const CANDIDATE_SOURCES = [
-  'https://cdn.jsdelivr.net/npm/stockfish@11.0.0/src/stockfish.js',
-];
-
-const WASM_SOURCE = 'https://cdn.jsdelivr.net/npm/stockfish@11.0.0/src/stockfish.wasm';
+const STOCKFISH_WORKER_URL = new URL('vendor/stockfish/stockfish-18-lite-single.js?v=20260325e', self.location.href).toString();
 
 let engine = null;
 let ready = false;
-let loadingError = null;
+let desiredSkill = 10;
 let activeRequestId = null;
-let activeRequest = null;
+let needsNewGame = true;
+
+function clampSkill(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 10;
+  }
+  return Math.max(0, Math.min(20, Math.round(numeric)));
+}
 
 function normalizeLine(raw) {
   if (typeof raw === 'string') {
@@ -22,8 +26,50 @@ function normalizeLine(raw) {
   return '';
 }
 
+function postError(message) {
+  self.postMessage({
+    type: 'error',
+    message: message || 'Unable to load Stockfish 18.',
+  });
+}
+
+function sendToEngine(command) {
+  if (!engine) {
+    return;
+  }
+  engine.postMessage(command);
+}
+
+function applyOptions() {
+  sendToEngine('setoption name UCI_Chess960 value false');
+  sendToEngine('setoption name MultiPV value 1');
+  sendToEngine('setoption name Ponder value false');
+  sendToEngine(`setoption name Skill Level value ${clampSkill(desiredSkill)}`);
+}
+
+function teardownEngine() {
+  if (!engine) {
+    return;
+  }
+  try {
+    engine.postMessage('stop');
+    engine.terminate();
+  } catch (error) {
+    // Ignore engine shutdown issues inside the worker wrapper.
+  }
+  engine = null;
+  ready = false;
+  activeRequestId = null;
+}
+
 function handleLine(line) {
   if (!line) {
+    return;
+  }
+
+  if (line === 'uciok') {
+    applyOptions();
+    sendToEngine('isready');
     return;
   }
 
@@ -42,105 +88,98 @@ function handleLine(line) {
       ponder: parts[3] || null,
     });
     activeRequestId = null;
-    activeRequest = null;
     return;
   }
 
-  if (line.startsWith('info ')) {
-    if (activeRequestId !== null) {
-      self.postMessage({
-        type: 'info',
-        requestId: activeRequestId,
-        line,
-      });
-    }
+  if (line.startsWith('info ') && activeRequestId !== null) {
+    self.postMessage({
+      type: 'info',
+      requestId: activeRequestId,
+      line,
+    });
   }
 }
 
 function attachEngine(instance) {
   engine = instance;
-  engine.onmessage = (raw) => {
-    const text = normalizeLine(raw);
+  ready = false;
+  needsNewGame = true;
+  engine.onmessage = (event) => {
+    const text = normalizeLine(event.data);
     if (!text) {
       return;
     }
     text.split(/\r?\n/).forEach((line) => handleLine(line.trim()));
   };
+  engine.onerror = () => {
+    teardownEngine();
+    postError('Stockfish 18 worker failed to load.');
+  };
 }
 
-function tryLoadEngine() {
-  if (engine || loadingError) {
-    return;
+function ensureEngine() {
+  if (engine) {
+    return true;
   }
 
-  for (const source of CANDIDATE_SOURCES) {
-    try {
-      importScripts(source);
-      if (typeof STOCKFISH === 'function') {
-        attachEngine(STOCKFISH(undefined, WASM_SOURCE));
-        return;
-      }
-    } catch (error) {
-      loadingError = error;
-    }
-  }
-
-  if (!engine) {
-    loadingError = loadingError || new Error('Could not load a Stockfish worker script.');
-    self.postMessage({
-      type: 'error',
-      message: loadingError.message || 'Unable to load the engine.',
-    });
+  try {
+    attachEngine(new Worker(STOCKFISH_WORKER_URL));
+    return true;
+  } catch (error) {
+    teardownEngine();
+    postError(error && error.message ? error.message : 'Could not start Stockfish 18.');
+    return false;
   }
 }
 
-function sendToEngine(command) {
-  if (!engine) {
+function initializeEngine() {
+  if (!ensureEngine()) {
     return;
   }
-  engine.postMessage(command);
+  if (ready) {
+    applyOptions();
+    self.postMessage({ type: 'ready' });
+    return;
+  }
+  sendToEngine('uci');
 }
 
 self.onmessage = (event) => {
   const payload = event.data || {};
 
   if (payload.type === 'init') {
-    tryLoadEngine();
-    if (!engine) {
-      return;
-    }
-    sendToEngine('uci');
-    sendToEngine('isready');
-    return;
-  }
-
-  if (!engine) {
-    self.postMessage({
-      type: 'error',
-      message: 'Engine is not available.',
-    });
-    return;
-  }
-
-  if (payload.type === 'analyze') {
-    activeRequestId = payload.requestId;
-    activeRequest = payload;
-    sendToEngine('stop');
-    sendToEngine('ucinewgame');
-    sendToEngine(`setoption name Skill Level value ${payload.skill || 10}`);
-    sendToEngine(`position fen ${payload.fen}`);
-    if (payload.depth) {
-      sendToEngine(`go depth ${payload.depth}`);
-    } else {
-      sendToEngine(`go movetime ${payload.movetime || 500}`);
-    }
+    desiredSkill = clampSkill(payload.skill || desiredSkill);
+    initializeEngine();
     return;
   }
 
   if (payload.type === 'stop') {
     activeRequestId = null;
-    activeRequest = null;
     sendToEngine('stop');
     return;
+  }
+
+  if (payload.type !== 'analyze') {
+    return;
+  }
+
+  desiredSkill = clampSkill(payload.skill || desiredSkill);
+  if (!ensureEngine() || !ready) {
+    postError('Stockfish 18 is not ready yet.');
+    return;
+  }
+
+  activeRequestId = payload.requestId;
+  applyOptions();
+  sendToEngine('stop');
+  if (needsNewGame) {
+    sendToEngine('ucinewgame');
+    needsNewGame = false;
+  }
+  sendToEngine(`position fen ${payload.fen}`);
+  if (payload.depth) {
+    sendToEngine(`go depth ${payload.depth}`);
+  } else {
+    sendToEngine(`go movetime ${payload.movetime || 700}`);
   }
 };
