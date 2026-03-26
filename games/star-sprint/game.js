@@ -1196,22 +1196,30 @@
     const paddingX = parseFloat(stageStyles.paddingLeft || '0') + parseFloat(stageStyles.paddingRight || '0');
     const paddingY = parseFloat(stageStyles.paddingTop || '0') + parseFloat(stageStyles.paddingBottom || '0');
     const widthBudget = Math.max(0, ui.boardStage.clientWidth - paddingX);
-    let heightBudget = Number.POSITIVE_INFINITY;
+    const viewportBottomReserve = window.innerWidth <= 820 ? 16 : state.focusMode ? 18 : 28;
+    const viewportHeightBudget = Math.max(0, window.innerHeight - stageRect.top - paddingY - viewportBottomReserve);
+    let heightBudget = viewportHeightBudget;
 
     if (state.focusMode) {
-      heightBudget = Math.max(0, ui.boardStage.clientHeight - paddingY);
-      if (!heightBudget) {
-        heightBudget = Math.max(0, window.innerHeight - stageRect.top - paddingY - 24);
+      const stageHeightBudget = Math.max(0, ui.boardStage.clientHeight - paddingY);
+      if (stageHeightBudget) {
+        heightBudget = Math.min(heightBudget, stageHeightBudget);
       }
     }
 
-    const rawSquareSize = Math.min(widthBudget / 8, heightBudget / 8, responsiveBoardSizeCap());
+    const widthSquareBudget = widthBudget / 8;
+    const heightSquareBudget = heightBudget / 8;
+    const rawSquareSize = Math.min(widthSquareBudget, heightSquareBudget, responsiveBoardSizeCap());
     if (!Number.isFinite(rawSquareSize) || rawSquareSize <= 0) {
       return;
     }
 
-    const minimumSquare = window.innerWidth <= 820 ? 36 : 52;
-    const squareSize = Math.max(minimumSquare, Math.floor(rawSquareSize));
+    const minimumSquare = window.innerWidth <= 820 ? 34 : 42;
+    const emergencyMinimum = window.innerWidth <= 820 ? 28 : 32;
+    const heightLimited = heightSquareBudget < widthSquareBudget;
+    const squareSize = heightLimited
+      ? Math.max(emergencyMinimum, Math.floor(rawSquareSize))
+      : Math.max(minimumSquare, Math.floor(rawSquareSize));
     ui.boardGrid.style.setProperty('--square-size', `${squareSize}px`);
   }
 
