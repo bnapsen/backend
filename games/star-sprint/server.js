@@ -16,6 +16,56 @@ const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const COLORS = ['white', 'black'];
 const TICK_MS = 50;
 const rooms = new Map();
+const CHESS_TIME_CONTROLS = Object.freeze({
+  untimed: {
+    id: 'untimed',
+    label: 'Untimed',
+    shortLabel: 'No clock',
+    baseMs: 0,
+    incrementMs: 0,
+    summary: 'No countdown clock. Good for relaxed games and testing.',
+  },
+  '1m': {
+    id: '1m',
+    label: '1 minute bullet',
+    shortLabel: '1+0',
+    baseMs: 60 * 1000,
+    incrementMs: 0,
+    summary: 'Fast bullet chess with almost no think time.',
+  },
+  '2m': {
+    id: '2m',
+    label: '2 minute sprint',
+    shortLabel: '2+0',
+    baseMs: 2 * 60 * 1000,
+    incrementMs: 0,
+    summary: 'Quick sprint games where both players need to move with intent.',
+  },
+  '3m': {
+    id: '3m',
+    label: '3 minute blitz',
+    shortLabel: '3+0',
+    baseMs: 3 * 60 * 1000,
+    incrementMs: 0,
+    summary: 'Classic blitz pressure with just enough time for tactics.',
+  },
+  '5m': {
+    id: '5m',
+    label: '5 minute blitz',
+    shortLabel: '5+0',
+    baseMs: 5 * 60 * 1000,
+    incrementMs: 0,
+    summary: 'A balanced blitz preset for most fast online games.',
+  },
+  '10m': {
+    id: '10m',
+    label: '10 minute rapid',
+    shortLabel: '10+0',
+    baseMs: 10 * 60 * 1000,
+    incrementMs: 0,
+    summary: 'A calmer rapid game with room for longer plans.',
+  },
+});
 const GAME_DEFS = {
   chess: {
     id: 'chess',
@@ -85,6 +135,149 @@ function normalizeGameType(raw) {
   return 'chess';
 }
 
+function capitalize(value) {
+  return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
+}
+
+function normalizeChessTimeControlPreset(raw) {
+  const value = String(raw || '').trim();
+  return CHESS_TIME_CONTROLS[value] ? value : 'untimed';
+}
+
+function chessTimeControlProfile(raw) {
+  return CHESS_TIME_CONTROLS[normalizeChessTimeControlPreset(raw)];
+}
+
+function createChessClock(presetId) {
+  const profile = chessTimeControlProfile(presetId);
+  return {
+    enabled: profile.baseMs > 0,
+    presetId: profile.id,
+    label: profile.label,
+    shortLabel: profile.shortLabel,
+    summary: profile.summary,
+    baseMs: profile.baseMs,
+    incrementMs: profile.incrementMs,
+    remainingMs: {
+      white: profile.baseMs,
+      black: profile.baseMs,
+    },
+    runningColor: null,
+    lastStartedAt: 0,
+  };
+}
+
+function syncChessClock(room, now) {
+  if (
+    !room ||
+    room.gameType !== 'chess' ||
+    !room.clock ||
+    !room.clock.enabled ||
+    !room.clock.runningColor ||
+    !room.clock.lastStartedAt
+  ) {
+    return false;
+  }
+
+  const elapsed = Math.max(0, now - room.clock.lastStartedAt);
+  if (!elapsed) {
+    return false;
+  }
+
+  const activeColor = room.clock.runningColor;
+  room.clock.remainingMs[activeColor] = Math.max(0, room.clock.remainingMs[activeColor] - elapsed);
+  room.clock.lastStartedAt = now;
+  return true;
+}
+
+function pauseChessClock(room, now) {
+  if (!room || room.gameType !== 'chess' || !room.clock) {
+    return;
+  }
+  syncChessClock(room, now);
+  room.clock.runningColor = null;
+  room.clock.lastStartedAt = 0;
+}
+
+function refreshChessClockTurn(room, now) {
+  if (!room || room.gameType !== 'chess' || !room.clock) {
+    return;
+  }
+  if (!room.clock.enabled) {
+    room.clock.runningColor = null;
+    room.clock.lastStartedAt = 0;
+    return;
+  }
+  syncChessClock(room, now);
+  if (room.players.size < 2 || room.game.winner || room.game.drawReason) {
+    room.clock.runningColor = null;
+    room.clock.lastStartedAt = 0;
+    return;
+  }
+  room.clock.runningColor = room.game.turn;
+  room.clock.lastStartedAt = now;
+}
+
+function finalizeChessTimeout(room, expiredColor) {
+  if (!room || room.gameType !== 'chess' || !room.clock) {
+    return false;
+  }
+  const winner = expiredColor === 'white' ? 'black' : 'white';
+  room.clock.remainingMs[expiredColor] = 0;
+  room.clock.runningColor = null;
+  room.clock.lastStartedAt = 0;
+  room.game.winner = winner;
+  room.game.winReason = 'timeout';
+  room.game.drawReason = null;
+  room.game.check = null;
+  room.game.status = `${capitalize(expiredColor)} ran out of time. ${capitalize(winner)} wins on time.`;
+  return true;
+}
+
+function maybeExpireChessClock(room, now) {
+  if (
+    !room ||
+    room.gameType !== 'chess' ||
+    !room.clock ||
+    !room.clock.enabled ||
+    room.players.size < 2 ||
+    room.game.winner ||
+    room.game.drawReason
+  ) {
+    return false;
+  }
+
+  syncChessClock(room, now);
+  const activeColor = room.clock.runningColor;
+  if (!activeColor) {
+    return false;
+  }
+  if (room.clock.remainingMs[activeColor] > 0) {
+    return false;
+  }
+  return finalizeChessTimeout(room, activeColor);
+}
+
+function serializeChessClock(room) {
+  if (!room || room.gameType !== 'chess' || !room.clock) {
+    return null;
+  }
+  return {
+    enabled: Boolean(room.clock.enabled),
+    presetId: room.clock.presetId,
+    label: room.clock.label,
+    shortLabel: room.clock.shortLabel,
+    summary: room.clock.summary,
+    baseMs: room.clock.baseMs,
+    incrementMs: room.clock.incrementMs,
+    remainingMs: {
+      white: room.clock.remainingMs.white,
+      black: room.clock.remainingMs.black,
+    },
+    runningColor: room.clock.enabled ? room.clock.runningColor : null,
+  };
+}
+
 function generateRoomCode() {
   let code = '';
   do {
@@ -93,7 +286,7 @@ function generateRoomCode() {
   return code;
 }
 
-function createRoom(code, gameType) {
+function createRoom(code, gameType, options = {}) {
   const gameDef = GAME_DEFS[gameType] || GAME_DEFS.chess;
   const room = {
     code,
@@ -102,6 +295,9 @@ function createRoom(code, gameType) {
     maxPlayers: gameDef.maxPlayers || DEFAULT_MAX_PLAYERS,
     players: new Map(),
     game: gameDef.createGameState(),
+    clock: gameDef.id === 'chess'
+      ? createChessClock(options.timeControlPreset)
+      : null,
     lastTickAt: Date.now(),
   };
   room.game.roomCode = code;
@@ -109,7 +305,7 @@ function createRoom(code, gameType) {
   return room;
 }
 
-function getRoomForJoin(code, mode, gameType) {
+function getRoomForJoin(code, mode, gameType, options = {}) {
   const normalized = sanitizeRoomCode(code);
 
   if (mode === 'host') {
@@ -121,7 +317,7 @@ function getRoomForJoin(code, mode, gameType) {
       };
     }
     return {
-      room: existing || createRoom(hostCode, gameType),
+      room: existing || createRoom(hostCode, gameType, options),
     };
   }
 
@@ -175,11 +371,22 @@ function snapshot(room, viewerId) {
   }
   return {
     ...base,
+    clock: room.gameType === 'chess' ? serializeChessClock(room) : undefined,
     players: listPlayers(room),
   };
 }
 
 function broadcastState(room, message) {
+  if (room.gameType === 'chess') {
+    const now = Date.now();
+    if (!maybeExpireChessClock(room, now)) {
+      if (room.players.size < 2 || room.game.winner || room.game.drawReason) {
+        pauseChessClock(room, now);
+      } else {
+        syncChessClock(room, now);
+      }
+    }
+  }
   for (const player of room.players.values()) {
     const payload = {
       type: 'state',
@@ -229,7 +436,9 @@ function seatIdentityForRoom(room) {
 function handleJoin(socket, payload) {
   const mode = payload && payload.mode === 'join' ? 'join' : 'host';
   const gameType = normalizeGameType(payload && payload.game);
-  const lookup = getRoomForJoin(payload.roomCode, mode, gameType);
+  const lookup = getRoomForJoin(payload.roomCode, mode, gameType, {
+    timeControlPreset: normalizeChessTimeControlPreset(payload && payload.timeControlPreset),
+  });
   if (lookup.error) {
     sendError(socket, lookup.error);
     return;
@@ -267,6 +476,9 @@ function handleJoin(socket, payload) {
   socket.playerId = player.id;
   socket.roomCode = room.code;
   room.lastTickAt = Date.now();
+  if (room.gameType === 'chess') {
+    refreshChessClockTurn(room, room.lastTickAt);
+  }
 
   send(socket, {
     type: 'welcome',
@@ -338,15 +550,24 @@ function handleMove(socket, payload) {
       die: payload.die,
     });
   } else {
+    const now = Date.now();
+    if (maybeExpireChessClock(room, now)) {
+      broadcastState(room);
+      return;
+    }
     if (room.game.turn !== player.color) {
       sendError(socket, `It is ${room.game.turn}'s turn.`);
       return;
     }
+    syncChessClock(room, now);
     result = Chess.applyMove(room.game, {
       from: payload.from,
       to: payload.to,
       promotion: payload.promotion,
     });
+    if (result.ok) {
+      refreshChessClockTurn(room, now);
+    }
   }
 
   if (!result.ok) {
@@ -458,6 +679,12 @@ function handleRestart(socket) {
   } else {
     room.game = room.gameDef.createGameState();
     room.game.roomCode = room.code;
+    room.clock = room.gameType === 'chess'
+      ? createChessClock(room.clock ? room.clock.presetId : 'untimed')
+      : room.clock;
+    if (room.gameType === 'chess') {
+      refreshChessClockTurn(room, Date.now());
+    }
   }
   broadcastState(
     room,
@@ -482,6 +709,9 @@ function handleDisconnect(socket) {
   }
 
   const player = room.players.get(playerId);
+  if (room.gameType === 'chess') {
+    pauseChessClock(room, Date.now());
+  }
   room.players.delete(playerId);
 
   if (room.players.size === 0) {
@@ -494,6 +724,8 @@ function handleDisconnect(socket) {
     room.lastTickAt = Date.now();
   } else if (room.gameType === 'poker') {
     Poker.removePlayer(room.game, playerId);
+  } else if (room.gameType === 'chess') {
+    refreshChessClockTurn(room, Date.now());
   }
 
   const message = player
@@ -509,14 +741,16 @@ function handleDisconnect(socket) {
 function tickRealtimeRooms() {
   const now = Date.now();
   for (const room of rooms.values()) {
-    if (room.gameType !== 'space-shooter' || room.players.size === 0) {
+    if (room.gameType === 'space-shooter' && room.players.size > 0) {
+      const elapsed = Math.max(16, Math.min(120, now - room.lastTickAt));
+      room.lastTickAt = now;
+      Shooter.step(room.game, elapsed / 1000);
+      broadcastState(room);
       continue;
     }
-
-    const elapsed = Math.max(16, Math.min(120, now - room.lastTickAt));
-    room.lastTickAt = now;
-    Shooter.step(room.game, elapsed / 1000);
-    broadcastState(room);
+    if (room.gameType === 'chess' && maybeExpireChessClock(room, now)) {
+      broadcastState(room);
+    }
   }
 }
 

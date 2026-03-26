@@ -6,6 +6,7 @@
     name: 'neonCrownChess.name',
     serverUrl: 'neonCrownChess.serverUrl',
     engineLevel: 'neonCrownChess.engineLevel',
+    timeControlPreset: 'neonCrownChess.timeControlPreset',
     boardTheme: 'neonCrownChess.boardTheme',
     pieceStyle: 'neonCrownChess.pieceStyle',
     soundEnabled: 'neonCrownChess.soundEnabled',
@@ -66,6 +67,50 @@
       movetime: 3400,
       meter: 100,
       summary: 'The toughest solo setting here, with the deepest search and strongest tactics.',
+    },
+  };
+  const TIME_CONTROL_PRESETS = {
+    untimed: {
+      id: 'untimed',
+      label: 'Untimed',
+      shortLabel: 'No clock',
+      baseMs: 0,
+      summary: 'No countdown clock. Good for relaxed games and testing.',
+    },
+    '1m': {
+      id: '1m',
+      label: '1 minute bullet',
+      shortLabel: '1+0',
+      baseMs: 60 * 1000,
+      summary: 'Fast bullet chess with almost no think time.',
+    },
+    '2m': {
+      id: '2m',
+      label: '2 minute sprint',
+      shortLabel: '2+0',
+      baseMs: 2 * 60 * 1000,
+      summary: 'Quick sprint games where both players need to move with intent.',
+    },
+    '3m': {
+      id: '3m',
+      label: '3 minute blitz',
+      shortLabel: '3+0',
+      baseMs: 3 * 60 * 1000,
+      summary: 'Classic blitz pressure with just enough time for tactics.',
+    },
+    '5m': {
+      id: '5m',
+      label: '5 minute blitz',
+      shortLabel: '5+0',
+      baseMs: 5 * 60 * 1000,
+      summary: 'A balanced blitz preset for most fast online games.',
+    },
+    '10m': {
+      id: '10m',
+      label: '10 minute rapid',
+      shortLabel: '10+0',
+      baseMs: 10 * 60 * 1000,
+      summary: 'A calmer rapid game with room for longer plans.',
     },
   };
   const BOARD_THEMES = {
@@ -294,6 +339,7 @@
     enginePending: null,
     engineLastInfoAt: 0,
     engineNeedsNewGame: true,
+    timeControlPreset: 'untimed',
     boardTheme: 'walnut',
     pieceStyle: 'auto',
     soundEnabled: true,
@@ -310,6 +356,8 @@
     engineLevelSelect: document.getElementById('engineLevelSelect'),
     engineLevelHint: document.getElementById('engineLevelHint'),
     engineLevelMeter: document.getElementById('engineLevelMeter'),
+    timeControlSelect: document.getElementById('timeControlSelect'),
+    timeControlHint: document.getElementById('timeControlHint'),
     boardThemeSelect: document.getElementById('boardThemeSelect'),
     boardThemeHint: document.getElementById('boardThemeHint'),
     pieceStyleSelect: document.getElementById('pieceStyleSelect'),
@@ -325,6 +373,14 @@
     turnText: document.getElementById('turnText'),
     phaseText: document.getElementById('phaseText'),
     winnerText: document.getElementById('winnerText'),
+    whiteClockCard: document.getElementById('whiteClockCard'),
+    whiteClockValue: document.getElementById('whiteClockValue'),
+    whiteClockMeta: document.getElementById('whiteClockMeta'),
+    blackClockCard: document.getElementById('blackClockCard'),
+    blackClockValue: document.getElementById('blackClockValue'),
+    blackClockMeta: document.getElementById('blackClockMeta'),
+    timeControlBadge: document.getElementById('timeControlBadge'),
+    clockStatus: document.getElementById('clockStatus'),
     focusHint: document.getElementById('focusHint'),
     presenceText: document.getElementById('presenceText'),
     networkStatus: document.getElementById('networkStatus'),
@@ -393,6 +449,14 @@
     return ENGINE_LEVELS[numeric] ? numeric : 10;
   }
 
+  function normalizeTimeControlPreset(value) {
+    return TIME_CONTROL_PRESETS[value] ? value : 'untimed';
+  }
+
+  function timeControlProfile(presetId = state.timeControlPreset) {
+    return TIME_CONTROL_PRESETS[normalizeTimeControlPreset(presetId)] || TIME_CONTROL_PRESETS.untimed;
+  }
+
   function normalizeBoardTheme(value) {
     return BOARD_THEMES[value] ? value : 'walnut';
   }
@@ -423,6 +487,186 @@
     return state.soundProfile === 'auto'
       ? boardThemeProfile().soundProfile || state.boardTheme
       : normalizeSoundProfile(state.soundProfile);
+  }
+
+  function normalizeClockState(rawClock) {
+    const profile = timeControlProfile(rawClock && rawClock.presetId);
+    const remaining = rawClock && rawClock.remainingMs ? rawClock.remainingMs : null;
+    const whiteRemaining = remaining && remaining.white !== undefined && remaining.white !== null
+      ? Number(remaining.white)
+      : profile.baseMs;
+    const blackRemaining = remaining && remaining.black !== undefined && remaining.black !== null
+      ? Number(remaining.black)
+      : profile.baseMs;
+    return {
+      enabled: Boolean(rawClock && rawClock.enabled && profile.baseMs > 0),
+      presetId: profile.id,
+      label: profile.label,
+      shortLabel: profile.shortLabel,
+      summary: profile.summary,
+      baseMs: profile.baseMs,
+      incrementMs: Number(rawClock && rawClock.incrementMs) || 0,
+      remainingMs: {
+        white: Math.max(0, Number.isFinite(whiteRemaining) ? whiteRemaining : profile.baseMs),
+        black: Math.max(0, Number.isFinite(blackRemaining) ? blackRemaining : profile.baseMs),
+      },
+      runningColor: rawClock && (rawClock.runningColor === 'white' || rawClock.runningColor === 'black')
+        ? rawClock.runningColor
+        : null,
+      clientReceivedAt: Date.now(),
+    };
+  }
+
+  function createLocalClockSnapshot(presetId) {
+    const profile = timeControlProfile(presetId);
+    return normalizeClockState({
+      enabled: profile.baseMs > 0,
+      presetId: profile.id,
+      incrementMs: 0,
+      remainingMs: {
+        white: profile.baseMs,
+        black: profile.baseMs,
+      },
+      runningColor: profile.baseMs > 0 ? 'white' : null,
+    });
+  }
+
+  function hydrateClockSnapshot(snapshot) {
+    if (!snapshot || !snapshot.clock) {
+      return;
+    }
+    snapshot.clock = normalizeClockState(snapshot.clock);
+    if (snapshot.winner || snapshot.drawReason || !snapshot.clock.enabled) {
+      snapshot.clock.runningColor = null;
+    }
+  }
+
+  function syncSnapshotClockToNow(snapshot, now = Date.now()) {
+    if (!snapshot || !snapshot.clock) {
+      return;
+    }
+    const clock = snapshot.clock;
+    if (!clock.enabled || !clock.runningColor || snapshot.winner || snapshot.drawReason) {
+      clock.clientReceivedAt = now;
+      if (snapshot.winner || snapshot.drawReason || !clock.enabled) {
+        clock.runningColor = null;
+      }
+      return;
+    }
+    const elapsed = Math.max(0, now - (clock.clientReceivedAt || now));
+    if (elapsed > 0) {
+      const color = clock.runningColor;
+      clock.remainingMs[color] = Math.max(0, clock.remainingMs[color] - elapsed);
+    }
+    clock.clientReceivedAt = now;
+  }
+
+  function projectClock(snapshot, now = Date.now()) {
+    const profile = timeControlProfile(snapshot && snapshot.clock ? snapshot.clock.presetId : state.timeControlPreset);
+    const clock = snapshot && snapshot.clock ? snapshot.clock : null;
+    const projection = {
+      enabled: Boolean(clock && clock.enabled && profile.baseMs > 0),
+      presetId: profile.id,
+      label: profile.label,
+      shortLabel: profile.shortLabel,
+      summary: profile.summary,
+      whiteMs: clock ? clock.remainingMs.white : profile.baseMs,
+      blackMs: clock ? clock.remainingMs.black : profile.baseMs,
+      runningColor: clock ? clock.runningColor : null,
+    };
+    if (
+      projection.enabled &&
+      projection.runningColor &&
+      snapshot &&
+      !snapshot.winner &&
+      !snapshot.drawReason
+    ) {
+      const elapsed = Math.max(0, now - (clock.clientReceivedAt || now));
+      if (projection.runningColor === 'white') {
+        projection.whiteMs = Math.max(0, projection.whiteMs - elapsed);
+      } else {
+        projection.blackMs = Math.max(0, projection.blackMs - elapsed);
+      }
+    }
+    return projection;
+  }
+
+  function setSnapshotClockRunning(snapshot, color, now = Date.now()) {
+    if (!snapshot || !snapshot.clock) {
+      return;
+    }
+    syncSnapshotClockToNow(snapshot, now);
+    if (!snapshot.clock.enabled || snapshot.winner || snapshot.drawReason) {
+      snapshot.clock.runningColor = null;
+      snapshot.clock.clientReceivedAt = now;
+      return;
+    }
+    snapshot.clock.runningColor = color;
+    snapshot.clock.clientReceivedAt = now;
+  }
+
+  function finishSnapshotOnTimeout(snapshot, expiredColor, now = Date.now()) {
+    if (!snapshot || !snapshot.clock || !snapshot.clock.enabled) {
+      return false;
+    }
+    syncSnapshotClockToNow(snapshot, now);
+    snapshot.clock.remainingMs[expiredColor] = 0;
+    snapshot.clock.runningColor = null;
+    snapshot.clock.clientReceivedAt = now;
+    snapshot.winner = Core.otherColor(expiredColor);
+    snapshot.winReason = 'timeout';
+    snapshot.drawReason = null;
+    snapshot.check = null;
+    snapshot.status = `${capitalize(expiredColor)} ran out of time. ${capitalize(snapshot.winner)} wins on time.`;
+    return true;
+  }
+
+  function maybeHandleSoloTimeout() {
+    if (
+      state.mode !== 'solo' ||
+      !state.snapshot ||
+      !state.snapshot.clock ||
+      !state.snapshot.clock.enabled ||
+      state.snapshot.winner ||
+      state.snapshot.drawReason
+    ) {
+      return false;
+    }
+    const activeColor = state.snapshot.clock.runningColor;
+    if (!activeColor) {
+      return false;
+    }
+    const projected = projectClock(state.snapshot);
+    const remaining = activeColor === 'white' ? projected.whiteMs : projected.blackMs;
+    if (remaining > 0) {
+      return false;
+    }
+    if (!finishSnapshotOnTimeout(state.snapshot, activeColor)) {
+      return false;
+    }
+    cancelEngineThinking();
+    clearSelection();
+    setStatusMessage(state.snapshot.status);
+    if (state.engineReady) {
+      setEngineStatus(engineReadyMessage());
+    }
+    render();
+    return true;
+  }
+
+  function formatClock(ms) {
+    const safeMs = Math.max(0, Number(ms) || 0);
+    if (safeMs < 10000) {
+      const totalTenths = Math.ceil(safeMs / 100);
+      const minutes = Math.floor(totalTenths / 600);
+      const seconds = Math.floor((totalTenths % 600) / 10);
+      const tenths = totalTenths % 10;
+      return `${minutes}:${String(seconds).padStart(2, '0')}.${tenths}`;
+    }
+    const totalSeconds = Math.ceil(safeMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
   }
 
   function pieceStyleProfile() {
@@ -552,6 +796,9 @@
   function setSnapshot(nextSnapshot, options = {}) {
     const previous = state.snapshot;
     state.snapshot = nextSnapshot;
+    if (state.snapshot) {
+      hydrateClockSnapshot(state.snapshot);
+    }
 
     if (options.silent) {
       return;
@@ -617,6 +864,7 @@
     localStorage.setItem(STORAGE_KEYS.name, ui.nameInput.value.trim());
     localStorage.setItem(STORAGE_KEYS.serverUrl, state.serverUrl);
     localStorage.setItem(STORAGE_KEYS.engineLevel, String(state.engineLevel));
+    localStorage.setItem(STORAGE_KEYS.timeControlPreset, state.timeControlPreset);
     localStorage.setItem(STORAGE_KEYS.boardTheme, state.boardTheme);
     localStorage.setItem(STORAGE_KEYS.pieceStyle, state.pieceStyle);
     localStorage.setItem(STORAGE_KEYS.soundEnabled, state.soundEnabled ? '1' : '0');
@@ -783,7 +1031,20 @@
           ? 'Solo vs backup engine'
           : 'Solo vs Stockfish 18';
     } else {
-      ui.presenceText.textContent = `${players.length}/2 players connected`;
+      const profile = timeControlProfile(state.snapshot.clock ? state.snapshot.clock.presetId : state.timeControlPreset);
+      ui.presenceText.textContent = `${players.length}/2 players connected${profile.baseMs > 0 ? ` - ${profile.shortLabel}` : ''}`;
+    }
+  }
+
+  function renderTimeControlInfo() {
+    const profile = timeControlProfile(state.snapshot && state.snapshot.clock ? state.snapshot.clock.presetId : state.timeControlPreset);
+    if (ui.timeControlSelect) {
+      ui.timeControlSelect.value = profile.id;
+    }
+    if (ui.timeControlHint) {
+      ui.timeControlHint.textContent = profile.baseMs > 0
+        ? `${profile.summary} Online rooms use the backend clock, and solo mode uses the same countdown locally.`
+        : profile.summary;
     }
   }
 
@@ -940,13 +1201,18 @@
         token: '\u2658',
       },
       {
+        title: 'Real chess clocks',
+        body: 'Choose untimed, bullet, blitz, or rapid presets. Online matches use a server-authoritative clock so both players see the same flag fall.',
+        token: '\u23f1',
+      },
+      {
         title: 'Real engine support',
         body: 'Solo mode has six Stockfish 18 tiers, from Rookie through Grandmaster, and only falls back to a local move chooser if the engine cannot wake up.',
         token: '\u2699',
       },
       {
         title: 'Online sync',
-        body: 'The backend still validates every multiplayer move, so both browsers stay locked to the same legal position.',
+        body: 'The backend validates multiplayer moves and timed rooms, so both browsers stay locked to the same legal position and clock state.',
         token: '\u2194',
       },
     ];
@@ -960,6 +1226,74 @@
         </div>
       </div>
     `).join('');
+  }
+
+  function renderClockStrip() {
+    const profile = timeControlProfile(state.snapshot && state.snapshot.clock ? state.snapshot.clock.presetId : state.timeControlPreset);
+    const projection = projectClock(state.snapshot);
+    const timed = Boolean(state.snapshot && state.snapshot.clock && projection.enabled);
+    const players = state.snapshot && Array.isArray(state.snapshot.players) ? state.snapshot.players.length : 0;
+    const winner = state.snapshot ? state.snapshot.winner : null;
+    const timeoutLoss = winner && state.snapshot && state.snapshot.winReason === 'timeout'
+      ? Core.otherColor(winner)
+      : null;
+
+    ui.timeControlBadge.textContent = profile.shortLabel;
+
+    if (!timed) {
+      ui.whiteClockValue.textContent = '--:--';
+      ui.blackClockValue.textContent = '--:--';
+      ui.whiteClockMeta.textContent = 'Clock off';
+      ui.blackClockMeta.textContent = 'Clock off';
+      ui.clockStatus.textContent = state.snapshot
+        ? 'Untimed game. No countdown clock is running.'
+        : 'Pick a timer preset before hosting if you want a real chess clock.';
+      ui.whiteClockCard.classList.remove('active-clock', 'low-clock', 'flagged-clock');
+      ui.blackClockCard.classList.remove('active-clock', 'low-clock', 'flagged-clock');
+      return;
+    }
+
+    ui.whiteClockValue.textContent = formatClock(projection.whiteMs);
+    ui.blackClockValue.textContent = formatClock(projection.blackMs);
+    ui.whiteClockMeta.textContent = winner === 'white'
+      ? 'Winner'
+      : timeoutLoss === 'white'
+        ? 'Flag fell'
+        : projection.runningColor === 'white'
+          ? 'Running'
+          : players < 2
+            ? 'Waiting'
+            : 'Ready';
+    ui.blackClockMeta.textContent = winner === 'black'
+      ? 'Winner'
+      : timeoutLoss === 'black'
+        ? 'Flag fell'
+        : projection.runningColor === 'black'
+          ? 'Running'
+          : players < 2
+            ? 'Waiting'
+            : 'Ready';
+
+    ui.whiteClockCard.classList.toggle('active-clock', projection.runningColor === 'white' && !winner && !(state.snapshot && state.snapshot.drawReason));
+    ui.blackClockCard.classList.toggle('active-clock', projection.runningColor === 'black' && !winner && !(state.snapshot && state.snapshot.drawReason));
+    ui.whiteClockCard.classList.toggle('low-clock', projection.whiteMs > 0 && projection.whiteMs <= 10000);
+    ui.blackClockCard.classList.toggle('low-clock', projection.blackMs > 0 && projection.blackMs <= 10000);
+    ui.whiteClockCard.classList.toggle('flagged-clock', timeoutLoss === 'white');
+    ui.blackClockCard.classList.toggle('flagged-clock', timeoutLoss === 'black');
+
+    if (!state.snapshot) {
+      ui.clockStatus.textContent = 'Clock starts as soon as the game begins.';
+    } else if (timeoutLoss) {
+      ui.clockStatus.textContent = `${capitalize(timeoutLoss)} flagged. ${capitalize(winner)} wins on time.`;
+    } else if (winner || state.snapshot.drawReason) {
+      ui.clockStatus.textContent = 'Clock stopped.';
+    } else if (state.mode === 'online' && players < 2) {
+      ui.clockStatus.textContent = 'Clock starts when both players join the room.';
+    } else if (projection.runningColor) {
+      ui.clockStatus.textContent = `${capitalize(projection.runningColor)} clock is running.`;
+    } else {
+      ui.clockStatus.textContent = 'Clock paused.';
+    }
   }
 
   function boardPieceAt(x, y) {
@@ -1209,7 +1543,9 @@
     ui.phaseText.textContent = state.snapshot.status || 'Match in progress.';
 
     if (state.snapshot.winner) {
-      ui.winnerText.textContent = `${capitalize(state.snapshot.winner)} wins by checkmate.`;
+      ui.winnerText.textContent = state.snapshot.winReason === 'timeout'
+        ? `${capitalize(state.snapshot.winner)} wins on time.`
+        : `${capitalize(state.snapshot.winner)} wins by checkmate.`;
     } else if (state.snapshot.drawReason) {
       ui.winnerText.textContent = state.snapshot.status;
     } else if (state.mode === 'online' && playerCount < 2) {
@@ -1255,6 +1591,8 @@
   function renderControls() {
     const hasRoom = Boolean(state.roomCode && state.mode === 'online');
     const pendingConnection = Boolean(state.socket && state.socket.readyState === WebSocket.CONNECTING);
+    const timeControlLocked = (state.mode === 'online' && hasRoom)
+      || (state.mode === 'solo' && Boolean(state.snapshot) && !state.snapshot.winner && !state.snapshot.drawReason);
     ui.hostBtn.disabled = pendingConnection;
     ui.joinBtn.disabled = pendingConnection || !sanitizeRoomCode(ui.roomInput.value);
     ui.retryEngineBtn.disabled = state.mode !== 'solo' || Boolean(state.engineInitPromise);
@@ -1264,6 +1602,7 @@
     ui.copyBtn.disabled = !hasRoom;
     ui.copyCodeBtn.disabled = !hasRoom;
     ui.engineLevelSelect.disabled = state.mode === 'online';
+    ui.timeControlSelect.disabled = timeControlLocked;
     ui.boardThemeSelect.disabled = false;
     ui.pieceStyleSelect.disabled = false;
     ui.soundProfileSelect.disabled = !audioSupported();
@@ -1282,6 +1621,7 @@
   function render() {
     renderPills();
     renderStatus();
+    renderTimeControlInfo();
     renderDifficultyInfo();
     renderBoardThemeInfo();
     renderPieceStyleInfo();
@@ -1290,6 +1630,7 @@
     renderFocusModeInfo();
     updateInviteUi();
     renderSummary();
+    renderClockStrip();
     renderPlayers();
     renderHistory();
     renderCaptured();
@@ -1332,6 +1673,12 @@
 
   function decorateSoloSnapshot(snapshot) {
     const soloState = Core.cloneState(snapshot);
+    soloState.clock = soloState.clock
+      ? normalizeClockState(soloState.clock)
+      : createLocalClockSnapshot(state.timeControlPreset);
+    if (soloState.winner || soloState.drawReason || !soloState.clock.enabled) {
+      soloState.clock.runningColor = null;
+    }
     soloState.roomCode = 'SOLO';
     soloState.maxPlayers = 2;
     soloState.players = [
@@ -1728,6 +2075,9 @@
   function queueEngineTurn() {
     window.clearTimeout(state.botTimer);
     state.botTimer = window.setTimeout(async () => {
+      if (maybeHandleSoloTimeout()) {
+        return;
+      }
       if (state.mode !== 'solo' || !state.snapshot || state.snapshot.turn !== 'black' || state.snapshot.winner || state.snapshot.drawReason) {
         return;
       }
@@ -1743,7 +2093,21 @@
       } catch (error) {
         move = chooseFallbackMove(workingSnapshot, 'black');
       }
-      if (!move || state.mode !== 'solo' || !state.snapshot || snapshotToFen(state.snapshot) !== fenAtStart) {
+      if (
+        !move ||
+        state.mode !== 'solo' ||
+        !state.snapshot ||
+        state.snapshot.winner ||
+        state.snapshot.drawReason ||
+        snapshotToFen(state.snapshot) !== fenAtStart
+      ) {
+        return;
+      }
+      syncSnapshotClockToNow(state.snapshot);
+      if (state.snapshot.clock && state.snapshot.clock.enabled && state.snapshot.clock.remainingMs.black <= 0) {
+        finishSnapshotOnTimeout(state.snapshot, 'black');
+        setStatusMessage(state.snapshot.status);
+        render();
         return;
       }
       const sandbox = Core.cloneState(state.snapshot);
@@ -1751,6 +2115,7 @@
       if (!result.ok) {
         return;
       }
+      setSnapshotClockRunning(sandbox, sandbox.turn);
       setSnapshot(decorateSoloSnapshot(sandbox));
       setStatusMessage(state.snapshot.status);
       if (state.engineReady) {
@@ -1763,6 +2128,9 @@
 
   async function forceEngineMoveNow() {
     if (state.mode !== 'solo' || !state.snapshot || state.snapshot.winner || state.snapshot.drawReason) {
+      return;
+    }
+    if (maybeHandleSoloTimeout()) {
       return;
     }
 
@@ -1784,7 +2152,20 @@
       move = chooseFallbackMove(state.snapshot, sideToMove);
     }
 
-    if (!move || !state.snapshot || snapshotToFen(state.snapshot) !== fenAtStart) {
+    if (
+      !move ||
+      !state.snapshot ||
+      state.snapshot.winner ||
+      state.snapshot.drawReason ||
+      snapshotToFen(state.snapshot) !== fenAtStart
+    ) {
+      return;
+    }
+    syncSnapshotClockToNow(state.snapshot);
+    if (state.snapshot.clock && state.snapshot.clock.enabled && state.snapshot.clock.remainingMs[sideToMove] <= 0) {
+      finishSnapshotOnTimeout(state.snapshot, sideToMove);
+      setStatusMessage(state.snapshot.status);
+      render();
       return;
     }
 
@@ -1795,6 +2176,7 @@
       return;
     }
 
+    setSnapshotClockRunning(sandbox, sandbox.turn);
     setSnapshot(decorateSoloSnapshot(sandbox));
     setStatusMessage(state.snapshot.status);
     if (state.engineReady) {
@@ -1856,17 +2238,27 @@
     }
 
     if (state.mode === 'solo') {
+      syncSnapshotClockToNow(state.snapshot);
+      if (state.snapshot.clock && state.snapshot.clock.enabled && state.snapshot.clock.remainingMs.white <= 0) {
+        finishSnapshotOnTimeout(state.snapshot, 'white');
+        setStatusMessage(state.snapshot.status);
+        render();
+        return;
+      }
       const sandbox = Core.cloneState(state.snapshot);
       const result = Core.applyMove(sandbox, move);
       if (!result.ok) {
         showToast(result.error || 'That move is not legal.');
         return;
       }
+      setSnapshotClockRunning(sandbox, sandbox.turn);
       setSnapshot(decorateSoloSnapshot(sandbox));
       setStatusMessage(state.snapshot.status);
       clearSelection();
       render();
-      queueEngineTurn();
+      if (!maybeHandleSoloTimeout()) {
+        queueEngineTurn();
+      }
     }
   }
 
@@ -2032,6 +2424,7 @@
 
   function updateSoloEngineLabel() {
     if (state.mode === 'solo' && state.snapshot) {
+      syncSnapshotClockToNow(state.snapshot);
       setSnapshot(decorateSoloSnapshot(state.snapshot), { silent: true });
       render();
     }
@@ -2039,6 +2432,9 @@
 
   function updateFromServerSnapshot(snapshot, message) {
     setSnapshot(snapshot);
+    if (snapshot && snapshot.clock && snapshot.clock.presetId) {
+      state.timeControlPreset = normalizeTimeControlPreset(snapshot.clock.presetId);
+    }
     state.roomCode = snapshot.roomCode;
     ui.roomInput.value = snapshot.roomCode;
     if (state.selected) {
@@ -2099,9 +2495,11 @@
     socket.onopen = () => {
       socket.send(JSON.stringify({
         action: 'join',
+        game: 'chess',
         mode,
         name,
         roomCode,
+        timeControlPreset: state.timeControlPreset,
       }));
       render();
     };
@@ -2161,11 +2559,14 @@
     state.roomCode = 'SOLO';
     state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
     persistSettings();
-    setSnapshot(decorateSoloSnapshot(Core.createGameState()), { startCue: true });
+    const freshGame = Core.createGameState();
+    freshGame.clock = createLocalClockSnapshot(state.timeControlPreset);
+    setSnapshot(decorateSoloSnapshot(freshGame), { startCue: true });
     state.selected = null;
     state.legalMoves = [];
     setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
-    setStatusMessage(`Stockfish 18 ${engineLevelProfile().label} match started. You control White. Mouse, touch, and keyboard controls are all enabled.`);
+    const clockProfile = timeControlProfile(state.timeControlPreset);
+    setStatusMessage(`Stockfish 18 ${engineLevelProfile().label} match started. You control White.${clockProfile.baseMs > 0 ? ` Clock: ${clockProfile.label}.` : ''} Mouse, touch, and keyboard controls are all enabled.`);
     setEngineStatus('Warming up local Stockfish 18...');
     render();
     ensureEngineReady().then((ready) => {
@@ -2197,6 +2598,7 @@
     ui.nameInput.addEventListener('input', () => {
       persistSettings();
       if (state.mode === 'solo' && state.snapshot) {
+        syncSnapshotClockToNow(state.snapshot);
         setSnapshot(decorateSoloSnapshot(state.snapshot), { silent: true });
         render();
         return;
@@ -2227,6 +2629,14 @@
       }
       updateSoloEngineLabel();
       render();
+    });
+
+    ui.timeControlSelect.addEventListener('change', () => {
+      state.timeControlPreset = normalizeTimeControlPreset(ui.timeControlSelect.value);
+      persistSettings();
+      renderTimeControlInfo();
+      renderClockStrip();
+      showToast(`${timeControlProfile().label} selected.`);
     });
 
     ui.boardThemeSelect.addEventListener('change', async () => {
@@ -2365,6 +2775,8 @@
     ui.serverUrlInput.value = state.serverUrl;
     state.engineLevel = normalizeEngineLevel(localStorage.getItem(STORAGE_KEYS.engineLevel) || '10');
     ui.engineLevelSelect.value = String(state.engineLevel);
+    state.timeControlPreset = normalizeTimeControlPreset(localStorage.getItem(STORAGE_KEYS.timeControlPreset) || 'untimed');
+    ui.timeControlSelect.value = state.timeControlPreset;
     state.boardTheme = normalizeBoardTheme(localStorage.getItem(STORAGE_KEYS.boardTheme) || 'walnut');
     ui.boardThemeSelect.value = state.boardTheme;
     state.pieceStyle = normalizePieceStyle(localStorage.getItem(STORAGE_KEYS.pieceStyle) || 'auto');
@@ -2385,6 +2797,13 @@
     renderLegend();
     bindEvents();
     render();
+    window.setInterval(() => {
+      if (!state.snapshot) {
+        return;
+      }
+      maybeHandleSoloTimeout();
+      renderClockStrip();
+    }, 100);
   }
 
   init();

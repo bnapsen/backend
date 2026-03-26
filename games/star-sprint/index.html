@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Neon Crown Chess</title>
-  <link rel="stylesheet" href="style.css?v=20260325j" />
+  <link rel="stylesheet" href="style.css?v=20260325k" />
 </head>
 <body>
   <div class="page-shell" id="pageShell">
@@ -62,6 +62,25 @@
             <button id="hostBtn" class="primary">Host match</button>
             <button id="joinBtn">Join match</button>
             <button id="soloBtn">Play vs Stockfish</button>
+          </div>
+
+          <div class="field-grid">
+            <label class="time-control-field">
+              <span>Game clock</span>
+              <select id="timeControlSelect">
+                <option value="untimed">Untimed</option>
+                <option value="1m">1 minute bullet</option>
+                <option value="2m">2 minute sprint</option>
+                <option value="3m">3 minute blitz</option>
+                <option value="5m">5 minute blitz</option>
+                <option value="10m">10 minute rapid</option>
+              </select>
+              <p class="field-note" id="timeControlHint">No countdown clock. Good for relaxed games and testing.</p>
+            </label>
+            <div class="control-card">
+              <span class="label">Clock sync</span>
+              <p>Online matches use the backend clock, and solo games use the same countdown locally so blitz presets feel consistent.</p>
+            </div>
           </div>
 
           <div class="field-grid">
@@ -198,6 +217,24 @@
             </div>
           </div>
 
+          <div class="clock-strip" id="clockStrip">
+            <div class="clock-card white" id="whiteClockCard">
+              <p class="label">White clock</p>
+              <p class="clock-value" id="whiteClockValue">--:--</p>
+              <p class="clock-meta" id="whiteClockMeta">Clock off</p>
+            </div>
+            <div class="clock-card center" id="clockCenterCard">
+              <p class="label">Game clock</p>
+              <p class="clock-value preset" id="timeControlBadge">No clock</p>
+              <p class="clock-meta" id="clockStatus">Pick a timer preset before hosting if you want a real chess clock.</p>
+            </div>
+            <div class="clock-card black" id="blackClockCard">
+              <p class="label">Black clock</p>
+              <p class="clock-value" id="blackClockValue">--:--</p>
+              <p class="clock-meta" id="blackClockMeta">Clock off</p>
+            </div>
+          </div>
+
           <div class="board-stage">
             <div class="board-grid" id="boardGrid" aria-label="Chess board"></div>
           </div>
@@ -275,7 +312,7 @@
     <div class="toast" id="toast" aria-live="polite"></div>
   </div>
 
-  <script src="chess-core.js?v=20260325j"></script>
-  <script src="game.js?v=20260325j"></script>
+  <script src="chess-core.js?v=20260325k"></script>
+  <script src="game.js?v=20260325k"></script>
 </body>
 </html>

@@ -79,6 +79,10 @@
       history: state.history.map((entry) => ({ ...entry })),
       lastMove: state.lastMove ? cloneMoveRecord(state.lastMove) : null,
       enPassant: state.enPassant ? { ...state.enPassant } : null,
+      clock: state.clock ? {
+        ...state.clock,
+        remainingMs: state.clock.remainingMs ? { ...state.clock.remainingMs } : null,
+      } : null,
     };
   }
 
@@ -112,6 +116,7 @@
       board: createInitialBoard(),
       turn: 'white',
       winner: null,
+      winReason: null,
       drawReason: null,
       check: null,
       status: 'White to move.',
@@ -620,23 +625,28 @@
     if (legalReplies.length === 0) {
       if (inCheck) {
         state.winner = movedColor;
+        state.winReason = 'checkmate';
         state.drawReason = null;
         state.status = `Checkmate. ${capitalize(movedColor)} wins.`;
       } else {
         state.winner = null;
+        state.winReason = null;
         state.drawReason = 'stalemate';
         state.status = 'Draw by stalemate.';
       }
     } else if (state.halfmoveClock >= 100) {
       state.winner = null;
+      state.winReason = null;
       state.drawReason = 'fifty-move';
       state.status = 'Draw by fifty-move rule.';
     } else if (hasInsufficientMaterial(state)) {
       state.winner = null;
+      state.winReason = null;
       state.drawReason = 'insufficient-material';
       state.status = 'Draw by insufficient material.';
     } else {
       state.winner = null;
+      state.winReason = null;
       state.drawReason = null;
       state.status = inCheck ? `${capitalize(nextColor)} is in check.` : `${capitalize(nextColor)} to move.`;
     }
