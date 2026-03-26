@@ -383,6 +383,7 @@
     renderSoundToggle();
     if (state.audio.enabled) {
       withAudio(() => {});
+      playTogglePreview();
     } else if (state.audio.ctx && state.audio.ctx.state === 'running') {
       state.audio.ctx.suspend().catch(() => {});
     }
@@ -518,34 +519,34 @@
 
   function playRollStartSound() {
     withAudio((ctx, when) => {
-      playNoise(ctx, when, { duration: 0.18, volume: 0.022, highpass: 900, lowpass: 3600 });
-      playTone(ctx, when, { freq: 210, endFreq: 132, type: 'triangle', duration: 0.19, volume: 0.028, pan: -0.16 });
-      playTone(ctx, when, { freq: 280, endFreq: 180, type: 'triangle', duration: 0.17, volume: 0.022, pan: 0.18, startOffset: 0.015 });
+      playNoise(ctx, when, { duration: 0.18, volume: 0.05, highpass: 900, lowpass: 3600 });
+      playTone(ctx, when, { freq: 210, endFreq: 132, type: 'triangle', duration: 0.19, volume: 0.065, pan: -0.16 });
+      playTone(ctx, when, { freq: 280, endFreq: 180, type: 'triangle', duration: 0.17, volume: 0.05, pan: 0.18, startOffset: 0.015 });
     });
   }
 
   function playRollSettleSound(first, second) {
     const notes = [294, 330, 370, 415, 494, 554];
     withAudio((ctx, when) => {
-      playTone(ctx, when, { freq: notes[first - 1] || 330, endFreq: notes[first - 1] || 330, type: 'sine', duration: 0.11, volume: 0.021, pan: -0.2 });
-      playTone(ctx, when, { freq: notes[second - 1] || 392, endFreq: notes[second - 1] || 392, type: 'sine', duration: 0.11, volume: 0.021, pan: 0.2, startOffset: 0.035 });
+      playTone(ctx, when, { freq: notes[first - 1] || 330, endFreq: notes[first - 1] || 330, type: 'sine', duration: 0.12, volume: 0.045, pan: -0.2 });
+      playTone(ctx, when, { freq: notes[second - 1] || 392, endFreq: notes[second - 1] || 392, type: 'sine', duration: 0.12, volume: 0.045, pan: 0.2, startOffset: 0.035 });
     });
   }
 
   function playMoveSound(player) {
     withAudio((ctx, when) => {
       const base = player === Core.WHITE ? 250 : 212;
-      playTone(ctx, when, { freq: base, endFreq: base * 0.82, type: 'triangle', duration: 0.08, volume: 0.028, pan: player === Core.WHITE ? -0.08 : 0.08 });
-      playTone(ctx, when, { freq: base * 1.92, endFreq: base * 1.48, type: 'triangle', duration: 0.06, volume: 0.013, startOffset: 0.01 });
+      playTone(ctx, when, { freq: base, endFreq: base * 0.82, type: 'triangle', duration: 0.08, volume: 0.055, pan: player === Core.WHITE ? -0.08 : 0.08 });
+      playTone(ctx, when, { freq: base * 1.92, endFreq: base * 1.48, type: 'triangle', duration: 0.06, volume: 0.026, startOffset: 0.01 });
     });
   }
 
   function playHitSound(player) {
     withAudio((ctx, when) => {
       const base = player === Core.WHITE ? 330 : 252;
-      playNoise(ctx, when, { duration: 0.08, volume: 0.028, highpass: 1100, lowpass: 4600 });
-      playTone(ctx, when, { freq: base, endFreq: base * 0.52, type: 'sawtooth', duration: 0.12, volume: 0.024 });
-      playTone(ctx, when, { freq: base * 1.5, endFreq: base * 0.74, type: 'triangle', duration: 0.13, volume: 0.016, startOffset: 0.014 });
+      playNoise(ctx, when, { duration: 0.08, volume: 0.05, highpass: 1100, lowpass: 4600 });
+      playTone(ctx, when, { freq: base, endFreq: base * 0.52, type: 'sawtooth', duration: 0.12, volume: 0.048 });
+      playTone(ctx, when, { freq: base * 1.5, endFreq: base * 0.74, type: 'triangle', duration: 0.13, volume: 0.032, startOffset: 0.014 });
     });
   }
 
@@ -557,8 +558,8 @@
           freq,
           endFreq: freq * 1.02,
           type: 'sine',
-          duration: 0.18,
-          volume: 0.016,
+          duration: 0.2,
+          volume: 0.03,
           startOffset: index * 0.04,
           pan: -0.16 + index * 0.16,
         });
@@ -576,12 +577,20 @@
           freq,
           endFreq: freq,
           type: index < 2 ? 'triangle' : 'sine',
-          duration: 0.26,
-          volume: 0.018,
+          duration: 0.28,
+          volume: 0.032,
           startOffset: index * 0.07,
           pan: -0.22 + index * 0.14,
         });
       });
+    });
+  }
+
+  function playTogglePreview() {
+    withAudio((ctx, when) => {
+      playTone(ctx, when, { freq: 494, endFreq: 494, type: 'triangle', duration: 0.08, volume: 0.05, pan: -0.1 });
+      playTone(ctx, when, { freq: 622, endFreq: 622, type: 'triangle', duration: 0.09, volume: 0.05, pan: 0.1, startOffset: 0.055 });
+      playTone(ctx, when, { freq: 740, endFreq: 740, type: 'sine', duration: 0.12, volume: 0.04, startOffset: 0.11 });
     });
   }
 
