@@ -38,6 +38,12 @@
       path: 'poker.html',
     },
   };
+  const VOICE_MODEL_CONFIG = {
+    modelId: 'Xenova/whisper-tiny.en',
+    libraryUrl: 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1',
+    sampleRate: 16000,
+    maxDurationMs: 18000,
+  };
   const query = new URLSearchParams(window.location.search);
   const state = {
     socket: null,
@@ -53,8 +59,10 @@
     voiceChunks: [],
     voiceRecording: false,
     voiceTranscribing: false,
+    voiceEngineLoading: false,
     voiceStopTimer: 0,
-    voiceApiConfigured: null,
+    voiceTranscriber: null,
+    voiceTranscriberPromise: null,
   };
 
   const ui = {
@@ -141,14 +149,8 @@
     return value;
   }
 
-  function currentHttpServerUrl() {
-    return currentServerUrl()
-      .replace(/^ws:\/\//i, 'http://')
-      .replace(/^wss:\/\//i, 'https://');
-  }
-
-  function transcriptionApiUrl() {
-    return new URL('/api/transcribe', currentHttpServerUrl()).toString();
+  function voiceAudioSupported() {
+    return Boolean(window.AudioContext || window.webkitAudioContext);
   }
 
   function voiceCaptureSupported() {
@@ -156,6 +158,7 @@
       navigator.mediaDevices
       && typeof navigator.mediaDevices.getUserMedia === 'function'
       && typeof window.MediaRecorder === 'function'
+      && voiceAudioSupported()
     );
   }
 
@@ -185,28 +188,135 @@
     ui.voiceStatus.dataset.tone = tone || 'idle';
   }
 
-  async function checkVoiceBackendReady() {
-    if (state.voiceApiConfigured === true) {
-      return true;
+  function describeVoiceLoadProgress(progress) {
+    if (!progress || !progress.status) {
+      return 'Loading the free speech model in your browser...';
     }
-    try {
-      const response = await fetch(transcriptionApiUrl(), {
-        method: 'GET',
-      });
-      const payload = await response.json().catch(() => ({}));
-      state.voiceApiConfigured = Boolean(payload && payload.configured);
-      if (!state.voiceApiConfigured) {
-        setVoiceStatus('Voice to text needs backend speech-to-text enabled.', 'error');
-        setStatus('Voice to text is not configured on the backend yet. Add OPENAI_API_KEY on Render and redeploy.');
-        return false;
+    if (progress.status === 'progress' && Number.isFinite(progress.progress)) {
+      return `Loading the free speech model... ${Math.round(progress.progress)}%`;
+    }
+    if ((progress.status === 'initiate' || progress.status === 'download' || progress.status === 'done') && progress.file) {
+      return `Loading ${progress.file}...`;
+    }
+    if (progress.status === 'ready') {
+      return 'Open-source speech model ready.';
+    }
+    return 'Loading the free speech model in your browser...';
+  }
+
+  async function loadVoiceTranscriber() {
+    if (state.voiceTranscriber) {
+      return state.voiceTranscriber;
+    }
+    if (state.voiceTranscriberPromise) {
+      return state.voiceTranscriberPromise;
+    }
+
+    state.voiceEngineLoading = true;
+    updateVoiceUi();
+    setVoiceStatus('Loading the free speech model in your browser...', 'processing');
+    setStatus('Downloading the free open-source speech model for lounge chat. The first run can take a bit.');
+
+    state.voiceTranscriberPromise = (async () => {
+      const module = await import(VOICE_MODEL_CONFIG.libraryUrl);
+      const { pipeline } = module;
+      const progress_callback = (progress) => {
+        if (!state.voiceEngineLoading) {
+          return;
+        }
+        setVoiceStatus(describeVoiceLoadProgress(progress), 'processing');
+      };
+
+      if (navigator.gpu) {
+        try {
+          return await pipeline('automatic-speech-recognition', VOICE_MODEL_CONFIG.modelId, {
+            device: 'webgpu',
+            progress_callback,
+          });
+        } catch (error) {
+          return pipeline('automatic-speech-recognition', VOICE_MODEL_CONFIG.modelId, {
+            progress_callback,
+          });
+        }
       }
-      return true;
+
+      return pipeline('automatic-speech-recognition', VOICE_MODEL_CONFIG.modelId, {
+        progress_callback,
+      });
+    })();
+
+    try {
+      state.voiceTranscriber = await state.voiceTranscriberPromise;
+      setVoiceStatus('Open-source speech model ready.', 'ready');
+      return state.voiceTranscriber;
     } catch (error) {
-      state.voiceApiConfigured = null;
-      setVoiceStatus('Could not reach the voice transcription service.', 'error');
-      setStatus('Could not reach the voice transcription service.');
-      return false;
+      state.voiceTranscriberPromise = null;
+      const message = 'The open-source speech model could not load on this device.';
+      setVoiceStatus(message, 'error');
+      setStatus(message);
+      throw new Error(message);
+    } finally {
+      state.voiceEngineLoading = false;
+      updateVoiceUi();
+      updateControlState();
     }
+  }
+
+  function audioContextCtor() {
+    return window.AudioContext || window.webkitAudioContext || null;
+  }
+
+  async function decodeVoiceBlob(blob) {
+    const AudioContextCtor = audioContextCtor();
+    if (!AudioContextCtor) {
+      throw new Error('Voice to text needs Web Audio support.');
+    }
+
+    const context = new AudioContextCtor();
+    let audioBuffer;
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      audioBuffer = await context.decodeAudioData(arrayBuffer.slice(0));
+    } finally {
+      if (typeof context.close === 'function') {
+        const closeResult = context.close();
+        if (closeResult && typeof closeResult.catch === 'function') {
+          closeResult.catch(() => {});
+        }
+      }
+    }
+
+    if (!audioBuffer || !audioBuffer.length) {
+      throw new Error('The voice note could not be decoded.');
+    }
+
+    const mono = new Float32Array(audioBuffer.length);
+    for (let channelIndex = 0; channelIndex < audioBuffer.numberOfChannels; channelIndex += 1) {
+      const channel = audioBuffer.getChannelData(channelIndex);
+      for (let index = 0; index < channel.length; index += 1) {
+        mono[index] += channel[index];
+      }
+    }
+    const scale = audioBuffer.numberOfChannels > 1 ? 1 / audioBuffer.numberOfChannels : 1;
+    for (let index = 0; index < mono.length; index += 1) {
+      mono[index] *= scale;
+    }
+
+    if (audioBuffer.sampleRate === VOICE_MODEL_CONFIG.sampleRate) {
+      return mono;
+    }
+
+    const ratio = audioBuffer.sampleRate / VOICE_MODEL_CONFIG.sampleRate;
+    const targetLength = Math.max(1, Math.round(mono.length / ratio));
+    const output = new Float32Array(targetLength);
+    for (let index = 0; index < targetLength; index += 1) {
+      const position = index * ratio;
+      const left = Math.floor(position);
+      const right = Math.min(mono.length - 1, left + 1);
+      const alpha = position - left;
+      output[index] = mono[left] * (1 - alpha) + mono[right] * alpha;
+    }
+    return output;
   }
 
   function stopVoiceTracks() {
@@ -233,6 +343,9 @@
     if (state.voiceRecording) {
       ui.voiceBtn.textContent = 'Stop mic';
       ui.voiceBtn.dataset.state = 'recording';
+    } else if (state.voiceEngineLoading) {
+      ui.voiceBtn.textContent = 'Loading voice...';
+      ui.voiceBtn.dataset.state = 'processing';
     } else if (state.voiceTranscribing) {
       ui.voiceBtn.textContent = 'Transcribing...';
       ui.voiceBtn.dataset.state = 'processing';
@@ -240,19 +353,6 @@
       ui.voiceBtn.textContent = 'Voice to text';
       ui.voiceBtn.dataset.state = 'idle';
     }
-  }
-
-  function blobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = String(reader.result || '');
-        const marker = result.indexOf(',');
-        resolve(marker >= 0 ? result.slice(marker + 1) : result);
-      };
-      reader.onerror = () => reject(new Error('Voice note could not be read.'));
-      reader.readAsDataURL(blob);
-    });
   }
 
   function mergeTranscriptIntoComposer(text) {
@@ -270,30 +370,24 @@
   async function transcribeVoiceBlob(blob) {
     state.voiceTranscribing = true;
     updateVoiceUi();
-    setVoiceStatus('Transcribing voice note...', 'processing');
+    setVoiceStatus(state.voiceTranscriber ? 'Transcribing voice note locally...' : 'Loading the free speech model...', 'processing');
+    setStatus(state.voiceTranscriber
+      ? 'Transcribing your voice note locally in the browser...'
+      : 'Loading the free open-source speech model for your first transcription...');
     try {
-      const audioBase64 = await blobToBase64(blob);
-      const response = await fetch(transcriptionApiUrl(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          audioBase64,
-          mimeType: blob.type || 'audio/webm',
-        }),
+      const transcriber = await loadVoiceTranscriber();
+      const waveform = await decodeVoiceBlob(blob);
+      const payload = await transcriber(waveform, {
+        chunk_length_s: 12,
+        stride_length_s: 2,
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || 'Voice transcription failed.');
-      }
-      const transcript = sanitizeText(payload.text, 360);
+      const transcript = sanitizeText(payload && payload.text, 360);
       if (!transcript) {
         throw new Error('The voice note came back empty.');
       }
       mergeTranscriptIntoComposer(transcript);
       setVoiceStatus('Transcript ready. Review it and send.', 'ready');
-      setStatus('Voice note transcribed into the chat box.');
+      setStatus('Voice note transcribed in your browser and added to the chat box.');
     } catch (error) {
       const message = error && error.message ? error.message : 'Voice transcription failed.';
       setVoiceStatus(message, 'error');
@@ -326,16 +420,12 @@
 
   async function startVoiceCapture() {
     if (!voiceCaptureSupported()) {
-      setVoiceStatus('Voice capture needs browser recording support.', 'error');
-      setStatus('This browser does not support voice capture on the lounge page.');
+      setVoiceStatus('Voice capture needs microphone recording and Web Audio support.', 'error');
+      setStatus('This browser does not support local voice transcription on the lounge page.');
       return;
     }
     if (!state.snapshot) {
       setStatus('Join a lounge room before using voice to text.');
-      return;
-    }
-    if (!(await checkVoiceBackendReady())) {
-      updateControlState();
       return;
     }
     try {
@@ -371,10 +461,12 @@
         if (state.voiceRecorder && state.voiceRecorder.state === 'recording') {
           state.voiceRecorder.stop();
         }
-      }, 18000);
+      }, VOICE_MODEL_CONFIG.maxDurationMs);
       updateVoiceUi();
       setVoiceStatus('Recording... tap Stop mic when done.', 'recording');
-      setStatus('Recording a short voice note for chat transcription.');
+      setStatus(state.voiceTranscriber
+        ? 'Recording a short voice note for local chat transcription.'
+        : 'Recording a short voice note. The first transcription downloads a free open-source model.');
       updateControlState();
     } catch (error) {
       stopVoiceTracks();
@@ -402,7 +494,7 @@
   }
 
   function toggleVoiceCapture() {
-    if (state.voiceTranscribing) {
+    if (state.voiceTranscribing || state.voiceEngineLoading) {
       return;
     }
     if (state.voiceRecording) {
@@ -714,26 +806,26 @@
     const connected = Boolean(state.socket && state.socket.readyState === WebSocket.OPEN && state.snapshot);
     ui.messageInput.disabled = !connected;
     ui.sendBtn.disabled = !connected;
-    ui.voiceBtn.disabled = !connected || !voiceCaptureSupported() || state.voiceTranscribing;
+    ui.voiceBtn.disabled = !connected || !voiceCaptureSupported() || (!state.voiceRecording && (state.voiceTranscribing || state.voiceEngineLoading));
     ui.gameSelect.disabled = !connected;
     ui.gameRoomInput.disabled = !connected;
     ui.inviteNoteInput.disabled = !connected;
     if (!voiceCaptureSupported()) {
-      setVoiceStatus('Voice to text needs a browser with microphone recording.', 'error');
-    } else if (state.voiceApiConfigured === false) {
-      setVoiceStatus('Voice to text needs backend speech-to-text enabled.', 'error');
+      setVoiceStatus('Voice to text needs a browser with microphone recording and Web Audio.', 'error');
     } else if (state.voiceRecording) {
       setVoiceStatus('Recording... tap Stop mic when done.', 'recording');
+    } else if (state.voiceEngineLoading) {
+      setVoiceStatus('Loading the free speech model in your browser...', 'processing');
     } else if (state.voiceTranscribing) {
-      setVoiceStatus('Transcribing voice note...', 'processing');
+      setVoiceStatus('Transcribing voice note locally...', 'processing');
     } else if (!connected) {
-      setVoiceStatus('Voice to text ready when you join a lounge.', 'idle');
+      setVoiceStatus('Voice to text runs in your browser after you join a lounge.', 'idle');
     } else if (
       ui.voiceStatus
       && ui.voiceStatus.dataset.tone !== 'error'
       && ui.voiceStatus.dataset.tone !== 'ready'
     ) {
-      setVoiceStatus('Voice to text is ready for short chat notes.', 'idle');
+      setVoiceStatus('Voice to text is ready. First use downloads a free open-source speech model.', 'idle');
     }
     updateVoiceUi();
     updateInvitePreview();
@@ -970,7 +1062,6 @@
   });
   ui.serverUrlInput.addEventListener('change', () => {
     ui.serverUrlInput.value = normalizeServerUrl(ui.serverUrlInput.value);
-    state.voiceApiConfigured = null;
     savePrefs();
     updateInvitePreview();
     updateLoungeInviteUi();
