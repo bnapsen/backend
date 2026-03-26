@@ -4,6 +4,9 @@
   const STORAGE_KEYS = {
     name: 'miniPoolShowdown.name',
     serverUrl: 'miniPoolShowdown.serverUrl',
+    variantId: 'miniPoolShowdown.variantId',
+    setupCollapsed: 'miniPoolShowdown.setupCollapsed',
+    sidebarCollapsed: 'miniPoolShowdown.sidebarCollapsed',
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const query = new URLSearchParams(window.location.search);
@@ -15,9 +18,13 @@
     nameInput: document.getElementById('nameInput'),
     roomInput: document.getElementById('roomInput'),
     serverUrlInput: document.getElementById('serverUrlInput'),
+    variantSelect: document.getElementById('variantSelect'),
+    variantNote: document.getElementById('variantNote'),
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
     soloBtn: document.getElementById('soloBtn'),
+    toggleSetupBtn: document.getElementById('toggleSetupBtn'),
+    toggleSidebarBtn: document.getElementById('toggleSidebarBtn'),
     openLoungeBtn: document.getElementById('openLoungeBtn'),
     shareLoungeBtn: document.getElementById('shareLoungeBtn'),
     copyBtn: document.getElementById('copyBtn'),
@@ -28,6 +35,7 @@
     modePill: document.getElementById('modePill'),
     roomCodeLabel: document.getElementById('roomCodeLabel'),
     rackLabel: document.getElementById('rackLabel'),
+    variantLabel: document.getElementById('variantLabel'),
     turnLabel: document.getElementById('turnLabel'),
     phaseLabel: document.getElementById('phaseLabel'),
     whiteScore: document.getElementById('whiteScore'),
@@ -47,6 +55,7 @@
     powerFill: document.getElementById('powerFill'),
     powerText: document.getElementById('powerText'),
     tableStage: document.getElementById('tableStage'),
+    layout: document.getElementById('layout'),
   };
 
   const state = {
@@ -69,6 +78,8 @@
     soloBotDueAt: 0,
     lastFrameAt: 0,
     summarySignature: '',
+    setupCollapsed: false,
+    sidebarCollapsed: false,
     view: {
       width: 0,
       height: 0,
@@ -80,15 +91,16 @@
   };
 
   const CUE_UI = Object.freeze({
-    anchorCap: 128,
-    powerRange: 146,
-    maxPower: 1.35,
+    anchorCap: 108,
+    powerRange: 124,
+    maxPower: 1.45,
     minPower: 0.04,
-    cuePullback: 104,
-    cueLength: 248,
+    cuePullback: 118,
+    boostPullback: 92,
+    cueLength: 264,
     guideLength: 640,
-    guideBounceLength: 110,
-    gripRadius: 30,
+    guideBounceLength: 124,
+    gripRadius: 32,
   });
   const SOLO_BOT_NAME = 'Orbit Bot';
 
@@ -143,6 +155,71 @@
     return window.NovaMiniPoolCore || null;
   }
 
+  function availableVariants() {
+    const core = localCore();
+    if (!core || !core.VARIANTS) {
+      return [];
+    }
+    return Object.values(core.VARIANTS);
+  }
+
+  function defaultVariantId() {
+    const core = localCore();
+    return core && core.DEFAULT_VARIANT_ID ? core.DEFAULT_VARIANT_ID : 'showdown';
+  }
+
+  function normalizeVariantId(raw) {
+    const core = localCore();
+    if (core && typeof core.normalizeVariantId === 'function') {
+      return core.normalizeVariantId(raw);
+    }
+    return defaultVariantId();
+  }
+
+  function selectedVariantId() {
+    return normalizeVariantId(ui.variantSelect ? ui.variantSelect.value : defaultVariantId());
+  }
+
+  function selectedVariant() {
+    return availableVariants().find((variant) => variant.id === selectedVariantId()) || availableVariants()[0] || null;
+  }
+
+  function currentVariantContext() {
+    if (state.snapshot && state.snapshot.variantId) {
+      return {
+        id: normalizeVariantId(state.snapshot.variantId),
+        label: state.snapshot.variantLabel || 'Showdown',
+        description: state.snapshot.variantDescription || '',
+        maxRacks: state.snapshot.maxRacks || 3,
+      };
+    }
+    const variant = selectedVariant();
+    if (!variant) {
+      return null;
+    }
+    return {
+      id: variant.id,
+      label: variant.label,
+      description: variant.description,
+      maxRacks: variant.maxRacks || 3,
+    };
+  }
+
+  function inviteVariantId() {
+    const variant = currentVariantContext();
+    return variant ? normalizeVariantId(variant.id) : defaultVariantId();
+  }
+
+  function formatMatchMeta(variant, soloMode) {
+    if (!variant) {
+      return soloMode ? 'Solo table' : 'Live duel';
+    }
+    if (soloMode) {
+      return `Solo ${variant.label}`;
+    }
+    return `${variant.maxRacks || 3}-rack ${variant.label}`;
+  }
+
   function isSoloMode() {
     return state.mode === 'solo';
   }
@@ -160,6 +237,56 @@
     state.socket = null;
   }
 
+  function savePanelPrefs() {
+    localStorage.setItem(STORAGE_KEYS.setupCollapsed, state.setupCollapsed ? '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, state.sidebarCollapsed ? '1' : '0');
+  }
+
+  function updateLayoutChrome() {
+    if (!ui.layout) {
+      return;
+    }
+    ui.layout.classList.toggle('setup-collapsed', state.setupCollapsed);
+    ui.layout.classList.toggle('sidebar-collapsed', state.sidebarCollapsed);
+    if (ui.toggleSetupBtn) {
+      ui.toggleSetupBtn.textContent = state.setupCollapsed ? 'Show setup' : 'Hide setup';
+    }
+    if (ui.toggleSidebarBtn) {
+      ui.toggleSidebarBtn.textContent = state.sidebarCollapsed ? 'Show feed' : 'Hide feed';
+    }
+    requestAnimationFrame(resizeCanvas);
+  }
+
+  function describeVariant(variant) {
+    if (!variant) {
+      return '';
+    }
+    return `${variant.label}: ${variant.description}`;
+  }
+
+  function populateVariantSelect() {
+    if (!ui.variantSelect) {
+      return;
+    }
+    const variants = availableVariants();
+    if (!variants.length) {
+      return;
+    }
+    ui.variantSelect.innerHTML = variants.map((variant) => `
+      <option value="${variant.id}">${variant.label}</option>
+    `).join('');
+    const preferred = normalizeVariantId(
+      query.get('variant')
+      || localStorage.getItem(STORAGE_KEYS.variantId)
+      || defaultVariantId()
+    );
+    ui.variantSelect.value = preferred;
+    if (ui.variantNote) {
+      const variant = selectedVariant();
+      ui.variantNote.textContent = describeVariant(variant);
+    }
+  }
+
   function snapshotSignature(snapshot) {
     if (!snapshot) {
       return 'empty';
@@ -168,6 +295,7 @@
     const players = Array.isArray(snapshot.players) ? snapshot.players.length : 0;
     return [
       snapshot.rackNumber,
+      snapshot.variantId || '',
       snapshot.turn,
       snapshot.shotCount,
       snapshot.moving ? 'moving' : 'still',
@@ -175,6 +303,7 @@
       snapshot.scores ? snapshot.scores.black : 0,
       snapshot.winner || '',
       snapshot.drawReason || '',
+      snapshot.status || '',
       latestEvent,
       players,
     ].join('|');
@@ -258,6 +387,9 @@
   function savePrefs() {
     localStorage.setItem(STORAGE_KEYS.name, ui.nameInput.value.trim().slice(0, 18));
     localStorage.setItem(STORAGE_KEYS.serverUrl, currentServerUrl());
+    if (ui.variantSelect) {
+      localStorage.setItem(STORAGE_KEYS.variantId, selectedVariantId());
+    }
   }
 
   function copyToClipboard(value, successMessage) {
@@ -300,6 +432,11 @@
     } else {
       url.searchParams.delete('server');
     }
+    if (inviteVariantId() !== defaultVariantId()) {
+      url.searchParams.set('variant', inviteVariantId());
+    } else {
+      url.searchParams.delete('variant');
+    }
     return url.toString();
   }
 
@@ -318,7 +455,9 @@
       gameType: 'mini-pool',
       roomCode: state.roomCode,
       inviteUrl: state.roomCode ? buildInviteUrl() : '',
-      note: state.roomCode ? `Join my Mini Pool Showdown duel in room ${state.roomCode}.` : '',
+      note: state.roomCode
+        ? `Join my ${currentVariantContext() ? currentVariantContext().label : 'Mini Pool'} table in room ${state.roomCode}.`
+        : '',
       autoShare: Boolean(autoShare),
     });
     setStatus(autoShare ? 'Opening Arcade Lounge with your duel ready to share.' : 'Opening Arcade Lounge in a new tab.');
@@ -353,7 +492,7 @@
     disconnectSocket();
     resetAimState();
     state.mode = 'solo';
-    state.localGame = core.createGameState();
+    state.localGame = core.createGameState({ variantId: selectedVariantId() });
     state.localPlayers = buildSoloPlayers();
     state.roomCode = 'SOLO';
     state.playerId = state.localPlayers[0].id;
@@ -362,9 +501,10 @@
     state.lastFrameAt = performance.now();
     ui.roomInput.value = '';
     setNetworkStatus('online', 'Solo');
+    const variant = selectedVariant();
     refreshLocalSnapshot({
       forceRender: true,
-      message: 'Solo table is ready. Orbit Bot is waiting on the other end of the rack.',
+      message: `${variant ? variant.label : 'Solo'} table is ready. Orbit Bot is waiting on the other end of the rack.`,
     });
   }
 
@@ -377,15 +517,16 @@
       return;
     }
     resetAimState();
-    state.localGame = core.createGameState();
+    state.localGame = core.createGameState({ variantId: selectedVariantId() });
     state.localPlayers = buildSoloPlayers();
     state.playerId = state.localPlayers[0].id;
     state.yourColor = 'white';
     state.soloBotDueAt = 0;
     state.lastFrameAt = performance.now();
+    const variant = selectedVariant();
     refreshLocalSnapshot({
       forceRender: true,
-      message: 'Fresh solo rack ready. You break first.',
+      message: `Fresh ${variant ? variant.label : 'solo'} rack ready. You break first.`,
     });
   }
 
@@ -665,9 +806,11 @@
     const players = Array.isArray(state.snapshot && state.snapshot.players)
       ? state.snapshot.players
       : [];
-    ui.presenceText.textContent = `${players.length}/2 seats filled`;
+    ui.presenceText.textContent = isSoloMode()
+      ? 'Solo table online'
+      : `${players.length}/2 seats filled`;
     if (!players.length) {
-      ui.playerList.innerHTML = '<div class="empty-state">Host a duel and the live seats will appear here.</div>';
+      ui.playerList.innerHTML = `<div class="empty-state">${isSoloMode() ? 'Start a solo table and the bot seat will appear here.' : 'Host a duel and the live seats will appear here.'}</div>`;
       return;
     }
 
@@ -718,9 +861,11 @@
     const snapshot = state.snapshot;
     const players = Array.isArray(snapshot && snapshot.players) ? snapshot.players : [];
     const byColor = new Map(players.map((player) => [player.color, player]));
+    const variant = currentVariantContext();
+    const defaultRackText = variant ? `1 / ${variant.maxRacks || 3}` : '1 / 3';
 
     ui.roomCodeLabel.textContent = isSoloMode() ? 'SOLO' : (state.roomCode || '-');
-    ui.rackLabel.textContent = snapshot ? `${snapshot.rackNumber} / ${snapshot.maxRacks}` : '1 / 3';
+    ui.rackLabel.textContent = snapshot ? `${snapshot.rackNumber} / ${snapshot.maxRacks}` : defaultRackText;
     ui.turnLabel.textContent = snapshot
       ? snapshot.winner
         ? `${capitalize(snapshot.winner)} wins`
@@ -730,7 +875,7 @@
       : 'Waiting to start';
     ui.phaseLabel.textContent = snapshot
       ? snapshot.status
-      : 'Open a table to begin.';
+      : (variant ? variant.description : 'Open a table to begin.');
 
     const whitePlayer = byColor.get('white');
     const blackPlayer = byColor.get('black');
@@ -748,6 +893,13 @@
     ui.blackMeta.textContent = blackPlayer
       ? `${blackPlayer.name}${blackPlayer.id === state.playerId ? ' • You' : ''}`
       : 'Waiting for seat';
+    ui.variantLabel.textContent = variant ? variant.label : 'Showdown';
+    ui.whiteMeta.textContent = whitePlayer
+      ? `${whitePlayer.name}${whitePlayer.id === state.playerId ? ' - You' : ''}`
+      : 'Waiting for seat';
+    ui.blackMeta.textContent = blackPlayer
+      ? `${blackPlayer.name}${blackPlayer.id === state.playerId ? ' - You' : ''}`
+      : 'Waiting for seat';
     ui.whiteCard.classList.toggle('active', Boolean(snapshot && snapshot.turn === 'white' && !snapshot.winner && !snapshot.drawReason));
     ui.blackCard.classList.toggle('active', Boolean(snapshot && snapshot.turn === 'black' && !snapshot.winner && !snapshot.drawReason));
 
@@ -757,22 +909,22 @@
         ? `Final score ${snapshot.scores.white}-${snapshot.scores.black}`
         : snapshot.drawReason
           ? `Drawn ${snapshot.scores.white}-${snapshot.scores.black}`
-          : isSoloMode()
-            ? 'Solo bot showdown'
-            : 'Three-rack showdown'
-      : 'Three-rack showdown';
+          : formatMatchMeta(variant, isSoloMode())
+      : formatMatchMeta(variant, isSoloMode());
 
     if (!snapshot) {
-      ui.turnNote.textContent = 'Pocket a scoring ball to stay at the table. Scratches and jammers pass control.';
+      ui.turnNote.textContent = variant
+        ? `${variant.description} Host a live table or start solo to take the first break.`
+        : 'Pocket a scoring ball to stay at the table. Scratches and jammers pass control.';
       ui.modePill.textContent = 'No table running';
       return;
     }
 
     if (snapshot.winner) {
-      ui.turnNote.textContent = `${capitalize(snapshot.winner)} wins the showdown ${snapshot.scores.white}-${snapshot.scores.black}.`;
+      ui.turnNote.textContent = `${capitalize(snapshot.winner)} wins the table ${snapshot.scores.white}-${snapshot.scores.black}.`;
       ui.modePill.textContent = 'Match finished';
     } else if (snapshot.drawReason) {
-      ui.turnNote.textContent = `The showdown ends level at ${snapshot.scores.white}-${snapshot.scores.black}.`;
+      ui.turnNote.textContent = `The table finishes level at ${snapshot.scores.white}-${snapshot.scores.black}.`;
       ui.modePill.textContent = 'Match drawn';
     } else if (snapshot.moving) {
       ui.turnNote.textContent = 'Balls are live. Wait for the table to settle before the next shot.';
@@ -799,6 +951,18 @@
     ui.copyCodeBtn.disabled = !state.roomCode || isSoloMode();
     ui.shareLoungeBtn.disabled = !state.roomCode || isSoloMode();
     ui.restartBtn.disabled = !(isConnected() || isSoloMode());
+    if (ui.variantSelect) {
+      ui.variantSelect.disabled = Boolean(isConnected() && !isSoloMode());
+    }
+    if (ui.variantNote) {
+      const variant = currentVariantContext();
+      ui.variantNote.textContent = variant
+        ? isConnected() && !isSoloMode()
+          ? `Current room: ${describeVariant(variant)} Host a new table to switch formats.`
+          : describeVariant(variant)
+        : 'Pick the kind of table you want before you host or start solo play.';
+    }
+    updateLayoutChrome();
     renderSummary();
     renderPlayers();
     renderEvents();
@@ -950,8 +1114,10 @@
 
     const direction = cueDirection();
     const guide = projectAimGuide(cue, direction);
-    const power = state.aiming ? state.power : 0;
-    const cueTipDistance = cue.r + 6 + power * CUE_UI.cuePullback;
+    const power = state.aiming ? normalizedShotPower(state.power) : 0;
+    const basePull = Math.min(power, 1) * CUE_UI.cuePullback;
+    const boostPull = Math.max(0, power - 1) * CUE_UI.boostPullback;
+    const cueTipDistance = cue.r + 6 + basePull + boostPull;
     const cueTip = {
       x: cue.x - direction.x * cueTipDistance,
       y: cue.y - direction.y * cueTipDistance,
@@ -971,15 +1137,19 @@
 
     ctx.beginPath();
     ctx.arc(cue.x, cue.y, cue.r + 16, 0, Math.PI * 2);
-    ctx.strokeStyle = state.aiming ? 'rgba(113, 241, 209, 0.65)' : 'rgba(131, 181, 255, 0.34)';
-    ctx.lineWidth = state.aiming ? 3.4 : 2;
+    ctx.strokeStyle = power > 1
+      ? 'rgba(255, 213, 124, 0.82)'
+      : state.aiming
+        ? 'rgba(113, 241, 209, 0.65)'
+        : 'rgba(131, 181, 255, 0.34)';
+    ctx.lineWidth = power > 1 ? 4.2 : state.aiming ? 3.4 : 2;
     ctx.stroke();
 
     ctx.beginPath();
     ctx.moveTo(cue.x, cue.y);
     ctx.lineTo(guide.point.x, guide.point.y);
-    ctx.strokeStyle = state.aiming ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.58)';
-    ctx.lineWidth = state.aiming ? 2.5 : 1.8;
+    ctx.strokeStyle = power > 1 ? 'rgba(255, 245, 214, 0.96)' : state.aiming ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.58)';
+    ctx.lineWidth = power > 1 ? 3 : state.aiming ? 2.5 : 1.8;
     ctx.setLineDash(state.aiming ? [12, 8] : [8, 8]);
     ctx.stroke();
     ctx.setLineDash([]);
@@ -1049,9 +1219,9 @@
 
     if (state.aiming) {
       ctx.beginPath();
-      ctx.arc(grip.x, grip.y, CUE_UI.gripRadius * (0.56 + power * 0.22), 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(113, 241, 209, 0.34)';
-      ctx.lineWidth = 2.2;
+      ctx.arc(grip.x, grip.y, CUE_UI.gripRadius * (0.56 + Math.min(power, 1.2) * 0.22), 0, Math.PI * 2);
+      ctx.strokeStyle = power > 1 ? 'rgba(255, 213, 124, 0.52)' : 'rgba(113, 241, 209, 0.34)';
+      ctx.lineWidth = power > 1 ? 2.8 : 2.2;
       ctx.stroke();
     }
   }
@@ -1071,7 +1241,7 @@
     } else if (snapshot.drawReason) {
       title = 'Match drawn';
       subtitle = `Final score ${snapshot.scores.white} - ${snapshot.scores.black}`;
-    } else if ((snapshot.players || []).length < 2) {
+    } else if (!isSoloMode() && (snapshot.players || []).length < 2) {
       title = 'Waiting for challenger';
       subtitle = 'Share the invite link to fill the second seat.';
     }
@@ -1140,6 +1310,9 @@
       state.roomCode = sanitizeRoomCode(state.snapshot.roomCode);
       ui.roomInput.value = state.roomCode;
     }
+    if (state.snapshot && state.snapshot.variantId && ui.variantSelect) {
+      ui.variantSelect.value = normalizeVariantId(state.snapshot.variantId);
+    }
     state.summarySignature = snapshotSignature(state.snapshot);
     setNetworkStatus('online', 'Online');
     setStatus(payload.message || (state.snapshot && state.snapshot.status) || 'Connected to the live table.');
@@ -1187,6 +1360,7 @@
         game: 'mini-pool',
         mode,
         roomCode,
+        variantId: selectedVariantId(),
         name: ui.nameInput.value.trim().slice(0, 18) || 'Guest',
       }));
     });
@@ -1285,7 +1459,11 @@
       if (distance > 0.0001) {
         state.aimAngle = Math.atan2(dy, dx);
       }
-      state.power = clamp(Math.max(0, distance - state.aimAnchorDistance) / CUE_UI.powerRange, 0, CUE_UI.maxPower);
+      const rawPower = Math.max(0, distance - state.aimAnchorDistance - 6) / CUE_UI.powerRange;
+      const easedPower = rawPower <= 1
+        ? Math.pow(rawPower, 0.9)
+        : 1 + Math.pow(rawPower - 1, 0.88);
+      state.power = clamp(easedPower, 0, CUE_UI.maxPower);
     }
     updatePowerUi();
   }
@@ -1333,6 +1511,7 @@
   }
 
   function hydrate() {
+    populateVariantSelect();
     ui.nameInput.value = (localStorage.getItem(STORAGE_KEYS.name) || '').slice(0, 18);
     ui.serverUrlInput.value = normalizeServerUrl(localStorage.getItem(STORAGE_KEYS.serverUrl) || defaultServerUrl());
     ui.roomInput.value = sanitizeRoomCode(query.get('room') || '');
@@ -1340,6 +1519,11 @@
     state.roomCode = sanitizeRoomCode(ui.roomInput.value);
     state.summarySignature = snapshotSignature(null);
     state.lastFrameAt = performance.now();
+    const storedSetupPref = localStorage.getItem(STORAGE_KEYS.setupCollapsed);
+    const storedSidebarPref = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed);
+    state.setupCollapsed = storedSetupPref === null ? false : storedSetupPref === '1';
+    state.sidebarCollapsed = storedSidebarPref === null ? window.innerWidth < 1460 : storedSidebarPref === '1';
+    updateLayoutChrome();
     setNetworkStatus('offline', 'Offline');
     setStatus('Host a duel, join by room code, or start a solo showdown against Orbit Bot.');
     renderUi();
@@ -1348,6 +1532,18 @@
   ui.hostBtn.addEventListener('click', () => connect('host'));
   ui.joinBtn.addEventListener('click', () => connect('join'));
   ui.soloBtn.addEventListener('click', startSoloGame);
+  ui.toggleSetupBtn.addEventListener('click', () => {
+    state.setupCollapsed = !state.setupCollapsed;
+    savePanelPrefs();
+    updateLayoutChrome();
+    renderUi();
+  });
+  ui.toggleSidebarBtn.addEventListener('click', () => {
+    state.sidebarCollapsed = !state.sidebarCollapsed;
+    savePanelPrefs();
+    updateLayoutChrome();
+    renderUi();
+  });
   ui.openLoungeBtn.addEventListener('click', () => openArcadeLounge(false));
   ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
   ui.copyBtn.addEventListener('click', () => copyToClipboard(ui.inviteInput.value, 'Invite link copied.'));
@@ -1369,6 +1565,24 @@
   ui.serverUrlInput.addEventListener('change', () => {
     ui.serverUrlInput.value = normalizeServerUrl(ui.serverUrlInput.value);
     savePrefs();
+    renderUi();
+  });
+  ui.variantSelect.addEventListener('change', () => {
+    ui.variantSelect.value = selectedVariantId();
+    savePrefs();
+    if (ui.variantNote) {
+      ui.variantNote.textContent = describeVariant(selectedVariant());
+    }
+    if (isSoloMode()) {
+      startSoloGame();
+      return;
+    }
+    if (!isConnected()) {
+      const variant = selectedVariant();
+      setStatus(variant
+        ? `${variant.label} is selected. Host a table, join a room, or start solo when you are ready.`
+        : 'Pick the kind of table you want before you host or start solo play.');
+    }
     renderUi();
   });
   ui.roomInput.addEventListener('input', () => {

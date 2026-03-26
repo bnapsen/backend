@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="pool.css?v=20260326e" />
+  <link rel="stylesheet" href="pool.css?v=20260326g" />
 </head>
 <body>
   <div class="page-shell">
@@ -18,17 +18,19 @@
         <strong>Mini Pool Showdown</strong>
       </div>
       <div class="topbar-status">
+        <button id="toggleSetupBtn" class="toolbar-btn" type="button">Hide setup</button>
+        <button id="toggleSidebarBtn" class="toolbar-btn" type="button">Hide feed</button>
         <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
         <div class="status-pill ghost" id="modePill">No table running</div>
       </div>
     </header>
 
-    <main class="layout">
-      <aside class="setup-column">
+    <main class="layout" id="layout">
+      <aside class="setup-column" id="setupColumn">
         <section class="panel hero-panel">
           <p class="eyebrow">Arcade duel pool</p>
           <h1>Race the score, dodge the jammers, and hold the table.</h1>
-          <p class="lede">Mini Pool now runs on the same live backend as chess, backgammon, poker, and the shooter. Host a room, send the invite, or jump straight into a solo showdown against the arcade bot.</p>
+          <p class="lede">Mini Pool now runs on the same live backend as chess, backgammon, poker, and the shooter. Pick a format, host a room, send the invite, or jump straight into a solo showdown against the arcade bot.</p>
 
           <div class="rule-strip">
             <article class="rule-card">
@@ -54,6 +56,14 @@
               <span>Room code</span>
               <input id="roomInput" maxlength="12" placeholder="Auto-created when hosting" />
             </label>
+          </div>
+
+          <div class="variant-panel">
+            <label>
+              <span>Pool format</span>
+              <select id="variantSelect"></select>
+            </label>
+            <p class="helper-text" id="variantNote">Pick the kind of table you want before you host or start solo play.</p>
           </div>
 
           <div class="action-row">
@@ -113,6 +123,10 @@
               <p class="metric-text" id="rackLabel">1 / 3</p>
             </div>
             <div>
+              <p class="label">Format</p>
+              <p class="metric-text" id="variantLabel">Showdown</p>
+            </div>
+            <div>
               <p class="label">Turn</p>
               <p class="metric-text" id="turnLabel">Waiting to start</p>
             </div>
@@ -131,7 +145,7 @@
             <article class="score-card center">
               <p class="label">Match</p>
               <strong id="shotCount">0 shots</strong>
-              <p id="matchMeta">Three-rack showdown</p>
+              <p id="matchMeta">Pick a format to begin</p>
             </article>
             <article class="score-card black" id="blackCard">
               <p class="label">Black score</p>
@@ -159,7 +173,7 @@
 
             <div class="tip-card">
               <p class="label">Quick cue tip</p>
-              <p class="tip-copy">Sight the shot first, then stretch the drag just enough to load the stick. Controlled speed sets up the next score ball better than blasting every rack.</p>
+              <p class="tip-copy">Sight the line first, then pull longer to load boost. The cue now has extra headroom, so smooth medium pace still sets up the next ball better than maxing every shot.</p>
             </div>
           </div>
 
@@ -175,7 +189,7 @@
         </section>
       </section>
 
-      <aside class="sidebar">
+      <aside class="sidebar" id="sidebarColumn">
         <section class="panel sidebar-panel">
           <div class="panel-head">
             <div>
@@ -201,8 +215,8 @@
     </main>
   </div>
 
-  <script src="games/star-sprint/mini-pool-core.js?v=20260326e"></script>
+  <script src="games/star-sprint/mini-pool-core.js?v=20260326g"></script>
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
-  <script src="pool.js?v=20260326e"></script>
+  <script src="pool.js?v=20260326g"></script>
 </body>
 </html>

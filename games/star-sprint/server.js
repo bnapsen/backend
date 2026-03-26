@@ -107,7 +107,7 @@ const GAME_DEFS = {
   'mini-pool': {
     id: 'mini-pool',
     title: 'Mini Pool Showdown',
-    createGameState: () => MiniPool.createGameState(),
+    createGameState: (options = {}) => MiniPool.createGameState(options),
     cloneState: (game) => MiniPool.cloneState(game),
   },
   'car-soccer': {
@@ -335,9 +335,10 @@ function createRoom(code, gameType, options = {}) {
     code,
     gameType: gameDef.id,
     gameDef,
+    options: { ...options },
     maxPlayers: gameDef.maxPlayers || DEFAULT_MAX_PLAYERS,
     players: new Map(),
-    game: gameDef.createGameState(),
+    game: gameDef.createGameState(options),
     clock: gameDef.id === 'chess'
       ? createChessClock(options.timeControlPreset)
       : null,
@@ -516,6 +517,7 @@ function handleJoin(socket, payload) {
   const gameType = normalizeGameType(payload && payload.game);
   const lookup = getRoomForJoin(payload.roomCode, mode, gameType, {
     timeControlPreset: normalizeChessTimeControlPreset(payload && payload.timeControlPreset),
+    variantId: MiniPool.normalizeVariantId(payload && payload.variantId),
   });
   if (lookup.error) {
     sendError(socket, lookup.error);
@@ -920,7 +922,7 @@ function handleRestart(socket) {
   } else if (room.gameType === 'blackjack') {
     Blackjack.resetTable(room.game);
   } else {
-    room.game = room.gameDef.createGameState();
+    room.game = room.gameDef.createGameState(room.options);
     room.game.roomCode = room.code;
     room.clock = room.gameType === 'chess'
       ? createChessClock(room.clock ? room.clock.presetId : 'untimed')

@@ -17,21 +17,87 @@ const MAX_EVENTS = 8;
 const MAX_RACKS = 3;
 const RACK_BONUS = 14;
 const SHOT_MAX_DISTANCE = 220;
-const SHOT_MAX_POWER = 1.35;
+const SHOT_MAX_POWER = 1.45;
 const SHOT_MIN_POWER = 0.04;
 const SHOT_MIN_SPEED = 0.95;
-const SHOT_SPEED = 13.9;
-const SHOT_BOOST_SPEED = 16.7;
+const SHOT_SPEED = 14.5;
+const SHOT_BOOST_SPEED = 18.4;
 const SCRATCH_PENALTY = 6;
 const BLOCKER_PENALTY = 8;
 const STOP_EPSILON = 0.014;
 const SOFT_SETTLE_SPEED = 0.075;
 const TARGET_VALUE = 10;
 const CROWN_VALUE = 18;
+const DEFAULT_VARIANT_ID = 'showdown';
 const TARGET_SUBSTEP_SECONDS = 1 / 120;
 const LOW_SPEED_BRAKE_THRESHOLD = 0.82;
 const LOW_SPEED_BRAKE = 0.972;
 const POCKET_PULL = 0.26;
+
+const VARIANTS = Object.freeze({
+  showdown: Object.freeze({
+    id: 'showdown',
+    label: 'Showdown',
+    description: 'Classic three-rack score race with the crown ball and two jammers.',
+    maxRacks: 3,
+    rackBonus: 14,
+    intro: 'Mini Pool Showdown is ready. First player breaks when both seats are filled.',
+    status: 'Pocket the glowing targets, dodge the jammers, and race for the best score.',
+    layout: Object.freeze({ startXFactor: 0.665, spacing: 23.5 }),
+    rack: Object.freeze([
+      ['flare-1', '#ff5f96', '1', TARGET_VALUE],
+      ['flare-2', '#f7ca45', '2', TARGET_VALUE],
+      ['flare-3', '#55e4ff', '3', TARGET_VALUE],
+      ['flare-4', '#9cff6c', '4', TARGET_VALUE],
+      ['flare-5', '#c27fff', '5', TARGET_VALUE],
+      ['flare-6', '#ff9154', '6', TARGET_VALUE],
+      ['flare-7', '#61c6ff', '7', TARGET_VALUE],
+      ['crown', '#ffe37d', 'C', CROWN_VALUE],
+      ['jammer-1', '#5d6679', 'X', -BLOCKER_PENALTY],
+      ['jammer-2', '#4a5367', 'X', -BLOCKER_PENALTY],
+    ]),
+  }),
+  'crown-rush': Object.freeze({
+    id: 'crown-rush',
+    label: 'Crown Rush',
+    description: 'Shorter two-rack game with an open table and a high-value crown chase.',
+    maxRacks: 2,
+    rackBonus: 11,
+    intro: 'Crown Rush is live. Faster racks, wider lanes, and a massive crown bonus.',
+    status: 'Hunt the crown fast, steal the big points, and finish the short race before your rival settles in.',
+    layout: Object.freeze({ startXFactor: 0.69, spacing: 24.5 }),
+    rack: Object.freeze([
+      ['flare-1', '#ff7d97', '1', 9],
+      ['flare-2', '#ffd86c', '2', 9],
+      ['flare-3', '#61d8ff', '3', 9],
+      ['flare-4', '#8fff86', '4', 9],
+      ['flare-5', '#dba5ff', '5', 9],
+      ['crown', '#ffe37d', 'C', 32],
+      ['jammer-1', '#596173', 'X', -BLOCKER_PENALTY],
+    ]),
+  }),
+  'clean-sweep': Object.freeze({
+    id: 'clean-sweep',
+    label: 'Clean Sweep',
+    description: 'No jammers. Two clean offensive racks where every sink is a scoring chance.',
+    maxRacks: 2,
+    rackBonus: 8,
+    intro: 'Clean Sweep is live. No blockers, no freebies, just pure shot making.',
+    status: 'Run the clean rack, keep the cue, and turn every open line into points.',
+    layout: Object.freeze({ startXFactor: 0.675, spacing: 22.5 }),
+    rack: Object.freeze([
+      ['flare-1', '#ff7095', '1', 8],
+      ['flare-2', '#ffb15a', '2', 8],
+      ['flare-3', '#66e4ff', '3', 8],
+      ['flare-4', '#9dff77', '4', 8],
+      ['flare-5', '#b485ff', '5', 8],
+      ['flare-6', '#f4e46c', '6', 8],
+      ['flare-7', '#7cb8ff', '7', 8],
+      ['flare-8', '#ff8dd2', '8', 8],
+      ['crown', '#fff0a7', 'C', 20],
+    ]),
+  }),
+});
 
 function capitalize(value) {
   return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
@@ -43,6 +109,15 @@ function otherColor(color) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeVariantId(raw) {
+  const key = String(raw || '').trim().toLowerCase();
+  return VARIANTS[key] ? key : DEFAULT_VARIANT_ID;
+}
+
+function variantFor(raw) {
+  return VARIANTS[normalizeVariantId(raw)];
 }
 
 function cloneBall(ball) {
@@ -86,38 +161,25 @@ function pushEvent(game, text) {
   game.status = text;
 }
 
-function getRackSpots() {
-  const spacing = 23.5;
-  const startX = TABLE.width * 0.665;
+function getRackSpots(count, layout = {}) {
+  const spacing = layout.spacing || 23.5;
+  const startX = TABLE.width * (layout.startXFactor || 0.665);
   const startY = TABLE.height / 2;
   const spots = [];
-  for (let row = 0; row < 4; row += 1) {
+  for (let row = 0; spots.length < count; row += 1) {
     const x = startX + row * spacing;
-    const count = row + 1;
-    const topY = startY - ((count - 1) * spacing) / 2;
-    for (let index = 0; index < count; index += 1) {
+    const rowCount = Math.min(row + 1, count - spots.length);
+    const topY = startY - ((rowCount - 1) * spacing) / 2;
+    for (let index = 0; index < rowCount; index += 1) {
       spots.push({ x, y: topY + index * spacing });
     }
   }
   return spots;
 }
 
-function rackBalls() {
-  const spots = getRackSpots();
-  const targets = [
-    ['flare-1', '#ff5f96', '1', TARGET_VALUE],
-    ['flare-2', '#f7ca45', '2', TARGET_VALUE],
-    ['flare-3', '#55e4ff', '3', TARGET_VALUE],
-    ['flare-4', '#9cff6c', '4', TARGET_VALUE],
-    ['flare-5', '#c27fff', '5', TARGET_VALUE],
-    ['flare-6', '#ff9154', '6', TARGET_VALUE],
-    ['flare-7', '#61c6ff', '7', TARGET_VALUE],
-    ['crown', '#ffe37d', 'C', CROWN_VALUE],
-    ['jammer-1', '#5d6679', 'X', -BLOCKER_PENALTY],
-    ['jammer-2', '#4a5367', 'X', -BLOCKER_PENALTY],
-  ];
-
-  return targets.map((entry, index) => {
+function rackBalls(variant) {
+  const spots = getRackSpots(variant.rack.length, variant.layout);
+  return variant.rack.map((entry, index) => {
     const [id, color, label, points] = entry;
     const kind = points < 0 ? 'blocker' : id === 'crown' ? 'crown' : 'target';
     return makeBall(id, spots[index].x, spots[index].y, color, kind, label, points);
@@ -128,8 +190,8 @@ function createCueBall() {
   return makeBall('cue', TABLE.width * 0.23, TABLE.height / 2, '#ffffff', 'cue', '', 0);
 }
 
-function createBalls() {
-  return [createCueBall(), ...rackBalls()];
+function createBalls(variant) {
+  return [createCueBall(), ...rackBalls(variant)];
 }
 
 function createShotState(color) {
@@ -142,26 +204,32 @@ function createShotState(color) {
   };
 }
 
-function createGameState() {
+function createGameState(options = {}) {
+  const variant = variantFor(options.variantId);
   return {
     roomCode: '',
     table: TABLE,
+    variantId: variant.id,
+    variantLabel: variant.label,
+    variantDescription: variant.description,
+    variant,
     rackNumber: 1,
-    maxRacks: MAX_RACKS,
+    maxRacks: variant.maxRacks || MAX_RACKS,
+    rackBonus: variant.rackBonus || RACK_BONUS,
     turn: 'white',
     breaker: 'white',
     scores: {
       white: 0,
       black: 0,
     },
-    balls: createBalls(),
+    balls: createBalls(variant),
     shotCount: 0,
     activeShot: null,
-    status: 'Pocket the glowing targets, dodge the jammers, and race for the best score.',
+    status: variant.status,
     events: [
       {
         id: 'intro',
-        text: 'Mini Pool Showdown is ready. First player breaks when both seats are filled.',
+        text: variant.intro,
       },
     ],
     winner: null,
@@ -172,6 +240,9 @@ function createGameState() {
 function cloneState(game) {
   return {
     table: { ...game.table },
+    variantId: game.variantId,
+    variantLabel: game.variantLabel,
+    variantDescription: game.variantDescription,
     rackNumber: game.rackNumber,
     maxRacks: game.maxRacks,
     turn: game.turn,
@@ -460,8 +531,8 @@ function settleTurn(game) {
   }
 
   if (rackCleared) {
-    game.scores[shooter] += RACK_BONUS;
-    summaryParts.push(`Rack clear +${RACK_BONUS}.`);
+    game.scores[shooter] += game.rackBonus;
+    summaryParts.push(`Rack clear +${game.rackBonus}.`);
 
     if (game.rackNumber >= game.maxRacks) {
       if (game.scores.white === game.scores.black) {
@@ -481,7 +552,7 @@ function settleTurn(game) {
     game.rackNumber += 1;
     game.breaker = otherColor(game.breaker);
     game.turn = game.breaker;
-    game.balls = createBalls();
+    game.balls = createBalls(game.variant);
     game.activeShot = null;
     pushEvent(game, `${summaryParts.join(' ')} Rack ${game.rackNumber} is ready. ${capitalize(game.turn)} breaks next.`);
     return true;
@@ -626,6 +697,9 @@ function step(game, deltaSeconds) {
 const MiniPoolApi = {
   COLORS,
   TABLE,
+  DEFAULT_VARIANT_ID,
+  VARIANTS,
+  normalizeVariantId,
   createGameState,
   cloneState,
   applyShot,
