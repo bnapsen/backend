@@ -716,7 +716,9 @@ button:disabled {
 .board-stage {
   position: relative;
   display: flex;
+  width: 100%;
   min-height: 0;
+  min-width: 0;
   align-items: center;
   justify-content: center;
   overflow: auto;
@@ -745,6 +747,7 @@ button:disabled {
 
 .board-grid {
   --square-size: min(10vw, 90px);
+  flex: 0 0 auto;
   position: relative;
   width: calc(var(--square-size) * 8);
   height: calc(var(--square-size) * 8);

@@ -327,6 +327,7 @@
     keyboardFocus: { x: 4, y: 6 },
     clickGuardUntil: 0,
     boardSizeFrame: 0,
+    boardLayoutObserver: null,
     drag: null,
     dragGhost: null,
     engineLevel: 10,
@@ -393,8 +394,12 @@
     networkStatus: document.getElementById('networkStatus'),
     modePill: document.getElementById('modePill'),
     boardStage: document.querySelector('.board-stage'),
+    boardColumn: document.querySelector('.board-column'),
+    boardPanel: document.querySelector('.board-panel'),
+    boardHeader: document.querySelector('.board-header'),
     boardFooter: document.querySelector('.board-footer'),
     battleStrip: document.querySelector('.battle-strip'),
+    clockStrip: document.getElementById('clockStrip'),
     boardGrid: document.getElementById('boardGrid'),
     playerCards: document.getElementById('playerCards'),
     historyList: document.getElementById('historyList'),
@@ -1198,20 +1203,41 @@
     const paddingX = parseFloat(stageStyles.paddingLeft || '0') + parseFloat(stageStyles.paddingRight || '0');
     const paddingY = parseFloat(stageStyles.paddingTop || '0') + parseFloat(stageStyles.paddingBottom || '0');
     const widthBudget = Math.max(0, ui.boardStage.clientWidth - paddingX);
-    const footerHeight = ui.boardFooter ? ui.boardFooter.getBoundingClientRect().height : 0;
-    const battleStripHeight = state.focusMode || !ui.battleStrip
-      ? 0
-      : ui.battleStrip.getBoundingClientRect().height;
-    const viewportBottomReserve = window.innerWidth <= 820 ? 16 : state.focusMode ? 18 : 22;
-    const viewportHeightBudget = Math.max(
-      0,
-      window.innerHeight - stageRect.top - paddingY - footerHeight - battleStripHeight - viewportBottomReserve
-    );
-    let heightBudget = viewportHeightBudget;
 
-    const stageHeightBudget = Math.max(0, ui.boardStage.clientHeight - paddingY);
-    if (state.focusMode && stageHeightBudget) {
-      heightBudget = Math.min(heightBudget, stageHeightBudget);
+    let heightBudget = 0;
+    if (state.focusMode) {
+      heightBudget = Math.max(0, ui.boardStage.clientHeight - paddingY);
+    } else if (ui.boardColumn && ui.boardPanel) {
+      const columnRect = ui.boardColumn.getBoundingClientRect();
+      const columnStyles = window.getComputedStyle(ui.boardColumn);
+      const columnGap = parseFloat(columnStyles.rowGap || columnStyles.gap || '0');
+      const battleStripHeight = ui.battleStrip ? ui.battleStrip.getBoundingClientRect().height : 0;
+      const panelStyles = window.getComputedStyle(ui.boardPanel);
+      const panelPaddingY = parseFloat(panelStyles.paddingTop || '0') + parseFloat(panelStyles.paddingBottom || '0');
+      const boardHeaderHeight = ui.boardHeader ? ui.boardHeader.getBoundingClientRect().height : 0;
+      const clockStripHeight = ui.clockStrip ? ui.clockStrip.getBoundingClientRect().height : 0;
+      const clockStripMarginTop = ui.clockStrip ? parseFloat(window.getComputedStyle(ui.clockStrip).marginTop || '0') : 0;
+      const boardFooterHeight = ui.boardFooter ? ui.boardFooter.getBoundingClientRect().height : 0;
+      const boardFooterMarginTop = ui.boardFooter ? parseFloat(window.getComputedStyle(ui.boardFooter).marginTop || '0') : 0;
+      const stageMarginTop = parseFloat(stageStyles.marginTop || '0');
+      const viewportBottomReserve = window.innerWidth <= 820 ? 16 : 22;
+      const boardColumnHeightBudget = Math.max(
+        0,
+        window.innerHeight - columnRect.top - battleStripHeight - (battleStripHeight ? columnGap : 0) - viewportBottomReserve
+      );
+      const boardPanelHeightBudget = Math.max(0, boardColumnHeightBudget - panelPaddingY);
+      heightBudget = Math.max(
+        0,
+        boardPanelHeightBudget
+          - boardHeaderHeight
+          - clockStripHeight
+          - clockStripMarginTop
+          - boardFooterHeight
+          - boardFooterMarginTop
+          - stageMarginTop
+      );
+    } else {
+      heightBudget = Math.max(0, window.innerHeight - stageRect.top - paddingY - 22);
     }
 
     const widthSquareBudget = widthBudget / 8;
@@ -1235,6 +1261,28 @@
       window.cancelAnimationFrame(state.boardSizeFrame);
     }
     state.boardSizeFrame = window.requestAnimationFrame(syncResponsiveBoardSize);
+  }
+
+  function installResponsiveBoardObserver() {
+    if (state.boardLayoutObserver || typeof window.ResizeObserver !== 'function') {
+      return;
+    }
+    const observer = new window.ResizeObserver(() => {
+      queueResponsiveBoardSizeSync();
+    });
+    [
+      ui.pageShell,
+      ui.setupColumn,
+      ui.sidebarColumn,
+      ui.boardColumn,
+      ui.boardPanel,
+      ui.boardHeader,
+      ui.clockStrip,
+      ui.boardStage,
+      ui.boardFooter,
+      ui.battleStrip,
+    ].filter(Boolean).forEach((element) => observer.observe(element));
+    state.boardLayoutObserver = observer;
   }
 
   function setFocusMode(enabled, options = {}) {
@@ -2926,6 +2974,7 @@
     setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
     renderLegend();
     bindEvents();
+    installResponsiveBoardObserver();
     render();
     window.setInterval(() => {
       if (!state.snapshot) {
