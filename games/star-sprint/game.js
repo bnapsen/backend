@@ -326,6 +326,7 @@
     pieceElements: new Map(),
     keyboardFocus: { x: 4, y: 6 },
     clickGuardUntil: 0,
+    boardSizeFrame: 0,
     drag: null,
     dragGhost: null,
     engineLevel: 10,
@@ -391,6 +392,7 @@
     presenceText: document.getElementById('presenceText'),
     networkStatus: document.getElementById('networkStatus'),
     modePill: document.getElementById('modePill'),
+    boardStage: document.querySelector('.board-stage'),
     boardGrid: document.getElementById('boardGrid'),
     playerCards: document.getElementById('playerCards'),
     historyList: document.getElementById('historyList'),
@@ -1163,16 +1165,75 @@
     }
   }
 
+  function responsiveBoardSizeCap() {
+    if (window.innerWidth <= 820) {
+      return state.focusMode ? 76 : 54;
+    }
+    if (state.focusMode) {
+      return 112;
+    }
+    if (state.setupCollapsed && state.sidebarCollapsed) {
+      return 104;
+    }
+    if (state.setupCollapsed || state.sidebarCollapsed) {
+      return 96;
+    }
+    return 90;
+  }
+
+  function syncResponsiveBoardSize() {
+    state.boardSizeFrame = 0;
+    if (!ui.boardStage || !ui.boardGrid) {
+      return;
+    }
+
+    const stageRect = ui.boardStage.getBoundingClientRect();
+    if (!stageRect.width) {
+      return;
+    }
+
+    const stageStyles = window.getComputedStyle(ui.boardStage);
+    const paddingX = parseFloat(stageStyles.paddingLeft || '0') + parseFloat(stageStyles.paddingRight || '0');
+    const paddingY = parseFloat(stageStyles.paddingTop || '0') + parseFloat(stageStyles.paddingBottom || '0');
+    const widthBudget = Math.max(0, ui.boardStage.clientWidth - paddingX);
+    let heightBudget = Number.POSITIVE_INFINITY;
+
+    if (state.focusMode) {
+      heightBudget = Math.max(0, ui.boardStage.clientHeight - paddingY);
+      if (!heightBudget) {
+        heightBudget = Math.max(0, window.innerHeight - stageRect.top - paddingY - 24);
+      }
+    }
+
+    const rawSquareSize = Math.min(widthBudget / 8, heightBudget / 8, responsiveBoardSizeCap());
+    if (!Number.isFinite(rawSquareSize) || rawSquareSize <= 0) {
+      return;
+    }
+
+    const minimumSquare = window.innerWidth <= 820 ? 36 : 52;
+    const squareSize = Math.max(minimumSquare, Math.floor(rawSquareSize));
+    ui.boardGrid.style.setProperty('--square-size', `${squareSize}px`);
+  }
+
+  function queueResponsiveBoardSizeSync() {
+    if (state.boardSizeFrame) {
+      window.cancelAnimationFrame(state.boardSizeFrame);
+    }
+    state.boardSizeFrame = window.requestAnimationFrame(syncResponsiveBoardSize);
+  }
+
   function setFocusMode(enabled, options = {}) {
     const next = Boolean(enabled);
     if (state.focusMode === next) {
       if (next && options.focusBoard !== false) {
         window.setTimeout(() => ui.boardGrid.focus(), 10);
       }
+      queueResponsiveBoardSizeSync();
       return;
     }
     state.focusMode = next;
     renderFocusModeInfo();
+    queueResponsiveBoardSizeSync();
     if (next) {
       if (!options.silent) {
         showToast('Focus mode on. Press Escape to leave.');
@@ -1659,6 +1720,7 @@
     renderBoard();
     renderControls();
     setEngineStatus(state.engineStatus);
+    queueResponsiveBoardSizeSync();
   }
 
   function clearSelection() {
@@ -2349,12 +2411,14 @@
     event.preventDefault();
     ui.boardGrid.focus();
     setKeyboardFocus(x, y);
+    const wasSelected = Boolean(state.selected && state.selected.x === x && state.selected.y === y);
     selectSquare(x, y);
     createDragGhost(piece, event.clientX, event.clientY);
     state.drag = {
       pointerId: event.pointerId,
       pieceId: piece.id,
       from: { x, y },
+      wasSelected,
       startX: event.clientX,
       startY: event.clientY,
       moved: false,
@@ -2392,17 +2456,27 @@
     }
     const dragInfo = state.drag;
     const dropSquare = boardPointToCoords(event.clientX, event.clientY);
+    const droppedElsewhere = Boolean(
+      dropSquare &&
+      (dropSquare.x !== dragInfo.from.x || dropSquare.y !== dragInfo.from.y)
+    );
     cleanupDrag();
     state.clickGuardUntil = performance.now() + 180;
-    if (dropSquare && dragInfo.moved) {
+    if (dropSquare && (dragInfo.moved || droppedElsewhere)) {
       setKeyboardFocus(dropSquare.x, dropSquare.y);
       if (attemptMoveTo(dropSquare.x, dropSquare.y)) {
         return;
       }
+      setKeyboardFocus(dragInfo.from.x, dragInfo.from.y);
       selectSquare(dragInfo.from.x, dragInfo.from.y);
       return;
     }
-    handleSquare(dragInfo.from.x, dragInfo.from.y);
+    setKeyboardFocus(dragInfo.from.x, dragInfo.from.y);
+    if (dragInfo.wasSelected) {
+      clearSelection();
+      return;
+    }
+    selectSquare(dragInfo.from.x, dragInfo.from.y);
   }
 
   function handleBoardKeydown(event) {
@@ -2741,6 +2815,10 @@
         setFocusMode(false);
       }
     });
+    window.addEventListener('resize', queueResponsiveBoardSizeSync, { passive: true });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', queueResponsiveBoardSizeSync, { passive: true });
+    }
 
     ui.hostBtn.addEventListener('click', () => {
       if (state.soundEnabled) {

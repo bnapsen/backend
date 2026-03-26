@@ -724,6 +724,10 @@ button:disabled {
     inset 0 14px 20px rgba(255, 255, 255, 0.04),
     0 18px 48px rgba(0, 0, 0, 0.3);
   touch-action: none;
+  transition:
+    width 220ms cubic-bezier(.22, 1, .36, 1),
+    height 220ms cubic-bezier(.22, 1, .36, 1),
+    box-shadow 180ms ease;
 }
 
 .board-grid:focus-visible {
@@ -999,12 +1003,15 @@ button:disabled {
   height: 100%;
   display: grid;
   place-items: center;
-  font-size: clamp(2.7rem, 5.4vw, 4rem);
+  font-size: calc(var(--square-size) * 0.62);
   font-family: Georgia, "Times New Roman", serif;
   line-height: 1;
   background: transparent;
   box-shadow: none;
   transform: translateY(-3px);
+  transition:
+    font-size 220ms cubic-bezier(.22, 1, .36, 1),
+    transform 180ms ease;
 }
 
 .piece-face::before {
@@ -1063,7 +1070,7 @@ button:disabled {
 
 .page-shell[data-piece-style="marble"] .piece-face {
   font-family: "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: clamp(2.55rem, 5.1vw, 3.82rem);
+  font-size: calc(var(--square-size) * 0.595);
   letter-spacing: 0.01em;
   transform: translateY(-2px);
 }
@@ -1121,7 +1128,7 @@ button:disabled {
 
 .page-shell[data-piece-style="midnight"] .piece-face {
   font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "Arial Unicode MS", sans-serif;
-  font-size: clamp(2.48rem, 4.95vw, 3.72rem);
+  font-size: calc(var(--square-size) * 0.585);
   letter-spacing: 0.02em;
   transform: translateY(-1px);
 }
@@ -1176,7 +1183,7 @@ button:disabled {
 
 .page-shell[data-piece-style="emerald"] .piece-face {
   font-family: Cambria, "Palatino Linotype", Georgia, serif;
-  font-size: clamp(2.6rem, 5.2vw, 3.9rem);
+  font-size: calc(var(--square-size) * 0.605);
   transform: translateY(-2px);
 }
 
