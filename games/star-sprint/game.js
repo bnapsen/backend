@@ -1183,11 +1183,11 @@
       ui.pageShell.dataset.sidebarCollapsed = state.sidebarCollapsed ? 'true' : 'false';
     }
     if (ui.toggleSetupBtn) {
-      ui.toggleSetupBtn.textContent = state.setupCollapsed ? 'Lobby' : 'Close lobby';
+      ui.toggleSetupBtn.textContent = state.setupCollapsed ? 'Show setup' : 'Hide setup';
       ui.toggleSetupBtn.setAttribute('aria-pressed', state.setupCollapsed ? 'true' : 'false');
     }
     if (ui.toggleSidebarBtn) {
-      ui.toggleSidebarBtn.textContent = state.sidebarCollapsed ? 'Moves' : 'Close moves';
+      ui.toggleSidebarBtn.textContent = state.sidebarCollapsed ? 'Show moves' : 'Hide moves';
       ui.toggleSidebarBtn.setAttribute('aria-pressed', state.sidebarCollapsed ? 'true' : 'false');
     }
   }

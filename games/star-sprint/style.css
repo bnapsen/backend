@@ -1002,6 +1002,7 @@ button:disabled {
 .board-square {
   position: relative;
   border: none;
+  border-radius: 0;
   margin: 0;
   padding: 0;
   width: 100%;
@@ -1113,6 +1114,7 @@ button:disabled {
   height: var(--square-size);
   padding: 4px;
   border: none;
+  border-radius: 0;
   background: transparent;
   pointer-events: auto;
   transform: translate(var(--x, 0), var(--y, 0));
@@ -1543,6 +1545,7 @@ button:disabled {
   height: var(--square-size);
   padding: 8px;
   border: none;
+  border-radius: 0;
   background: transparent;
   pointer-events: none;
   z-index: 60;
