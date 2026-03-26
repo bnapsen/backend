@@ -299,6 +299,7 @@
     soundEnabled: true,
     soundProfile: 'auto',
     audioContext: null,
+    focusMode: false,
   };
 
   const ui = {
@@ -324,6 +325,7 @@
     turnText: document.getElementById('turnText'),
     phaseText: document.getElementById('phaseText'),
     winnerText: document.getElementById('winnerText'),
+    focusHint: document.getElementById('focusHint'),
     presenceText: document.getElementById('presenceText'),
     networkStatus: document.getElementById('networkStatus'),
     modePill: document.getElementById('modePill'),
@@ -339,6 +341,8 @@
     soloBtn: document.getElementById('soloBtn'),
     retryEngineBtn: document.getElementById('retryEngineBtn'),
     engineMoveBtn: document.getElementById('engineMoveBtn'),
+    focusBtn: document.getElementById('focusBtn'),
+    focusExitBtn: document.getElementById('focusExitBtn'),
     copyBtn: document.getElementById('copyBtn'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     restartBtn: document.getElementById('restartBtn'),
@@ -858,6 +862,49 @@
       : `${activeProfile.label} is selected, but audio is muted.`;
   }
 
+  function renderFocusModeInfo() {
+    if (ui.pageShell) {
+      ui.pageShell.dataset.focusMode = state.focusMode ? 'true' : 'false';
+    }
+    document.body.classList.toggle('focus-mode', state.focusMode);
+    if (ui.focusBtn) {
+      ui.focusBtn.textContent = state.focusMode ? 'Exit focus' : 'Focus mode';
+      ui.focusBtn.setAttribute('aria-pressed', state.focusMode ? 'true' : 'false');
+    }
+    if (ui.focusExitBtn) {
+      ui.focusExitBtn.hidden = !state.focusMode;
+    }
+    if (ui.focusHint) {
+      ui.focusHint.textContent = state.focusMode
+        ? 'Focus mode is on. Press Escape or use Exit focus to bring the full layout back.'
+        : 'Focus mode hides the rest of the page. Press Escape to leave.';
+    }
+  }
+
+  function setFocusMode(enabled, options = {}) {
+    const next = Boolean(enabled);
+    if (state.focusMode === next) {
+      if (next && options.focusBoard !== false) {
+        window.setTimeout(() => ui.boardGrid.focus(), 10);
+      }
+      return;
+    }
+    state.focusMode = next;
+    renderFocusModeInfo();
+    if (next) {
+      if (!options.silent) {
+        showToast('Focus mode on. Press Escape to leave.');
+      }
+      if (options.focusBoard !== false) {
+        window.setTimeout(() => ui.boardGrid.focus(), 20);
+      }
+      return;
+    }
+    if (!options.silent) {
+      showToast('Focus mode off.');
+    }
+  }
+
   function renderHistory() {
     const history = state.snapshot && Array.isArray(state.snapshot.history) ? state.snapshot.history : [];
     if (!history.length) {
@@ -1220,6 +1267,7 @@
     ui.boardThemeSelect.disabled = false;
     ui.pieceStyleSelect.disabled = false;
     ui.soundProfileSelect.disabled = !audioSupported();
+    ui.focusBtn.disabled = false;
     ui.retryEngineBtn.textContent = state.engineInitPromise
       ? 'Loading Stockfish 18...'
       : state.engineReady
@@ -1239,6 +1287,7 @@
     renderPieceStyleInfo();
     renderSoundProfileInfo();
     renderSoundInfo();
+    renderFocusModeInfo();
     updateInviteUi();
     renderSummary();
     renderPlayers();
@@ -1970,6 +2019,10 @@
         return;
       case 'Escape':
         event.preventDefault();
+        if (state.focusMode) {
+          setFocusMode(false);
+          return;
+        }
         clearSelection();
         return;
       default:
@@ -2222,6 +2275,13 @@
       }
     });
 
+    ui.focusBtn.addEventListener('click', () => {
+      setFocusMode(!state.focusMode);
+    });
+    ui.focusExitBtn.addEventListener('click', () => {
+      setFocusMode(false);
+    });
+
     window.addEventListener('pointerdown', () => {
       if (state.soundEnabled) {
         primeAudio();
@@ -2230,6 +2290,12 @@
     window.addEventListener('keydown', () => {
       if (state.soundEnabled) {
         primeAudio();
+      }
+    });
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && state.focusMode && event.target !== ui.boardGrid) {
+        event.preventDefault();
+        setFocusMode(false);
       }
     });
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Neon Crown Chess</title>
-  <link rel="stylesheet" href="style.css?v=20260325i" />
+  <link rel="stylesheet" href="style.css?v=20260325j" />
 </head>
 <body>
   <div class="page-shell" id="pageShell">
@@ -192,6 +192,10 @@
               <p class="label">Status</p>
               <p class="turn-text" id="phaseText">Start a match to begin.</p>
             </div>
+            <div class="focus-tools" id="focusTools">
+              <p class="focus-hint" id="focusHint">Focus mode hides the rest of the page. Press Escape to leave.</p>
+              <button id="focusExitBtn" class="secondary" type="button">Exit focus</button>
+            </div>
           </div>
 
           <div class="board-stage">
@@ -207,6 +211,7 @@
               <button id="retryEngineBtn" class="secondary">Retry Stockfish</button>
               <button id="engineMoveBtn" class="secondary">Force engine move</button>
               <button id="flipBtn" class="secondary">Flip board</button>
+              <button id="focusBtn" class="secondary" type="button">Focus mode</button>
               <button id="restartBtn" class="primary">New game</button>
             </div>
           </div>
@@ -270,7 +275,7 @@
     <div class="toast" id="toast" aria-live="polite"></div>
   </div>
 
-  <script src="chess-core.js?v=20260325i"></script>
-  <script src="game.js?v=20260325i"></script>
+  <script src="chess-core.js?v=20260325j"></script>
+  <script src="game.js?v=20260325j"></script>
 </body>
 </html>
