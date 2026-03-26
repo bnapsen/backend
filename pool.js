@@ -1034,10 +1034,11 @@
     }
 
     const direction = cueDirection();
+    const legacyVectorScale = power * 220;
     if (sendJson({
       action: 'shoot',
-      vectorX: direction.x,
-      vectorY: direction.y,
+      vectorX: direction.x * legacyVectorScale,
+      vectorY: direction.y * legacyVectorScale,
       power,
     })) {
       setStatus('Shot sent. Waiting for the table physics to resolve.');
