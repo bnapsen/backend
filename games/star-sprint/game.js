@@ -2456,10 +2456,19 @@
   }
 
   function handlePiecePointerDown(event, x, y, piece) {
-    if (!canInteract() || piece.color !== getControlledColor()) {
+    if (!canInteract()) {
       return;
     }
     if (event.button !== undefined && event.button !== 0) {
+      return;
+    }
+    if (piece.color !== getControlledColor()) {
+      if (state.selected) {
+        event.preventDefault();
+        ui.boardGrid.focus();
+        setKeyboardFocus(x, y);
+        handleSquare(x, y);
+      }
       return;
     }
     event.preventDefault();
@@ -2515,7 +2524,9 @@
       (dropSquare.x !== dragInfo.from.x || dropSquare.y !== dragInfo.from.y)
     );
     cleanupDrag();
-    state.clickGuardUntil = performance.now() + 180;
+    state.clickGuardUntil = dragInfo.moved || droppedElsewhere
+      ? performance.now() + 180
+      : 0;
     if (dropSquare && (dragInfo.moved || droppedElsewhere)) {
       setKeyboardFocus(dropSquare.x, dropSquare.y);
       if (attemptMoveTo(dropSquare.x, dropSquare.y)) {
