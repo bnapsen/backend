@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/arcade-lounge/style.css?v=20260326f" />
+  <link rel="stylesheet" href="games/arcade-lounge/style.css?v=20260326h" />
 </head>
 <body>
   <div class="page-shell">
@@ -137,11 +137,12 @@
             </label>
             <div class="composer-actions">
               <div class="composer-meta">
-                <p id="composerHint">Press Enter to send. Use Shift+Enter for a new line or use the mic for free in-browser dictation. Best for short English notes.</p>
-                <p id="voiceStatus" class="voice-status" data-tone="idle">Sharper local voice-to-text runs in your browser after you join a lounge.</p>
+                <p id="composerHint">Press Enter to send. Use Shift+Enter for a new line. Use voice for live lobby chat.</p>
+                <p id="voiceStatus" class="voice-status" data-tone="idle">Join a lounge, then open direct voice chat with your mic.</p>
               </div>
               <div class="composer-button-row">
-                <button id="voiceBtn" class="secondary voice-btn" type="button">Voice to text</button>
+                <button id="voiceBtn" class="secondary voice-btn" type="button">Join voice</button>
+                <button id="muteVoiceBtn" class="secondary mute-voice-btn" type="button">Mute mic</button>
                 <button id="sendBtn" class="primary" type="submit">Send message</button>
               </div>
             </div>
@@ -215,6 +216,8 @@
     </main>
   </div>
 
-  <script src="games/arcade-lounge/game.js?v=20260326f"></script>
+  <div id="voiceAudioHost" class="voice-audio-host" aria-hidden="true"></div>
+
+  <script src="games/arcade-lounge/game.js?v=20260326h"></script>
 </body>
 </html>

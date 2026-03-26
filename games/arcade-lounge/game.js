@@ -38,16 +38,23 @@
       path: 'poker.html',
     },
   };
-  const VOICE_MODEL_CONFIG = {
-    primaryModelId: 'onnx-community/moonshine-base-ONNX',
-    fallbackModelId: 'onnx-community/moonshine-tiny-ONNX',
-    libraryUrl: 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1',
-    sampleRate: 16000,
-    maxDurationMs: 14000,
-    modelLoadTimeoutMs: 60000,
-    transcriptionTimeoutMs: 30000,
-    chunkLengthS: 8,
-    strideLengthS: 2,
+  const VOICE_CHAT_CONFIG = {
+    rtcConfig: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+      ],
+      bundlePolicy: 'max-bundle',
+      iceCandidatePoolSize: 2,
+    },
+    mediaConstraints: {
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+      },
+      video: false,
+    },
   };
   const query = new URLSearchParams(window.location.search);
   const state = {
@@ -59,17 +66,12 @@
     lastMessageCount: 0,
     pendingShare: null,
     autoShareDone: false,
-    voiceRecorder: null,
     voiceStream: null,
-    voiceChunks: [],
-    voiceRecording: false,
-    voiceTranscribing: false,
-    voiceEngineLoading: false,
-    voiceStopTimer: 0,
-    voiceModelId: '',
-    voiceTranscriber: null,
-    voiceTranscriberPromise: null,
-    voiceLibraryPromise: null,
+    voiceJoined: false,
+    voiceJoining: false,
+    voiceMuted: false,
+    voicePeers: new Map(),
+    voiceAudioElements: new Map(),
   };
 
   const ui = {
@@ -94,7 +96,9 @@
     composerForm: document.getElementById('composerForm'),
     messageInput: document.getElementById('messageInput'),
     voiceBtn: document.getElementById('voiceBtn'),
+    muteVoiceBtn: document.getElementById('muteVoiceBtn'),
     voiceStatus: document.getElementById('voiceStatus'),
+    voiceAudioHost: document.getElementById('voiceAudioHost'),
     sendBtn: document.getElementById('sendBtn'),
     composerHint: document.getElementById('composerHint'),
     gameSelect: document.getElementById('gameSelect'),
@@ -156,35 +160,12 @@
     return value;
   }
 
-  function voiceAudioSupported() {
-    return Boolean(window.AudioContext || window.webkitAudioContext);
-  }
-
-  function voiceCaptureSupported() {
+  function voiceChatSupported() {
     return Boolean(
       navigator.mediaDevices
       && typeof navigator.mediaDevices.getUserMedia === 'function'
-      && typeof window.MediaRecorder === 'function'
-      && voiceAudioSupported()
+      && typeof window.RTCPeerConnection === 'function'
     );
-  }
-
-  function preferredVoiceMimeType() {
-    const candidates = [
-      'audio/webm;codecs=opus',
-      'audio/webm',
-      'audio/mp4',
-      'audio/ogg;codecs=opus',
-    ];
-    for (const mimeType of candidates) {
-      if (!window.MediaRecorder || typeof window.MediaRecorder.isTypeSupported !== 'function') {
-        return '';
-      }
-      if (window.MediaRecorder.isTypeSupported(mimeType)) {
-        return mimeType;
-      }
-    }
-    return '';
   }
 
   function setVoiceStatus(message, tone) {
@@ -195,285 +176,86 @@
     ui.voiceStatus.dataset.tone = tone || 'idle';
   }
 
-  function describeVoiceLoadProgress(progress) {
-    if (!progress || !progress.status) {
-      return 'Loading the sharper local speech model...';
-    }
-    if (progress.status === 'progress' && Number.isFinite(progress.progress)) {
-      return `Loading local speech tools... ${Math.round(progress.progress)}%`;
-    }
-    if ((progress.status === 'initiate' || progress.status === 'download' || progress.status === 'done') && progress.file) {
-      return `Loading ${progress.file}...`;
-    }
-    if (progress.status === 'ready') {
-      return 'Local speech model ready.';
-    }
-    return 'Loading the sharper local speech model...';
+  function currentPlayers() {
+    return Array.isArray(state.snapshot && state.snapshot.players)
+      ? state.snapshot.players
+      : [];
   }
 
-  function withTimeout(promise, timeoutMs, message) {
-    return new Promise((resolve, reject) => {
-      const timer = window.setTimeout(() => {
-        reject(new Error(message));
-      }, timeoutMs);
-
-      Promise.resolve(promise)
-        .then((value) => {
-          window.clearTimeout(timer);
-          resolve(value);
-        })
-        .catch((error) => {
-          window.clearTimeout(timer);
-          reject(error);
-        });
-    });
-  }
-
-  function currentVoiceModelLabel() {
-    if (state.voiceModelId === VOICE_MODEL_CONFIG.fallbackModelId) {
-      return 'Fast local speech';
+  function findSnapshotPlayer(playerId) {
+    if (!playerId) {
+      return null;
     }
-    return 'Sharper local speech';
+    return currentPlayers().find((player) => player.id === playerId) || null;
   }
 
-  function disposeVoiceTranscriber(transcriber) {
-    if (!transcriber || typeof transcriber.dispose !== 'function') {
+  function remoteVoicePlayers() {
+    return currentPlayers().filter((player) => player.id !== state.playerId && player.voiceJoined);
+  }
+
+  function selfSnapshotPlayer() {
+    return findSnapshotPlayer(state.playerId);
+  }
+
+  function voiceParticipantCount() {
+    return currentPlayers().filter((player) => player.voiceJoined).length;
+  }
+
+  function voiceParticipantLabel() {
+    const total = voiceParticipantCount();
+    if (!total) {
+      return 'no one on voice';
+    }
+    return `${total} player${total === 1 ? '' : 's'} on voice`;
+  }
+
+  function voicePresenceSentence() {
+    const total = voiceParticipantCount();
+    if (!total) {
+      return 'No one is on voice yet.';
+    }
+    if (total === 1) {
+      return '1 player is already on voice.';
+    }
+    return `${total} players are already on voice.`;
+  }
+
+  function createRemoteAudioElement(playerId, playerName) {
+    let audio = state.voiceAudioElements.get(playerId);
+    if (audio) {
+      return audio;
+    }
+    audio = document.createElement('audio');
+    audio.autoplay = true;
+    audio.playsInline = true;
+    audio.dataset.playerId = playerId;
+    audio.setAttribute('aria-label', `Voice chat audio for ${playerName || 'Guest'}`);
+    ui.voiceAudioHost.appendChild(audio);
+    state.voiceAudioElements.set(playerId, audio);
+    return audio;
+  }
+
+  function removeRemoteAudioElement(playerId) {
+    const audio = state.voiceAudioElements.get(playerId);
+    if (!audio) {
       return;
     }
-    const disposeResult = transcriber.dispose();
-    if (disposeResult && typeof disposeResult.catch === 'function') {
-      disposeResult.catch(() => {});
+    audio.pause();
+    audio.srcObject = null;
+    audio.remove();
+    state.voiceAudioElements.delete(playerId);
+  }
+
+  function setLocalVoiceTracksEnabled(enabled) {
+    if (!state.voiceStream) {
+      return;
+    }
+    for (const track of state.voiceStream.getAudioTracks()) {
+      track.enabled = enabled;
     }
   }
 
-  function loadVoiceLibrary() {
-    if (!state.voiceLibraryPromise) {
-      state.voiceLibraryPromise = import(VOICE_MODEL_CONFIG.libraryUrl);
-    }
-    return state.voiceLibraryPromise;
-  }
-
-  async function createVoiceTranscriber(modelId, progress_callback) {
-    const module = await loadVoiceLibrary();
-    const { pipeline } = module;
-    const buildTranscriber = (options = {}) => withTimeout(
-      pipeline('automatic-speech-recognition', modelId, {
-        progress_callback,
-        ...options,
-      }),
-      VOICE_MODEL_CONFIG.modelLoadTimeoutMs,
-      'The local speech model took too long to load.'
-    );
-
-    if (navigator.gpu) {
-      try {
-        return await buildTranscriber({ device: 'webgpu' });
-      } catch (error) {
-        return buildTranscriber();
-      }
-    }
-
-    return buildTranscriber();
-  }
-
-  async function loadVoiceTranscriber() {
-    if (state.voiceTranscriber && state.voiceModelId) {
-      return state.voiceTranscriber;
-    }
-    if (state.voiceTranscriberPromise) {
-      return state.voiceTranscriberPromise;
-    }
-
-    state.voiceEngineLoading = true;
-    updateVoiceUi();
-    setVoiceStatus('Loading the sharper local speech model...', 'processing');
-    setStatus('Downloading a stronger free speech model for lounge chat. The first run can take a bit.');
-
-    state.voiceTranscriberPromise = (async () => {
-      const progress_callback = (progress) => {
-        if (!state.voiceEngineLoading) {
-          return;
-        }
-        setVoiceStatus(describeVoiceLoadProgress(progress), 'processing');
-      };
-
-      if (navigator.gpu) {
-        progress_callback({ status: 'initiate', file: 'webgpu' });
-      }
-
-      try {
-        const transcriber = await createVoiceTranscriber(VOICE_MODEL_CONFIG.primaryModelId, progress_callback);
-        state.voiceModelId = VOICE_MODEL_CONFIG.primaryModelId;
-        return transcriber;
-      } catch (primaryError) {
-        setVoiceStatus('The sharper model was heavy for this device. Trying a lighter local model...', 'processing');
-        setStatus('Trying a lighter local speech model so voice-to-text still works smoothly.');
-        const transcriber = await createVoiceTranscriber(VOICE_MODEL_CONFIG.fallbackModelId, progress_callback);
-        state.voiceModelId = VOICE_MODEL_CONFIG.fallbackModelId;
-        return transcriber;
-      }
-    })();
-
-    try {
-      state.voiceTranscriber = await state.voiceTranscriberPromise;
-      setVoiceStatus(`${currentVoiceModelLabel()} ready.`, 'ready');
-      return state.voiceTranscriber;
-    } catch (error) {
-      state.voiceTranscriberPromise = null;
-      state.voiceModelId = '';
-      disposeVoiceTranscriber(state.voiceTranscriber);
-      state.voiceTranscriber = null;
-      const message = error && error.message
-        ? error.message
-        : 'The local speech model could not load on this device.';
-      setVoiceStatus(message, 'error');
-      setStatus(message);
-      throw new Error(message);
-    } finally {
-      state.voiceEngineLoading = false;
-      updateVoiceUi();
-      updateControlState();
-    }
-  }
-
-  function audioContextCtor() {
-    return window.AudioContext || window.webkitAudioContext || null;
-  }
-
-  async function decodeVoiceBlob(blob) {
-    const AudioContextCtor = audioContextCtor();
-    if (!AudioContextCtor) {
-      throw new Error('Voice to text needs Web Audio support.');
-    }
-
-    const context = new AudioContextCtor();
-    let audioBuffer;
-    try {
-      const arrayBuffer = await blob.arrayBuffer();
-      audioBuffer = await context.decodeAudioData(arrayBuffer.slice(0));
-    } finally {
-      if (typeof context.close === 'function') {
-        const closeResult = context.close();
-        if (closeResult && typeof closeResult.catch === 'function') {
-          closeResult.catch(() => {});
-        }
-      }
-    }
-
-    if (!audioBuffer || !audioBuffer.length) {
-      throw new Error('The voice note could not be decoded.');
-    }
-
-    const mono = new Float32Array(audioBuffer.length);
-    for (let channelIndex = 0; channelIndex < audioBuffer.numberOfChannels; channelIndex += 1) {
-      const channel = audioBuffer.getChannelData(channelIndex);
-      for (let index = 0; index < channel.length; index += 1) {
-        mono[index] += channel[index];
-      }
-    }
-    const scale = audioBuffer.numberOfChannels > 1 ? 1 / audioBuffer.numberOfChannels : 1;
-    for (let index = 0; index < mono.length; index += 1) {
-      mono[index] *= scale;
-    }
-
-    if (audioBuffer.sampleRate === VOICE_MODEL_CONFIG.sampleRate) {
-      return mono;
-    }
-
-    const ratio = audioBuffer.sampleRate / VOICE_MODEL_CONFIG.sampleRate;
-    const targetLength = Math.max(1, Math.round(mono.length / ratio));
-    const output = new Float32Array(targetLength);
-    for (let index = 0; index < targetLength; index += 1) {
-      const position = index * ratio;
-      const left = Math.floor(position);
-      const right = Math.min(mono.length - 1, left + 1);
-      const alpha = position - left;
-      output[index] = mono[left] * (1 - alpha) + mono[right] * alpha;
-    }
-    return output;
-  }
-
-  function preprocessVoiceWaveform(waveform) {
-    if (!waveform || !waveform.length) {
-      throw new Error('The voice note was empty.');
-    }
-
-    let mean = 0;
-    for (let index = 0; index < waveform.length; index += 1) {
-      mean += waveform[index];
-    }
-    mean /= waveform.length;
-
-    const centered = new Float32Array(waveform.length);
-    let peak = 0;
-    for (let index = 0; index < waveform.length; index += 1) {
-      const value = waveform[index] - mean;
-      centered[index] = value;
-      const abs = Math.abs(value);
-      if (abs > peak) {
-        peak = abs;
-      }
-    }
-
-    if (peak < 0.01) {
-      throw new Error('The recording was too quiet. Try moving closer to the mic.');
-    }
-
-    const windowSize = 320;
-    const totalWindows = Math.max(1, Math.ceil(centered.length / windowSize));
-    let maxRms = 0;
-    const rmsValues = new Float32Array(totalWindows);
-    for (let windowIndex = 0; windowIndex < totalWindows; windowIndex += 1) {
-      const start = windowIndex * windowSize;
-      const end = Math.min(centered.length, start + windowSize);
-      let energy = 0;
-      for (let index = start; index < end; index += 1) {
-        energy += centered[index] * centered[index];
-      }
-      const rms = Math.sqrt(energy / Math.max(1, end - start));
-      rmsValues[windowIndex] = rms;
-      if (rms > maxRms) {
-        maxRms = rms;
-      }
-    }
-
-    const threshold = Math.max(0.01, maxRms * 0.16);
-    let startWindow = 0;
-    while (startWindow < rmsValues.length && rmsValues[startWindow] < threshold) {
-      startWindow += 1;
-    }
-    let endWindow = rmsValues.length - 1;
-    while (endWindow > startWindow && rmsValues[endWindow] < threshold) {
-      endWindow -= 1;
-    }
-
-    const padding = Math.round(VOICE_MODEL_CONFIG.sampleRate * 0.18);
-    const startSample = Math.max(0, startWindow * windowSize - padding);
-    const endSample = Math.min(centered.length, (endWindow + 1) * windowSize + padding);
-    const trimmed = centered.subarray(startSample, endSample);
-
-    if (trimmed.length < VOICE_MODEL_CONFIG.sampleRate * 0.2) {
-      throw new Error('The recording was too short to understand. Try a slightly longer note.');
-    }
-
-    let trimmedPeak = 0;
-    for (let index = 0; index < trimmed.length; index += 1) {
-      const abs = Math.abs(trimmed[index]);
-      if (abs > trimmedPeak) {
-        trimmedPeak = abs;
-      }
-    }
-
-    const gain = trimmedPeak > 0 ? Math.min(4.5, 0.88 / trimmedPeak) : 1;
-    const normalized = new Float32Array(trimmed.length);
-    for (let index = 0; index < trimmed.length; index += 1) {
-      const amplified = trimmed[index] * gain;
-      normalized[index] = Math.tanh(amplified * 1.15);
-    }
-    return normalized;
-  }
-
-  function stopVoiceTracks() {
+  function stopLocalVoiceStream() {
     if (!state.voiceStream) {
       return;
     }
@@ -483,179 +265,381 @@
     state.voiceStream = null;
   }
 
-  function clearVoiceStopTimer() {
-    if (state.voiceStopTimer) {
-      window.clearTimeout(state.voiceStopTimer);
-      state.voiceStopTimer = 0;
-    }
-  }
-
   function updateVoiceUi() {
     if (!ui.voiceBtn) {
       return;
     }
-    if (state.voiceRecording) {
-      ui.voiceBtn.textContent = 'Stop mic';
-      ui.voiceBtn.dataset.state = 'recording';
-    } else if (state.voiceEngineLoading) {
-      ui.voiceBtn.textContent = 'Loading voice...';
+    if (state.voiceJoining) {
+      ui.voiceBtn.textContent = 'Joining voice...';
       ui.voiceBtn.dataset.state = 'processing';
-    } else if (state.voiceTranscribing) {
-      ui.voiceBtn.textContent = 'Transcribing...';
-      ui.voiceBtn.dataset.state = 'processing';
+    } else if (state.voiceJoined) {
+      ui.voiceBtn.textContent = 'Leave voice';
+      ui.voiceBtn.dataset.state = 'live';
     } else {
-      ui.voiceBtn.textContent = 'Voice to text';
+      ui.voiceBtn.textContent = 'Join voice';
       ui.voiceBtn.dataset.state = 'idle';
     }
+
+    if (ui.muteVoiceBtn) {
+      ui.muteVoiceBtn.textContent = state.voiceMuted ? 'Unmute mic' : 'Mute mic';
+      ui.muteVoiceBtn.dataset.muted = state.voiceMuted ? 'true' : 'false';
+    }
   }
 
-  function mergeTranscriptIntoComposer(text) {
-    const transcript = sanitizeText(text, 360);
-    if (!transcript) {
+  function attachLocalTracks(session) {
+    if (!session || !state.voiceStream || session.localTracksAdded) {
       return;
     }
-    const existing = sanitizeText(ui.messageInput.value, 320);
-    ui.messageInput.value = sanitizeText(existing ? `${existing} ${transcript}` : transcript, 360);
-    ui.messageInput.focus();
-    const end = ui.messageInput.value.length;
-    ui.messageInput.setSelectionRange(end, end);
+    for (const track of state.voiceStream.getAudioTracks()) {
+      session.pc.addTrack(track, state.voiceStream);
+    }
+    session.localTracksAdded = true;
   }
 
-  async function transcribeVoiceBlob(blob) {
-    state.voiceTranscribing = true;
-    updateVoiceUi();
-    setVoiceStatus(state.voiceTranscriber ? 'Transcribing voice note locally...' : 'Loading the sharper local speech model...', 'processing');
-    setStatus(state.voiceTranscriber
-      ? `Transcribing your voice note with ${currentVoiceModelLabel().toLowerCase()}...`
-      : 'Loading the sharper free speech model for your first transcription...');
-    try {
-      const transcriber = await loadVoiceTranscriber();
-      const waveform = preprocessVoiceWaveform(await decodeVoiceBlob(blob));
-      const payload = await withTimeout(transcriber(waveform, {
-        chunk_length_s: VOICE_MODEL_CONFIG.chunkLengthS,
-        stride_length_s: VOICE_MODEL_CONFIG.strideLengthS,
-      }), VOICE_MODEL_CONFIG.transcriptionTimeoutMs, 'The voice note took too long to transcribe. Try a shorter, clearer note.');
-      const transcript = sanitizeText(payload && payload.text, 360);
-      if (!transcript) {
-        throw new Error('The voice note came back empty.');
+  async function flushPendingVoiceCandidates(session) {
+    if (!session || !session.pendingCandidates.length || !session.pc.remoteDescription) {
+      return;
+    }
+    const queue = session.pendingCandidates.splice(0);
+    for (const candidate of queue) {
+      try {
+        await session.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (error) {
+        // Ignore stale ICE from a previous negotiation.
       }
-      mergeTranscriptIntoComposer(transcript);
-      setVoiceStatus(`Transcript ready with ${currentVoiceModelLabel().toLowerCase()}.`, 'ready');
-      setStatus('Voice note transcribed in your browser and added to the chat box.');
-    } catch (error) {
-      const message = error && error.message ? error.message : 'Voice transcription failed.';
-      setVoiceStatus(message, 'error');
-      setStatus(message);
-    } finally {
-      state.voiceTranscribing = false;
-      updateVoiceUi();
-      updateControlState();
     }
   }
 
-  function finishVoiceCapture() {
-    const mimeType = state.voiceRecorder && state.voiceRecorder.mimeType
-      ? state.voiceRecorder.mimeType
-      : preferredVoiceMimeType() || 'audio/webm';
-    const blob = new Blob(state.voiceChunks, { type: mimeType });
-    state.voiceChunks = [];
-    state.voiceRecorder = null;
-    state.voiceRecording = false;
-    clearVoiceStopTimer();
-    stopVoiceTracks();
-    updateVoiceUi();
-    if (!blob.size) {
-      setVoiceStatus('No audio captured. Try again.', 'error');
-      updateControlState();
+  function closeVoicePeer(playerId) {
+    const session = state.voicePeers.get(playerId);
+    if (!session) {
       return;
     }
-    transcribeVoiceBlob(blob);
+    state.voicePeers.delete(playerId);
+    session.pc.ontrack = null;
+    session.pc.onicecandidate = null;
+    session.pc.onconnectionstatechange = null;
+    session.pc.oniceconnectionstatechange = null;
+    try {
+      session.pc.close();
+    } catch (error) {
+      // Ignore close errors for already-closed peers.
+    }
+    removeRemoteAudioElement(playerId);
   }
 
-  async function startVoiceCapture() {
-    if (!voiceCaptureSupported()) {
-      setVoiceStatus('Voice capture needs microphone recording and Web Audio support.', 'error');
-      setStatus('This browser does not support local voice transcription on the lounge page.');
+  function resetVoiceChatState() {
+    state.voiceJoining = false;
+    state.voiceJoined = false;
+    state.voiceMuted = false;
+    stopLocalVoiceStream();
+    for (const playerId of Array.from(state.voicePeers.keys())) {
+      closeVoicePeer(playerId);
+    }
+  }
+
+  function shouldInitiateVoice(remotePlayerId) {
+    return String(state.playerId || '') < String(remotePlayerId || '');
+  }
+
+  function createVoicePeerSession(remotePlayerId, remotePlayerName) {
+    const existing = state.voicePeers.get(remotePlayerId);
+    if (existing) {
+      return existing;
+    }
+
+    const pc = new RTCPeerConnection(VOICE_CHAT_CONFIG.rtcConfig);
+    const remoteStream = new MediaStream();
+    const audio = createRemoteAudioElement(remotePlayerId, remotePlayerName);
+    audio.srcObject = remoteStream;
+
+    const session = {
+      playerId: remotePlayerId,
+      playerName: remotePlayerName || 'Guest',
+      pc,
+      remoteStream,
+      localTracksAdded: false,
+      pendingCandidates: [],
+      creatingOffer: false,
+      offerSent: false,
+    };
+
+    pc.onicecandidate = (event) => {
+      if (!event.candidate) {
+        return;
+      }
+      sendJson({
+        action: 'voice-signal',
+        toPlayerId: remotePlayerId,
+        signal: {
+          type: 'ice-candidate',
+          candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
+        },
+      });
+    };
+
+    pc.ontrack = (event) => {
+      const sourceTracks = event.streams && event.streams[0]
+        ? event.streams[0].getAudioTracks()
+        : [event.track];
+      for (const track of sourceTracks) {
+        if (!session.remoteStream.getAudioTracks().some((existingTrack) => existingTrack.id === track.id)) {
+          session.remoteStream.addTrack(track);
+        }
+      }
+      const playResult = audio.play();
+      if (playResult && typeof playResult.catch === 'function') {
+        playResult.catch(() => {});
+      }
+    };
+
+    const handleConnectionChange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.iceConnectionState === 'failed') {
+        closeVoicePeer(remotePlayerId);
+        if (state.voiceJoined && findSnapshotPlayer(remotePlayerId)?.voiceJoined) {
+          ensureVoiceConnections();
+        }
+      }
+    };
+
+    pc.onconnectionstatechange = handleConnectionChange;
+    pc.oniceconnectionstatechange = handleConnectionChange;
+
+    attachLocalTracks(session);
+    state.voicePeers.set(remotePlayerId, session);
+    return session;
+  }
+
+  async function sendVoiceOffer(session) {
+    if (!session || session.creatingOffer || !state.voiceJoined || !state.voiceStream) {
+      return;
+    }
+    session.creatingOffer = true;
+    try {
+      attachLocalTracks(session);
+      const offer = await session.pc.createOffer({
+        offerToReceiveAudio: true,
+      });
+      await session.pc.setLocalDescription(offer);
+      sendJson({
+        action: 'voice-signal',
+        toPlayerId: session.playerId,
+        signal: {
+          type: 'offer',
+          description: session.pc.localDescription,
+        },
+      });
+      session.offerSent = true;
+    } catch (error) {
+      closeVoicePeer(session.playerId);
+    } finally {
+      session.creatingOffer = false;
+    }
+  }
+
+  function ensureVoiceConnections() {
+    if (!state.voiceJoined || !state.voiceStream) {
+      for (const playerId of Array.from(state.voicePeers.keys())) {
+        closeVoicePeer(playerId);
+      }
+      return;
+    }
+
+    const remotePlayers = remoteVoicePlayers();
+    const activeIds = new Set(remotePlayers.map((player) => player.id));
+
+    for (const playerId of Array.from(state.voicePeers.keys())) {
+      if (!activeIds.has(playerId)) {
+        closeVoicePeer(playerId);
+      }
+    }
+
+    for (const remotePlayer of remotePlayers) {
+      const session = createVoicePeerSession(remotePlayer.id, remotePlayer.name);
+      session.playerName = remotePlayer.name || session.playerName;
+      attachLocalTracks(session);
+      if (
+        shouldInitiateVoice(remotePlayer.id)
+        && session.pc.signalingState === 'stable'
+        && !session.pc.currentRemoteDescription
+        && !session.creatingOffer
+        && !session.offerSent
+      ) {
+        sendVoiceOffer(session);
+      }
+    }
+  }
+
+  async function handleVoiceSignal(payload) {
+    if (!state.voiceJoined || !state.voiceStream) {
+      return;
+    }
+
+    const remotePlayerId = String(payload && payload.fromPlayerId || '').trim();
+    const signal = payload && payload.signal;
+    if (!remotePlayerId || remotePlayerId === state.playerId || !signal || typeof signal !== 'object') {
+      return;
+    }
+
+    const remotePlayer = findSnapshotPlayer(remotePlayerId);
+    if (remotePlayer && !remotePlayer.voiceJoined && signal.type !== 'offer') {
+      return;
+    }
+
+    const session = createVoicePeerSession(
+      remotePlayerId,
+      (payload && payload.fromPlayerName) || (remotePlayer && remotePlayer.name) || 'Guest'
+    );
+    attachLocalTracks(session);
+
+    try {
+      if (signal.type === 'offer' && signal.description) {
+        await session.pc.setRemoteDescription(new RTCSessionDescription(signal.description));
+        await flushPendingVoiceCandidates(session);
+        const answer = await session.pc.createAnswer();
+        await session.pc.setLocalDescription(answer);
+        sendJson({
+          action: 'voice-signal',
+          toPlayerId: remotePlayerId,
+          signal: {
+            type: 'answer',
+            description: session.pc.localDescription,
+          },
+        });
+        session.offerSent = true;
+        return;
+      }
+
+      if (signal.type === 'answer' && signal.description) {
+        await session.pc.setRemoteDescription(new RTCSessionDescription(signal.description));
+        await flushPendingVoiceCandidates(session);
+        return;
+      }
+
+      if (signal.type === 'ice-candidate' && signal.candidate) {
+        if (session.pc.remoteDescription) {
+          await session.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        } else {
+          session.pendingCandidates.push(signal.candidate);
+        }
+        return;
+      }
+
+      if (signal.type === 'leave') {
+        closeVoicePeer(remotePlayerId);
+      }
+    } catch (error) {
+      closeVoicePeer(remotePlayerId);
+    }
+  }
+
+  async function joinVoiceChat() {
+    if (!voiceChatSupported()) {
+      setVoiceStatus('Voice chat needs microphone access and WebRTC support.', 'error');
+      setStatus('This browser does not support direct lounge voice chat.');
+      updateControlState();
       return;
     }
     if (!state.snapshot) {
-      setStatus('Join a lounge room before using voice to text.');
+      setStatus('Join a lounge room before opening voice chat.');
       return;
     }
+    if (state.voiceJoined || state.voiceJoining) {
+      return;
+    }
+
+    state.voiceJoining = true;
+    updateControlState();
+    setVoiceStatus('Opening your mic for lounge voice chat...', 'processing');
+    setStatus('Requesting microphone access for direct lounge voice chat.');
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = preferredVoiceMimeType();
-      const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream);
+      const stream = await navigator.mediaDevices.getUserMedia(VOICE_CHAT_CONFIG.mediaConstraints);
       state.voiceStream = stream;
-      state.voiceRecorder = recorder;
-      state.voiceChunks = [];
-      state.voiceRecording = true;
-      recorder.addEventListener('dataavailable', (event) => {
-        if (event.data && event.data.size) {
-          state.voiceChunks.push(event.data);
-        }
-      });
-      recorder.addEventListener('stop', finishVoiceCapture);
-      recorder.addEventListener('error', () => {
-        state.voiceRecording = false;
-        clearVoiceStopTimer();
-        stopVoiceTracks();
-        state.voiceRecorder = null;
-        state.voiceChunks = [];
-        updateVoiceUi();
-        setVoiceStatus('The microphone hit an error.', 'error');
-        setStatus('The microphone hit an error while recording.');
-        updateControlState();
-      });
-      recorder.start();
-      clearVoiceStopTimer();
-      state.voiceStopTimer = window.setTimeout(() => {
-        if (state.voiceRecorder && state.voiceRecorder.state === 'recording') {
-          state.voiceRecorder.stop();
-        }
-      }, VOICE_MODEL_CONFIG.maxDurationMs);
-      updateVoiceUi();
-      setVoiceStatus('Recording... tap Stop mic when done.', 'recording');
-      setStatus(state.voiceTranscriber
-        ? 'Recording a short voice note for sharper local transcription.'
-        : 'Recording a short voice note. The first transcription downloads a stronger free speech model.');
+      state.voiceJoined = true;
+      state.voiceMuted = false;
+      state.voiceJoining = false;
+      setLocalVoiceTracksEnabled(true);
+
+      if (!sendJson({
+        action: 'voice-join',
+        muted: false,
+      })) {
+        throw new Error('Could not connect you to lounge voice chat.');
+      }
+
+      setVoiceStatus('Mic live. Use headphones for the cleanest chat.', 'live');
+      setStatus('You joined lounge voice chat.');
+      ensureVoiceConnections();
       updateControlState();
+      renderPlayers();
     } catch (error) {
-      stopVoiceTracks();
-      state.voiceRecorder = null;
-      state.voiceChunks = [];
-      state.voiceRecording = false;
-      updateVoiceUi();
+      resetVoiceChatState();
       const message = error && error.name === 'NotAllowedError'
         ? 'Microphone access was blocked.'
-        : 'Could not start the microphone.';
+        : error && error.message
+          ? error.message
+          : 'Could not start lounge voice chat.';
       setVoiceStatus(message, 'error');
       setStatus(message);
       updateControlState();
     }
   }
 
-  function stopVoiceCapture() {
-    if (!state.voiceRecorder || state.voiceRecorder.state !== 'recording') {
-      return;
+  function leaveVoiceChat(notifyServer) {
+    const wasJoined = state.voiceJoined || Boolean(state.voiceStream);
+    if (notifyServer && wasJoined && state.socket && state.socket.readyState === WebSocket.OPEN) {
+      state.socket.send(JSON.stringify({
+        action: 'voice-leave',
+      }));
     }
-    clearVoiceStopTimer();
-    setVoiceStatus('Stopping mic and preparing transcript...', 'processing');
-    setStatus('Processing your voice note...');
-    state.voiceRecorder.stop();
+    resetVoiceChatState();
+    if (voiceChatSupported()) {
+      setVoiceStatus(
+        state.snapshot
+          ? 'Join voice when you want to talk live in this lounge.'
+          : 'Join a lounge, then open direct voice chat with your mic.',
+        'idle'
+      );
+    } else {
+      setVoiceStatus('Voice chat needs microphone access and WebRTC support.', 'error');
+    }
+    if (wasJoined) {
+      setStatus('You left lounge voice chat.');
+    }
+    updateControlState();
+    renderPlayers();
   }
 
-  function toggleVoiceCapture() {
-    if (state.voiceTranscribing || state.voiceEngineLoading) {
+  function toggleVoiceMute() {
+    if (!state.voiceJoined || !state.voiceStream) {
       return;
     }
-    if (state.voiceRecording) {
-      stopVoiceCapture();
+    state.voiceMuted = !state.voiceMuted;
+    setLocalVoiceTracksEnabled(!state.voiceMuted);
+    sendJson({
+      action: 'voice-mute',
+      muted: state.voiceMuted,
+    });
+    setVoiceStatus(
+      state.voiceMuted
+        ? 'You are muted in lounge voice chat.'
+        : 'Mic live. Use headphones for the cleanest chat.',
+      state.voiceMuted ? 'ready' : 'live'
+    );
+    updateControlState();
+    renderPlayers();
+  }
+
+  function toggleVoiceChat() {
+    if (state.voiceJoining) {
       return;
     }
-    startVoiceCapture();
+    if (state.voiceJoined) {
+      leaveVoiceChat(true);
+      return;
+    }
+    joinVoiceChat();
   }
 
   function isPublicRoom(code) {
@@ -869,8 +853,9 @@
       ? state.snapshot.players
       : [];
     ui.playerCount.textContent = String(players.length);
+    const liveVoiceCount = players.filter((player) => player.voiceJoined).length;
     ui.presenceText.textContent = players.length
-      ? `${players.length} player${players.length === 1 ? '' : 's'} in this lounge`
+      ? `${players.length} player${players.length === 1 ? '' : 's'} in this lounge, ${liveVoiceCount} on voice`
       : 'Nobody is connected yet.';
     if (!players.length) {
       ui.playerList.innerHTML = '<div class="player-empty">Open the public lounge and you will appear here instantly.</div>';
@@ -879,11 +864,21 @@
     ui.playerList.innerHTML = players.map((player) => {
       const chips = [
         player.id === state.playerId ? '<span class="chip">You</span>' : '',
+        player.voiceJoined
+          ? `<span class="chip ${player.voiceMuted ? 'voice-muted' : 'voice-live'}">${player.voiceMuted ? 'Muted' : 'Voice live'}</span>`
+          : '',
       ].filter(Boolean).join('');
+      const description = player.voiceJoined
+        ? player.voiceMuted
+          ? 'In voice chat with mic muted.'
+          : 'Talking live in lounge voice chat.'
+        : player.id === state.playerId
+          ? 'Connected from this browser.'
+          : 'Live in this lounge right now.';
       return `
-        <article class="player-card">
+        <article class="player-card${player.voiceJoined ? ' voice-active' : ''}">
           <strong>${escapeHtml(player.name || 'Guest')}</strong>
-          <p>${player.id === state.playerId ? 'Connected from this browser.' : 'Live in this lounge right now.'}</p>
+          <p>${description}</p>
           <div class="player-meta">${chips}</div>
         </article>
       `;
@@ -909,11 +904,16 @@
     const code = activeRoomCode();
     const snapshot = state.snapshot;
     const playerTotal = Array.isArray(snapshot && snapshot.players) ? snapshot.players.length : 0;
+    const voiceTotal = Array.isArray(snapshot && snapshot.players)
+      ? snapshot.players.filter((player) => player.voiceJoined).length
+      : 0;
     const playerLabel = `${playerTotal} player${playerTotal === 1 ? '' : 's'}`;
     ui.roomCodeLabel.textContent = snapshot ? snapshot.roomCode : (isPublicRoom(code) ? 'PUBLIC' : code || '-');
     ui.roomHeadline.textContent = roomLabel(snapshot ? snapshot.roomCode : code);
     ui.roomSummary.textContent = snapshot
-      ? snapshot.status || 'Players are active in this lounge.'
+      ? snapshot.status || (voiceTotal
+        ? `${voiceTotal} player${voiceTotal === 1 ? '' : 's'} are already in live voice chat.`
+        : 'Players are active in this lounge.')
       : isPublicRoom(code)
         ? 'A shared place to trade invite links, coordinate rematches, and point people at the right multiplayer game.'
         : 'Private side room ready. Host it or join it once everyone has the code.';
@@ -923,7 +923,7 @@
         ? 'Public lounge ready'
         : `Private room ${code}`;
     ui.feedStatus.textContent = snapshot
-      ? `${playerLabel} live in ${roomLabel(snapshot.roomCode).toLowerCase()}.`
+      ? `${playerLabel} live in ${roomLabel(snapshot.roomCode).toLowerCase()}${voiceTotal ? `, ${voiceTotal} on voice.` : '.'}`
       : 'Join a lounge to start chatting.';
   }
 
@@ -960,26 +960,26 @@
     const connected = Boolean(state.socket && state.socket.readyState === WebSocket.OPEN && state.snapshot);
     ui.messageInput.disabled = !connected;
     ui.sendBtn.disabled = !connected;
-    ui.voiceBtn.disabled = !connected || !voiceCaptureSupported() || (!state.voiceRecording && (state.voiceTranscribing || state.voiceEngineLoading));
+    ui.voiceBtn.disabled = !connected || !voiceChatSupported() || state.voiceJoining;
+    ui.muteVoiceBtn.disabled = !connected || !state.voiceJoined;
     ui.gameSelect.disabled = !connected;
     ui.gameRoomInput.disabled = !connected;
     ui.inviteNoteInput.disabled = !connected;
-    if (!voiceCaptureSupported()) {
-      setVoiceStatus('Voice to text needs a browser with microphone recording and Web Audio.', 'error');
-    } else if (state.voiceRecording) {
-      setVoiceStatus('Recording... tap Stop mic when done.', 'recording');
-    } else if (state.voiceEngineLoading) {
-      setVoiceStatus('Loading the sharper local speech model...', 'processing');
-    } else if (state.voiceTranscribing) {
-      setVoiceStatus('Transcribing voice note locally...', 'processing');
+    if (!voiceChatSupported()) {
+      setVoiceStatus('Voice chat needs microphone access and WebRTC support.', 'error');
     } else if (!connected) {
-      setVoiceStatus('Sharper local voice-to-text runs in your browser after you join a lounge.', 'idle');
-    } else if (
-      ui.voiceStatus
-      && ui.voiceStatus.dataset.tone !== 'error'
-      && ui.voiceStatus.dataset.tone !== 'ready'
-    ) {
-      setVoiceStatus('Voice to text is ready. First use downloads a stronger free local speech model.', 'idle');
+      setVoiceStatus('Join a lounge, then open direct voice chat with your mic.', 'idle');
+    } else if (state.voiceJoining) {
+      setVoiceStatus('Opening your mic for lounge voice chat...', 'processing');
+    } else if (state.voiceJoined) {
+      setVoiceStatus(
+        state.voiceMuted
+          ? `You are muted. ${voiceParticipantLabel()}.`
+          : `Mic live. ${voiceParticipantLabel()}.`,
+        state.voiceMuted ? 'ready' : 'live'
+      );
+    } else if (ui.voiceStatus && ui.voiceStatus.dataset.tone !== 'error') {
+      setVoiceStatus(`Join live voice chat for this lounge. ${voicePresenceSentence()}`, 'idle');
     }
     updateVoiceUi();
     updateInvitePreview();
@@ -1000,6 +1000,13 @@
       state.roomCode = sanitizeRoomCode(state.snapshot.roomCode);
       ui.roomInput.value = isPublicRoom(state.roomCode) ? '' : state.roomCode;
     }
+    const selfPlayer = selfSnapshotPlayer();
+    if (selfPlayer && state.voiceJoined) {
+      state.voiceMuted = Boolean(selfPlayer.voiceMuted);
+    }
+    if (state.voiceJoined) {
+      ensureVoiceConnections();
+    }
     setNetworkStatus('online', 'Online');
     setStatus(payload.message || (state.snapshot && state.snapshot.status) || 'Connected to the lounge.');
     render();
@@ -1016,6 +1023,9 @@
 
     const socket = new WebSocket(currentServerUrl());
     const previous = state.socket;
+    if (state.voiceJoined || state.voiceJoining || state.voiceStream) {
+      leaveVoiceChat(Boolean(previous && previous.readyState === WebSocket.OPEN));
+    }
     if (previous && previous.readyState < WebSocket.CLOSING) {
       previous.close();
     }
@@ -1064,6 +1074,11 @@
         return;
       }
 
+      if (payload.type === 'voice-signal') {
+        handleVoiceSignal(payload);
+        return;
+      }
+
       if (payload.type === 'error') {
         setStatus(payload.message || 'The lounge rejected that action.');
       }
@@ -1073,10 +1088,15 @@
       if (state.socket !== socket) {
         return;
       }
+      resetVoiceChatState();
       state.socket = null;
       setNetworkStatus('offline', 'Offline');
       setStatus('The lounge connection closed. Rejoin when you are ready.');
+      if (voiceChatSupported()) {
+        setVoiceStatus('Reconnect to the lounge to open live voice chat again.', 'idle');
+      }
       updateControlState();
+      renderPlayers();
     });
 
     socket.addEventListener('error', () => {
@@ -1195,7 +1215,8 @@
   });
 
   ui.shareInviteBtn.addEventListener('click', () => handleInviteShare());
-  ui.voiceBtn.addEventListener('click', toggleVoiceCapture);
+  ui.voiceBtn.addEventListener('click', toggleVoiceChat);
+  ui.muteVoiceBtn.addEventListener('click', toggleVoiceMute);
   ui.composerForm.addEventListener('submit', handleMessageSubmit);
   ui.messageInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {

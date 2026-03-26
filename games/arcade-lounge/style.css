@@ -551,18 +551,28 @@ button:disabled {
   color: var(--good);
 }
 
+.voice-status[data-tone="live"] {
+  color: var(--accent);
+}
+
 .voice-status[data-tone="error"] {
   color: #ff9b9b;
 }
 
-.voice-btn[data-state="recording"] {
-  color: #221003;
-  background: linear-gradient(135deg, var(--accent-2), #ffdcb0);
-  box-shadow: 0 16px 34px rgba(255, 191, 114, 0.18);
+.voice-btn[data-state="live"] {
+  color: #04140f;
+  background: linear-gradient(135deg, var(--accent), #dffcf3);
+  box-shadow: 0 16px 34px rgba(126, 243, 220, 0.18);
 }
 
 .voice-btn[data-state="processing"] {
   background: linear-gradient(135deg, rgba(126, 243, 220, 0.22), rgba(143, 184, 255, 0.2));
+}
+
+.mute-voice-btn[data-muted="true"] {
+  color: #221003;
+  background: linear-gradient(135deg, var(--accent-2), #ffe1be);
+  box-shadow: 0 14px 28px rgba(255, 191, 114, 0.16);
 }
 
 .share-grid,
@@ -578,6 +588,11 @@ button:disabled {
 
 .player-card {
   padding: 14px 16px;
+}
+
+.player-card.voice-active {
+  border-color: rgba(126, 243, 220, 0.18);
+  background: linear-gradient(180deg, rgba(126, 243, 220, 0.08), rgba(255, 255, 255, 0.03));
 }
 
 .player-card strong {
@@ -603,6 +618,18 @@ button:disabled {
   letter-spacing: 0.08em;
   color: var(--muted);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.chip.voice-live {
+  color: #062317;
+  border-color: rgba(126, 243, 220, 0.42);
+  background: linear-gradient(135deg, rgba(126, 243, 220, 0.96), rgba(219, 255, 244, 0.96));
+}
+
+.chip.voice-muted {
+  color: #2b1707;
+  border-color: rgba(255, 191, 114, 0.45);
+  background: linear-gradient(135deg, rgba(255, 191, 114, 0.94), rgba(255, 226, 185, 0.98));
 }
 
 .invite-card {
@@ -660,6 +687,14 @@ button:disabled {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+.voice-audio-host {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 @media (max-width: 1220px) {

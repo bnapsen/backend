@@ -19,11 +19,6 @@ const DEFAULT_MAX_PLAYERS = 2;
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const COLORS = ['white', 'black'];
 const TICK_MS = 50;
-const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '').trim();
-const OPENAI_TRANSCRIBE_MODEL = String(process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe').trim();
-const MAX_TRANSCRIBE_AUDIO_BYTES = Number(process.env.OPENAI_TRANSCRIBE_MAX_BYTES || 2500000) || 2500000;
-const MAX_TRANSCRIBE_REQUEST_BYTES = Math.ceil(MAX_TRANSCRIBE_AUDIO_BYTES * 1.5) + 4096;
-const TRANSCRIBE_PROMPT = 'Transcribe short Nova Arcade lounge chat messages. Preserve player names, room codes, links, and casual phrasing.';
 const ALLOWED_HTTP_ORIGIN_HOSTS = new Set([
   'classiccarcollectorshub.com',
   'www.classiccarcollectorshub.com',
@@ -190,215 +185,6 @@ function sendJsonResponse(req, res, statusCode, payload) {
     'Cache-Control': 'no-store',
   });
   res.end(JSON.stringify(payload));
-}
-
-function readJsonBody(req, maxBytes) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let total = 0;
-
-    req.on('data', (chunk) => {
-      total += chunk.length;
-      if (total > maxBytes) {
-        const error = new Error('Voice note is too large.');
-        error.statusCode = 413;
-        reject(error);
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-
-    req.on('end', () => {
-      try {
-        const raw = Buffer.concat(chunks).toString('utf8') || '{}';
-        resolve(JSON.parse(raw));
-      } catch (error) {
-        error.statusCode = 400;
-        reject(error);
-      }
-    });
-
-    req.on('error', (error) => {
-      if (!error.statusCode) {
-        error.statusCode = 400;
-      }
-      reject(error);
-    });
-  });
-}
-
-function extensionForMimeType(mimeType) {
-  const value = String(mimeType || '').toLowerCase();
-  if (value.includes('webm')) {
-    return 'webm';
-  }
-  if (value.includes('ogg')) {
-    return 'ogg';
-  }
-  if (value.includes('mpeg') || value.includes('mp3')) {
-    return 'mp3';
-  }
-  if (value.includes('wav')) {
-    return 'wav';
-  }
-  if (value.includes('mp4') || value.includes('m4a')) {
-    return 'm4a';
-  }
-  return 'webm';
-}
-
-function transcriptionErrorMessage(payload) {
-  if (payload && payload.error && payload.error.message) {
-    return payload.error.message;
-  }
-  if (payload && payload.message) {
-    return payload.message;
-  }
-  return 'Transcription request failed upstream.';
-}
-
-async function handleTranscriptionRequest(req, res) {
-  if (!isAllowedHttpOrigin(req)) {
-    sendJsonResponse(req, res, 403, {
-      ok: false,
-      error: 'This voice endpoint only accepts requests from the Nova Arcade site.',
-    });
-    return;
-  }
-
-  if (req.method === 'GET') {
-    sendJsonResponse(req, res, 200, {
-      ok: true,
-      configured: Boolean(OPENAI_API_KEY),
-      model: OPENAI_TRANSCRIBE_MODEL,
-      maxAudioBytes: MAX_TRANSCRIBE_AUDIO_BYTES,
-    });
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    sendJsonResponse(req, res, 405, {
-      ok: false,
-      error: 'Use POST to submit an audio clip for transcription.',
-    });
-    return;
-  }
-
-  if (!OPENAI_API_KEY) {
-    sendJsonResponse(req, res, 503, {
-      ok: false,
-      error: 'Speech-to-text is not configured on this server yet.',
-    });
-    return;
-  }
-
-  let payload;
-  try {
-    payload = await readJsonBody(req, MAX_TRANSCRIBE_REQUEST_BYTES);
-  } catch (error) {
-    sendJsonResponse(req, res, error.statusCode || 400, {
-      ok: false,
-      error: error.statusCode === 413
-        ? 'Voice note is too large. Keep recordings short and try again.'
-        : 'That voice note payload was not valid JSON.',
-    });
-    return;
-  }
-
-  const audioBase64 = String(payload && payload.audioBase64 || '').trim();
-  const mimeType = String(payload && payload.mimeType || 'audio/webm').trim() || 'audio/webm';
-  if (!audioBase64) {
-    sendJsonResponse(req, res, 400, {
-      ok: false,
-      error: 'No voice note audio was provided.',
-    });
-    return;
-  }
-
-  let audioBuffer;
-  try {
-    audioBuffer = Buffer.from(audioBase64, 'base64');
-  } catch (error) {
-    sendJsonResponse(req, res, 400, {
-      ok: false,
-      error: 'Voice note audio could not be decoded.',
-    });
-    return;
-  }
-
-  if (!audioBuffer.length) {
-    sendJsonResponse(req, res, 400, {
-      ok: false,
-      error: 'Voice note audio was empty.',
-    });
-    return;
-  }
-
-  if (audioBuffer.length > MAX_TRANSCRIBE_AUDIO_BYTES) {
-    sendJsonResponse(req, res, 413, {
-      ok: false,
-      error: 'Voice note is too large. Keep recordings short and try again.',
-    });
-    return;
-  }
-
-  const form = new FormData();
-  form.append(
-    'file',
-    new Blob([audioBuffer], { type: mimeType }),
-    `arcade-lounge-note.${extensionForMimeType(mimeType)}`
-  );
-  form.append('model', OPENAI_TRANSCRIBE_MODEL);
-  form.append('response_format', 'json');
-  form.append('prompt', TRANSCRIBE_PROMPT);
-
-  let response;
-  try {
-    response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: form,
-    });
-  } catch (error) {
-    sendJsonResponse(req, res, 502, {
-      ok: false,
-      error: 'Could not reach the transcription service.',
-    });
-    return;
-  }
-
-  let result = null;
-  try {
-    result = await response.json();
-  } catch (error) {
-    result = null;
-  }
-
-  if (!response.ok) {
-    sendJsonResponse(req, res, 502, {
-      ok: false,
-      error: transcriptionErrorMessage(result),
-    });
-    return;
-  }
-
-  const text = String(result && result.text || '').trim();
-  if (!text) {
-    sendJsonResponse(req, res, 422, {
-      ok: false,
-      error: 'The voice note did not produce any text.',
-    });
-    return;
-  }
-
-  sendJsonResponse(req, res, 200, {
-    ok: true,
-    text,
-    model: OPENAI_TRANSCRIBE_MODEL,
-  });
 }
 
 function sanitizeName(raw) {
@@ -652,6 +438,8 @@ function listPlayers(room) {
     name: player.name,
     color: player.color,
     seat: player.seat,
+    voiceJoined: Boolean(player.voiceJoined),
+    voiceMuted: Boolean(player.voiceMuted),
   }));
 }
 
@@ -802,6 +590,8 @@ function handleJoin(socket, payload) {
     name: sanitizeName(payload.name),
     color: identity === true ? null : identity,
     socket,
+    voiceJoined: false,
+    voiceMuted: false,
   };
 
   if (!addPlayerToGame(room, player)) {
@@ -1088,6 +878,101 @@ function handleShareInvite(socket, payload) {
   broadcastState(room);
 }
 
+function handleVoiceJoin(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'arcade-chat') {
+    sendError(socket, 'Voice chat is only available in Arcade Lounge rooms.');
+    return;
+  }
+
+  player.voiceJoined = true;
+  player.voiceMuted = Boolean(payload && payload.muted);
+  broadcastState(room);
+}
+
+function handleVoiceLeave(socket) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'arcade-chat') {
+    sendError(socket, 'Voice chat is only available in Arcade Lounge rooms.');
+    return;
+  }
+
+  player.voiceJoined = false;
+  player.voiceMuted = false;
+  broadcastState(room);
+}
+
+function handleVoiceMute(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'arcade-chat') {
+    sendError(socket, 'Voice chat is only available in Arcade Lounge rooms.');
+    return;
+  }
+
+  if (!player.voiceJoined) {
+    sendError(socket, 'Join voice chat before muting your mic.');
+    return;
+  }
+
+  player.voiceMuted = Boolean(payload && payload.muted);
+  broadcastState(room);
+}
+
+function handleVoiceSignal(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'arcade-chat') {
+    sendError(socket, 'Voice chat is only available in Arcade Lounge rooms.');
+    return;
+  }
+
+  if (!player.voiceJoined) {
+    sendError(socket, 'Join voice chat before sending mic data.');
+    return;
+  }
+
+  const toPlayerId = String(payload && payload.toPlayerId || '').trim();
+  if (!toPlayerId || toPlayerId === player.id) {
+    return;
+  }
+
+  const target = room.players.get(toPlayerId);
+  if (!target || !target.voiceJoined) {
+    return;
+  }
+
+  const signal = payload && payload.signal;
+  if (!signal || typeof signal !== 'object') {
+    return;
+  }
+
+  send(target.socket, {
+    type: 'voice-signal',
+    fromPlayerId: player.id,
+    fromPlayerName: player.name,
+    signal,
+  });
+}
+
 function handleInput(socket, payload) {
   const context = requirePlayer(socket);
   if (!context) {
@@ -1313,19 +1198,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   const requestUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  if (requestUrl.pathname === '/api/transcribe') {
-    await handleTranscriptionRequest(req, res);
-    return;
-  }
-
   if (requestUrl.pathname === '/healthz') {
     sendJsonResponse(req, res, 200, {
       ok: true,
       service: 'nova-arcade-realtime',
       games: Object.keys(GAME_DEFS),
       rooms: rooms.size,
-      speechToText: Boolean(OPENAI_API_KEY),
-      transcribeModel: OPENAI_TRANSCRIBE_MODEL,
     });
     return;
   }
@@ -1335,7 +1213,6 @@ const server = http.createServer(async (req, res) => {
     service: 'nova-arcade-realtime',
     games: Object.keys(GAME_DEFS),
     websocket: true,
-    speechToText: Boolean(OPENAI_API_KEY),
   });
 });
 
@@ -1360,6 +1237,18 @@ wss.on('connection', (socket) => {
         break;
       case 'share-invite':
         handleShareInvite(socket, payload);
+        break;
+      case 'voice-join':
+        handleVoiceJoin(socket, payload);
+        break;
+      case 'voice-leave':
+        handleVoiceLeave(socket);
+        break;
+      case 'voice-mute':
+        handleVoiceMute(socket, payload);
+        break;
+      case 'voice-signal':
+        handleVoiceSignal(socket, payload);
         break;
       case 'shoot':
         handleShot(socket, payload);
