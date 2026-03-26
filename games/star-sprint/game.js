@@ -431,6 +431,8 @@
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
     soloBtn: document.getElementById('soloBtn'),
+    openLoungeBtn: document.getElementById('openLoungeBtn'),
+    shareLoungeBtn: document.getElementById('shareLoungeBtn'),
     retryEngineBtn: document.getElementById('retryEngineBtn'),
     engineMoveBtn: document.getElementById('engineMoveBtn'),
     focusBtn: document.getElementById('focusBtn'),
@@ -1009,6 +1011,29 @@
     ui.inviteInput.value = link;
     ui.copyBtn.disabled = !link;
     ui.copyCodeBtn.disabled = !state.roomCode || state.mode !== 'online';
+  }
+
+  function openArcadeLounge(autoShare) {
+    if (!window.NovaArcadeLoungeBridge) {
+      showToast('Arcade Lounge bridge is not available.');
+      return;
+    }
+    if (autoShare && !(state.mode === 'online' && state.roomCode)) {
+      showToast('Host or join an online room before sharing it to the lounge.');
+      return;
+    }
+    window.NovaArcadeLoungeBridge.open({
+      name: getPlayerName(),
+      serverUrl: sanitizeServerUrl(ui.serverUrlInput.value || state.serverUrl || PROD_SERVER_URL),
+      gameType: 'chess',
+      roomCode: state.mode === 'online' ? state.roomCode : '',
+      inviteUrl: state.mode === 'online' ? inviteUrl() : '',
+      note: state.mode === 'online' && state.roomCode
+        ? `Join my Neon Crown Chess match in room ${state.roomCode}.`
+        : '',
+      autoShare: Boolean(autoShare),
+    });
+    showToast(autoShare ? 'Opening Arcade Lounge with your chess room ready to share.' : 'Opening Arcade Lounge in a new tab.');
   }
 
   function emptySeatCard(color) {
@@ -1803,6 +1828,7 @@
     ui.flipBtn.disabled = !state.snapshot;
     ui.copyBtn.disabled = !hasRoom;
     ui.copyCodeBtn.disabled = !hasRoom;
+    ui.shareLoungeBtn.disabled = !hasRoom;
     ui.engineLevelSelect.disabled = state.mode === 'online';
     ui.timeControlSelect.disabled = timeControlLocked;
     ui.boardThemeSelect.disabled = false;
@@ -2974,6 +3000,8 @@
     });
     ui.copyBtn.addEventListener('click', () => copyText(inviteUrl(), 'Invite link copied.'));
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
+    ui.openLoungeBtn.addEventListener('click', () => openArcadeLounge(false));
+    ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
     ui.restartBtn.addEventListener('click', () => {
       cleanupDrag();
       closePromotion();

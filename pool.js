@@ -17,6 +17,8 @@
     serverUrlInput: document.getElementById('serverUrlInput'),
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
+    openLoungeBtn: document.getElementById('openLoungeBtn'),
+    shareLoungeBtn: document.getElementById('shareLoungeBtn'),
     copyBtn: document.getElementById('copyBtn'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     inviteInput: document.getElementById('inviteInput'),
@@ -198,6 +200,27 @@
       url.searchParams.delete('server');
     }
     return url.toString();
+  }
+
+  function openArcadeLounge(autoShare) {
+    if (!window.NovaArcadeLoungeBridge) {
+      setStatus('Arcade Lounge bridge is not available.');
+      return;
+    }
+    if (autoShare && !state.roomCode) {
+      setStatus('Host or join a live duel before sharing it to the lounge.');
+      return;
+    }
+    window.NovaArcadeLoungeBridge.open({
+      name: ui.nameInput.value.trim().slice(0, 18) || 'Guest',
+      serverUrl: currentServerUrl(),
+      gameType: 'mini-pool',
+      roomCode: state.roomCode,
+      inviteUrl: state.roomCode ? buildInviteUrl() : '',
+      note: state.roomCode ? `Join my Mini Pool Showdown duel in room ${state.roomCode}.` : '',
+      autoShare: Boolean(autoShare),
+    });
+    setStatus(autoShare ? 'Opening Arcade Lounge with your duel ready to share.' : 'Opening Arcade Lounge in a new tab.');
   }
 
   function sendJson(payload) {
@@ -396,6 +419,7 @@
     ui.inviteInput.value = state.roomCode ? buildInviteUrl() : '';
     ui.copyBtn.disabled = !state.roomCode;
     ui.copyCodeBtn.disabled = !state.roomCode;
+    ui.shareLoungeBtn.disabled = !state.roomCode;
     ui.restartBtn.disabled = !isConnected();
     renderSummary();
     renderPlayers();
@@ -813,6 +837,8 @@
 
   ui.hostBtn.addEventListener('click', () => connect('host'));
   ui.joinBtn.addEventListener('click', () => connect('join'));
+  ui.openLoungeBtn.addEventListener('click', () => openArcadeLounge(false));
+  ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
   ui.copyBtn.addEventListener('click', () => copyToClipboard(ui.inviteInput.value, 'Invite link copied.'));
   ui.copyCodeBtn.addEventListener('click', () => copyToClipboard(state.roomCode, 'Room code copied.'));
   ui.restartBtn.addEventListener('click', () => {

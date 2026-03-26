@@ -25,6 +25,8 @@
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
     soloBtn: document.getElementById('soloBtn'),
+    openLoungeBtn: document.getElementById('openLoungeBtn'),
+    shareLoungeBtn: document.getElementById('shareLoungeBtn'),
     toggleSetupBtn: document.getElementById('toggleSetupBtn'),
     toggleSidebarBtn: document.getElementById('toggleSidebarBtn'),
     soundToggleBtn: document.getElementById('soundToggleBtn'),
@@ -202,6 +204,29 @@
     ui.copyCodeBtn.disabled = !state.roomCode || state.mode !== 'online';
   }
 
+  function openArcadeLounge(autoShare) {
+    if (!window.NovaArcadeLoungeBridge) {
+      showToast('Arcade Lounge bridge is not available.');
+      return;
+    }
+    if (autoShare && !(state.mode === 'online' && state.roomCode)) {
+      showToast('Host or join an online room before sharing it to the lounge.');
+      return;
+    }
+    window.NovaArcadeLoungeBridge.open({
+      name: getPlayerName(),
+      serverUrl: sanitizeServerUrl(ui.serverUrlInput.value || state.serverUrl || PROD_SERVER_URL),
+      gameType: 'backgammon',
+      roomCode: state.mode === 'online' ? state.roomCode : '',
+      inviteUrl: state.mode === 'online' ? inviteUrl() : '',
+      note: state.mode === 'online' && state.roomCode
+        ? `Join my Neon Backgammon Blitz match in room ${state.roomCode}.`
+        : '',
+      autoShare: Boolean(autoShare),
+    });
+    showToast(autoShare ? 'Opening Arcade Lounge with your backgammon room ready to share.' : 'Opening Arcade Lounge in a new tab.');
+  }
+
   function emptySeatCard(color) {
     return `
       <div class="player-card">
@@ -353,6 +378,7 @@
 
     ui.hostBtn.disabled = pendingConnection;
     ui.joinBtn.disabled = pendingConnection || !canJoin;
+    ui.shareLoungeBtn.disabled = !(state.mode === 'online' && state.roomCode);
     ui.rollBtn.disabled = !activeTurn || !state.snapshot || state.snapshot.winner || state.snapshot.dice.length > 0;
     ui.autoBtn.disabled = !activeTurn || !state.snapshot || state.snapshot.winner || !state.snapshot.dice.length;
     ui.restartBtn.disabled = !state.snapshot;
@@ -1689,6 +1715,8 @@
     ui.restartBtn.addEventListener('click', restartMatch);
     ui.copyBtn.addEventListener('click', () => copyText(inviteUrl(), 'Invite link copied.'));
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
+    ui.openLoungeBtn.addEventListener('click', () => openArcadeLounge(false));
+    ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
 
     canvas.addEventListener('click', (event) => {
       if (!canAct() || !state.snapshot) {

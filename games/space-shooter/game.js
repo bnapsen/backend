@@ -22,6 +22,8 @@
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
     soloBtn: document.getElementById('soloBtn'),
+    openLoungeBtn: document.getElementById('openLoungeBtn'),
+    shareLoungeBtn: document.getElementById('shareLoungeBtn'),
     copyBtn: document.getElementById('copyBtn'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     restartBtn: document.getElementById('restartBtn'),
@@ -377,6 +379,30 @@
     ui.inviteInput.value = inviteUrl();
     ui.copyBtn.disabled = !ui.inviteInput.value;
     ui.copyCodeBtn.disabled = !state.roomCode || state.mode !== 'online';
+    ui.shareLoungeBtn.disabled = !state.roomCode || state.mode !== 'online';
+  }
+
+  function openArcadeLounge(autoShare) {
+    if (!window.NovaArcadeLoungeBridge) {
+      showToast('Arcade Lounge bridge is not available.');
+      return;
+    }
+    if (autoShare && !(state.mode === 'online' && state.roomCode)) {
+      showToast('Host or join an online squad room before sharing it to the lounge.');
+      return;
+    }
+    window.NovaArcadeLoungeBridge.open({
+      name: getPlayerName(),
+      serverUrl: sanitizeServerUrl(ui.serverUrlInput.value || state.serverUrl || PROD_SERVER_URL),
+      gameType: 'space-shooter',
+      roomCode: state.mode === 'online' ? state.roomCode : '',
+      inviteUrl: state.mode === 'online' ? inviteUrl() : '',
+      note: state.mode === 'online' && state.roomCode
+        ? `Join my Starline Defense co-op run in room ${state.roomCode}.`
+        : '',
+      autoShare: Boolean(autoShare),
+    });
+    showToast(autoShare ? 'Opening Arcade Lounge with your squad room ready to share.' : 'Opening Arcade Lounge in a new tab.');
   }
 
   function copyText(value, successText) {
@@ -1491,6 +1517,9 @@
     ui.copyCodeBtn.addEventListener('click', () => {
       copyText(state.roomCode, 'Room code copied.');
     });
+
+    ui.openLoungeBtn.addEventListener('click', () => openArcadeLounge(false));
+    ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
 
     ui.restartBtn.addEventListener('click', restartRun);
 

@@ -141,6 +141,19 @@
             </div>
           </div>
 
+          <div class="invite-panel">
+            <div class="invite-header">
+              <div>
+                <p class="label">Arcade Lounge</p>
+                <p class="invite-help">Open the shared lounge in a new tab or post this room there so other players can jump straight into your match.</p>
+              </div>
+            </div>
+            <div class="invite-row">
+              <button id="openLoungeBtn" class="secondary" type="button">Open Lounge tab</button>
+              <button id="shareLoungeBtn" class="primary" type="button">Share room to Lounge</button>
+            </div>
+          </div>
+
           <details class="advanced-panel">
             <summary>Advanced connection settings</summary>
             <label class="advanced-field">
@@ -259,7 +272,8 @@
     <div class="toast" id="toast" aria-live="polite"></div>
   </div>
 
+  <script src="../shared/lounge-bridge.js?v=20260326b"></script>
   <script src="chess-core.js?v=20260326c"></script>
-  <script src="game.js?v=20260326c"></script>
+  <script src="game.js?v=20260326e"></script>
 </body>
 </html>

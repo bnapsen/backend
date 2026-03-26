@@ -52,6 +52,8 @@
     logList: document.getElementById('logList'),
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
+    openLoungeBtn: document.getElementById('openLoungeBtn'),
+    shareLoungeBtn: document.getElementById('shareLoungeBtn'),
     copyBtn: document.getElementById('copyBtn'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     toggleSetupBtn: document.getElementById('toggleSetupBtn'),
@@ -262,6 +264,29 @@
     ui.inviteInput.value = link;
     ui.copyBtn.disabled = !link;
     ui.copyCodeBtn.disabled = !(state.mode === 'online' && state.roomCode);
+  }
+
+  function openArcadeLounge(autoShare) {
+    if (!window.NovaArcadeLoungeBridge) {
+      showToast('Arcade Lounge bridge is not available.');
+      return;
+    }
+    if (autoShare && !(state.mode === 'online' && state.roomCode)) {
+      showToast('Host or join an online table before sharing it to the lounge.');
+      return;
+    }
+    window.NovaArcadeLoungeBridge.open({
+      name: getPlayerName(),
+      serverUrl: sanitizeServerUrl(ui.serverUrlInput.value || state.serverUrl || PROD_SERVER_URL),
+      gameType: 'poker',
+      roomCode: state.mode === 'online' ? state.roomCode : '',
+      inviteUrl: state.mode === 'online' ? inviteUrl() : '',
+      note: state.mode === 'online' && state.roomCode
+        ? `Join my Orbit Holdem Live table in room ${state.roomCode}.`
+        : '',
+      autoShare: Boolean(autoShare),
+    });
+    showToast(autoShare ? 'Opening Arcade Lounge with your poker table ready to share.' : 'Opening Arcade Lounge in a new tab.');
   }
 
   function currentControls() {
@@ -673,6 +698,7 @@
 
     ui.hostBtn.disabled = pendingConnection;
     ui.joinBtn.disabled = pendingConnection || !canJoin;
+    ui.shareLoungeBtn.disabled = !(connected && state.mode === 'online' && state.roomCode);
     ui.startHandBtn.disabled = !(connected && controls.canStartHand);
     ui.resetTableBtn.disabled = !(connected && controls.canResetTable);
     ui.checkCallBtn.disabled = !(connected && controls.canAct);
@@ -918,6 +944,8 @@
     ui.toggleInfoBtn.addEventListener('click', () => {
       setPanelHidden('infoHidden', !state.panels.infoHidden);
     });
+    ui.openLoungeBtn.addEventListener('click', () => openArcadeLounge(false));
+    ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
     ui.copyBtn.addEventListener('click', () => copyText(inviteUrl(), 'Invite link copied.'));
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
     ui.startHandBtn.addEventListener('click', sendStartHand);

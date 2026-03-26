@@ -81,6 +81,19 @@
             </div>
           </div>
 
+          <div class="invite-panel">
+            <div class="invite-header">
+              <div>
+                <p class="label">Arcade Lounge</p>
+                <p class="invite-help">Open the lounge in a new tab or post this squad room there so another pilot can jump in quickly.</p>
+              </div>
+            </div>
+            <div class="invite-row">
+              <button id="openLoungeBtn" class="secondary" type="button">Open Lounge tab</button>
+              <button id="shareLoungeBtn" class="primary" type="button">Share squad to Lounge</button>
+            </div>
+          </div>
+
           <details class="advanced-panel">
             <summary>Advanced connection settings</summary>
             <label class="advanced-field">
@@ -240,7 +253,8 @@
     <div class="toast" id="toast" aria-live="polite"></div>
   </div>
 
-  <script src="games/star-sprint/space-shooter-core.js"></script>
-  <script src="games/space-shooter/game.js"></script>
+  <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
+  <script src="games/star-sprint/space-shooter-core.js?v=20260326a"></script>
+  <script src="games/space-shooter/game.js?v=20260326a"></script>
 </body>
 </html>

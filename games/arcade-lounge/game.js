@@ -42,6 +42,8 @@
     playerId: '',
     serverUrl: '',
     lastMessageCount: 0,
+    pendingShare: null,
+    autoShareDone: false,
   };
 
   const ui = {
@@ -85,6 +87,13 @@
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, '')
       .slice(0, 12);
+  }
+
+  function sanitizeText(raw, maxLength) {
+    return String(raw || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, maxLength);
   }
 
   function defaultServerUrl() {
@@ -395,6 +404,22 @@
     ui.shareInviteBtn.disabled = !preview || !state.snapshot;
   }
 
+  function buildSharePayload(override) {
+    const gameType = String(override && override.gameType || ui.gameSelect.value || '').trim();
+    const roomCode = sanitizeRoomCode(override && override.roomCode || ui.gameRoomInput.value);
+    const preview = buildGameInviteUrl(gameType, roomCode) || String(override && override.url || '').trim();
+    if (!preview || !gameType || !roomCode) {
+      return null;
+    }
+    return {
+      action: 'share-invite',
+      gameType,
+      roomCode,
+      url: preview,
+      note: sanitizeText(override && override.note !== undefined ? override.note : ui.inviteNoteInput.value, 140),
+    };
+  }
+
   function updateLoungeInviteUi() {
     const code = activeRoomCode();
     ui.inviteInput.value = buildLoungeInviteUrl(code);
@@ -429,6 +454,7 @@
     setNetworkStatus('online', 'Online');
     setStatus(payload.message || (state.snapshot && state.snapshot.status) || 'Connected to the lounge.');
     render();
+    tryAutoShareDraft();
   }
 
   function connect(mode, roomCode) {
@@ -527,24 +553,33 @@
     }
   }
 
-  function handleInviteShare() {
-    const roomCode = sanitizeRoomCode(ui.gameRoomInput.value);
-    const preview = buildGameInviteUrl(ui.gameSelect.value, roomCode);
-    if (!preview) {
+  function handleInviteShare(override, silent) {
+    const payload = buildSharePayload(override);
+    if (!payload) {
       setStatus('Pick a game and enter the room code from that game first.');
+      return false;
+    }
+    const sent = sendJson(payload);
+    if (sent && !silent) {
+      setStatus(`Sharing your ${GAME_LINKS[payload.gameType]?.title || 'game'} room into the lounge...`);
+    }
+    return sent;
+  }
+
+  function tryAutoShareDraft() {
+    if (!state.pendingShare || state.autoShareDone || !state.snapshot) {
       return;
     }
-    sendJson({
-      action: 'share-invite',
-      gameType: ui.gameSelect.value,
-      roomCode,
-      url: preview,
-      note: ui.inviteNoteInput.value.trim(),
-    });
+    if (handleInviteShare(state.pendingShare, true)) {
+      state.autoShareDone = true;
+      state.pendingShare = null;
+      setStatus('Your game room was shared into the public lounge.');
+    }
   }
 
   function hydrateFromStorage() {
-    ui.nameInput.value = (localStorage.getItem(STORAGE_KEYS.name) || '').slice(0, 18);
+    const queryName = sanitizeText(query.get('name'), 18);
+    ui.nameInput.value = queryName || (localStorage.getItem(STORAGE_KEYS.name) || '').slice(0, 18);
     ui.serverUrlInput.value = normalizeServerUrl(localStorage.getItem(STORAGE_KEYS.serverUrl) || defaultServerUrl());
     const queryRoom = sanitizeRoomCode(query.get('room'));
     const storedRoom = sanitizeRoomCode(localStorage.getItem(STORAGE_KEYS.roomCode));
@@ -555,6 +590,33 @@
         : '';
     if (queryRoom && !isPublicRoom(queryRoom)) {
       setStatus(`Private lounge ${queryRoom} is ready in the room field. Press "Join private room" to enter.`);
+    }
+
+    const shareGame = String(query.get('shareGame') || '').trim();
+    const shareRoom = sanitizeRoomCode(query.get('shareRoom'));
+    const shareNote = sanitizeText(query.get('shareNote'), 140);
+    if (GAME_LINKS[shareGame]) {
+      ui.gameSelect.value = shareGame;
+    }
+    if (shareRoom) {
+      ui.gameRoomInput.value = shareRoom;
+    }
+    if (shareNote) {
+      ui.inviteNoteInput.value = shareNote;
+    }
+    if (GAME_LINKS[shareGame] && shareRoom) {
+      state.pendingShare = {
+        gameType: shareGame,
+        roomCode: shareRoom,
+        note: shareNote,
+        url: String(query.get('shareUrl') || '').trim(),
+      };
+      state.autoShareDone = false;
+      if (query.get('autoShare') === '1') {
+        setStatus(`Invite draft loaded from ${GAME_LINKS[shareGame].title}. Opening the public lounge and sharing it now.`);
+      } else {
+        setStatus(`Invite draft loaded from ${GAME_LINKS[shareGame].title}. Press Share invite when you are ready.`);
+      }
     }
   }
 
@@ -583,7 +645,7 @@
     copyToClipboard(ui.gameLinkPreview.value, 'Game invite link copied.');
   });
 
-  ui.shareInviteBtn.addEventListener('click', handleInviteShare);
+  ui.shareInviteBtn.addEventListener('click', () => handleInviteShare());
   ui.composerForm.addEventListener('submit', handleMessageSubmit);
   ui.messageInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -614,4 +676,8 @@
   updateInvitePreview();
   updateLoungeInviteUi();
   render();
+
+  if (query.get('lounge') === 'public' || query.get('autoShare') === '1') {
+    connect('host', PUBLIC_ROOM_CODE);
+  }
 })();

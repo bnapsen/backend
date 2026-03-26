@@ -57,6 +57,8 @@
     logList: document.getElementById('logList'),
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
+    openLoungeBtn: document.getElementById('openLoungeBtn'),
+    shareLoungeBtn: document.getElementById('shareLoungeBtn'),
     copyBtn: document.getElementById('copyBtn'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     toggleSetupBtn: document.getElementById('toggleSetupBtn'),
@@ -221,6 +223,29 @@
     ui.inviteInput.value = link;
     ui.copyBtn.disabled = !link;
     ui.copyCodeBtn.disabled = !(state.mode === 'online' && state.roomCode);
+  }
+
+  function openArcadeLounge(autoShare) {
+    if (!window.NovaArcadeLoungeBridge) {
+      showToast('Arcade Lounge bridge is not available.');
+      return;
+    }
+    if (autoShare && !(state.mode === 'online' && state.roomCode)) {
+      showToast('Host or join an online table before sharing it to the lounge.');
+      return;
+    }
+    window.NovaArcadeLoungeBridge.open({
+      name: getPlayerName(),
+      serverUrl: sanitizeServerUrl(ui.serverUrlInput.value || state.serverUrl || defaultServerUrl()),
+      gameType: 'blackjack',
+      roomCode: state.mode === 'online' ? state.roomCode : '',
+      inviteUrl: state.mode === 'online' ? inviteUrl() : '',
+      note: state.mode === 'online' && state.roomCode
+        ? `Join my Royal SuperSplash Blackjack table in room ${state.roomCode}.`
+        : '',
+      autoShare: Boolean(autoShare),
+    });
+    showToast(autoShare ? 'Opening Arcade Lounge with your blackjack table ready to share.' : 'Opening Arcade Lounge in a new tab.');
   }
 
   function currentControls() {
@@ -642,6 +667,7 @@
 
     ui.hostBtn.disabled = pendingConnection;
     ui.joinBtn.disabled = pendingConnection || !canJoin;
+    ui.shareLoungeBtn.disabled = !(connected && state.mode === 'online' && state.roomCode);
     ui.clearBetBtn.disabled = !(connected && controls.canClearBet);
     ui.dealBtn.disabled = !(connected && controls.canStartRound);
     ui.hitBtn.disabled = !(connected && controls.canHit);
@@ -833,6 +859,8 @@
 
     ui.hostBtn.addEventListener('click', () => connectOnline('host'));
     ui.joinBtn.addEventListener('click', () => connectOnline('join'));
+    ui.openLoungeBtn.addEventListener('click', () => openArcadeLounge(false));
+    ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
     ui.copyBtn.addEventListener('click', () => copyText(inviteUrl(), 'Invite link copied.'));
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
     ui.toggleSetupBtn.addEventListener('click', () => setPanelHidden('setupHidden', !state.panels.setupHidden));
