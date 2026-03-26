@@ -1210,7 +1210,7 @@
     let heightBudget = viewportHeightBudget;
 
     const stageHeightBudget = Math.max(0, ui.boardStage.clientHeight - paddingY);
-    if (stageHeightBudget) {
+    if (state.focusMode && stageHeightBudget) {
       heightBudget = Math.min(heightBudget, stageHeightBudget);
     }
 
