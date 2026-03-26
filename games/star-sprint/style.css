@@ -187,25 +187,39 @@ button {
 
 .layout {
   min-height: 0;
-  align-items: start;
-  gap: 10px;
+  display: block;
+  position: relative;
   overflow: visible;
 }
 
 .setup-column,
 .sidebar {
-  width: min(286px, 20vw);
+  position: fixed;
+  top: 78px;
+  bottom: 16px;
+  z-index: 35;
+  width: min(320px, calc(100vw - 28px));
+  max-height: calc(100vh - 94px);
   display: grid;
   gap: 12px;
   min-height: 0;
-  overflow: visible;
-  scrollbar-gutter: auto;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.setup-column {
+  left: max(12px, calc((100vw - 1560px) / 2 + 12px));
+}
+
+.sidebar {
+  right: max(12px, calc((100vw - 1560px) / 2 + 12px));
 }
 
 .board-column {
   min-width: 0;
   min-height: 0;
-  flex: 1 1 auto;
+  width: min(100%, 1340px);
+  margin: 0 auto;
   display: grid;
   gap: 12px;
 }
@@ -231,6 +245,7 @@ button {
 
 .board-panel {
   min-height: 0;
+  padding: 12px;
   background:
     radial-gradient(circle at top, rgba(255, 236, 196, 0.06), transparent 42%),
     linear-gradient(180deg, rgba(8, 17, 27, 0.94), rgba(5, 10, 17, 0.96));
@@ -722,8 +737,8 @@ button:disabled {
   align-items: center;
   justify-content: center;
   overflow: auto;
-  padding: 12px;
-  margin-top: 10px;
+  padding: 10px;
+  margin-top: 8px;
   border-radius: 34px;
   background:
     linear-gradient(145deg, var(--board-frame-1), var(--board-frame-mid-1) 28%, var(--board-frame-mid-2) 62%, var(--board-frame-2) 100%);
@@ -736,7 +751,7 @@ button:disabled {
 .board-stage::before {
   content: "";
   position: absolute;
-  inset: 7px;
+  inset: 6px;
   border-radius: 26px;
   border: 1px solid rgba(255, 236, 210, 0.18);
   background:
@@ -798,7 +813,7 @@ button:disabled {
   bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(1180px, calc(100vw - 36px));
+  width: min(1380px, calc(100vw - 28px));
   gap: 0;
   z-index: 40;
 }
@@ -825,7 +840,7 @@ button:disabled {
 .page-shell[data-focus-mode="true"] .board-stage {
   min-height: 0;
   margin-top: 0;
-  padding: 16px;
+  padding: 12px;
   border-radius: 30px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
@@ -834,7 +849,7 @@ button:disabled {
 }
 
 .page-shell[data-focus-mode="true"] .board-grid {
-  --square-size: min(calc((100vw - 168px) / 8), calc((100vh - 308px) / 8), 112px);
+  --square-size: min(calc((100vw - 112px) / 8), calc((100vh - 264px) / 8), 128px);
 }
 
 .page-shell[data-setup-collapsed="true"] .setup-column {
@@ -860,6 +875,17 @@ button:disabled {
 
 .page-shell[data-focus-mode="true"] .board-footer {
   align-items: end;
+}
+
+.battle-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.battle-strip > div {
+  display: grid;
+  gap: 8px;
 }
 
 .board-squares,
@@ -1457,14 +1483,11 @@ button:disabled {
 
 @media (max-width: 1260px) {
   .layout {
-    display: grid;
-    gap: 16px;
+    display: block;
   }
 
-  .setup-column,
-  .sidebar,
   .board-column {
-    width: auto;
+    width: min(100%, 1120px);
   }
 
   .page-shell[data-setup-collapsed="true"] .setup-column,
@@ -1483,17 +1506,26 @@ button:disabled {
   }
 
   .layout {
+    display: block;
     overflow: visible;
   }
 
   .setup-column,
   .sidebar {
+    position: static;
+    top: auto;
+    bottom: auto;
+    left: auto;
+    right: auto;
+    width: auto;
+    max-height: none;
     overflow: visible;
     scrollbar-gutter: auto;
   }
 
   .board-column {
     display: grid;
+    width: auto;
   }
 
   .board-panel,
@@ -1578,6 +1610,6 @@ button:disabled {
   }
 
   .page-shell[data-focus-mode="true"] .board-grid {
-    --square-size: min(calc((100vw - 56px) / 8), calc((100vh - 290px) / 8), 76px);
+    --square-size: min(calc((100vw - 44px) / 8), calc((100vh - 258px) / 8), 82px);
   }
 }

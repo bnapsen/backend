@@ -1163,29 +1163,20 @@
       ui.pageShell.dataset.sidebarCollapsed = state.sidebarCollapsed ? 'true' : 'false';
     }
     if (ui.toggleSetupBtn) {
-      ui.toggleSetupBtn.textContent = state.setupCollapsed ? 'Show setup' : 'Hide setup';
+      ui.toggleSetupBtn.textContent = state.setupCollapsed ? 'Lobby' : 'Close lobby';
       ui.toggleSetupBtn.setAttribute('aria-pressed', state.setupCollapsed ? 'true' : 'false');
     }
     if (ui.toggleSidebarBtn) {
-      ui.toggleSidebarBtn.textContent = state.sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar';
+      ui.toggleSidebarBtn.textContent = state.sidebarCollapsed ? 'Moves' : 'Close moves';
       ui.toggleSidebarBtn.setAttribute('aria-pressed', state.sidebarCollapsed ? 'true' : 'false');
     }
   }
 
   function responsiveBoardSizeCap() {
     if (window.innerWidth <= 820) {
-      return state.focusMode ? 80 : 58;
+      return state.focusMode ? 82 : 60;
     }
-    if (state.focusMode) {
-      return 118;
-    }
-    if (state.setupCollapsed && state.sidebarCollapsed) {
-      return 110;
-    }
-    if (state.setupCollapsed || state.sidebarCollapsed) {
-      return 102;
-    }
-    return 96;
+    return state.focusMode ? 132 : 118;
   }
 
   function syncResponsiveBoardSize() {
@@ -2951,10 +2942,10 @@
     ui.engineLevelSelect.value = String(state.engineLevel);
     state.timeControlPreset = normalizeTimeControlPreset(localStorage.getItem(STORAGE_KEYS.timeControlPreset) || 'untimed');
     ui.timeControlSelect.value = state.timeControlPreset;
-    state.setupCollapsed = localStorage.getItem(STORAGE_KEYS.setupCollapsed) === '1';
-    state.sidebarCollapsed = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed) === null
-      ? true
-      : localStorage.getItem(STORAGE_KEYS.sidebarCollapsed) === '1';
+    const savedSetupCollapsed = localStorage.getItem(STORAGE_KEYS.setupCollapsed);
+    const savedSidebarCollapsed = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed);
+    state.setupCollapsed = savedSetupCollapsed === null ? true : savedSetupCollapsed === '1';
+    state.sidebarCollapsed = savedSidebarCollapsed === null ? true : savedSidebarCollapsed === '1';
     state.boardTheme = normalizeBoardTheme(localStorage.getItem(STORAGE_KEYS.boardTheme) || 'walnut');
     ui.boardThemeSelect.value = state.boardTheme;
     state.pieceStyle = normalizePieceStyle(localStorage.getItem(STORAGE_KEYS.pieceStyle) || 'auto');
