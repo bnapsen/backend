@@ -1,80 +1,238 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Royal SuperSplash Blackjack | Nova Arcade</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="blackjack.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Royal SuperSplash Blackjack Live</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="games/blackjack-live/style.css?v=20260326a" />
 </head>
 <body>
-  <div class="casino-bg"></div>
-  <main class="table-shell">
-    <header class="table-header">
-      <a class="back-link" href="index.html">← Back to Nova Arcade</a>
-      <h1>Royal SuperSplash Blackjack</h1>
-      <p>Single-player blackjack with a proper table flow and realistic hand rules.</p>
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="topbar-main">
+        <a class="back-link" href="index.html">Back to Nova Arcade</a>
+        <div class="view-controls">
+          <button id="toggleSetupBtn" class="view-toggle" type="button">Hide setup</button>
+          <button id="toggleInfoBtn" class="view-toggle" type="button">Hide feed</button>
+        </div>
+      </div>
+      <div class="topbar-status">
+        <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
+        <div class="status-pill ghost" id="modePill">No table connected</div>
+      </div>
     </header>
 
-    <section class="blackjack-table" aria-label="Blackjack table layout">
-      <div class="table-rim" aria-hidden="true"></div>
-      <div class="table-markings" aria-hidden="true">
-        <span class="table-text">BLACKJACK PAYS 3 TO 2</span>
-        <span class="insurance-text">DEALER STANDS ON ALL 17</span>
-      </div>
+    <main class="layout" id="layoutShell">
+      <section class="setup-column">
+        <section class="hero panel">
+          <p class="eyebrow">Six-seat live casino table</p>
+          <h1>Royal SuperSplash Blackjack Live</h1>
+          <p class="lede">Host a live blackjack table, seat up to six players against the dealer, share the invite link, and let the backend run the deal, turns, payouts, and fresh-shoe resets.</p>
 
-      <section class="score-strip" aria-live="polite">
-        <div class="stat"><span>Bankroll</span><strong id="bankroll">$1000</strong></div>
-        <div class="stat"><span>Table Bet</span><strong id="currentBet">$25</strong></div>
-        <div class="stat"><span>Streak</span><strong id="streak">0</strong></div>
-        <div class="stat"><span>Round</span><strong id="round">1</strong></div>
+          <div class="step-strip">
+            <div class="step-card">
+              <span class="step-number">1</span>
+              <div>
+                <strong>Choose a table name</strong>
+                <p>Your table name shows on the felt and in the dealer feed.</p>
+              </div>
+            </div>
+            <div class="step-card">
+              <span class="step-number">2</span>
+              <div>
+                <strong>Host or join</strong>
+                <p>Hosting creates a room instantly. Joining works with a room code or invite link.</p>
+              </div>
+            </div>
+            <div class="step-card">
+              <span class="step-number">3</span>
+              <div>
+                <strong>Seat up and wager</strong>
+                <p>Click an open seat, set the next bet, and let the dealer run the round.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>Name</span>
+              <input id="nameInput" maxlength="18" placeholder="Nova" autocomplete="nickname" />
+            </label>
+            <label>
+              <span>Room code</span>
+              <input id="roomInput" maxlength="12" placeholder="Auto-created when hosting" />
+            </label>
+          </div>
+
+          <div class="hero-actions">
+            <button id="hostBtn" class="primary" type="button">Host table</button>
+            <button id="joinBtn" type="button">Join table</button>
+          </div>
+
+          <div class="invite-panel">
+            <div class="invite-header">
+              <div>
+                <p class="label">Invite link</p>
+                <p class="invite-help">Host once, then copy the room code or full invite link to pull the whole table together.</p>
+              </div>
+              <button id="copyCodeBtn" class="secondary" type="button">Copy room code</button>
+            </div>
+            <div class="invite-row">
+              <input id="inviteInput" readonly value="" />
+              <button id="copyBtn" class="primary" type="button">Copy invite</button>
+            </div>
+          </div>
+
+          <details class="advanced-panel">
+            <summary>Advanced connection settings</summary>
+            <label class="advanced-field">
+              <span>Server WS URL</span>
+              <input id="serverUrlInput" placeholder="wss://backend-ujaa.onrender.com" />
+            </label>
+          </details>
+
+          <p class="status-text" id="statusText">Host a table to create an invite link, or join with a room code to take the next open seat.</p>
+        </section>
+
+        <section class="panel guide-panel">
+          <div class="panel-heading">
+            <p class="label">How it works</p>
+            <h2>Clean table flow</h2>
+          </div>
+          <div class="guide-list">
+            <div class="guide-item">
+              <strong>Visible table hands</strong>
+              <p>Everyone can see the dealer and all seated hands, just like a real shared blackjack table.</p>
+            </div>
+            <div class="guide-item">
+              <strong>Simple betting</strong>
+              <p>Preset chips set your next wager between rounds, while live bets and payouts are handled by the backend.</p>
+            </div>
+            <div class="guide-item">
+              <strong>Fast relaunches</strong>
+              <p>Reset reloads fresh stacks and a fresh shoe without making everyone rejoin the room.</p>
+            </div>
+          </div>
+        </section>
       </section>
 
-      <section class="dealer-zone">
-        <div class="zone-title">
-          <h2>Dealer</h2>
-          <span id="dealerScore" class="score-pill">Score: ?</span>
-        </div>
-        <div class="cards-row" id="dealerCards"></div>
+      <section class="table-column">
+        <section class="table-panel panel">
+          <div class="table-header">
+            <div class="hud-card">
+              <p class="label">Room</p>
+              <p class="hud-value room-code" id="roomCodeLabel">-</p>
+            </div>
+            <div class="hud-card">
+              <p class="label">Phase</p>
+              <p class="hud-value" id="phaseLabel">Waiting</p>
+            </div>
+            <div class="hud-card">
+              <p class="label">Table bet</p>
+              <p class="hud-value" id="tableBetLabel">0</p>
+            </div>
+            <div class="hud-card">
+              <p class="label">Shoe</p>
+              <p class="hud-value" id="shoeLabel">312 cards</p>
+            </div>
+          </div>
+
+          <div class="felt-shell">
+            <div class="table-felt">
+              <div class="table-rim" aria-hidden="true"></div>
+              <div class="table-markings" aria-hidden="true">
+                <span>BLACKJACK PAYS 3 TO 2</span>
+                <span>DEALER STANDS ON ALL 17</span>
+              </div>
+
+              <section class="dealer-zone">
+                <div class="dealer-copy">
+                  <p class="mini-label">Dealer</p>
+                  <h2 id="tableHeadline">Royal SuperSplash Blackjack Live</h2>
+                  <p id="tableSubline">Seat up, set wagers, and deal when ready.</p>
+                </div>
+                <div class="dealer-row" id="dealerCards"></div>
+                <div class="dealer-pills">
+                  <span class="dealer-pill">Dealer score <strong id="dealerScoreLabel">?</strong></span>
+                  <span class="dealer-pill alt">Hand <strong id="handLabel">0</strong></span>
+                </div>
+              </section>
+
+              <div class="table-center">
+                <div class="pot-cluster">
+                  <div class="pot-chip">Table wager <span id="tableBetAmount">0</span></div>
+                  <div class="pot-chip alt">Action <span id="turnLabel">Seat players</span></div>
+                </div>
+              </div>
+
+              <div class="seat-layer" id="seatLayer"></div>
+            </div>
+          </div>
+
+          <div class="action-tray">
+            <div class="tray-copy">
+              <p class="label">Your controls</p>
+              <p class="tray-line" id="actionPrompt">Click an open seat to host or join. Once seated, set your next wager and deal the round when the table is ready.</p>
+            </div>
+
+            <div class="wager-strip">
+              <div class="chip-row" id="chipRow"></div>
+              <div class="bet-summary">
+                <div class="bet-pill">Next bet <strong id="nextBetLabel">25</strong></div>
+                <div class="bet-pill alt">Live bet <strong id="activeBetLabel">0</strong></div>
+                <button id="clearBetBtn" class="secondary" type="button">Clear bet</button>
+              </div>
+            </div>
+
+            <div class="table-buttons">
+              <button id="dealBtn" class="primary" type="button">Deal round</button>
+              <button id="hitBtn" type="button">Hit</button>
+              <button id="standBtn" type="button">Stand</button>
+              <button id="doubleBtn" type="button">Double</button>
+              <button id="resetTableBtn" type="button">Reset table</button>
+            </div>
+          </div>
+        </section>
       </section>
 
-      <section class="wager-lane" aria-live="polite">
-        <div class="wager-label">Current Wager</div>
-        <div class="wager-chip" id="wagerDisplay">$0</div>
-      </section>
+      <aside class="sidebar">
+        <section class="panel sidebar-panel">
+          <div class="panel-heading">
+            <p class="label">Dealer feed</p>
+            <h2>Recent table action</h2>
+          </div>
+          <div class="log-list" id="logList"></div>
+        </section>
 
-      <section class="center-banner" id="message">Set your table bet and press Deal.</section>
+        <section class="panel sidebar-panel">
+          <div class="panel-heading">
+            <p class="label">Live table info</p>
+            <h2>What is running</h2>
+          </div>
+          <div class="facts">
+            <div class="fact">
+              <strong>Seats</strong>
+              <p>Up to six players can sit at once, each playing a separate hand against the same dealer.</p>
+            </div>
+            <div class="fact">
+              <strong>Rules</strong>
+              <p>Blackjack pays 3:2, dealer stands on all 17, and double is allowed on the opening two cards.</p>
+            </div>
+            <div class="fact">
+              <strong>Stacks</strong>
+              <p>Fresh resets restore every seated player to 1,000 chips and reload the shoe.</p>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </main>
 
-      <section class="player-zone">
-        <div class="zone-title">
-          <h2>Player</h2>
-          <span id="playerScore" class="score-pill">Score: 0</span>
-        </div>
-        <div class="cards-row" id="playerCards"></div>
-      </section>
-    </section>
+    <div class="toast" id="toast" aria-live="polite"></div>
+  </div>
 
-    <section class="controls-panel">
-      <div class="chip-controls" aria-label="Bet controls">
-        <button class="chip" data-bet="5">+$5</button>
-        <button class="chip" data-bet="25">+$25</button>
-        <button class="chip" data-bet="100">+$100</button>
-        <button class="chip" data-bet="-25">-$25</button>
-        <button class="chip danger" id="clearBet">Clear Bet</button>
-      </div>
-
-      <div class="action-controls" aria-label="Blackjack actions">
-        <button id="dealBtn" class="action primary">Deal</button>
-        <button id="hitBtn" class="action">Hit</button>
-        <button id="standBtn" class="action">Stand</button>
-        <button id="doubleBtn" class="action">Double</button>
-        <button id="newHandBtn" class="action ghost">Reset Table</button>
-      </div>
-    </section>
-  </main>
-
-  <script src="blackjack.js"></script>
+  <script src="games/blackjack-live/game.js?v=20260326a"></script>
 </body>
 </html>

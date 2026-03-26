@@ -12,6 +12,7 @@ const GAME_TITLES = Object.freeze({
   chess: 'Neon Crown Chess',
   backgammon: 'Neon Backgammon Blitz',
   'space-shooter': 'Starline Defense Co-Op',
+  blackjack: 'Royal SuperSplash Blackjack Live',
   poker: 'Orbit Holdem Live',
   'mini-pool': 'Mini Pool Showdown',
 });

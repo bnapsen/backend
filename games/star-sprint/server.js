@@ -7,6 +7,7 @@ const { WebSocketServer } = require('ws');
 const Chess = require('./chess-core.js');
 const Backgammon = require('./backgammon-core.js');
 const Shooter = require('./space-shooter-core.js');
+const Blackjack = require('./blackjack-core.js');
 const Poker = require('./poker-core.js');
 const MiniPool = require('./mini-pool-core.js');
 const ArcadeChat = require('./arcade-chat-core.js');
@@ -88,6 +89,13 @@ const GAME_DEFS = {
     createGameState: () => Shooter.createGameState(),
     cloneState: (game) => Shooter.cloneState(game),
   },
+  blackjack: {
+    id: 'blackjack',
+    title: 'Royal SuperSplash Blackjack Live',
+    maxPlayers: Blackjack.MAX_SEATS,
+    createGameState: () => Blackjack.createGameState(),
+    cloneState: (game, viewerId) => Blackjack.cloneState(game, viewerId),
+  },
   poker: {
     id: 'poker',
     title: 'Orbit Holdem Live',
@@ -140,6 +148,9 @@ function sanitizeRoomCode(raw) {
 function normalizeGameType(raw) {
   if (raw === 'backgammon') {
     return 'backgammon';
+  }
+  if (raw === 'blackjack') {
+    return 'blackjack';
   }
   if (raw === 'poker') {
     return 'poker';
@@ -393,7 +404,7 @@ function snapshot(room, viewerId) {
       players: listPlayers(room),
     };
   }
-  if (room.gameType === 'poker') {
+  if (room.gameType === 'poker' || room.gameType === 'blackjack') {
     return base;
   }
   return {
@@ -450,6 +461,17 @@ function addPlayerToGame(room, player) {
     return result;
   }
 
+  if (room.gameType === 'blackjack') {
+    const result = Blackjack.addPlayer(room.game, {
+      id: player.id,
+      name: player.name,
+    });
+    if (result) {
+      player.seat = result.seat;
+    }
+    return result;
+  }
+
   return true;
 }
 
@@ -491,7 +513,7 @@ function handleJoin(socket, payload) {
   };
 
   if (!addPlayerToGame(room, player)) {
-    sendError(socket, room.gameType === 'poker'
+    sendError(socket, room.gameType === 'poker' || room.gameType === 'blackjack'
       ? 'That table is full.'
       : room.gameType === 'space-shooter'
         ? 'That squad room is full.'
@@ -535,6 +557,10 @@ function handleJoin(socket, payload) {
     ? room.players.size === 1
       ? `${player.name} took the first seat. Invite more players to start the table.`
       : `${player.name} joined the table.`
+    : room.gameType === 'blackjack'
+      ? room.players.size === 1
+        ? `${player.name} took the first blackjack seat. Set wagers and deal when ready.`
+        : `${player.name} joined the blackjack table.`
     : room.players.size === 1
       ? `${player.name} is ready. Share the invite to start playing.`
       : `${player.name} joined. Match ready.`;
@@ -630,8 +656,21 @@ function handleTableAction(socket, payload) {
   }
 
   const { room, player } = context;
+  if (room.gameType === 'blackjack') {
+    const result = Blackjack.applyAction(room.game, player.id, {
+      type: payload.type,
+    });
+    if (!result.ok) {
+      sendError(socket, result.error || 'That action could not be played.');
+      return;
+    }
+
+    broadcastState(room, result.message);
+    return;
+  }
+
   if (room.gameType !== 'poker') {
-    sendError(socket, 'Table actions are only used in poker rooms.');
+    sendError(socket, 'Table actions are only used in poker and blackjack rooms.');
     return;
   }
 
@@ -647,6 +686,27 @@ function handleTableAction(socket, payload) {
   broadcastState(room, result.message);
 }
 
+function handleSetBet(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'blackjack') {
+    sendError(socket, 'Bet controls are only used in blackjack rooms.');
+    return;
+  }
+
+  const result = Blackjack.setBet(room.game, player.id, payload && payload.amount, payload && payload.mode);
+  if (!result.ok) {
+    sendError(socket, result.error || 'That wager could not be set.');
+    return;
+  }
+
+  broadcastState(room, result.message || `${player.name} changed their wager.`);
+}
+
 function handleStartHand(socket) {
   const context = requirePlayer(socket);
   if (!context) {
@@ -654,8 +714,19 @@ function handleStartHand(socket) {
   }
 
   const { room, player } = context;
+  if (room.gameType === 'blackjack') {
+    const result = Blackjack.startRound(room.game, player.id);
+    if (!result.ok) {
+      sendError(socket, result.error || 'The round could not be started.');
+      return;
+    }
+
+    broadcastState(room, result.message || `${player.name} dealt a new blackjack round.`);
+    return;
+  }
+
   if (room.gameType !== 'poker') {
-    sendError(socket, 'Starting a hand is only used in poker rooms.');
+    sendError(socket, 'Starting a hand is only used in poker and blackjack rooms.');
     return;
   }
 
@@ -806,6 +877,8 @@ function handleRestart(socket) {
     room.lastTickAt = Date.now();
   } else if (room.gameType === 'poker') {
     Poker.resetTable(room.game);
+  } else if (room.gameType === 'blackjack') {
+    Blackjack.resetTable(room.game);
   } else {
     room.game = room.gameDef.createGameState();
     room.game.roomCode = room.code;
@@ -822,6 +895,8 @@ function handleRestart(socket) {
       ? `${player.name} launched a fresh squad run.`
       : room.gameType === 'poker'
         ? `${player.name} reset the table.`
+        : room.gameType === 'blackjack'
+          ? `${player.name} reset the blackjack table.`
         : room.gameType === 'mini-pool'
           ? `${player.name} reset the rack.`
         : `${player.name} reset the board.`
@@ -856,6 +931,8 @@ function handleDisconnect(socket) {
     room.lastTickAt = Date.now();
   } else if (room.gameType === 'poker') {
     Poker.removePlayer(room.game, playerId);
+  } else if (room.gameType === 'blackjack') {
+    Blackjack.removePlayer(room.game, playerId);
   } else if (room.gameType === 'arcade-chat') {
     if (player) {
       ArcadeChat.addSystemMessage(room.game, `${player.name} left lounge ${room.code}.`);
@@ -869,6 +946,8 @@ function handleDisconnect(socket) {
       ? `${player.name} disconnected. The room stays open for a new wingmate.`
       : room.gameType === 'poker'
         ? `${player.name} disconnected. The table stays open.`
+        : room.gameType === 'blackjack'
+          ? `${player.name} disconnected. The blackjack table stays open.`
       : room.gameType === 'mini-pool'
         ? `${player.name} disconnected. The table stays open for a new challenger.`
       : room.gameType === 'arcade-chat'
@@ -968,6 +1047,9 @@ wss.on('connection', (socket) => {
         break;
       case 'act':
         handleTableAction(socket, payload);
+        break;
+      case 'set-bet':
+        handleSetBet(socket, payload);
         break;
       case 'start-hand':
         handleStartHand(socket);

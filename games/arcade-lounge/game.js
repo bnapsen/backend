@@ -25,6 +25,10 @@
       title: 'Starline Defense Co-Op',
       path: 'space-shooter.html',
     },
+    blackjack: {
+      title: 'Royal SuperSplash Blackjack Live',
+      path: 'blackjack.html',
+    },
     poker: {
       title: 'Orbit Holdem Live',
       path: 'poker.html',
