@@ -128,12 +128,24 @@
 
           <div class="table-stage" id="tableStage">
             <canvas id="poolTable" aria-label="Mini Pool Showdown table"></canvas>
-            <div class="table-overlay">
-              <div class="power-card">
-                <p class="label">Shot power</p>
-                <div class="power-meter"><span id="powerFill"></span></div>
-                <p id="powerText">Pull back to line up the cue.</p>
+          </div>
+
+          <div class="table-meta">
+            <div class="power-card">
+              <div class="power-head">
+                <div>
+                  <p class="label">Shot power</p>
+                  <p class="power-title">Cue control rail</p>
+                </div>
+                <span class="power-chip">Live</span>
               </div>
+              <div class="power-meter"><span id="powerFill"></span></div>
+              <p id="powerText">Pull back to line up the cue.</p>
+            </div>
+
+            <div class="tip-card">
+              <p class="label">Quick cue tip</p>
+              <p class="tip-copy">Long pullbacks hit harder, but soft controlled shots are better for setting up the next score ball.</p>
             </div>
           </div>
 

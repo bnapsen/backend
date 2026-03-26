@@ -217,12 +217,14 @@
   }
 
   function resizeCanvas() {
-    const rect = ui.tableStage.getBoundingClientRect();
+    const stageRect = ui.tableStage.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+    const rect = canvasRect.width > 0 && canvasRect.height > 0 ? canvasRect : stageRect;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(rect.width * dpr);
     canvas.height = Math.round(rect.height * dpr);
-    canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${rect.height}px`;
+    canvas.style.width = '';
+    canvas.style.height = '';
 
     const table = activeTable();
     const scale = Math.min(rect.width / table.width, rect.height / table.height);

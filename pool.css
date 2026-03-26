@@ -46,7 +46,7 @@ body::before {
 }
 
 .page-shell {
-  width: min(1560px, calc(100vw - 28px));
+  width: min(1620px, calc(100vw - 24px));
   margin: 0 auto;
   padding: 18px 0 28px;
 }
@@ -60,6 +60,7 @@ body::before {
 .invite-row,
 .board-header,
 .score-strip,
+.table-meta,
 .board-footer,
 .footer-actions,
 .panel-head {
@@ -147,7 +148,7 @@ h2 {
   align-items: start;
   margin-top: 16px;
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(250px, 320px);
+  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr) minmax(220px, 272px);
 }
 
 .setup-column,
@@ -160,7 +161,7 @@ h2 {
 .panel {
   border: 1px solid var(--panel-border);
   border-radius: 28px;
-  padding: 18px;
+  padding: 16px;
   background:
     radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 34%),
     linear-gradient(180deg, var(--panel), var(--panel-strong));
@@ -367,7 +368,7 @@ button:disabled {
 
 .board-panel {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .board-header {
@@ -386,10 +387,11 @@ button:disabled {
 .score-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .score-card {
-  padding: 13px 14px;
+  padding: 12px 13px;
 }
 
 .score-card strong {
@@ -417,6 +419,7 @@ button:disabled {
   aspect-ratio: 16 / 10;
   border-radius: 30px;
   overflow: hidden;
+  padding: 12px;
   background:
     radial-gradient(circle at top, rgba(255, 241, 222, 0.16), transparent 34%),
     linear-gradient(145deg, #3f2716, #1d1209 52%, #4d3421);
@@ -428,39 +431,69 @@ button:disabled {
 
 #poolTable {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  inset: 12px;
+  width: calc(100% - 24px);
+  height: calc(100% - 24px);
   display: block;
   touch-action: none;
 }
 
-.table-overlay {
-  position: absolute;
-  inset: 14px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  pointer-events: none;
+.table-meta {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.35fr) minmax(220px, 0.9fr);
+  align-items: stretch;
+  gap: 10px;
 }
 
 .power-card {
-  min-width: 220px;
-  max-width: min(280px, 42%);
   padding: 12px 14px;
   border-radius: 20px;
-  background: rgba(8, 15, 24, 0.78);
+  background:
+    linear-gradient(135deg, rgba(9, 17, 27, 0.88), rgba(12, 22, 34, 0.92));
   border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  min-height: 102px;
+}
+
+.power-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.power-title,
+.tip-copy {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.power-title {
+  color: rgba(237, 245, 255, 0.9);
+  font-weight: 700;
+}
+
+.power-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.34rem 0.62rem;
+  border-radius: 999px;
+  color: #041611;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .power-meter {
-  margin-top: 10px;
+  margin-top: 8px;
   height: 10px;
   border-radius: 999px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
 .power-meter span {
@@ -473,14 +506,24 @@ button:disabled {
 }
 
 #powerText {
-  margin-top: 8px;
+  margin-top: 7px;
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: 0.83rem;
   line-height: 1.45;
+}
+
+.tip-card {
+  padding: 12px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  min-height: 102px;
 }
 
 .board-footer {
   flex-wrap: wrap;
+  align-items: start;
+  gap: 10px;
 }
 
 .footer-actions {
@@ -539,7 +582,7 @@ button:disabled {
 
 @media (max-width: 1240px) {
   .layout {
-    grid-template-columns: minmax(280px, 330px) minmax(0, 1fr);
+    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
   }
 
   .sidebar {
@@ -571,12 +614,7 @@ button:disabled {
     width: 100%;
   }
 
-  .table-overlay {
-    justify-content: stretch;
-  }
-
-  .power-card {
-    max-width: none;
-    width: 100%;
+  .table-meta {
+    grid-template-columns: 1fr;
   }
 }
