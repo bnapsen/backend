@@ -112,6 +112,8 @@
     aimSmoothing: 0.26,
     stickAimSmoothing: 0.16,
     powerSmoothing: 0.26,
+    scenePadding: 112,
+    minCueVisualScale: 0.52,
   });
   const SOLO_BOT_NAME = 'Orbit Bot';
 
@@ -719,6 +721,21 @@
     };
   }
 
+  function distanceToRectEdge(origin, direction, bounds) {
+    let best = Number.POSITIVE_INFINITY;
+    if (direction.x > 0.0001) {
+      best = Math.min(best, (bounds.maxX - origin.x) / direction.x);
+    } else if (direction.x < -0.0001) {
+      best = Math.min(best, (bounds.minX - origin.x) / direction.x);
+    }
+    if (direction.y > 0.0001) {
+      best = Math.min(best, (bounds.maxY - origin.y) / direction.y);
+    } else if (direction.y < -0.0001) {
+      best = Math.min(best, (bounds.minY - origin.y) / direction.y);
+    }
+    return Number.isFinite(best) && best > 0 ? best : 0;
+  }
+
   function rayCircleIntersection(origin, direction, center, radius) {
     const offsetX = origin.x - center.x;
     const offsetY = origin.y - center.y;
@@ -825,13 +842,15 @@
     canvas.style.height = '';
 
     const table = activeTable();
-    const scale = Math.min(rect.width / table.width, rect.height / table.height);
+    const sceneWidth = table.width + CUE_UI.scenePadding * 2;
+    const sceneHeight = table.height + CUE_UI.scenePadding * 2;
+    const scale = Math.min(rect.width / sceneWidth, rect.height / sceneHeight);
     state.view = {
       width: rect.width,
       height: rect.height,
       scale,
-      offsetX: (rect.width - table.width * scale) / 2,
-      offsetY: (rect.height - table.height * scale) / 2,
+      offsetX: (rect.width - sceneWidth * scale) / 2 + CUE_UI.scenePadding * scale,
+      offsetY: (rect.height - sceneHeight * scale) / 2 + CUE_UI.scenePadding * scale,
       dpr,
     };
   }
@@ -1190,19 +1209,32 @@
       return;
     }
 
+    const sceneBounds = {
+      minX: -CUE_UI.scenePadding,
+      maxX: activeTable().width + CUE_UI.scenePadding,
+      minY: -CUE_UI.scenePadding,
+      maxY: activeTable().height + CUE_UI.scenePadding,
+    };
     const direction = cueDirection();
     const guide = projectAimGuide(cue, direction);
     const power = state.aiming ? normalizedShotPower(state.power) : 0;
     const basePull = Math.min(power, 1) * CUE_UI.cuePullback;
     const boostPull = Math.max(0, power - 1) * CUE_UI.boostPullback;
     const cueTipDistance = cue.r + 6 + basePull + boostPull;
+    const totalBackDistance = cueTipDistance + CUE_UI.cueLength;
+    const maxBackDistance = distanceToRectEdge(cue, { x: -direction.x, y: -direction.y }, sceneBounds);
+    const cueScale = totalBackDistance > 0
+      ? clamp(maxBackDistance / totalBackDistance, CUE_UI.minCueVisualScale, 1)
+      : 1;
+    const visualCueTipDistance = cueTipDistance * cueScale;
+    const visualCueLength = CUE_UI.cueLength * cueScale;
     const cueTip = {
-      x: cue.x - direction.x * cueTipDistance,
-      y: cue.y - direction.y * cueTipDistance,
+      x: cue.x - direction.x * visualCueTipDistance,
+      y: cue.y - direction.y * visualCueTipDistance,
     };
     const cueButt = {
-      x: cueTip.x - direction.x * CUE_UI.cueLength,
-      y: cueTip.y - direction.y * CUE_UI.cueLength,
+      x: cueTip.x - direction.x * visualCueLength,
+      y: cueTip.y - direction.y * visualCueLength,
     };
     const grip = {
       x: cueButt.x + direction.x * 42,
