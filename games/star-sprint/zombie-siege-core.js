@@ -153,6 +153,8 @@
     return {
       moveX: 0,
       moveY: 0,
+      moveDirX: 0,
+      moveDirZ: 0,
       yaw: 0,
       aimX: null,
       aimZ: null,
@@ -417,6 +419,8 @@
     const next = rawInput || {};
     player.input.moveX = clamp(Number(next.moveX) || 0, -1, 1);
     player.input.moveY = clamp(Number(next.moveY) || 0, -1, 1);
+    player.input.moveDirX = clamp(Number(next.moveDirX) || 0, -1, 1);
+    player.input.moveDirZ = clamp(Number(next.moveDirZ) || 0, -1, 1);
     player.input.yaw = normalizeAngle(Number(next.yaw) || 0);
     player.input.aimX = Number.isFinite(Number(next.aimX))
       ? clamp(Number(next.aimX), -ARENA.width * 0.65, ARENA.width * 0.65)
@@ -702,19 +706,30 @@
       return;
     }
 
-    let moveX = player.input.moveX;
-    let moveY = player.input.moveY;
-    if (Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001) {
-      const magnitude = Math.hypot(moveX, moveY) || 1;
-      moveX /= magnitude;
-      moveY /= magnitude;
+    let moveDirX = player.input.moveDirX;
+    let moveDirZ = player.input.moveDirZ;
+    if (Math.abs(moveDirX) > 0.001 || Math.abs(moveDirZ) > 0.001) {
+      const magnitude = Math.hypot(moveDirX, moveDirZ) || 1;
+      moveDirX /= magnitude;
+      moveDirZ /= magnitude;
       const speed = player.input.sprint ? player.sprintSpeed : player.moveSpeed;
-      const forwardX = Math.sin(moveBasisYaw);
-      const forwardZ = -Math.cos(moveBasisYaw);
-      const rightX = -forwardZ;
-      const rightZ = forwardX;
-      player.x += (forwardX * moveY + rightX * moveX) * speed * dt;
-      player.z += (forwardZ * moveY + rightZ * moveX) * speed * dt;
+      player.x += moveDirX * speed * dt;
+      player.z += moveDirZ * speed * dt;
+    } else {
+      let moveX = player.input.moveX;
+      let moveY = player.input.moveY;
+      if (Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001) {
+        const magnitude = Math.hypot(moveX, moveY) || 1;
+        moveX /= magnitude;
+        moveY /= magnitude;
+        const speed = player.input.sprint ? player.sprintSpeed : player.moveSpeed;
+        const forwardX = Math.sin(moveBasisYaw);
+        const forwardZ = -Math.cos(moveBasisYaw);
+        const rightX = -forwardZ;
+        const rightZ = forwardX;
+        player.x += (forwardX * moveY + rightX * moveX) * speed * dt;
+        player.z += (forwardZ * moveY + rightZ * moveX) * speed * dt;
+      }
     }
     player.x = clamp(player.x, -ARENA.width * 0.47, ARENA.width * 0.47);
     player.z = clamp(player.z, -ARENA.depth * 0.47, ARENA.depth * 0.47);

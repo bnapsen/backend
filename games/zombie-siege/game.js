@@ -70,9 +70,18 @@
     nextUiRefreshAt: 0,
     lastEventId: 0,
     hasYawSeed: false,
+    movement: {
+      active: false,
+      rawX: 0,
+      rawY: 0,
+      worldX: 0,
+      worldZ: 0,
+    },
     input: {
       moveX: 0,
       moveY: 0,
+      moveDirX: 0,
+      moveDirZ: 0,
       yaw: -Math.PI / 2,
       aimX: 0,
       aimZ: 0,
@@ -1700,6 +1709,13 @@
     state.lastInputSentAt = 0;
     state.lastEventId = 0;
     state.hasYawSeed = false;
+    state.movement.active = false;
+    state.movement.rawX = 0;
+    state.movement.rawY = 0;
+    state.movement.worldX = 0;
+    state.movement.worldZ = 0;
+    state.input.moveDirX = 0;
+    state.input.moveDirZ = 0;
     clearSceneEntities();
     updateInviteUi();
   }
@@ -2041,32 +2057,41 @@
       }
     }
 
-    if (state.camera && state.world && (Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001)) {
-      const camForward = state.world.tempVecA;
-      const camRight = state.world.tempVecB;
-      state.camera.getWorldDirection(camForward);
-      camForward.y = 0;
-      if (camForward.lengthSq() < 0.0001) {
-        camForward.set(Math.sin(desiredYaw), 0, -Math.cos(desiredYaw));
+    if (Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001) {
+      const movementChanged = !state.movement.active || moveX !== state.movement.rawX || moveY !== state.movement.rawY;
+      if (movementChanged) {
+        let worldMoveX = moveX;
+        let worldMoveZ = -moveY;
+        if (state.camera && state.world) {
+          const camForward = state.world.tempVecA;
+          const camRight = state.world.tempVecB;
+          state.camera.getWorldDirection(camForward);
+          camForward.y = 0;
+          if (camForward.lengthSq() < 0.0001) {
+            camForward.set(Math.sin(desiredYaw), 0, -Math.cos(desiredYaw));
+          }
+          camForward.normalize();
+          camRight.set(-camForward.z, 0, camForward.x);
+          worldMoveX = camRight.x * moveX + camForward.x * moveY;
+          worldMoveZ = camRight.z * moveX + camForward.z * moveY;
+        }
+        const worldMagnitude = Math.hypot(worldMoveX, worldMoveZ) || 1;
+        state.movement.worldX = worldMoveX / worldMagnitude;
+        state.movement.worldZ = worldMoveZ / worldMagnitude;
+        state.movement.rawX = moveX;
+        state.movement.rawY = moveY;
+        state.movement.active = true;
       }
-      camForward.normalize();
-      camRight.set(-camForward.z, 0, camForward.x);
-
-      const worldMoveX = camRight.x * moveX + camForward.x * moveY;
-      const worldMoveZ = camRight.z * moveX + camForward.z * moveY;
-      const aimForwardX = Math.sin(desiredYaw);
-      const aimForwardZ = -Math.cos(desiredYaw);
-      const aimRightX = -aimForwardZ;
-      const aimRightZ = aimForwardX;
-
-      state.input.moveX = worldMoveX * aimRightX + worldMoveZ * aimRightZ;
-      state.input.moveY = worldMoveX * aimForwardX + worldMoveZ * aimForwardZ;
-
-      const correctedMagnitude = Math.hypot(state.input.moveX, state.input.moveY) || 1;
-      if (correctedMagnitude > 1) {
-        state.input.moveX /= correctedMagnitude;
-        state.input.moveY /= correctedMagnitude;
-      }
+      state.input.moveDirX = state.movement.worldX;
+      state.input.moveDirZ = state.movement.worldZ;
+    } else {
+      state.movement.active = false;
+      state.movement.rawX = 0;
+      state.movement.rawY = 0;
+      state.movement.worldX = 0;
+      state.movement.worldZ = 0;
+      state.input.moveDirX = 0;
+      state.input.moveDirZ = 0;
     }
 
     return state.input;
