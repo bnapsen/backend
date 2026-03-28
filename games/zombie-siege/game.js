@@ -11,6 +11,7 @@
   const STORAGE_KEYS = {
     name: 'zombieSiege.name',
     serverUrl: 'zombieSiege.serverUrl',
+    sound: 'zombieSiege.sound',
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const INPUT_SEND_MS = 50;
@@ -35,6 +36,7 @@
     restartBtn: document.getElementById('restartBtn'),
     networkStatus: document.getElementById('networkStatus'),
     modePill: document.getElementById('modePill'),
+    soundBtn: document.getElementById('soundBtn'),
     statusText: document.getElementById('statusText'),
     roomCodeLabel: document.getElementById('roomCodeLabel'),
     waveLabel: document.getElementById('waveLabel'),
@@ -118,6 +120,12 @@
     renderer: null,
     world: null,
     textures: null,
+    audio: {
+      enabled: true,
+      context: null,
+      master: null,
+      noiseBuffer: null,
+    },
   };
 
   function clamp(value, min, max) {
@@ -209,9 +217,176 @@
     return weapon.label;
   }
 
+  function updateSoundButton() {
+    if (!ui.soundBtn) {
+      return;
+    }
+    ui.soundBtn.textContent = state.audio.enabled ? 'Sound on' : 'Sound off';
+    ui.soundBtn.classList.toggle('muted', !state.audio.enabled);
+  }
+
+  function createNoiseBuffer(context) {
+    const duration = 0.22;
+    const sampleCount = Math.max(1, Math.floor(context.sampleRate * duration));
+    const buffer = context.createBuffer(1, sampleCount, context.sampleRate);
+    const channel = buffer.getChannelData(0);
+    for (let index = 0; index < sampleCount; index += 1) {
+      channel[index] = (Math.random() * 2 - 1) * (1 - index / sampleCount);
+    }
+    return buffer;
+  }
+
+  async function ensureAudioContext() {
+    if (!state.audio.enabled) {
+      return null;
+    }
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+      return null;
+    }
+    if (!state.audio.context) {
+      const context = new AudioContextCtor();
+      const master = context.createGain();
+      master.gain.value = 0.28;
+      master.connect(context.destination);
+      state.audio.context = context;
+      state.audio.master = master;
+      state.audio.noiseBuffer = createNoiseBuffer(context);
+    }
+    if (state.audio.context.state === 'suspended') {
+      try {
+        await state.audio.context.resume();
+      } catch (error) {
+        return null;
+      }
+    }
+    return state.audio.context;
+  }
+
+  function scheduleOscillator(context, options = {}) {
+    const {
+      type = 'triangle',
+      frequency = 220,
+      frequencyEnd = frequency,
+      start = context.currentTime,
+      duration = 0.12,
+      gain = 0.08,
+      gainEnd = 0.0001,
+      pan = 0,
+    } = options;
+    const oscillator = context.createOscillator();
+    const gainNode = context.createGain();
+    const panner = typeof context.createStereoPanner === 'function' ? context.createStereoPanner() : null;
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, start);
+    oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, frequencyEnd), start + duration);
+    gainNode.gain.setValueAtTime(Math.max(0.0001, gain), start);
+    gainNode.gain.exponentialRampToValueAtTime(Math.max(0.0001, gainEnd), start + duration);
+    oscillator.connect(gainNode);
+    if (panner) {
+      panner.pan.value = clamp(pan, -1, 1);
+      gainNode.connect(panner);
+      panner.connect(state.audio.master);
+    } else {
+      gainNode.connect(state.audio.master);
+    }
+    oscillator.start(start);
+    oscillator.stop(start + duration + 0.02);
+  }
+
+  function scheduleNoiseBurst(context, options = {}) {
+    if (!state.audio.noiseBuffer) {
+      return;
+    }
+    const {
+      start = context.currentTime,
+      duration = 0.2,
+      gain = 0.08,
+      filter = 1200,
+    } = options;
+    const source = context.createBufferSource();
+    source.buffer = state.audio.noiseBuffer;
+    const biquad = context.createBiquadFilter();
+    biquad.type = 'lowpass';
+    biquad.frequency.setValueAtTime(filter, start);
+    const gainNode = context.createGain();
+    gainNode.gain.setValueAtTime(gain, start);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    source.connect(biquad);
+    biquad.connect(gainNode);
+    gainNode.connect(state.audio.master);
+    source.start(start);
+    source.stop(start + duration + 0.03);
+  }
+
+  async function playSound(name) {
+    const context = await ensureAudioContext();
+    if (!context || !state.audio.master) {
+      return;
+    }
+    const now = context.currentTime;
+    switch (name) {
+      case 'rifle':
+        scheduleNoiseBurst(context, { start: now, duration: 0.08, gain: 0.035, filter: 1800 });
+        scheduleOscillator(context, { type: 'square', frequency: 210, frequencyEnd: 95, duration: 0.08, gain: 0.05 });
+        break;
+      case 'smg':
+        scheduleNoiseBurst(context, { start: now, duration: 0.05, gain: 0.028, filter: 2200 });
+        scheduleOscillator(context, { type: 'square', frequency: 260, frequencyEnd: 130, duration: 0.05, gain: 0.04 });
+        break;
+      case 'shotgun':
+        scheduleNoiseBurst(context, { start: now, duration: 0.14, gain: 0.08, filter: 900 });
+        scheduleOscillator(context, { type: 'sawtooth', frequency: 150, frequencyEnd: 55, duration: 0.14, gain: 0.065 });
+        break;
+      case 'grenade-throw':
+        scheduleOscillator(context, { type: 'triangle', frequency: 320, frequencyEnd: 180, duration: 0.12, gain: 0.035 });
+        break;
+      case 'frag-boom':
+        scheduleNoiseBurst(context, { start: now, duration: 0.28, gain: 0.16, filter: 620 });
+        scheduleOscillator(context, { type: 'sawtooth', frequency: 96, frequencyEnd: 32, duration: 0.26, gain: 0.08 });
+        break;
+      case 'acid-shot':
+        scheduleOscillator(context, { type: 'sawtooth', frequency: 540, frequencyEnd: 210, duration: 0.18, gain: 0.04 });
+        break;
+      case 'acid-burst':
+        scheduleNoiseBurst(context, { start: now, duration: 0.16, gain: 0.07, filter: 1500 });
+        scheduleOscillator(context, { type: 'triangle', frequency: 420, frequencyEnd: 120, duration: 0.2, gain: 0.05 });
+        break;
+      case 'wave':
+        scheduleOscillator(context, { type: 'triangle', frequency: 220, frequencyEnd: 420, duration: 0.18, gain: 0.06 });
+        scheduleOscillator(context, { type: 'triangle', frequency: 300, frequencyEnd: 580, start: now + 0.08, duration: 0.22, gain: 0.05 });
+        break;
+      case 'boss':
+        scheduleNoiseBurst(context, { start: now, duration: 0.22, gain: 0.05, filter: 760 });
+        scheduleOscillator(context, { type: 'sawtooth', frequency: 120, frequencyEnd: 58, duration: 0.4, gain: 0.08 });
+        break;
+      case 'relay':
+        scheduleOscillator(context, { type: 'triangle', frequency: 360, frequencyEnd: 740, duration: 0.22, gain: 0.05 });
+        break;
+      case 'objective':
+        scheduleOscillator(context, { type: 'triangle', frequency: 260, frequencyEnd: 520, duration: 0.16, gain: 0.04 });
+        scheduleOscillator(context, { type: 'triangle', frequency: 390, frequencyEnd: 780, start: now + 0.1, duration: 0.16, gain: 0.04 });
+        break;
+      case 'success':
+        scheduleOscillator(context, { type: 'triangle', frequency: 320, frequencyEnd: 640, duration: 0.18, gain: 0.05 });
+        scheduleOscillator(context, { type: 'triangle', frequency: 480, frequencyEnd: 960, start: now + 0.12, duration: 0.26, gain: 0.05 });
+        break;
+      case 'pickup':
+        scheduleOscillator(context, { type: 'sine', frequency: 560, frequencyEnd: 920, duration: 0.14, gain: 0.05 });
+        break;
+      case 'down':
+        scheduleNoiseBurst(context, { start: now, duration: 0.12, gain: 0.03, filter: 900 });
+        scheduleOscillator(context, { type: 'sawtooth', frequency: 170, frequencyEnd: 70, duration: 0.3, gain: 0.05 });
+        break;
+      default:
+        scheduleOscillator(context, { type: 'triangle', frequency: 300, frequencyEnd: 240, duration: 0.1, gain: 0.04 });
+    }
+  }
+
   function persistSettings() {
     localStorage.setItem(STORAGE_KEYS.name, ui.nameInput.value.trim());
     localStorage.setItem(STORAGE_KEYS.serverUrl, state.serverUrl);
+    localStorage.setItem(STORAGE_KEYS.sound, state.audio.enabled ? 'on' : 'off');
   }
 
   function showToast(message) {
@@ -455,8 +630,8 @@
 
   function createLabelSprite(text, color) {
     const canvas = document.createElement('canvas');
-    canvas.width = 168;
-    canvas.height = 56;
+    canvas.width = 140;
+    canvas.height = 44;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const fill = ctx.createLinearGradient(0, 0, canvas.width, 0);
@@ -464,12 +639,12 @@
     fill.addColorStop(1, 'rgba(14, 19, 26, 0.58)');
     ctx.fillStyle = fill;
     ctx.beginPath();
-    ctx.roundRect(10, 10, 148, 34, 12);
+    ctx.roundRect(8, 8, 124, 28, 10);
     ctx.fill();
     ctx.strokeStyle = `${color}bb`;
     ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.font = '700 18px Rajdhani, sans-serif';
+    ctx.font = '700 15px Rajdhani, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#f5f7fb';
@@ -481,8 +656,8 @@
       transparent: true,
       depthWrite: false,
     }));
-    sprite.scale.set(2.78, 0.92, 1);
-    sprite.position.set(0, 2.88, 0);
+    sprite.scale.set(2.18, 0.68, 1);
+    sprite.position.set(0, 2.72, 0);
     return sprite;
   }
 
@@ -539,14 +714,20 @@
       shots: new Map(),
       grenades: new Map(),
       explosions: new Map(),
+      enemyProjectiles: new Map(),
       pickups: new Map(),
+      relays: new Map(),
+      nests: new Map(),
       entityRoot: new THREE.Group(),
       playerRoot: new THREE.Group(),
       zombieRoot: new THREE.Group(),
       shotRoot: new THREE.Group(),
       grenadeRoot: new THREE.Group(),
       explosionRoot: new THREE.Group(),
+      enemyProjectileRoot: new THREE.Group(),
       pickupRoot: new THREE.Group(),
+      relayRoot: new THREE.Group(),
+      nestRoot: new THREE.Group(),
       cameraPos: new THREE.Vector3(0, 7, 12),
       cameraLook: new THREE.Vector3(0, 2, 0),
       cameraYaw: CAMERA_DEFAULT_YAW,
@@ -573,8 +754,10 @@
       state.world.shotRoot,
       state.world.grenadeRoot,
       state.world.explosionRoot,
+      state.world.enemyProjectileRoot,
       state.world.pickupRoot
     );
+    state.world.entityRoot.add(state.world.relayRoot, state.world.nestRoot);
 
     const hemi = new THREE.HemisphereLight(0xa1b8ff, 0x111317, 1.1);
     scene.add(hemi);
@@ -1031,6 +1214,73 @@
       group.add(beacon);
     });
 
+    const eastDeck = new THREE.Mesh(new THREE.BoxGeometry(40, 5.2, 46), slabMat);
+    eastDeck.position.set(74, 2.6, 27);
+    eastDeck.castShadow = true;
+    eastDeck.receiveShadow = true;
+    group.add(eastDeck);
+
+    const eastRoof = new THREE.Mesh(new THREE.BoxGeometry(16, 4.4, 16), slabMat);
+    eastRoof.position.set(74, 7.4, 26);
+    eastRoof.castShadow = true;
+    eastRoof.receiveShadow = true;
+    group.add(eastRoof);
+
+    const southBlock = new THREE.Mesh(new THREE.BoxGeometry(56, 3.8, 36), slabMat);
+    southBlock.position.set(0, 1.9, 74);
+    southBlock.castShadow = true;
+    southBlock.receiveShadow = true;
+    group.add(southBlock);
+
+    const southRoof = new THREE.Mesh(new THREE.BoxGeometry(20, 3.6, 16), slabMat);
+    southRoof.position.set(0, 5.6, 76);
+    southRoof.castShadow = true;
+    southRoof.receiveShadow = true;
+    group.add(southRoof);
+
+    [
+      [56, 4.86, 4, 46],
+      [94, 4.86, 27, 46],
+      [74, 9.86, 18, 16],
+      [74, 9.86, 34, 16],
+      [0, 3.98, 56, 56],
+      [0, 7.58, 68, 20],
+      [0, 7.58, 84, 20],
+    ].forEach(([x, y, z, length], index) => {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(index < 2 ? 0.24 : index < 4 ? 16 : index === 4 ? 56 : 20, 0.24, index < 2 ? length : index < 4 ? 0.24 : index === 4 ? 0.24 : 0.24),
+        trimMat
+      );
+      mesh.position.set(x, y, z);
+      if (index < 2) {
+        mesh.rotation.y = Math.PI / 2;
+      }
+      mesh.castShadow = true;
+      group.add(mesh);
+    });
+
+    buildStepRun(group, 48, 16, 34, 0.5, 5.2, 8, 2.4, 6, slabMat, true);
+    buildStepRun(group, 60, 18, 34, 5.4, 9.6, 8, 2.2, 5, slabMat, true);
+    buildStepRun(group, -35, 68, 84, 0.4, 3.8, 8, 2.4, 6, slabMat, true);
+    buildStepRun(group, -16, 68, 84, 4.0, 7.4, 8, 2.2, 5, slabMat, true);
+
+    [
+      [58, 9.6, 10],
+      [90, 9.6, 10],
+      [58, 9.6, 44],
+      [90, 9.6, 44],
+      [-20, 5.7, 58],
+      [20, 5.7, 58],
+      [-20, 5.7, 90],
+      [20, 5.7, 90],
+    ].forEach(([x, y, z]) => {
+      const support = new THREE.Mesh(new THREE.BoxGeometry(2.4, y, 2.4), supportMat);
+      support.position.set(x, y * 0.5, z);
+      support.castShadow = true;
+      support.receiveShadow = true;
+      group.add(support);
+    });
+
     scene.add(group);
   }
 
@@ -1046,6 +1296,10 @@
       [14, 28, -0.24],
       [-30, -24, 0.54],
       [30, -24, -0.54],
+      [76, 58, 0.16],
+      [66, 2, -0.24],
+      [-2, 98, 0.02],
+      [-68, 20, -0.18],
     ].forEach(([x, z, rotation]) => {
       scene.add(buildBarricade(x, z, rotation));
     });
@@ -1069,6 +1323,10 @@
       [0, 24],
       [-14, 20],
       [18, -18],
+      [68, 34],
+      [82, 12],
+      [0, 72],
+      [-16, 84],
     ].forEach(([x, z], index) => {
       const stack = new THREE.Group();
       const crateA = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.8, 2.2), crateMat);
@@ -1092,13 +1350,13 @@
       opacity: 0.3,
       depthWrite: false,
     });
-    for (let index = 0; index < 18; index += 1) {
+    for (let index = 0; index < 28; index += 1) {
       const decal = new THREE.Mesh(
         new THREE.CircleGeometry(0.8 + Math.random() * 1.6, 24),
         bloodMat
       );
       decal.rotation.x = -Math.PI / 2;
-      decal.position.set((Math.random() - 0.5) * 60, 0.02, (Math.random() - 0.5) * 58);
+      decal.position.set((Math.random() - 0.5) * 102, 0.02, (Math.random() - 0.5) * 96);
       scene.add(decal);
     }
 
@@ -1340,11 +1598,14 @@
     group.add(ring);
     group.add(createLabelSprite(player.name, player.color || '#73d9ff'));
     group.userData = {
+      playerId: player.id,
       gunMat,
       accentMat,
       ringMat: ring.material,
       visorMat,
       muzzleMat,
+      chargeCell,
+      opticLens,
       upperArms: [armA, armB],
       forearms: [forearmA, forearmB],
       thighs: [thighA, thighB],
@@ -1362,6 +1623,9 @@
       targetAlive: player.alive,
       health: player.health,
       maxHealth: player.maxHealth,
+      weaponKey: player.weaponKey || 'rifle',
+      recoilKick: 0,
+      lastFlash: 0,
     };
     return group;
   }
@@ -1369,7 +1633,17 @@
   function createZombieMesh(zombie) {
     const group = new THREE.Group();
     const type = Core.ZOMBIE_TYPES[zombie.type] || Core.ZOMBIE_TYPES.walker;
-    const scale = zombie.type === 'boss' ? 1.55 : zombie.type === 'brute' ? 1.22 : zombie.type === 'runner' ? 0.88 : 1;
+    const scale = zombie.type === 'boss'
+      ? 1.55
+      : zombie.type === 'brute'
+        ? 1.22
+        : zombie.type === 'runner'
+          ? 0.88
+          : zombie.type === 'crawler'
+            ? 0.72
+            : zombie.type === 'spitter'
+              ? 1.04
+              : 1;
     const fleshMat = new THREE.MeshStandardMaterial({
       map: state.textures.flesh,
       color: new THREE.Color(type.tint || '#9ec593'),
@@ -1379,7 +1653,15 @@
     });
     const clothMat = new THREE.MeshStandardMaterial({
       map: state.textures.zombieCloth,
-      color: zombie.type === 'boss' ? 0x291617 : zombie.type === 'brute' ? 0x4b463c : 0x2e322b,
+      color: zombie.type === 'boss'
+        ? 0x291617
+        : zombie.type === 'brute'
+          ? 0x4b463c
+          : zombie.type === 'spitter'
+            ? 0x30492b
+            : zombie.type === 'crawler'
+              ? 0x3a3127
+              : 0x2e322b,
       roughness: 0.92,
       metalness: 0.04,
       emissive: new THREE.Color(0x000000),
@@ -1487,6 +1769,34 @@
       shoulderSpikeA,
       shoulderSpikeB,
     ];
+    if (zombie.type === 'spitter') {
+      const sacMat = new THREE.MeshStandardMaterial({
+        color: 0x86cf62,
+        emissive: 0x4ca036,
+        emissiveIntensity: 0.8,
+        roughness: 0.34,
+        metalness: 0.08,
+      });
+      const sac = new THREE.Mesh(new THREE.SphereGeometry(0.44, 14, 12), sacMat);
+      sac.position.set(0, 1.66, 0.64);
+      const jawSpur = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.48, 10), boneMat);
+      jawSpur.position.set(0.02, 2.28, -0.44);
+      jawSpur.rotation.x = Math.PI / 2;
+      parts.push(sac, jawSpur);
+    }
+    if (zombie.type === 'crawler') {
+      torso.rotation.x = 0.46;
+      head.position.y = 2.22;
+      head.position.z = -0.26;
+      jaw.position.y = 1.98;
+      jaw.position.z = -0.34;
+      armA.position.set(-0.88, 1.22, -0.34);
+      armB.position.set(0.92, 1.18, -0.34);
+      forearmA.position.set(-1.02, 0.54, -0.4);
+      forearmB.position.set(1.04, 0.5, -0.42);
+      shoulderSpikeA.visible = false;
+      shoulderSpikeB.visible = false;
+    }
     if (zombie.type === 'boss') {
       const hump = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.94, 0.76), fleshMat);
       hump.position.set(0, 2.12, 0.22);
@@ -1511,6 +1821,7 @@
     parts.forEach((mesh) => group.add(mesh));
     group.scale.setScalar(scale);
     group.userData = {
+      type: zombie.type,
       fleshMat,
       clothMat,
       eyeMat,
@@ -1716,10 +2027,11 @@
   }
 
   function createExplosionMesh(explosion) {
+    const acid = explosion.kind === 'acid';
     const flash = new THREE.Mesh(
       new THREE.IcosahedronGeometry(1, 1),
       new THREE.MeshBasicMaterial({
-        color: 0xffdf94,
+        color: acid ? (explosion.color || 0x8dff72) : 0xffdf94,
         transparent: true,
         opacity: 0.9,
         depthWrite: false,
@@ -1729,7 +2041,7 @@
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(1, 0.12, 10, 28),
       new THREE.MeshBasicMaterial({
-        color: 0xff8d4e,
+        color: acid ? 0x71ff8d : 0xff8d4e,
         transparent: true,
         opacity: 0.78,
         depthWrite: false,
@@ -1740,7 +2052,7 @@
     const smoke = new THREE.Mesh(
       new THREE.SphereGeometry(1, 16, 16),
       new THREE.MeshBasicMaterial({
-        color: 0x574947,
+        color: acid ? 0x355034 : 0x574947,
         transparent: true,
         opacity: 0.22,
         depthWrite: false,
@@ -1755,6 +2067,7 @@
       maxTtl: explosion.maxTtl || explosion.ttl || 0.56,
       radius: explosion.radius || 8.8,
       ttl: explosion.ttl || 0.56,
+      kind: explosion.kind || 'frag',
     };
     updateExplosionMesh(group, explosion);
     return group;
@@ -1774,7 +2087,198 @@
     group.userData.smoke.material.opacity = life * 0.18;
   }
 
-  function syncEntityMap(map, items, parent, createMesh, applyState, removeMesh) {
+  function createRelayMesh(relay) {
+    const group = new THREE.Group();
+    const baseMat = new THREE.MeshStandardMaterial({
+      color: 0x29333b,
+      roughness: 0.52,
+      metalness: 0.46,
+    });
+    const glowMat = new THREE.MeshStandardMaterial({
+      color: 0x7ed6ff,
+      emissive: 0x3cb2ff,
+      emissiveIntensity: 0.8,
+      roughness: 0.16,
+      metalness: 0.42,
+      transparent: true,
+      opacity: 0.88,
+    });
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(relay.radius * 0.72, relay.radius * 0.78, 0.36, 28), baseMat);
+    pad.position.y = 0.18;
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 5.4, 14), baseMat);
+    mast.position.y = 2.9;
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.9, 1), glowMat);
+    core.position.y = 5.9;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(relay.radius, 0.16, 12, 42), new THREE.MeshBasicMaterial({
+      color: 0x7ed6ff,
+      transparent: true,
+      opacity: 0.42,
+    }));
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.1;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.72, 8.4, 16, 1, true), new THREE.MeshBasicMaterial({
+      color: 0x8fdfff,
+      transparent: true,
+      opacity: 0.16,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }));
+    beam.position.y = 4.2;
+    [pad, mast, core].forEach((mesh) => {
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    });
+    group.add(ring, beam);
+    group.userData = {
+      targetX: relay.x,
+      targetY: relay.y || 0,
+      targetZ: relay.z,
+      progress: relay.progress || 0,
+      goal: relay.goal || 1,
+      complete: relay.complete,
+      pulse: relay.pulse || 0,
+      coreMat: glowMat,
+      ringMat: ring.material,
+      beamMat: beam.material,
+      core,
+      ring,
+    };
+    return group;
+  }
+
+  function updateRelayMesh(group, relay) {
+    group.userData.targetX = relay.x;
+    group.userData.targetY = relay.y || 0;
+    group.userData.targetZ = relay.z;
+    group.userData.progress = relay.progress || 0;
+    group.userData.goal = relay.goal || 1;
+    group.userData.complete = Boolean(relay.complete);
+    group.userData.pulse = relay.pulse || 0;
+  }
+
+  function createNestMesh(nest) {
+    const group = new THREE.Group();
+    const fleshMat = new THREE.MeshStandardMaterial({
+      color: 0x643235,
+      emissive: 0x23080a,
+      emissiveIntensity: 0.52,
+      roughness: 0.8,
+      metalness: 0.04,
+    });
+    const boneMat = new THREE.MeshStandardMaterial({
+      color: 0xb89e7a,
+      roughness: 0.84,
+      metalness: 0.06,
+    });
+    const mound = new THREE.Mesh(new THREE.SphereGeometry(2.2, 18, 16), fleshMat);
+    mound.scale.set(1.1, 0.78, 1.2);
+    mound.position.y = 1.55;
+    const heart = new THREE.Mesh(new THREE.OctahedronGeometry(0.88, 1), new THREE.MeshStandardMaterial({
+      color: 0xff8a93,
+      emissive: 0xff4459,
+      emissiveIntensity: 1.1,
+      roughness: 0.28,
+      metalness: 0.08,
+    }));
+    heart.position.y = 2.24;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(nest.radius * 1.25, 0.12, 10, 28), new THREE.MeshBasicMaterial({
+      color: 0xff7c84,
+      transparent: true,
+      opacity: 0.32,
+      depthWrite: false,
+    }));
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.08;
+    const spikes = [];
+    for (let index = 0; index < 6; index += 1) {
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.8, 9), boneMat);
+      const angle = (index / 6) * Math.PI * 2;
+      spike.position.set(Math.cos(angle) * 1.6, 1.2, Math.sin(angle) * 1.6);
+      spike.rotation.z = 0.5;
+      spike.rotation.x = Math.PI / 2;
+      spikes.push(spike);
+    }
+    [mound, heart, ...spikes].forEach((mesh) => {
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    });
+    group.add(ring);
+    group.userData = {
+      targetX: nest.x,
+      targetY: nest.y || 0,
+      targetZ: nest.z,
+      pulse: nest.pulse || 0,
+      destroyed: Boolean(nest.destroyed),
+      hp: nest.hp,
+      maxHp: nest.maxHp || 1,
+      fleshMat,
+      heart,
+      ringMat: ring.material,
+      spikes,
+    };
+    return group;
+  }
+
+  function updateNestMesh(group, nest) {
+    group.userData.targetX = nest.x;
+    group.userData.targetY = nest.y || 0;
+    group.userData.targetZ = nest.z;
+    group.userData.pulse = nest.pulse || 0;
+    group.userData.destroyed = Boolean(nest.destroyed);
+    group.userData.hp = nest.hp;
+    group.userData.maxHp = nest.maxHp || 1;
+  }
+
+  function createEnemyProjectileMesh(projectile) {
+    const group = new THREE.Group();
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 14), new THREE.MeshBasicMaterial({
+      color: projectile.color || 0x9bff71,
+      transparent: true,
+      opacity: 0.92,
+      blending: THREE.AdditiveBlending,
+    }));
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.44, 12, 12), new THREE.MeshBasicMaterial({
+      color: projectile.color || 0x9bff71,
+      transparent: true,
+      opacity: 0.2,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }));
+    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.18, 1.2, 10), new THREE.MeshBasicMaterial({
+      color: 0xb0ff95,
+      transparent: true,
+      opacity: 0.3,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }));
+    tail.rotation.x = Math.PI / 2;
+    tail.position.z = 0.5;
+    group.add(tail, halo, core);
+    group.userData = {
+      targetX: projectile.x,
+      targetY: projectile.y || 0,
+      targetZ: projectile.z,
+      vx: projectile.vx || 0,
+      vy: projectile.vy || 0,
+      vz: projectile.vz || 0,
+      halo,
+      tail,
+    };
+    return group;
+  }
+
+  function updateEnemyProjectileMesh(group, projectile) {
+    group.userData.targetX = projectile.x;
+    group.userData.targetY = projectile.y || 0;
+    group.userData.targetZ = projectile.z;
+    group.userData.vx = projectile.vx || 0;
+    group.userData.vy = projectile.vy || 0;
+    group.userData.vz = projectile.vz || 0;
+  }
+
+  function syncEntityMap(map, items, parent, createMesh, applyState, removeMesh, onCreate) {
     const seen = new Set();
     for (const item of items) {
       seen.add(item.id);
@@ -1783,6 +2287,9 @@
         mesh = createMesh(item);
         map.set(item.id, mesh);
         parent.add(mesh);
+        if (onCreate) {
+          onCreate(item, mesh);
+        }
       }
       applyState(mesh, item);
     }
@@ -1817,6 +2324,7 @@
           mesh.userData.targetAlive = player.alive;
           mesh.userData.health = player.health;
           mesh.userData.maxHealth = player.maxHealth;
+          mesh.userData.weaponKey = player.weaponKey || 'rifle';
           mesh.userData.flash = player.flash || 0;
           mesh.visible = true;
           const accentIntensity = player.alive ? 0.12 : 0.03;
@@ -1867,7 +2375,13 @@
       game?.grenades || [],
       world.grenadeRoot,
       createGrenadeMesh,
-      updateGrenadeMesh
+      updateGrenadeMesh,
+      null,
+      (grenade) => {
+        if (grenade.ownerId === state.yourPlayerId) {
+          playSound('grenade-throw');
+        }
+      }
     );
 
     syncEntityMap(
@@ -1875,7 +2389,35 @@
       game?.explosions || [],
       world.explosionRoot,
       createExplosionMesh,
-      updateExplosionMesh
+      updateExplosionMesh,
+      null,
+      (explosion) => playSound(explosion.kind === 'acid' ? 'acid-burst' : 'frag-boom')
+    );
+
+    syncEntityMap(
+      world.enemyProjectiles,
+      game?.enemyProjectiles || [],
+      world.enemyProjectileRoot,
+      createEnemyProjectileMesh,
+      updateEnemyProjectileMesh,
+      null,
+      () => playSound('acid-shot')
+    );
+
+    syncEntityMap(
+      world.relays,
+      game?.relays || [],
+      world.relayRoot,
+      createRelayMesh,
+      updateRelayMesh
+    );
+
+    syncEntityMap(
+      world.nests,
+      game?.nests || [],
+      world.nestRoot,
+      createNestMesh,
+      updateNestMesh
     );
   }
 
@@ -1883,7 +2425,7 @@
     if (!state.world) {
       return;
     }
-    for (const key of ['players', 'zombies', 'shots', 'grenades', 'explosions', 'pickups']) {
+    for (const key of ['players', 'zombies', 'shots', 'grenades', 'explosions', 'enemyProjectiles', 'pickups', 'relays', 'nests']) {
       for (const mesh of state.world[key].values()) {
         mesh.parent?.remove(mesh);
       }
@@ -2062,6 +2604,16 @@
       mesh.userData.walkPhase += dt * (airborne ? 5.6 : moving ? 10.8 : 3.2);
       const bob = !airborne && moving ? Math.sin(mesh.userData.walkPhase) * 0.07 : 0;
       const recoil = clamp(mesh.userData.flash || 0, 0, 1);
+      if (recoil > 0.32 && mesh.userData.lastFlash <= 0.12) {
+        mesh.userData.recoilKick = 1;
+        if (mesh.userData.playerId === state.yourPlayerId) {
+          playSound(mesh.userData.weaponKey || 'rifle');
+        }
+      }
+      mesh.userData.lastFlash = recoil;
+      mesh.userData.recoilKick = Math.max(0, (mesh.userData.recoilKick || 0) - dt * 6.8);
+      const weaponKick = clamp(recoil * 0.55 + mesh.userData.recoilKick * 0.95, 0, 1.4);
+      const sway = moving ? Math.sin(mesh.userData.walkPhase * 0.5) * 0.06 : 0;
       mesh.position.y = mesh.userData.targetAlive ? bob + baseHeight : -0.55;
       mesh.scale.y = lerp(mesh.scale.y, mesh.userData.targetAlive ? 1 : 0.85, blend);
       mesh.userData.thighs[0].rotation.x = airborne ? -0.42 : Math.sin(mesh.userData.walkPhase) * 0.34;
@@ -2069,14 +2621,19 @@
       mesh.userData.shins[0].rotation.x = airborne ? 0.62 : Math.max(0, -Math.sin(mesh.userData.walkPhase)) * 0.24;
       mesh.userData.shins[1].rotation.x = airborne ? 0.42 : Math.max(0, -Math.sin(mesh.userData.walkPhase + Math.PI)) * 0.24;
       mesh.userData.upperArms[0].rotation.x = airborne ? -0.4 : -0.26 + Math.sin(mesh.userData.walkPhase + Math.PI) * 0.18;
-      mesh.userData.upperArms[1].rotation.x = -0.5 + recoil * 0.3;
+      mesh.userData.upperArms[1].rotation.x = -0.54 + weaponKick * 0.34;
       mesh.userData.forearms[0].rotation.x = airborne ? -0.56 : -0.42 + Math.max(0, Math.sin(mesh.userData.walkPhase + Math.PI)) * 0.1;
-      mesh.userData.forearms[1].rotation.x = -0.52 - recoil * 0.18;
-      mesh.userData.rifle.rotation.x = 0.06 + recoil * 0.12;
+      mesh.userData.forearms[1].rotation.x = -0.5 - weaponKick * 0.24;
+      mesh.userData.rifle.rotation.x = 0.06 + weaponKick * 0.24 + sway * 0.12;
+      mesh.userData.rifle.rotation.y = sway * 0.2;
+      mesh.userData.rifle.rotation.z = -0.08 - weaponKick * 0.16 + sway * 0.26;
+      mesh.userData.rifle.position.x = 0.5 + sway * 0.2;
       mesh.userData.rifle.position.y = 1.58 + bob * 0.22 + (airborne ? 0.04 : 0);
+      mesh.userData.rifle.position.z = -0.38 + weaponKick * 0.22;
       mesh.userData.backpack.rotation.x = Math.sin(mesh.userData.walkPhase * 0.5) * 0.03;
-      mesh.userData.visorMat.emissiveIntensity = 0.42 + recoil * 1.1;
-      mesh.userData.muzzleMat.opacity = recoil * 0.95;
+      mesh.userData.visorMat.emissiveIntensity = 0.42 + weaponKick * 0.84;
+      mesh.userData.accentMat.emissiveIntensity = 0.16 + weaponKick * 0.18;
+      mesh.userData.muzzleMat.opacity = weaponKick * 0.95;
       mesh.userData.muzzleMat.color.set(recoil > 0.1 ? 0xffe3a8 : 0xffdf9a);
     }
 
@@ -2085,26 +2642,27 @@
       mesh.position.y = lerp(mesh.position.y, mesh.userData.targetY || 0, blend * 0.9);
       mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend * 0.9);
       mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetYaw, blend * 0.9);
-      mesh.userData.stridePhase += dt * 6.4;
-      mesh.userData.legs[0].rotation.x = Math.sin(mesh.userData.stridePhase) * 0.34;
-      mesh.userData.legs[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * 0.34;
+      const speedScale = mesh.userData.type === 'crawler' ? 1.5 : mesh.userData.type === 'runner' ? 1.2 : 1;
+      mesh.userData.stridePhase += dt * 6.4 * speedScale;
+      mesh.userData.legs[0].rotation.x = Math.sin(mesh.userData.stridePhase) * (mesh.userData.type === 'crawler' ? 0.22 : 0.34);
+      mesh.userData.legs[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * (mesh.userData.type === 'crawler' ? 0.22 : 0.34);
       mesh.userData.shins[0].rotation.x = Math.max(0, -Math.sin(mesh.userData.stridePhase)) * 0.28;
       mesh.userData.shins[1].rotation.x = Math.max(0, -Math.sin(mesh.userData.stridePhase + Math.PI)) * 0.28;
-      mesh.userData.arms[0].rotation.x = Math.sin(mesh.userData.stridePhase) * 0.55;
-      mesh.userData.arms[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * 0.55;
-      mesh.userData.forearms[0].rotation.x = -0.2 + Math.sin(mesh.userData.stridePhase) * 0.44;
-      mesh.userData.forearms[1].rotation.x = -0.2 + Math.sin(mesh.userData.stridePhase + Math.PI) * 0.44;
+      mesh.userData.arms[0].rotation.x = Math.sin(mesh.userData.stridePhase) * (mesh.userData.type === 'spitter' ? 0.32 : 0.55);
+      mesh.userData.arms[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * (mesh.userData.type === 'spitter' ? 0.32 : 0.55);
+      mesh.userData.forearms[0].rotation.x = -0.2 + Math.sin(mesh.userData.stridePhase) * (mesh.userData.type === 'spitter' ? 0.18 : 0.44);
+      mesh.userData.forearms[1].rotation.x = -0.2 + Math.sin(mesh.userData.stridePhase + Math.PI) * (mesh.userData.type === 'spitter' ? 0.18 : 0.44);
       mesh.userData.claws[0].rotation.x = Math.sin(mesh.userData.stridePhase) * 0.42;
       mesh.userData.claws[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * 0.42;
-      mesh.userData.torso.rotation.x = 0.12 + Math.sin(mesh.userData.stridePhase * 0.5) * 0.05;
+      mesh.userData.torso.rotation.x = (mesh.userData.type === 'crawler' ? 0.4 : 0.12) + Math.sin(mesh.userData.stridePhase * 0.5) * 0.05;
       mesh.userData.shoulders.rotation.z = 0.1 + Math.sin(mesh.userData.stridePhase * 0.36) * 0.04;
       mesh.userData.head.rotation.z = Math.sin(mesh.userData.stridePhase * 0.4) * 0.08;
-      mesh.userData.head.rotation.x = 0.06 + Math.sin(mesh.userData.stridePhase * 0.32) * 0.04;
-      mesh.userData.jaw.rotation.x = 0.16 + Math.max(0, Math.sin(mesh.userData.stridePhase * 1.1)) * 0.18;
+      mesh.userData.head.rotation.x = (mesh.userData.type === 'crawler' ? 0.26 : 0.06) + Math.sin(mesh.userData.stridePhase * 0.32) * 0.04;
+      mesh.userData.jaw.rotation.x = (mesh.userData.type === 'spitter' ? 0.28 : 0.16) + Math.max(0, Math.sin(mesh.userData.stridePhase * 1.1)) * 0.18;
       const flash = clamp(mesh.userData.hitFlash * 7.5, 0, 1.3);
       mesh.userData.fleshMat.emissive.setRGB(flash * 0.6, flash * 0.08, flash * 0.08);
       mesh.userData.clothMat.emissive.setRGB(flash * 0.2, flash * 0.03, flash * 0.03);
-      mesh.userData.eyeMat.emissiveIntensity = 1.35 + Math.sin(mesh.userData.stridePhase * 0.8) * 0.52 + flash * 1.05;
+      mesh.userData.eyeMat.emissiveIntensity = (mesh.userData.type === 'spitter' ? 2.2 : 1.35) + Math.sin(mesh.userData.stridePhase * 0.8) * 0.52 + flash * 1.05;
     }
 
     for (const mesh of state.world.pickups.values()) {
@@ -2127,6 +2685,45 @@
     for (const mesh of state.world.explosions.values()) {
       mesh.userData.flash.rotation.y += dt * 4.8;
       mesh.userData.smoke.rotation.y -= dt * 1.8;
+    }
+
+    for (const mesh of state.world.enemyProjectiles.values()) {
+      mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
+      mesh.position.y = lerp(mesh.position.y, mesh.userData.targetY || 0, blend);
+      mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
+      const speed = Math.hypot(mesh.userData.vx, mesh.userData.vz) || 0.001;
+      mesh.rotation.y = Math.atan2(mesh.userData.vx, mesh.userData.vz);
+      mesh.userData.halo.scale.setScalar(0.9 + Math.sin(performance.now() * 0.02 + speed) * 0.18);
+      mesh.userData.tail.scale.z = 0.8 + speed * 0.04;
+    }
+
+    for (const mesh of state.world.relays.values()) {
+      mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
+      mesh.position.y = lerp(mesh.position.y, mesh.userData.targetY || 0, blend);
+      mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
+      const progress = clamp((mesh.userData.progress || 0) / Math.max(0.001, mesh.userData.goal || 1), 0, 1);
+      mesh.userData.core.rotation.y += dt * 1.6;
+      mesh.userData.core.rotation.x += dt * 0.8;
+      mesh.userData.core.scale.setScalar(0.92 + Math.sin(mesh.userData.pulse + performance.now() * 0.004) * 0.08 + progress * 0.1);
+      mesh.userData.ring.scale.setScalar(0.9 + progress * 0.22);
+      mesh.userData.coreMat.emissiveIntensity = mesh.userData.complete ? 2.3 : 0.62 + progress * 1.4;
+      mesh.userData.ringMat.opacity = mesh.userData.complete ? 0.88 : 0.24 + progress * 0.32;
+      mesh.userData.beamMat.opacity = mesh.userData.complete ? 0.36 : 0.08 + progress * 0.16;
+    }
+
+    for (const mesh of state.world.nests.values()) {
+      mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
+      mesh.position.y = lerp(mesh.position.y, mesh.userData.targetY || 0, blend);
+      mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
+      const health = clamp((mesh.userData.hp || 0) / Math.max(1, mesh.userData.maxHp || 1), 0, 1);
+      const pulse = Math.sin(mesh.userData.pulse + performance.now() * 0.006);
+      mesh.userData.heart.rotation.y += dt * 2.4;
+      mesh.userData.heart.scale.setScalar((mesh.userData.destroyed ? 0.2 : 1) * (0.92 + pulse * 0.12));
+      mesh.userData.fleshMat.emissiveIntensity = mesh.userData.destroyed ? 0.05 : 0.32 + (1 - health) * 0.74;
+      mesh.userData.ringMat.opacity = mesh.userData.destroyed ? 0.08 : 0.18 + (1 - health) * 0.18;
+      if (mesh.userData.destroyed) {
+        mesh.position.y = lerp(mesh.position.y, (mesh.userData.targetY || 0) - 0.8, blend * 0.8);
+      }
     }
 
     updateDynamicWorld(dt);
@@ -2330,8 +2927,23 @@
         return `Wave ${event.wave} breached the yard.`;
       case 'boss-wave':
         return `Boss wave ${event.wave}: abomination incoming.`;
+      case 'mission-stage':
+        if (event.stage === 'relays') {
+          return 'Mission update: uplink relays exposed.';
+        }
+        if (event.stage === 'nests') {
+          return 'Mission update: plague nests detected.';
+        }
+        if (event.stage === 'evac') {
+          return 'Mission update: extraction pad is live.';
+        }
+        return 'Mission updated.';
+      case 'relay-online':
+        return `Relay ${event.active}/${event.total} is online.`;
       case 'enemy-down':
         return `${event.playerName} dropped a ${event.enemyType}.`;
+      case 'nest-destroyed':
+        return `${event.playerName} destroyed a plague nest (${event.destroyed}/${event.total}).`;
       case 'pickup':
         return `${event.playerName} grabbed a med kit.`;
       case 'player-down':
@@ -2342,6 +2954,8 @@
         return `Wave ${event.wave} cleared.`;
       case 'game-over':
         return `The yard fell on wave ${event.wave}.`;
+      case 'mission-clear':
+        return 'Extraction successful. The squad got out.';
       default:
         return 'Field activity updated.';
     }
@@ -2359,14 +2973,42 @@
       state.lastEventId = event.id;
       if (event.type === 'boss-wave') {
         showToast(`Boss wave ${event.wave} is live.`);
+        playSound('boss');
+      } else if (event.type === 'mission-stage') {
+        if (event.stage === 'relays') {
+          showToast('Relay uplinks are online. Capture all three.');
+          playSound('objective');
+        } else if (event.stage === 'nests') {
+          showToast('Plague nests are active. Burn them down.');
+          playSound('objective');
+        } else if (event.stage === 'evac') {
+          showToast('Extraction pad live. Move to the rooftop.');
+          playSound('boss');
+        }
+      } else if (event.type === 'relay-online') {
+        showToast(`Relay ${event.active}/${event.total} online.`);
+        playSound('relay');
+      } else if (event.type === 'nest-destroyed') {
+        showToast(`Nest destroyed ${event.destroyed}/${event.total}.`);
+        playSound('objective');
       } else if (event.type === 'player-down' && event.playerId === state.yourPlayerId) {
         showToast('You went down. Stay in the room for the respawn.');
+        playSound('down');
       } else if (event.type === 'player-respawn' && event.playerId === state.yourPlayerId) {
         showToast('You fought your way back in.');
       } else if (event.type === 'wave-clear') {
         showToast(`Wave ${event.wave} cleared.`);
+        playSound('wave');
+      } else if (event.type === 'wave-start') {
+        playSound('wave');
+      } else if (event.type === 'pickup' && event.playerId === state.yourPlayerId) {
+        playSound('pickup');
       } else if (event.type === 'game-over') {
         showToast(`Run over on wave ${event.wave}.`);
+        playSound('down');
+      } else if (event.type === 'mission-clear') {
+        showToast('Extraction secured.');
+        playSound('success');
       }
     }
   }
@@ -2388,7 +3030,7 @@
       return `
         <article class="player-card" style="border-color:${escapeHtml(player.color || '#73d9ff')}44">
           <strong>${escapeHtml(player.name)}</strong>
-          <p>Health ${Math.round(player.health)} / ${Math.round(player.maxHealth)} · Kills ${player.kills} · Score ${player.score}</p>
+          <p>Health ${Math.round(player.health)} / ${Math.round(player.maxHealth)} - Kills ${player.kills} - Score ${player.score}</p>
           <div class="player-meta">${chips.join('')}</div>
         </article>
       `;
@@ -2409,7 +3051,7 @@
       ? events.map((event) => `
           <article class="feed-item">
             <strong>${escapeHtml(formatFeedEvent(event))}</strong>
-            <p>${event.wave ? `Wave ${event.wave}` : 'Live event'} · ${event.time?.toFixed ? event.time.toFixed(1) : 'now'}s</p>
+            <p>${event.wave ? `Wave ${event.wave}` : 'Live event'} - ${event.time?.toFixed ? event.time.toFixed(1) : 'now'}s</p>
           </article>
         `).join('')
       : '<article class="feed-item"><strong>Quiet for now.</strong><p>The next wave call, pickup, or boss alert will land here.</p></article>';
@@ -2431,9 +3073,15 @@
     }
 
     if (game.gameOver) {
-      ui.overlayTitle.textContent = `Run over on wave ${game.wave || 0}`;
-      ui.overlayCopy.textContent = `Final squad score ${Math.round(game.score || 0)}. Restart the run or keep the room open and send a fresh invite.`;
-      ui.overlayMeta.textContent = 'Restart uses the same room code online, so your squad can jump straight back in.';
+      if (game.victory) {
+        ui.overlayTitle.textContent = 'Extraction secured';
+        ui.overlayCopy.textContent = `Mission complete. Final squad score ${Math.round(game.score || 0)}. Restart the run to play the full operation again.`;
+        ui.overlayMeta.textContent = 'Restart uses the same room code online, so your squad can run the mission again with the same crew.';
+      } else {
+        ui.overlayTitle.textContent = `Run over on wave ${game.wave || 0}`;
+        ui.overlayCopy.textContent = `Final squad score ${Math.round(game.score || 0)}. Restart the run or keep the room open and send a fresh invite.`;
+        ui.overlayMeta.textContent = 'Restart uses the same room code online, so your squad can jump straight back in.';
+      }
       ui.startBtn.textContent = 'Restart run';
       return;
     }
@@ -2458,7 +3106,9 @@
     ui.objectiveText.textContent = game?.objective || 'Clear the yard before the breach breaks through.';
 
     let condition = 'Stand by';
-    if (game?.gameOver) {
+    if (game?.gameOver && game?.victory) {
+      condition = 'Mission clear';
+    } else if (game?.gameOver) {
       condition = 'Overrun';
     } else if (player && !player.alive) {
       condition = `Respawn ${player.respawnTimer.toFixed(1)}s`;
@@ -2466,6 +3116,9 @@
       condition = 'Awaiting squad';
     } else if (game?.intermission > 0 && !remainingThreats(game) && game.wave > 0) {
       condition = `Intermission ${game.intermission.toFixed(1)}s`;
+    } else if (game?.extraction?.active) {
+      const goal = Math.max(0.1, game.extraction.goal || 1);
+      condition = `Evac ${(Math.min(goal, game.extraction.progress || 0) / goal * 100).toFixed(0)}%`;
     } else if (game) {
       condition = `${currentWeaponLabel(game)} · ${player?.grenadeCooldown > 0 ? `Frag ${player.grenadeCooldown.toFixed(1)}s` : 'Frag ready'}`;
     }
@@ -2712,6 +3365,18 @@
     ui.hostBtn.addEventListener('click', () => connectOnline('host'));
     ui.joinBtn.addEventListener('click', () => connectOnline('join'));
     ui.soloBtn.addEventListener('click', () => startSolo());
+    ui.soundBtn?.addEventListener('click', async () => {
+      state.audio.enabled = !state.audio.enabled;
+      updateSoundButton();
+      persistSettings();
+      if (state.audio.enabled) {
+        await ensureAudioContext();
+        playSound('objective');
+        showToast('Zombie Siege sound enabled.');
+      } else {
+        showToast('Zombie Siege sound muted.');
+      }
+    });
     ui.copyBtn.addEventListener('click', () => copyText(ui.inviteInput.value, 'Invite copied.'));
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
     ui.openLoungeBtn.addEventListener('click', () => openArcadeLounge(false));
@@ -2729,6 +3394,7 @@
       if (event.button !== 0) {
         return;
       }
+      ensureAudioContext();
       if (!currentGame() || currentGame()?.gameOver) {
         return;
       }
@@ -2747,6 +3413,7 @@
     });
 
     window.addEventListener('keydown', (event) => {
+      ensureAudioContext();
       const consumed = setKeyState(event.code, true);
       if (consumed) {
         event.preventDefault();
@@ -2769,6 +3436,8 @@
   function loadSettings() {
     ui.nameInput.value = localStorage.getItem(STORAGE_KEYS.name) || '';
     state.serverUrl = sanitizeServerUrl(localStorage.getItem(STORAGE_KEYS.serverUrl) || query.get('server') || PROD_SERVER_URL);
+    state.audio.enabled = (localStorage.getItem(STORAGE_KEYS.sound) || 'on') !== 'off';
+    updateSoundButton();
     ui.serverUrlInput.value = state.serverUrl;
     const inviteRoom = sanitizeRoomCode(query.get('room'));
     if (inviteRoom) {

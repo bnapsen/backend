@@ -7,7 +7,7 @@
 })(typeof self !== 'undefined' ? self : globalThis, function () {
   'use strict';
 
-  const ARENA = { width: 176, depth: 176 };
+  const ARENA = { width: 232, depth: 232 };
   const MAX_PLAYERS = 4;
   const MAX_EVENTS = 28;
   const PLAYER_COLORS = ['#73d9ff', '#ffd57a', '#ff9fc5', '#91f5a8'];
@@ -30,9 +30,14 @@
   const GRENADE_DAMAGE = 88;
   const GRENADE_KNOCKBACK = 4.4;
   const GRENADE_FUSE = 1.18;
+  const SPITTER_PROJECTILE_SPEED = 16.5;
+  const SPITTER_SPLASH_RADIUS = 2.8;
+  const SPITTER_SPLASH_DAMAGE = 13;
   const RESPAWN_TIME = 5.5;
   const WAVE_START_DELAY = 2.3;
   const BOSS_WAVE_INTERVAL = 4;
+  const RELAY_CAPTURE_SECONDS = 5.5;
+  const EXTRACTION_HOLD_SECONDS = 11;
   const WEAPONS = Object.freeze({
     rifle: {
       key: 'rifle',
@@ -94,6 +99,30 @@
       score: 120,
       tint: '#d2e3b2',
     },
+    crawler: {
+      key: 'crawler',
+      label: 'Crawler',
+      hp: 22,
+      speed: 4.85,
+      radius: 0.54,
+      damage: 7,
+      attackCooldown: 0.64,
+      score: 130,
+      tint: '#bfc89a',
+    },
+    spitter: {
+      key: 'spitter',
+      label: 'Spitter',
+      hp: 48,
+      speed: 2.3,
+      radius: 0.78,
+      damage: 10,
+      attackCooldown: 1.95,
+      score: 210,
+      tint: '#7ca870',
+      preferredDistance: 16,
+      ranged: true,
+    },
     brute: {
       key: 'brute',
       label: 'Brute',
@@ -116,6 +145,21 @@
       score: 1800,
       tint: '#774748',
     },
+  });
+  const RELAY_POINTS = Object.freeze([
+    { x: -78, z: 18, radius: 7.4 },
+    { x: 0, z: -42, radius: 7.6 },
+    { x: 74, z: 26, radius: 7.4 },
+  ]);
+  const NEST_POINTS = Object.freeze([
+    { x: -82, z: -18, radius: 2.8 },
+    { x: 86, z: -26, radius: 2.8 },
+    { x: 0, z: 78, radius: 2.9 },
+  ]);
+  const EXTRACTION_POINT = Object.freeze({
+    x: 0,
+    z: 78,
+    radius: 9.8,
   });
 
   function clamp(value, min, max) {
@@ -213,6 +257,72 @@
       maxZ: -32,
     })) {
       height = Math.max(height, rampHeight(x, 30, 18, 4.4, 8.2));
+    }
+
+    if (rectContains(x, z, {
+      minX: 54,
+      maxX: 94,
+      minZ: 4,
+      maxZ: 50,
+    })) {
+      height = Math.max(height, 5.2);
+    }
+    if (rectContains(x, z, {
+      minX: 42,
+      maxX: 54,
+      minZ: 16,
+      maxZ: 34,
+    })) {
+      height = Math.max(height, rampHeight(x, 42, 54, 0, 5.2));
+    }
+    if (rectContains(x, z, {
+      minX: 66,
+      maxX: 82,
+      minZ: 18,
+      maxZ: 34,
+    })) {
+      height = Math.max(height, 9.6);
+    }
+    if (rectContains(x, z, {
+      minX: 54,
+      maxX: 66,
+      minZ: 18,
+      maxZ: 34,
+    })) {
+      height = Math.max(height, rampHeight(x, 54, 66, 5.2, 9.6));
+    }
+
+    if (rectContains(x, z, {
+      minX: -28,
+      maxX: 28,
+      minZ: 56,
+      maxZ: 92,
+    })) {
+      height = Math.max(height, 3.8);
+    }
+    if (rectContains(x, z, {
+      minX: -42,
+      maxX: -28,
+      minZ: 68,
+      maxZ: 84,
+    })) {
+      height = Math.max(height, rampHeight(x, -42, -28, 0, 3.8));
+    }
+    if (rectContains(x, z, {
+      minX: -10,
+      maxX: 10,
+      minZ: 68,
+      maxZ: 84,
+    })) {
+      height = Math.max(height, 7.4);
+    }
+    if (rectContains(x, z, {
+      minX: -22,
+      maxX: -10,
+      minZ: 68,
+      maxZ: 84,
+    })) {
+      height = Math.max(height, rampHeight(x, -22, -10, 3.8, 7.4));
     }
 
     return Number(height.toFixed(3));
@@ -335,6 +445,8 @@
       hitFlash: zombie.hitFlash,
       stride: zombie.stride,
       score: zombie.score,
+      preferredDistance: zombie.preferredDistance,
+      ranged: zombie.ranged,
     };
   }
 
@@ -364,8 +476,20 @@
     return { ...explosion };
   }
 
+  function cloneEnemyProjectile(projectile) {
+    return { ...projectile };
+  }
+
   function clonePickup(pickup) {
     return { ...pickup };
+  }
+
+  function cloneRelay(relay) {
+    return { ...relay };
+  }
+
+  function cloneNest(nest) {
+    return { ...nest };
   }
 
   function cloneEvent(event) {
@@ -385,6 +509,8 @@
       score: 0,
       kills: 0,
       gameOver: false,
+      victory: false,
+      missionStage: 'breach',
       intermission: 0.2,
       spawnBudget: 0,
       spawnTimer: 0,
@@ -395,7 +521,19 @@
       shots: [],
       grenades: [],
       explosions: [],
+      enemyProjectiles: [],
       pickups: [],
+      relays: [],
+      nests: [],
+      extraction: {
+        active: false,
+        x: EXTRACTION_POINT.x,
+        z: EXTRACTION_POINT.z,
+        y: groundHeightAt(EXTRACTION_POINT.x, EXTRACTION_POINT.z),
+        radius: EXTRACTION_POINT.radius,
+        progress: 0,
+        goal: EXTRACTION_HOLD_SECONDS,
+      },
       events: [],
     };
   }
@@ -413,10 +551,12 @@
       score: state.score,
       kills: state.kills,
       gameOver: state.gameOver,
+      victory: state.victory,
+      missionStage: state.missionStage,
       intermission: state.intermission,
       spawnBudget: state.spawnBudget,
       spawnTimer: state.spawnTimer,
-      remaining: state.zombies.length + state.spawnBudget,
+      remaining: state.zombies.length + state.spawnBudget + state.nests.filter((nest) => !nest.destroyed).length,
       nextEntityId: state.nextEntityId,
       lastEventId: state.lastEventId,
       players: state.players.map(clonePlayer),
@@ -424,7 +564,11 @@
       shots: state.shots.map(cloneShot),
       grenades: state.grenades.map(cloneGrenade),
       explosions: state.explosions.map(cloneExplosion),
+      enemyProjectiles: state.enemyProjectiles.map(cloneEnemyProjectile),
       pickups: state.pickups.map(clonePickup),
+      relays: state.relays.map(cloneRelay),
+      nests: state.nests.map(cloneNest),
+      extraction: state.extraction ? { ...state.extraction } : null,
       events: state.events.map(cloneEvent),
     };
   }
@@ -449,6 +593,51 @@
     state.objective = text;
   }
 
+  function activeRelayCount(state) {
+    return state.relays.filter((relay) => relay.complete).length;
+  }
+
+  function destroyedNestCount(state) {
+    return state.nests.filter((nest) => nest.destroyed).length;
+  }
+
+  function updateMissionObjective(state) {
+    if (state.victory) {
+      setObjective(state, 'Extraction successful. Restart the run or host another squad drop.');
+      return;
+    }
+    if (state.missionStage === 'relays') {
+      if (activeRelayCount(state) >= RELAY_POINTS.length) {
+        setObjective(state, `Relay grid online. Hold the yard until plague nests reveal themselves on later waves.`);
+        return;
+      }
+      setObjective(state, `Bring the relay grid online (${activeRelayCount(state)}/${RELAY_POINTS.length}). Stand in each uplink ring to charge it.`);
+      return;
+    }
+    if (state.missionStage === 'nests') {
+      if (destroyedNestCount(state) >= NEST_POINTS.length) {
+        setObjective(state, 'All nests destroyed. Survive until extraction is available.');
+        return;
+      }
+      setObjective(state, `Destroy the plague nests (${destroyedNestCount(state)}/${NEST_POINTS.length}). They keep seeding new infected into the yard.`);
+      return;
+    }
+    if (state.missionStage === 'evac' && state.extraction?.active) {
+      const hold = Math.max(0, (state.extraction.goal || EXTRACTION_HOLD_SECONDS) - (state.extraction.progress || 0));
+      setObjective(state, `Reach the evac pad and hold it for ${hold.toFixed(1)}s while the last horde crashes in.`);
+      return;
+    }
+    if (state.wave <= 1) {
+      setObjective(state, 'Clear the first breach and stabilize the perimeter.');
+      return;
+    }
+    if (state.wave < 3) {
+      setObjective(state, `Survive the breach. Objective systems unlock after wave 2. Wave ${state.wave} is live.`);
+      return;
+    }
+    setObjective(state, `Stay alive and keep the yard clean while the mission escalates. Wave ${state.wave} is live.`);
+  }
+
   function resetMatch(state) {
     const players = state.players.map((player) => ({
       id: player.id,
@@ -467,7 +656,7 @@
     if (state.players.length) {
       state.intermission = 1.4;
       setStatus(state, 'Wave one is almost here. Secure the lot.');
-      setObjective(state, 'Clear the first breach and keep everyone alive.');
+      updateMissionObjective(state);
     }
     return state;
   }
@@ -491,7 +680,7 @@
     if (state.wave === 0) {
       state.intermission = 1.4;
       setStatus(state, `${player.name} is gearing up. Wave one is about to start.`);
-      setObjective(state, 'Move the mouse over the arena, line up your shots, and clear the breach.');
+      updateMissionObjective(state);
     } else {
       setStatus(state, `${player.name} joined the fight. Cover the new teammate.`);
     }
@@ -522,6 +711,7 @@
       playerName: player.name,
     });
     setStatus(state, `${player.name} dropped out. The fight stays open for another survivor.`);
+    updateMissionObjective(state);
   }
 
   function setPlayerInput(state, playerId, rawInput) {
@@ -556,6 +746,93 @@
     const id = state.nextEntityId;
     state.nextEntityId += 1;
     return id;
+  }
+
+  function ensureRelayPhase(state) {
+    if (state.relays.length) {
+      return;
+    }
+    state.missionStage = 'relays';
+    state.relays = RELAY_POINTS.map((point) => ({
+      id: nextEntityId(state),
+      x: point.x,
+      z: point.z,
+      y: groundHeightAt(point.x, point.z),
+      radius: point.radius,
+      progress: 0,
+      goal: RELAY_CAPTURE_SECONDS,
+      complete: false,
+      pulse: rand(0, Math.PI * 2),
+    }));
+    setStatus(state, 'Mission update: the relay grid is exposed. Bring all three uplinks online.');
+    updateMissionObjective(state);
+    pushEvent(state, 'mission-stage', {
+      stage: 'relays',
+      wave: state.wave,
+    });
+  }
+
+  function ensureNestPhase(state) {
+    if (state.nests.length) {
+      return;
+    }
+    state.missionStage = 'nests';
+    state.nests = NEST_POINTS.map((point) => ({
+      id: nextEntityId(state),
+      x: point.x,
+      z: point.z,
+      y: groundHeightAt(point.x, point.z),
+      radius: point.radius,
+      hp: 220,
+      maxHp: 220,
+      destroyed: false,
+      pulse: rand(0, Math.PI * 2),
+      spawnTimer: 1.4 + Math.random() * 1.1,
+    }));
+    setStatus(state, 'Mission update: plague nests are pulsing across the yard. Burn them down.');
+    updateMissionObjective(state);
+    pushEvent(state, 'mission-stage', {
+      stage: 'nests',
+      wave: state.wave,
+    });
+  }
+
+  function ensureEvacPhase(state) {
+    if (state.extraction?.active) {
+      return;
+    }
+    state.missionStage = 'evac';
+    state.extraction = {
+      active: true,
+      x: EXTRACTION_POINT.x,
+      z: EXTRACTION_POINT.z,
+      y: groundHeightAt(EXTRACTION_POINT.x, EXTRACTION_POINT.z),
+      radius: EXTRACTION_POINT.radius,
+      progress: 0,
+      goal: EXTRACTION_HOLD_SECONDS,
+    };
+    state.spawnBudget += 8 + state.players.length * 2;
+    spawnZombie(state, 'boss');
+    spawnZombie(state, 'spitter');
+    setStatus(state, 'Mission update: evac shuttle inbound. Reach the rooftop pad and hold it.');
+    updateMissionObjective(state);
+    pushEvent(state, 'mission-stage', {
+      stage: 'evac',
+      wave: state.wave,
+    });
+  }
+
+  function completeMission(state) {
+    state.gameOver = true;
+    state.victory = true;
+    state.spawnBudget = 0;
+    state.enemyProjectiles = [];
+    setStatus(state, 'Extraction secured. The squad made it out alive.');
+    updateMissionObjective(state);
+    pushEvent(state, 'mission-clear', {
+      wave: state.wave,
+      score: state.score,
+    });
   }
 
   function spawnZombie(state, typeKey) {
@@ -596,6 +873,8 @@
       hitFlash: 0,
       stride: rand(0, Math.PI * 2),
       score: template.score,
+      preferredDistance: template.preferredDistance || 0,
+      ranged: Boolean(template.ranged),
     });
   }
 
@@ -612,11 +891,10 @@
         wave: state.wave,
       });
       setStatus(state, `Boss wave ${state.wave} is live. The abomination is in the yard.`);
-      setObjective(state, 'Focus the boss, kite the brute pack, and keep someone alive.');
     } else {
       setStatus(state, `Wave ${state.wave} incoming. Hold the perimeter.`);
-      setObjective(state, `Clear wave ${state.wave} and get ready for wave ${state.wave + 1}.`);
     }
+    updateMissionObjective(state);
     state.spawnTimer = 0.15;
     pushEvent(state, 'wave-start', { wave: state.wave });
   }
@@ -687,10 +965,48 @@
     if (zombie.type === 'brute') {
       return (zombie.y || 0) + 2.2;
     }
+    if (zombie.type === 'spitter') {
+      return (zombie.y || 0) + 1.72;
+    }
     if (zombie.type === 'runner') {
       return (zombie.y || 0) + 1.18;
     }
+    if (zombie.type === 'crawler') {
+      return (zombie.y || 0) + 0.8;
+    }
     return (zombie.y || 0) + 1.45;
+  }
+
+  function nestAimHeight(nest) {
+    return (nest.y || 0) + 1.9;
+  }
+
+  function damageNest(state, nest, amount, owner) {
+    if (!nest || nest.destroyed) {
+      return false;
+    }
+    nest.hp -= amount;
+    nest.pulse += 0.4;
+    if (nest.hp > 0) {
+      return false;
+    }
+    nest.hp = 0;
+    nest.destroyed = true;
+    const player = owner || state.players[0];
+    if (player) {
+      player.score += 420;
+      state.score += 420;
+    }
+    pushEvent(state, 'nest-destroyed', {
+      playerId: player?.id || '',
+      playerName: player?.name || 'Survivor',
+      destroyed: destroyedNestCount(state),
+      total: NEST_POINTS.length,
+      wave: state.wave,
+    });
+    setStatus(state, `${player?.name || 'The squad'} destroyed a plague nest.`);
+    updateMissionObjective(state);
+    return true;
   }
 
   function recordShot(state, player, weapon, toX, toZ, toY, hit) {
@@ -739,6 +1055,7 @@
       const dirX = Math.sin(angle);
       const dirZ = -Math.cos(angle);
       let bestZombie = null;
+      let bestNest = null;
       let bestAhead = aimData.targetDistance;
 
       for (const zombie of state.zombies) {
@@ -755,6 +1072,28 @@
         if (ahead <= bestAhead) {
           bestAhead = ahead;
           bestZombie = zombie;
+          bestNest = null;
+        }
+      }
+
+      for (const nest of state.nests) {
+        if (nest.destroyed) {
+          continue;
+        }
+        const dx = nest.x - player.x;
+        const dz = nest.z - player.z;
+        const ahead = dx * dirX + dz * dirZ;
+        if (ahead < 0.3 || ahead > aimData.targetDistance) {
+          continue;
+        }
+        const lateral = Math.abs(dx * dirZ - dz * dirX);
+        if (lateral > nest.radius + weapon.width) {
+          continue;
+        }
+        if (ahead <= bestAhead) {
+          bestAhead = ahead;
+          bestZombie = null;
+          bestNest = nest;
         }
       }
 
@@ -767,6 +1106,13 @@
         bestZombie.hitFlash = 0.1;
         bestZombie.x += dirX * weapon.knockback;
         bestZombie.z += dirZ * weapon.knockback;
+        recordShot(state, player, weapon, hitX, hitZ, hitY, true);
+      } else if (bestNest) {
+        const hitX = player.x + dirX * bestAhead;
+        const hitZ = player.z + dirZ * bestAhead;
+        const hitY = nestAimHeight(bestNest);
+        const damageFalloff = 1 - clamp(bestAhead / weapon.range, 0, 1) * 0.1;
+        damageNest(state, bestNest, weapon.damage * player.damageScale * damageFalloff * 1.05, player);
         recordShot(state, player, weapon, hitX, hitZ, hitY, true);
       } else {
         recordShot(
@@ -803,23 +1149,66 @@
     };
   }
 
-  function recordExplosion(state, x, y, z, radius) {
+  function recordExplosion(state, x, y, z, radius, kind, color) {
     state.explosions.push({
       id: nextEntityId(state),
       x,
       y,
       z,
       radius,
+      kind: kind || 'frag',
+      color: color || (kind === 'acid' ? '#7dff72' : '#ffb26a'),
       ttl: 0.56,
       maxTtl: 0.56,
     });
+  }
+
+  function applyDamageToPlayer(state, player, amount, sourceX, sourceZ, statusText) {
+    if (!player || !player.alive) {
+      return false;
+    }
+    player.health -= amount;
+    player.hurtTimer = 0.2;
+    const angle = Math.atan2(player.x - sourceX, player.z - sourceZ);
+    player.vx += Math.sin(angle) * 2.2;
+    player.vz += Math.cos(angle) * 2.2;
+    player.x += Math.sin(angle) * 0.4;
+    player.z += Math.cos(angle) * 0.4;
+    player.x = clamp(player.x, -ARENA.width * 0.47, ARENA.width * 0.47);
+    player.z = clamp(player.z, -ARENA.depth * 0.47, ARENA.depth * 0.47);
+    player.y = groundHeightAt(player.x, player.z);
+    player.vy = 0;
+    player.grounded = true;
+    if (player.health <= 0) {
+      player.health = 0;
+      player.alive = false;
+      player.respawnTimer = RESPAWN_TIME;
+      pushEvent(state, 'player-down', {
+        playerId: player.id,
+        playerName: player.name,
+      });
+      setStatus(state, statusText || `${player.name} went down. Keep someone alive for the respawn.`);
+      return true;
+    }
+    return false;
+  }
+
+  function recordEnemyProjectile(state, projectile) {
+    state.enemyProjectiles.push({
+      id: nextEntityId(state),
+      ...projectile,
+    });
+  }
+
+  function recordAcidSplash(state, x, y, z) {
+    recordExplosion(state, x, y, z, SPITTER_SPLASH_RADIUS, 'acid', '#8dff7a');
   }
 
   function explodeGrenade(state, grenade, owner) {
     const originX = grenade.x;
     const originZ = grenade.z;
     const originY = grenade.y;
-    recordExplosion(state, originX, originY, originZ, GRENADE_RADIUS);
+    recordExplosion(state, originX, originY, originZ, GRENADE_RADIUS, 'frag', '#ffb26a');
     let kills = 0;
 
     for (let index = state.zombies.length - 1; index >= 0; index -= 1) {
@@ -844,6 +1233,18 @@
         state.zombies.splice(index, 1);
         kills += 1;
       }
+    }
+
+    for (const nest of state.nests) {
+      if (nest.destroyed) {
+        continue;
+      }
+      const distance = Math.hypot(nest.x - originX, nest.z - originZ);
+      if (distance > GRENADE_RADIUS + nest.radius) {
+        continue;
+      }
+      const falloff = 1 - clamp(distance / GRENADE_RADIUS, 0, 1);
+      damageNest(state, nest, GRENADE_DAMAGE * (0.48 + falloff * 0.72), owner);
     }
 
     if (owner) {
@@ -1006,7 +1407,6 @@
   }
 
   function applyZombieAttacks(state, zombie, player) {
-    zombie.attackTimer = Math.max(0, zombie.attackTimer - state.lastStep);
     if (!player || !player.alive) {
       return;
     }
@@ -1022,26 +1422,31 @@
       return;
     }
     zombie.attackTimer = zombie.attackCooldown;
-    player.health -= zombie.damage;
-    player.hurtTimer = 0.2;
-    const angle = Math.atan2(player.x - zombie.x, player.z - zombie.z);
-    player.vx += Math.sin(angle) * 2.2;
-    player.vz += Math.cos(angle) * 2.2;
-    player.x += Math.sin(angle) * 0.4;
-    player.z += Math.cos(angle) * 0.4;
-    player.y = groundHeightAt(player.x, player.z);
-    player.vy = 0;
-    player.grounded = true;
-    if (player.health <= 0) {
-      player.health = 0;
-      player.alive = false;
-      player.respawnTimer = RESPAWN_TIME;
-      pushEvent(state, 'player-down', {
-        playerId: player.id,
-        playerName: player.name,
-      });
-      setStatus(state, `${player.name} went down. Keep someone alive for the respawn.`);
-    }
+    applyDamageToPlayer(state, player, zombie.damage, zombie.x, zombie.z);
+  }
+
+  function launchAcid(state, zombie, target) {
+    const dx = target.x - zombie.x;
+    const dz = target.z - zombie.z;
+    const distance = Math.hypot(dx, dz) || 1;
+    const dirX = dx / distance;
+    const dirZ = dz / distance;
+    const fromY = zombieAimHeight(zombie);
+    const targetY = (target.y || 0) + 1.05;
+    recordEnemyProjectile(state, {
+      ownerId: zombie.id,
+      x: zombie.x + dirX * (zombie.radius + 0.5),
+      y: fromY,
+      z: zombie.z + dirZ * (zombie.radius + 0.5),
+      vx: dirX * SPITTER_PROJECTILE_SPEED,
+      vy: clamp((targetY - fromY) / Math.max(0.8, distance / SPITTER_PROJECTILE_SPEED), -1.6, 1.8),
+      vz: dirZ * SPITTER_PROJECTILE_SPEED,
+      radius: 0.32,
+      ttl: 1.9,
+      splashRadius: SPITTER_SPLASH_RADIUS,
+      damage: SPITTER_SPLASH_DAMAGE + Math.floor(state.wave / 3),
+      color: '#9bff71',
+    });
   }
 
   function stepZombies(state, dt) {
@@ -1056,12 +1461,186 @@
       const dz = target.z - zombie.z;
       const distance = Math.sqrt(dx * dx + dz * dz) || 1;
       zombie.yaw = Math.atan2(dx, -dz);
-      if (distance > zombie.radius + target.radius + 0.18) {
+      if (zombie.ranged) {
+        const desired = zombie.preferredDistance || 15;
+        let moveX = 0;
+        let moveZ = 0;
+        if (distance > desired + 2.4) {
+          moveX = dx / distance;
+          moveZ = dz / distance;
+        } else if (distance < desired - 3.2) {
+          moveX = -dx / distance;
+          moveZ = -dz / distance;
+        } else {
+          const strafe = Math.sin(state.time * 0.8 + zombie.id) >= 0 ? 1 : -1;
+          moveX = (dz / distance) * strafe * 0.75;
+          moveZ = (-dx / distance) * strafe * 0.75;
+        }
+        zombie.x += moveX * zombie.speed * dt;
+        zombie.z += moveZ * zombie.speed * dt;
+        if (distance <= 28 && Math.abs((target.y || 0) - (zombie.y || 0)) <= 3 && zombie.attackTimer <= 0) {
+          zombie.attackTimer = zombie.attackCooldown;
+          launchAcid(state, zombie, target);
+        }
+      } else if (distance > zombie.radius + target.radius + 0.18) {
         zombie.x += (dx / distance) * zombie.speed * dt;
         zombie.z += (dz / distance) * zombie.speed * dt;
       }
+      zombie.x = clamp(zombie.x, -ARENA.width * 0.49, ARENA.width * 0.49);
+      zombie.z = clamp(zombie.z, -ARENA.depth * 0.49, ARENA.depth * 0.49);
       zombie.y = groundHeightAt(zombie.x, zombie.z);
       applyZombieAttacks(state, zombie, target);
+    }
+  }
+
+  function stepEnemyProjectiles(state, dt) {
+    for (let index = state.enemyProjectiles.length - 1; index >= 0; index -= 1) {
+      const projectile = state.enemyProjectiles[index];
+      projectile.ttl -= dt;
+      projectile.x += projectile.vx * dt;
+      projectile.y += projectile.vy * dt;
+      projectile.z += projectile.vz * dt;
+      projectile.vy -= 5.6 * dt;
+      projectile.x = clamp(projectile.x, -ARENA.width * 0.52, ARENA.width * 0.52);
+      projectile.z = clamp(projectile.z, -ARENA.depth * 0.52, ARENA.depth * 0.52);
+
+      let removed = false;
+      for (const player of livingPlayers(state)) {
+        const dy = ((player.y || 0) + 1.05) - projectile.y;
+        const horizontal = Math.sqrt(distanceSquared(player.x, player.z, projectile.x, projectile.z));
+        if (horizontal > player.radius + projectile.radius || Math.abs(dy) > 1.2) {
+          continue;
+        }
+        recordAcidSplash(state, projectile.x, Math.max(projectile.y, player.y || 0), projectile.z);
+        applyDamageToPlayer(state, player, projectile.damage, projectile.x, projectile.z);
+        state.enemyProjectiles.splice(index, 1);
+        removed = true;
+        break;
+      }
+      if (removed) {
+        continue;
+      }
+
+      const groundY = groundHeightAt(projectile.x, projectile.z) + projectile.radius * 0.5;
+      if (projectile.y <= groundY || projectile.ttl <= 0) {
+        recordAcidSplash(state, projectile.x, groundY, projectile.z);
+        for (const player of livingPlayers(state)) {
+          const distance = Math.sqrt(distanceSquared(player.x, player.z, projectile.x, projectile.z));
+          if (distance > (projectile.splashRadius || SPITTER_SPLASH_RADIUS) + player.radius) {
+            continue;
+          }
+          const falloff = 1 - clamp(distance / (projectile.splashRadius || SPITTER_SPLASH_RADIUS), 0, 1);
+          applyDamageToPlayer(state, player, projectile.damage * (0.45 + falloff * 0.55), projectile.x, projectile.z);
+        }
+        state.enemyProjectiles.splice(index, 1);
+      }
+    }
+  }
+
+  function stepRelays(state, dt) {
+    if (!state.relays.length || activeRelayCount(state) >= RELAY_POINTS.length) {
+      return;
+    }
+    let activatedThisFrame = false;
+    for (const relay of state.relays) {
+      relay.pulse += dt * 1.8;
+      if (relay.complete) {
+        continue;
+      }
+      let charging = false;
+      for (const player of livingPlayers(state)) {
+        const sameLevel = Math.abs((player.y || 0) - relay.y) <= 2.5;
+        const distance = Math.sqrt(distanceSquared(player.x, player.z, relay.x, relay.z));
+        if (!sameLevel || distance > relay.radius) {
+          continue;
+        }
+        charging = true;
+        relay.progress = Math.min(relay.goal, relay.progress + dt);
+      }
+      if (!charging) {
+        relay.progress = Math.max(0, relay.progress - dt * 0.35);
+      }
+      if (!relay.complete && relay.progress >= relay.goal) {
+        relay.complete = true;
+        activatedThisFrame = true;
+        pushEvent(state, 'relay-online', {
+          relayId: relay.id,
+          active: activeRelayCount(state),
+          total: RELAY_POINTS.length,
+          wave: state.wave,
+        });
+        setStatus(state, `Relay ${activeRelayCount(state)} of ${RELAY_POINTS.length} is online.`);
+      }
+    }
+    if (activatedThisFrame) {
+      updateMissionObjective(state);
+    }
+  }
+
+  function stepNests(state, dt) {
+    if (!state.nests.length || destroyedNestCount(state) >= NEST_POINTS.length) {
+      return;
+    }
+    for (const nest of state.nests) {
+      nest.pulse += dt * 2.6;
+      if (nest.destroyed) {
+        continue;
+      }
+      nest.spawnTimer -= dt;
+      if (nest.spawnTimer <= 0) {
+        const type = Math.random() > 0.5 ? 'crawler' : 'runner';
+        spawnZombie(state, type);
+        const zombie = state.zombies[state.zombies.length - 1];
+        if (zombie) {
+          zombie.x = clamp(nest.x + rand(-4.2, 4.2), -ARENA.width * 0.48, ARENA.width * 0.48);
+          zombie.z = clamp(nest.z + rand(-4.2, 4.2), -ARENA.depth * 0.48, ARENA.depth * 0.48);
+          zombie.y = groundHeightAt(zombie.x, zombie.z);
+        }
+        nest.spawnTimer = 3.4 + Math.random() * 1.8;
+      }
+    }
+  }
+
+  function stepExtraction(state, dt) {
+    if (!state.extraction?.active || state.victory) {
+      return;
+    }
+    let occupied = false;
+    for (const player of livingPlayers(state)) {
+      const sameLevel = Math.abs((player.y || 0) - state.extraction.y) <= 2.6;
+      const distance = Math.sqrt(distanceSquared(player.x, player.z, state.extraction.x, state.extraction.z));
+      if (!sameLevel || distance > state.extraction.radius) {
+        continue;
+      }
+      occupied = true;
+      break;
+    }
+    if (occupied) {
+      state.extraction.progress = Math.min(state.extraction.goal, state.extraction.progress + dt);
+    } else {
+      state.extraction.progress = Math.max(0, state.extraction.progress - dt * 0.35);
+    }
+    if (state.extraction.progress >= state.extraction.goal) {
+      completeMission(state);
+    } else {
+      updateMissionObjective(state);
+    }
+  }
+
+  function advanceMission(state) {
+    if (state.victory || state.gameOver) {
+      return;
+    }
+    if (state.wave >= 3 && !state.relays.length) {
+      ensureRelayPhase(state);
+      return;
+    }
+    if (state.relays.length && activeRelayCount(state) >= RELAY_POINTS.length && state.wave >= 5 && !state.nests.length) {
+      ensureNestPhase(state);
+      return;
+    }
+    if (state.nests.length && destroyedNestCount(state) >= NEST_POINTS.length && state.wave >= 7 && !state.extraction?.active) {
+      ensureEvacPhase(state);
     }
   }
 
@@ -1136,7 +1715,7 @@
   }
 
   function maybeAdvanceWave(state, dt) {
-    if (!state.players.length || state.gameOver) {
+    if (!state.players.length || state.gameOver || state.victory) {
       return;
     }
 
@@ -1151,10 +1730,12 @@
     if (state.spawnBudget > 0) {
       state.spawnTimer -= dt;
       if (state.spawnTimer <= 0) {
-        const pool = state.wave >= 5
-          ? ['walker', 'walker', 'runner', 'runner', 'runner', 'brute', 'brute']
+        const pool = state.wave >= 8
+          ? ['walker', 'runner', 'runner', 'crawler', 'crawler', 'spitter', 'brute', 'brute']
+          : state.wave >= 5
+            ? ['walker', 'walker', 'runner', 'runner', 'crawler', 'spitter', 'brute', 'brute']
           : state.wave >= 3
-            ? ['walker', 'walker', 'runner', 'runner', 'brute']
+            ? ['walker', 'walker', 'runner', 'runner', 'crawler', 'spitter', 'brute']
             : ['walker', 'walker', 'walker', 'runner'];
         spawnZombie(state, pool[Math.floor(Math.random() * pool.length)]);
         state.spawnBudget -= 1;
@@ -1167,7 +1748,7 @@
       if (state.intermission <= 0) {
         state.intermission = WAVE_START_DELAY;
         setStatus(state, `Wave ${state.wave} cleared. Catch your breath and reload.`);
-        setObjective(state, `Next breach in ${WAVE_START_DELAY.toFixed(1)} seconds.`);
+        updateMissionObjective(state);
         pushEvent(state, 'wave-clear', {
           wave: state.wave,
         });
@@ -1178,7 +1759,7 @@
         beginWave(state);
       } else {
         setStatus(state, `Wave ${state.wave} cleared. Next breach in ${state.intermission.toFixed(1)}s.`);
-        setObjective(state, `Fortify for wave ${state.wave + 1}.`);
+        updateMissionObjective(state);
       }
     }
   }
@@ -1191,6 +1772,7 @@
       return;
     }
     state.gameOver = true;
+    state.victory = false;
     setStatus(state, `The yard fell on wave ${state.wave}. Restart to run it back.`);
     setObjective(state, 'Everybody is down. Reset the run or host a fresh room.');
     pushEvent(state, 'game-over', {
@@ -1210,6 +1792,11 @@
     }
     stepGrenades(state, delta);
     stepZombies(state, delta);
+    stepEnemyProjectiles(state, delta);
+    advanceMission(state);
+    stepRelays(state, delta);
+    stepNests(state, delta);
+    stepExtraction(state, delta);
     stepPickups(state, delta);
     maybeAdvanceWave(state, delta);
     updateGameOver(state);

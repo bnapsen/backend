@@ -315,6 +315,21 @@ button.secondary {
   background: rgba(255, 255, 255, 0.05);
 }
 
+button.compact {
+  padding: 0.56rem 0.82rem;
+  border-radius: 999px;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+button.compact.muted {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .advanced-panel {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.03);
