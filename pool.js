@@ -95,7 +95,7 @@
 
   const CUE_UI = Object.freeze({
     anchorCap: 108,
-    powerRange: 92,
+    powerRange: 70,
     maxPower: 2.05,
     minPower: 0.04,
     cuePullback: 144,
@@ -112,7 +112,7 @@
     aimSmoothing: 0.26,
     stickAimSmoothing: 0.16,
     powerSmoothing: 0.26,
-    scenePadding: 112,
+    scenePadding: 132,
     minCueVisualScale: 0.52,
   });
   const SOLO_BOT_NAME = 'Orbit Bot';
@@ -855,17 +855,24 @@
     };
   }
 
-  function boardPointFromClient(clientX, clientY, clampToTable = false) {
+  function boardPointFromClient(clientX, clientY, clampMode = 'table') {
     const rect = canvas.getBoundingClientRect();
     const table = activeTable();
     const x = (clientX - rect.left - state.view.offsetX) / state.view.scale;
     const y = (clientY - rect.top - state.view.offsetY) / state.view.scale;
-    if (!clampToTable && (x < 0 || x > table.width || y < 0 || y > table.height)) {
+    if (clampMode === 'none') {
+      return { x, y };
+    }
+    const minX = clampMode === 'scene' ? -CUE_UI.scenePadding : 0;
+    const maxX = clampMode === 'scene' ? table.width + CUE_UI.scenePadding : table.width;
+    const minY = clampMode === 'scene' ? -CUE_UI.scenePadding : 0;
+    const maxY = clampMode === 'scene' ? table.height + CUE_UI.scenePadding : table.height;
+    if (x < minX || x > maxX || y < minY || y > maxY) {
       return null;
     }
     return {
-      x: clamp(x, 0, table.width),
-      y: clamp(y, 0, table.height),
+      x: clamp(x, minX, maxX),
+      y: clamp(y, minY, maxY),
     };
   }
 
@@ -1528,7 +1535,7 @@
     if (!canShoot()) {
       return;
     }
-    const point = boardPointFromClient(event.clientX, event.clientY);
+    const point = boardPointFromClient(event.clientX, event.clientY, 'scene');
     const cue = activeCue();
     if (!point || !cue) {
       return;
@@ -1560,8 +1567,9 @@
     if (!state.aiming || event.pointerId !== state.pointerId) {
       return;
     }
-    const point = boardPointFromClient(event.clientX, event.clientY, true);
-    if (!point) {
+    const point = boardPointFromClient(event.clientX, event.clientY, 'scene');
+    const rawPoint = boardPointFromClient(event.clientX, event.clientY, 'none');
+    if (!point || !rawPoint) {
       return;
     }
     state.pointer = point;
@@ -1573,7 +1581,7 @@
       if (state.aimFromStick || !state.aimLocked) {
         updateAimAngleFromPoint(cue, point, state.aimFromStick);
       }
-      const pullState = computeCuePullState(cue, point);
+      const pullState = computeCuePullState(cue, rawPoint);
       const pullback = pullState.pullback;
       const lateral = pullState.lateral;
       const lockLateralLimit = Math.max(CUE_UI.lockLateral, pullback * 1.35);
@@ -1610,7 +1618,8 @@
     if (!state.aiming || event.pointerId !== state.pointerId) {
       return;
     }
-    const point = boardPointFromClient(event.clientX, event.clientY, true) || state.pointer;
+    const point = boardPointFromClient(event.clientX, event.clientY, 'scene') || state.pointer;
+    const rawPoint = boardPointFromClient(event.clientX, event.clientY, 'none') || point;
     const cue = activeCue();
     state.aiming = false;
     state.pointerId = null;
@@ -1624,7 +1633,7 @@
       return;
     }
 
-    const power = normalizedShotPower(computeCuePullState(cue, point).power);
+    const power = normalizedShotPower(computeCuePullState(cue, rawPoint).power);
     if (power < CUE_UI.minPower) {
       updatePowerUi();
       return;
