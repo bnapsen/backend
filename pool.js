@@ -73,6 +73,7 @@
     power: 0,
     powerTarget: 0,
     aimAngle: 0,
+    aimAngleTarget: 0,
     aimAnchor: { x: 0, y: 0 },
     aimLocked: false,
     aimFromStick: false,
@@ -80,6 +81,7 @@
     localPlayers: [],
     soloBotDueAt: 0,
     lastFrameAt: 0,
+    lastUiFrameAt: 0,
     summarySignature: '',
     setupCollapsed: false,
     sidebarCollapsed: false,
@@ -112,6 +114,9 @@
     aimSmoothing: 0.26,
     stickAimSmoothing: 0.16,
     powerSmoothing: 0.26,
+    aimLerpPerSecond: 18,
+    stickAimLerpPerSecond: 12,
+    powerLerpPerSecond: 16,
     scenePadding: 132,
     minCueVisualScale: 0.52,
   });
@@ -246,6 +251,7 @@
     state.pointerId = null;
     state.power = 0;
     state.powerTarget = 0;
+    state.aimAngleTarget = state.aimAngle;
     state.aimAnchor.x = 0;
     state.aimAnchor.y = 0;
     state.aimLocked = false;
@@ -283,10 +289,10 @@
     const targetAngle = resolveAimAngle(cue, point, fromStick);
     if (options.immediate) {
       state.aimAngle = targetAngle;
+      state.aimAngleTarget = targetAngle;
       return true;
     }
-    const smoothing = fromStick ? CUE_UI.stickAimSmoothing : CUE_UI.aimSmoothing;
-    state.aimAngle = lerpAngle(state.aimAngle, targetAngle, smoothing);
+    state.aimAngleTarget = targetAngle;
     return true;
   }
 
@@ -305,6 +311,17 @@
       lateral,
       power: clamp(easedPower, 0, CUE_UI.maxPower),
     };
+  }
+
+  function stepCueUi(now = performance.now()) {
+    const last = state.lastUiFrameAt || now;
+    const dt = clamp((now - last) / 1000, 1 / 240, 0.05);
+    state.lastUiFrameAt = now;
+    const aimRate = state.aimFromStick ? CUE_UI.stickAimLerpPerSecond : CUE_UI.aimLerpPerSecond;
+    const aimAmount = 1 - Math.exp(-aimRate * dt);
+    const powerAmount = 1 - Math.exp(-CUE_UI.powerLerpPerSecond * dt);
+    state.aimAngle = lerpAngle(state.aimAngle, state.aimAngleTarget, aimAmount);
+    state.power = lerp(state.power, state.powerTarget, powerAmount);
   }
 
   function disconnectSocket() {
@@ -1408,6 +1425,7 @@
 
   function drawFrame(now = performance.now()) {
     stepSoloMode(now);
+    stepCueUi(now);
     resizeCanvas();
     setDrawTransform();
     drawTable();
@@ -1609,7 +1627,6 @@
         return;
       }
       state.powerTarget = pullState.power;
-      state.power = lerp(state.power, state.powerTarget, CUE_UI.powerSmoothing);
     }
     updatePowerUi();
   }
