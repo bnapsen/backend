@@ -451,6 +451,98 @@
     return count;
   }
 
+  function longestPrime(state, player) {
+    let best = 0;
+    let streak = 0;
+    for (let index = 0; index < 24; index += 1) {
+      const value = state.points[index];
+      const owned = player === WHITE ? value >= 2 : value <= -2;
+      if (owned) {
+        streak += 1;
+        if (streak > best) {
+          best = streak;
+        }
+      } else {
+        streak = 0;
+      }
+    }
+    return best;
+  }
+
+  function rearCheckerDistance(state, player) {
+    if (state.bar[player] > 0) {
+      return 25;
+    }
+    if (player === WHITE) {
+      for (let index = 23; index >= 0; index -= 1) {
+        if (state.points[index] > 0) {
+          return index + 1;
+        }
+      }
+      return 0;
+    }
+    for (let index = 0; index < 24; index += 1) {
+      if (state.points[index] < 0) {
+        return 24 - index;
+      }
+    }
+    return 0;
+  }
+
+  function stackPressure(state, player) {
+    let total = 0;
+    for (let index = 0; index < 24; index += 1) {
+      const value = player === WHITE
+        ? Math.max(0, state.points[index])
+        : Math.max(0, -state.points[index]);
+      if (value > 3) {
+        total += value - 3;
+      }
+    }
+    return total;
+  }
+
+  function directShotsOnPoint(state, attacker, targetIndex) {
+    let total = 0;
+    if (state.bar[attacker] > 0) {
+      const entryDie = attacker === WHITE ? 24 - targetIndex : targetIndex + 1;
+      return entryDie >= 1 && entryDie <= 6 ? 1 : 0;
+    }
+
+    for (let source = 0; source < 24; source += 1) {
+      if (!hasChecker(state, attacker, source)) {
+        continue;
+      }
+      const die = attacker === WHITE ? source - targetIndex : targetIndex - source;
+      if (die >= 1 && die <= 6) {
+        total += 1;
+      }
+    }
+    return total;
+  }
+
+  function attackPressure(state, player) {
+    let total = 0;
+    for (let index = 0; index < 24; index += 1) {
+      if ((player === WHITE && state.points[index] === -1) ||
+          (player === BLACK && state.points[index] === 1)) {
+        total += directShotsOnPoint(state, player, index);
+      }
+    }
+    return total;
+  }
+
+  function exposedBlotThreat(state, player) {
+    let total = state.bar[player] * 6;
+    for (let index = 0; index < 24; index += 1) {
+      if ((player === WHITE && state.points[index] === 1) ||
+          (player === BLACK && state.points[index] === -1)) {
+        total += directShotsOnPoint(state, -player, index);
+      }
+    }
+    return total;
+  }
+
   function boardPhase(state, player) {
     const myPip = pipCount(state, player);
     const opponentPip = pipCount(state, -player);
@@ -475,6 +567,16 @@
     const myMadePoints = madePoints(state, player);
     const myAnchors = anchoredPoints(state, player);
     const myHome = homeBoardStrength(state, player);
+    const myPrime = longestPrime(state, player);
+    const opponentPrime = longestPrime(state, -player);
+    const myRear = rearCheckerDistance(state, player);
+    const opponentRear = rearCheckerDistance(state, -player);
+    const myThreat = attackPressure(state, player);
+    const opponentThreat = attackPressure(state, -player);
+    const myRisk = exposedBlotThreat(state, player);
+    const opponentRisk = exposedBlotThreat(state, -player);
+    const myStacks = stackPressure(state, player);
+    const opponentStacks = stackPressure(state, -player);
     const pipEdge = opponentPip - myPip;
 
     let score = 0;
@@ -485,72 +587,273 @@
     score += myMadePoints * 8;
     score += myAnchors * 7;
     score += myHome * 10;
+    score += (myPrime - opponentPrime) * 12;
+    score += (myThreat - opponentThreat) * 7;
+    score += (opponentRisk - myRisk) * 6;
+    score += (opponentRear - myRear) * 1.6;
+    score += (opponentStacks - myStacks) * 3.5;
 
     if (phase === 'race') {
       score += pipEdge * 1.6;
       score += state.borneOff[player] * 25;
       score -= myBlots * 6;
+      score -= myRisk * 4.5;
+      score -= myRear * 1.6;
     } else if (phase === 'attack') {
       score += state.bar[-player] * 35;
       score += myHome * 14;
       score += opponentBlots * 16;
+      score += myThreat * 10;
+      score += myPrime * 5;
     } else if (phase === 'prime') {
       score += myMadePoints * 14;
       score += myAnchors * 12;
       score -= myBlots * 8;
+      score += myPrime * 14;
+      score -= myStacks * 4;
     } else {
       score += myAnchors * 8;
       score += opponentBlots * 8;
+      score += myThreat * 7;
+      score -= myRisk * 5.5;
     }
 
     return score;
   }
 
-  function chooseBestMove(state, player = state.current, dice = state.dice) {
-    const legalMoves = getAllLegalMoves(state, player, dice);
-    if (!legalMoves.length) {
+  function createRollOutcomes() {
+    const outcomes = [];
+    for (let first = 1; first <= 6; first += 1) {
+      for (let second = first; second <= 6; second += 1) {
+        outcomes.push({
+          dice: [first, second],
+          weight: first === second ? 1 : 2,
+        });
+      }
+    }
+    return outcomes;
+  }
+
+  const ROLL_OUTCOMES = createRollOutcomes();
+
+  function moveExecutionValue(move, player) {
+    if (!move) {
+      return 0;
+    }
+    if (move.to === 'off') {
+      return move.die + 2;
+    }
+    return player === WHITE ? move.from - move.to : move.to - move.from;
+  }
+
+  function normalizePlannedMove(move) {
+    return {
+      from: move.from,
+      to: move.to,
+      die: move.die,
+      di: move.di,
+      bearOff: Boolean(move.bearOff),
+    };
+  }
+
+  function getTurnPlans(state, player = state.current) {
+    const plans = [];
+    const initial = cloneState(state);
+
+    function visit(position, sequence, stats) {
+      if (position.winner || position.current !== player || !position.dice.length) {
+        if (sequence.length) {
+          plans.push({
+            moves: sequence.slice(),
+            firstMove: sequence[0],
+            resultState: cloneState(position),
+            stats: {
+              hits: stats.hits,
+              bearOffs: stats.bearOffs,
+              entries: stats.entries,
+              progress: stats.progress,
+            },
+          });
+        }
+        return;
+      }
+
+      const legalMoves = getAllLegalMoves(position, player, position.dice);
+      if (!legalMoves.length) {
+        if (sequence.length) {
+          plans.push({
+            moves: sequence.slice(),
+            firstMove: sequence[0],
+            resultState: cloneState(position),
+            stats: {
+              hits: stats.hits,
+              bearOffs: stats.bearOffs,
+              entries: stats.entries,
+              progress: stats.progress,
+            },
+          });
+        }
+        return;
+      }
+
+      const seen = new Set();
+      for (const move of legalMoves) {
+        const key = `${move.from}|${move.to}|${move.die}|${move.bearOff ? 'off' : 'board'}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        const sandbox = cloneState(position);
+        sandbox.current = player;
+        sandbox.dice = position.dice.slice();
+        const result = applyMove(sandbox, move);
+        if (!result.ok) {
+          continue;
+        }
+        sequence.push(normalizePlannedMove(move));
+        visit(sandbox, sequence, {
+          hits: stats.hits + (result.hit ? 1 : 0),
+          bearOffs: stats.bearOffs + (move.to === 'off' ? 1 : 0),
+          entries: stats.entries + (move.from === 'bar' ? 1 : 0),
+          progress: stats.progress + moveExecutionValue(move, player),
+        });
+        sequence.pop();
+      }
+    }
+
+    visit(initial, [], {
+      hits: 0,
+      bearOffs: 0,
+      entries: 0,
+      progress: 0,
+    });
+    return plans;
+  }
+
+  function scoreTurnPlan(initialState, plan, player) {
+    const beforeMadePoints = madePoints(initialState, player);
+    const beforeHome = homeBoardStrength(initialState, player);
+    const beforePrime = longestPrime(initialState, player);
+    const beforeThreat = attackPressure(initialState, player);
+    const beforeRisk = exposedBlotThreat(initialState, player);
+    const beforePip = pipCount(initialState, player);
+    const beforeRear = rearCheckerDistance(initialState, player);
+
+    const after = plan.resultState;
+    let score = evaluateBoard(after, player);
+    score += plan.stats.progress * 2.2;
+    score += plan.stats.hits * 34;
+    score += plan.stats.bearOffs * 42;
+    score += plan.stats.entries * 18;
+    score += Math.max(0, beforeMadePoints - madePoints(after, player)) * -8;
+    score += (madePoints(after, player) - beforeMadePoints) * 16;
+    score += (homeBoardStrength(after, player) - beforeHome) * 14;
+    score += (longestPrime(after, player) - beforePrime) * 18;
+    score += (attackPressure(after, player) - beforeThreat) * 9;
+    score += (beforeRisk - exposedBlotThreat(after, player)) * 7;
+    score -= Math.max(0, exposedBlotThreat(after, player) - beforeRisk) * 11;
+    score += (beforePip - pipCount(after, player)) * 0.65;
+    score += (beforeRear - rearCheckerDistance(after, player)) * 1.4;
+
+    if (after.winner === player) {
+      score += 100000;
+    }
+    if (after.winner === -player) {
+      score -= 100000;
+    }
+    return score;
+  }
+
+  function chooseBestTurnPlan(state, player = state.current, options = {}) {
+    const includeReply = options.includeReply !== false;
+    const maxReplyCandidates = Math.max(1, options.maxReplyCandidates || 6);
+    const plans = getTurnPlans(state, player);
+    if (!plans.length) {
       return null;
     }
 
-    let best = null;
-    let bestScore = -Infinity;
+    for (const plan of plans) {
+      plan.baseScore = scoreTurnPlan(state, plan, player);
+      plan.score = plan.baseScore;
+    }
 
-    for (const move of legalMoves) {
-      const sandbox = cloneState(state);
-      sandbox.current = player;
-      sandbox.dice = dice.slice();
-      const result = applyMove(sandbox, move);
-      if (!result.ok) {
-        continue;
-      }
-
-      let score = evaluateBoard(cloneBoardState(sandbox), player);
-      if (sandbox.current === player && sandbox.dice.length) {
-        const followUp = chooseBestMove(sandbox, player, sandbox.dice);
-        if (followUp) {
-          score += followUp.score * 0.55;
-        }
-      }
-
-      if (score > bestScore) {
-        bestScore = score;
-        best = move;
+    if (includeReply) {
+      const candidates = [...plans]
+        .sort((left, right) => right.baseScore - left.baseScore)
+        .slice(0, Math.min(maxReplyCandidates, plans.length));
+      for (const plan of candidates) {
+        const replyScore = estimateOpponentReply(plan.resultState, player);
+        plan.score = plan.baseScore * 0.6 + replyScore * 0.4;
       }
     }
 
-    if (!best) {
+    return plans.reduce((best, candidate) => {
+      if (!best || candidate.score > best.score) {
+        return candidate;
+      }
+      if (candidate.score < best.score) {
+        return best;
+      }
+      return candidate.moves.length > best.moves.length ? candidate : best;
+    }, null);
+  }
+
+  function estimateOpponentReply(state, player) {
+    if (state.winner === player) {
+      return 100000;
+    }
+    if (state.winner === -player) {
+      return -100000;
+    }
+
+    const opponent = -player;
+    let total = 0;
+    let weightTotal = 0;
+
+    for (const outcome of ROLL_OUTCOMES) {
+      const sandbox = cloneState(state);
+      sandbox.current = opponent;
+      sandbox.dice = [];
+      const roll = rollDice(sandbox, outcome.dice);
+      if (!roll.ok) {
+        continue;
+      }
+
+      let score;
+      if (sandbox.winner) {
+        score = evaluateBoard(sandbox, player);
+      } else if (roll.passed || sandbox.current !== opponent || !sandbox.dice.length) {
+        score = evaluateBoard(sandbox, player);
+      } else {
+        const reply = chooseBestTurnPlan(sandbox, opponent, {
+          includeReply: false,
+          maxReplyCandidates: 4,
+        });
+        score = reply ? evaluateBoard(reply.resultState, player) : evaluateBoard(sandbox, player);
+      }
+
+      total += score * outcome.weight;
+      weightTotal += outcome.weight;
+    }
+
+    return weightTotal ? total / weightTotal : evaluateBoard(state, player);
+  }
+
+  function chooseBestMove(state, player = state.current, dice = state.dice) {
+    const sandbox = cloneState(state);
+    sandbox.current = player;
+    sandbox.dice = Array.isArray(dice) ? dice.slice() : [];
+    const plan = chooseBestTurnPlan(sandbox, player, {
+      includeReply: true,
+      maxReplyCandidates: 6,
+    });
+    if (!plan || !plan.firstMove) {
       return null;
     }
 
     return {
-      move: {
-        from: best.from,
-        to: best.to,
-        die: best.die,
-        di: best.di,
-        bearOff: best.bearOff,
-      },
-      score: bestScore,
+      move: normalizePlannedMove(plan.firstMove),
+      score: plan.score,
     };
   }
 

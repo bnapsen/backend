@@ -17,6 +17,7 @@
   const H = canvas.height;
   const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
   const hitRadiusBoost = isCoarsePointer ? 14 : 0;
+  const BOT_NAME = 'Deep Blitz Bot';
 
   const ui = {
     nameInput: document.getElementById('nameInput'),
@@ -256,7 +257,7 @@
         <div class="player-card">
           <div class="player-head">
             <div>
-              <div class="player-name">Blitz Bot</div>
+              <div class="player-name">${BOT_NAME}</div>
               <div class="player-color-label">Black checkers</div>
             </div>
             <span class="inline-chip ready-chip">Solo</span>
@@ -1052,7 +1053,7 @@
     state.yourColor = Core.WHITE;
     state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
     persistSettings();
-    applyIncomingSnapshot(Core.createGameState(), 'Solo match started. White opens the race.');
+    applyIncomingSnapshot(Core.createGameState(), `Solo match started. ${BOT_NAME} is on the far side of the board.`);
   }
 
   function queueBotTurn() {
@@ -1083,7 +1084,7 @@
       const pick = Core.chooseBestMove(state.snapshot, Core.BLACK, state.snapshot.dice);
       const move = pick?.move || Core.furthestMove(Core.getAllLegalMoves(state.snapshot, Core.BLACK), Core.BLACK);
       if (!move) {
-        setStatusMessage('Bot had no legal move. Your turn.');
+        setStatusMessage(`${BOT_NAME} had no legal move. Your turn.`);
         render();
         return;
       }
