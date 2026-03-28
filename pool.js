@@ -787,15 +787,18 @@
     };
   }
 
-  function boardPointFromClient(clientX, clientY) {
+  function boardPointFromClient(clientX, clientY, clampToTable = false) {
     const rect = canvas.getBoundingClientRect();
     const table = activeTable();
     const x = (clientX - rect.left - state.view.offsetX) / state.view.scale;
     const y = (clientY - rect.top - state.view.offsetY) / state.view.scale;
-    if (x < 0 || x > table.width || y < 0 || y > table.height) {
+    if (!clampToTable && (x < 0 || x > table.width || y < 0 || y > table.height)) {
       return null;
     }
-    return { x, y };
+    return {
+      x: clamp(x, 0, table.width),
+      y: clamp(y, 0, table.height),
+    };
   }
 
   function updatePowerUi() {
@@ -1477,7 +1480,7 @@
     if (!state.aiming || event.pointerId !== state.pointerId) {
       return;
     }
-    const point = boardPointFromClient(event.clientX, event.clientY);
+    const point = boardPointFromClient(event.clientX, event.clientY, true);
     if (!point) {
       return;
     }
@@ -1487,7 +1490,7 @@
       const dx = point.x - cue.x;
       const dy = point.y - cue.y;
       const distance = Math.hypot(dx, dy);
-      if (!state.aimLocked && distance > 0.0001) {
+      if ((state.aimFromStick || !state.aimLocked) && distance > 0.0001) {
         state.aimAngle = resolveAimAngle(cue, point, state.aimFromStick);
       }
       const direction = cueDirection();
@@ -1530,7 +1533,7 @@
     if (!state.aiming || event.pointerId !== state.pointerId) {
       return;
     }
-    const point = boardPointFromClient(event.clientX, event.clientY) || state.pointer;
+    const point = boardPointFromClient(event.clientX, event.clientY, true) || state.pointer;
     const cue = activeCue();
     const power = normalizedShotPower(state.power);
     state.aiming = false;
