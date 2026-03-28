@@ -105,8 +105,11 @@
     gripRadius: 32,
     lockPullback: 12,
     unlockPullback: 5,
-    lockLateral: 38,
-    unlockLateral: 72,
+    lockLateral: 54,
+    unlockLateral: 122,
+    aimDeadZone: 26,
+    aimSmoothing: 0.34,
+    stickAimSmoothing: 0.22,
   });
   const SOLO_BOT_NAME = 'Orbit Bot';
 
@@ -251,9 +254,31 @@
     return angle;
   }
 
+  function lerpAngle(current, target, amount) {
+    const delta = normalizeAngle(target - current);
+    return normalizeAngle(current + delta * clamp(amount, 0, 1));
+  }
+
   function resolveAimAngle(cue, point, fromStick) {
     const rawAngle = Math.atan2(point.y - cue.y, point.x - cue.x);
     return fromStick ? normalizeAngle(rawAngle + Math.PI) : rawAngle;
+  }
+
+  function updateAimAngleFromPoint(cue, point, fromStick, options = {}) {
+    const dx = point.x - cue.x;
+    const dy = point.y - cue.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < CUE_UI.aimDeadZone) {
+      return false;
+    }
+    const targetAngle = resolveAimAngle(cue, point, fromStick);
+    if (options.immediate) {
+      state.aimAngle = targetAngle;
+      return true;
+    }
+    const smoothing = fromStick ? CUE_UI.stickAimSmoothing : CUE_UI.aimSmoothing;
+    state.aimAngle = lerpAngle(state.aimAngle, targetAngle, smoothing);
+    return true;
   }
 
   function disconnectSocket() {
@@ -1464,9 +1489,7 @@
     state.aimAnchor.y = point.y;
     state.aimLocked = false;
     state.aimFromStick = forwardDot < 0;
-    if (distance > 0.0001) {
-      state.aimAngle = resolveAimAngle(cue, point, state.aimFromStick);
-    }
+    updateAimAngleFromPoint(cue, point, state.aimFromStick, { immediate: true });
     state.power = 0;
     updatePowerUi();
     try {
@@ -1490,16 +1513,17 @@
       const dx = point.x - cue.x;
       const dy = point.y - cue.y;
       const distance = Math.hypot(dx, dy);
-      if ((state.aimFromStick || !state.aimLocked) && distance > 0.0001) {
-        state.aimAngle = resolveAimAngle(cue, point, state.aimFromStick);
+      if (state.aimFromStick || !state.aimLocked) {
+        updateAimAngleFromPoint(cue, point, state.aimFromStick);
       }
       const direction = cueDirection();
       const dragX = state.aimAnchor.x - point.x;
       const dragY = state.aimAnchor.y - point.y;
       const pullback = dragX * direction.x + dragY * direction.y;
       const lateral = Math.abs(dragX * -direction.y + dragY * direction.x);
+      const lockLateralLimit = Math.max(CUE_UI.lockLateral, pullback * 1.35);
       if (!state.aimLocked) {
-        if (pullback > CUE_UI.lockPullback && lateral < CUE_UI.lockLateral) {
+        if (pullback > CUE_UI.lockPullback && lateral < lockLateralLimit) {
           state.aimLocked = true;
         } else {
           state.aimAnchor.x = point.x;
@@ -1509,11 +1533,10 @@
           return;
         }
       }
-      if (state.aimLocked && (pullback < CUE_UI.unlockPullback || lateral > CUE_UI.unlockLateral)) {
+      const unlockLateralLimit = Math.max(CUE_UI.unlockLateral, pullback * 2.2);
+      if (state.aimLocked && (pullback < CUE_UI.unlockPullback || lateral > unlockLateralLimit)) {
         state.aimLocked = false;
-        if (distance > 0.0001) {
-          state.aimAngle = resolveAimAngle(cue, point, state.aimFromStick);
-        }
+        updateAimAngleFromPoint(cue, point, state.aimFromStick, { immediate: true });
         state.aimAnchor.x = point.x;
         state.aimAnchor.y = point.y;
         state.power = 0;
