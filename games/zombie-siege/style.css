@@ -393,8 +393,12 @@ button.secondary {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background:
-    radial-gradient(circle at top, rgba(255, 201, 133, 0.12), transparent 28%),
-    linear-gradient(180deg, rgba(7, 10, 14, 0.95), rgba(3, 5, 8, 0.98));
+      radial-gradient(circle at top, rgba(255, 201, 133, 0.12), transparent 28%),
+      linear-gradient(180deg, rgba(7, 10, 14, 0.95), rgba(3, 5, 8, 0.98));
+}
+
+.arena-stage.live {
+  cursor: none;
 }
 
 #gameCanvas {
@@ -405,15 +409,20 @@ button.secondary {
 
 .crosshair {
   position: absolute;
-  inset: 50% auto auto 50%;
+  left: var(--crosshair-x, 50%);
+  top: var(--crosshair-y, 50%);
   width: 22px;
   height: 22px;
-  margin-left: -11px;
-  margin-top: -11px;
+  transform: translate(-50%, -50%);
   border-radius: 999px;
   border: 2px solid rgba(255, 217, 141, 0.94);
   box-shadow: 0 0 18px rgba(255, 217, 141, 0.42);
   pointer-events: none;
+  transition: opacity 120ms ease, transform 60ms linear;
+}
+
+.crosshair.hidden {
+  opacity: 0;
 }
 
 .crosshair::before,

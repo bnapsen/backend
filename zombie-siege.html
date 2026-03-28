@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/zombie-siege/style.css?v=20260327c" />
+  <link rel="stylesheet" href="games/zombie-siege/style.css?v=20260327d" />
 </head>
 <body>
   <div class="page-shell">
@@ -48,8 +48,8 @@
             <article class="step-card">
               <span class="step-number">3</span>
               <div>
-                <strong>Lock aim and survive</strong>
-                <p>Click into the arena to lock the mouse, then use hitscan fire to cut down the wave before it reaches you.</p>
+                <strong>Aim and survive</strong>
+                <p>Move the mouse over the arena to aim, then use hitscan fire to cut down the wave before it reaches you.</p>
               </div>
             </article>
           </div>
@@ -171,12 +171,12 @@
 
           <div class="arena-stage" id="arenaStage">
             <canvas id="gameCanvas" width="1600" height="900" aria-label="Zombie Siege 3D arena"></canvas>
-            <div class="crosshair" aria-hidden="true"></div>
+            <div class="crosshair hidden" aria-hidden="true"></div>
             <div class="arena-overlay" id="overlay">
               <div class="overlay-card">
                 <h2 class="overlay-title" id="overlayTitle">Zombie Siege 3D Live</h2>
-                <p class="overlay-copy" id="overlayCopy">Use the side panel to host, join, or start solo. Once you are in a run, click the button below or click the arena to lock your aim.</p>
-                <p class="overlay-meta" id="overlayMeta">Controls: WASD move, mouse turns, Left Click fires, Shift sprints, 1 2 3 swaps weapons.</p>
+                <p class="overlay-copy" id="overlayCopy">Use the side panel to host, join, or start solo. Once you are in a run, move the mouse over the arena to aim and click to fire.</p>
+                <p class="overlay-meta" id="overlayMeta">Controls: WASD move, mouse aims, Left Click fires, Shift sprints, 1 2 3 swaps weapons.</p>
                 <button id="startBtn" class="primary" type="button">Start solo instantly</button>
               </div>
             </div>
@@ -185,7 +185,7 @@
           <div class="arena-footer">
             <div>
               <p class="label">Controls</p>
-              <p class="footer-copy" id="controlHint">WASD moves. Mouse turns. Left Click fires. Shift sprints. Press 1, 2, or 3 for rifle, SMG, and shotgun. Click the arena to lock your aim.</p>
+              <p class="footer-copy" id="controlHint">WASD moves. Move the mouse over the arena to aim. Left Click fires. Shift sprints. Press 1, 2, or 3 for rifle, SMG, and shotgun.</p>
             </div>
             <div class="arena-actions">
               <button id="restartBtn" class="primary" type="button">Restart run</button>
@@ -247,7 +247,7 @@
 
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="games/star-sprint/zombie-siege-core.js?v=20260327c"></script>
-  <script src="games/zombie-siege/game.js?v=20260327c"></script>
+  <script src="games/star-sprint/zombie-siege-core.js?v=20260327d"></script>
+  <script src="games/zombie-siege/game.js?v=20260327d"></script>
 </body>
 </html>

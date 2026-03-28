@@ -15,7 +15,6 @@
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const INPUT_SEND_MS = 50;
   const PLAYER_HEIGHT = 1.72;
-  const MOUSE_SENSITIVITY = 0.00235;
   const query = new URLSearchParams(window.location.search);
 
   const ui = {
@@ -47,6 +46,7 @@
     feedList: document.getElementById('feedList'),
     stage: document.getElementById('arenaStage'),
     canvas: document.getElementById('gameCanvas'),
+    crosshair: document.querySelector('.crosshair'),
     overlay: document.getElementById('overlay'),
     overlayTitle: document.getElementById('overlayTitle'),
     overlayCopy: document.getElementById('overlayCopy'),
@@ -65,7 +65,6 @@
     serverUrl: '',
     statusMessage: '',
     toastTimer: 0,
-    pointerLocked: false,
     lastFrameAt: performance.now(),
     lastInputSentAt: 0,
     nextUiRefreshAt: 0,
@@ -88,6 +87,13 @@
       right: false,
       sprint: false,
       fire: false,
+    },
+    mouse: {
+      inside: false,
+      ndcX: 0,
+      ndcY: 0,
+      stageX: 0.5,
+      stageY: 0.5,
     },
     scene: null,
     camera: null,
@@ -1231,19 +1237,19 @@
       game?.players || [],
       world.playerRoot,
       createPlayerMesh,
-      (mesh, player) => {
-        mesh.userData.targetX = player.x;
-        mesh.userData.targetZ = player.z;
-        mesh.userData.targetYaw = player.yaw;
-        mesh.userData.targetAlive = player.alive;
-        mesh.userData.health = player.health;
-        mesh.userData.maxHealth = player.maxHealth;
-        mesh.visible = !(player.id === state.yourPlayerId && state.pointerLocked && player.alive);
-        const accentIntensity = player.alive ? 0.12 : 0.03;
-        mesh.userData.accentMat.emissiveIntensity = accentIntensity;
-        mesh.userData.gunMat.emissiveIntensity = clamp((player.flash || 0) * 2.4, 0, 2.4);
-        mesh.userData.ringMat.opacity = player.alive ? 0.5 : 0.18;
-      }
+        (mesh, player) => {
+          mesh.userData.targetX = player.x;
+          mesh.userData.targetZ = player.z;
+          mesh.userData.targetYaw = player.yaw;
+          mesh.userData.targetAlive = player.alive;
+          mesh.userData.health = player.health;
+          mesh.userData.maxHealth = player.maxHealth;
+          mesh.visible = true;
+          const accentIntensity = player.alive ? 0.12 : 0.03;
+          mesh.userData.accentMat.emissiveIntensity = accentIntensity;
+          mesh.userData.gunMat.emissiveIntensity = clamp((player.flash || 0) * 2.4, 0, 2.4);
+          mesh.userData.ringMat.opacity = player.alive ? 0.5 : 0.18;
+        }
     );
 
     syncEntityMap(
@@ -1300,7 +1306,7 @@
     }
 
     const raycaster = world.raycaster;
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), state.camera);
+    raycaster.setFromCamera(new THREE.Vector2(state.mouse.ndcX, state.mouse.ndcY), state.camera);
     const ray = raycaster.ray;
     let bestZombie = null;
     let bestDistance = Infinity;
@@ -1351,24 +1357,26 @@
     const targetPos = new THREE.Vector3();
     const lookAt = new THREE.Vector3();
 
-      if (local) {
-        const forward = new THREE.Vector3(Math.sin(local.yaw), 0, -Math.cos(local.yaw));
-        const right = new THREE.Vector3(-forward.z, 0, forward.x);
-        const distance = game?.gameOver ? 12.8 : state.pointerLocked ? 8.6 : 9.8;
-        const aimTarget = new THREE.Vector3(
-          Number.isFinite(state.input.aimX) ? state.input.aimX : local.x + forward.x * 40,
-          1.55,
-          Number.isFinite(state.input.aimZ) ? state.input.aimZ : local.z + forward.z * 40
-        );
-        targetPos.copy(new THREE.Vector3(local.x, 0, local.z))
-          .addScaledVector(forward, -distance)
-          .addScaledVector(right, 2.3)
-          .add(new THREE.Vector3(0, game?.gameOver ? 7.8 : 5.6, 0));
-        lookAt.copy(aimTarget);
-        world.aimTarget.copy(aimTarget);
-      } else {
-        const orbit = performance.now() * 0.00012;
-        targetPos.set(Math.cos(orbit) * 30, 12, Math.sin(orbit) * 26);
+    if (local) {
+      const forward = new THREE.Vector3(Math.sin(local.yaw), 0, -Math.cos(local.yaw));
+      const right = new THREE.Vector3(-forward.z, 0, forward.x);
+      const distance = game?.gameOver ? 9.8 : 7.1;
+      const aimTarget = new THREE.Vector3(
+        Number.isFinite(state.input.aimX) ? state.input.aimX : local.x + forward.x * 40,
+        1.55,
+        Number.isFinite(state.input.aimZ) ? state.input.aimZ : local.z + forward.z * 40
+      );
+      const shoulder = new THREE.Vector3(local.x, PLAYER_HEIGHT + 0.45, local.z)
+        .addScaledVector(right, 1.15);
+      targetPos.copy(shoulder)
+        .addScaledVector(forward, -distance)
+        .addScaledVector(right, 1.25)
+        .add(new THREE.Vector3(0, game?.gameOver ? 4.1 : 3.05, 0));
+      lookAt.copy(shoulder).lerp(aimTarget, 0.34);
+      world.aimTarget.copy(aimTarget);
+    } else {
+      const orbit = performance.now() * 0.00012;
+      targetPos.set(Math.cos(orbit) * 30, 12, Math.sin(orbit) * 26);
         lookAt.set(0, 2, 0);
       }
 
@@ -1432,7 +1440,7 @@
     }
     if (world.aimMarker) {
       world.aimMarker.position.set(world.aimTarget.x, 0.05, world.aimTarget.z);
-      world.aimMarker.material.opacity = state.pointerLocked ? 0.78 : 0.4;
+      world.aimMarker.material.opacity = state.mouse.inside ? 0.78 : 0.5;
       world.aimMarker.scale.setScalar(1 + Math.sin(time * 4) * 0.08);
       world.aimMarker.visible = Boolean(currentGame() && !currentGame()?.gameOver);
     }
@@ -1737,7 +1745,7 @@
   }
 
   function renderOverlay(game) {
-    const show = !game || game.gameOver || !state.pointerLocked;
+    const show = !game || game.gameOver;
     ui.overlay.classList.toggle('hidden', !show);
     if (!show) {
       return;
@@ -1745,8 +1753,8 @@
 
     if (!game) {
       ui.overlayTitle.textContent = 'Zombie Siege 3D Live';
-      ui.overlayCopy.textContent = 'Host a room, join a friend, or start solo. Once you are in the yard, lock the mouse and the new hitscan gunplay will take over.';
-      ui.overlayMeta.textContent = 'Controls: WASD move, mouse turns, Left Click fires, Shift sprints, 1 2 3 swaps weapons.';
+      ui.overlayCopy.textContent = 'Host a room, join a friend, or start solo. The game now uses regular third-person mouse aiming instead of pointer lock.';
+      ui.overlayMeta.textContent = 'Controls: WASD move, move the mouse to aim, Left Click fires, Shift sprints, 1 2 3 swaps weapons.';
       ui.startBtn.textContent = 'Start solo instantly';
       return;
     }
@@ -1759,12 +1767,12 @@
       return;
     }
 
-    ui.overlayTitle.textContent = state.mode === 'online' ? 'Lock aim and deploy' : 'Resume the solo siege';
+    ui.overlayTitle.textContent = state.mode === 'online' ? 'Back to the yard' : 'Resume the solo siege';
     ui.overlayCopy.textContent = state.mode === 'online'
-      ? 'Click the button below or click the arena to lock the mouse. The room keeps running while your aim is unlocked.'
-      : 'Click the button below or the arena to lock the mouse and resume the solo run.';
+      ? 'The room is still live. Move the mouse over the arena and click to fire.'
+      : 'Move the mouse over the arena and click to fire. No mouse lock needed.';
     ui.overlayMeta.textContent = `Current weapon: ${currentWeaponLabel(game)}. Use 1, 2, and 3 to swap instantly.`;
-    ui.startBtn.textContent = 'Lock aim and continue';
+    ui.startBtn.textContent = 'Continue';
   }
 
   function renderPanels() {
@@ -1806,8 +1814,9 @@
       setModePill('No room active');
     }
 
-    ui.controlHint.textContent = 'WASD moves. Mouse turns. Left Click fires. Shift sprints. Press 1, 2, or 3 for rifle, SMG, and shotgun. Click the arena to lock your aim.';
+    ui.controlHint.textContent = 'WASD moves. Move the mouse over the arena to aim. Left Click fires. Shift sprints. Press 1, 2, or 3 for rifle, SMG, and shotgun.';
     ui.restartBtn.disabled = !game;
+    ui.stage.classList.toggle('live', Boolean(game && !game.gameOver));
     updateInviteUi();
     renderPlayersPanel(game);
     renderFeed(game);
@@ -1904,25 +1913,15 @@
     window.requestAnimationFrame(renderFrame);
   }
 
-  function requestAimLock() {
-    if (!currentGame() || currentGame()?.gameOver) {
-      return;
-    }
-    ui.stage.requestPointerLock?.();
-  }
-
   function handleOverlayAction() {
     const game = currentGame();
     if (!game) {
       startSolo();
-      requestAimLock();
       return;
     }
     if (game.gameOver) {
       restartRun();
-      return;
     }
-    requestAimLock();
   }
 
   function setKeyState(code, pressed) {
@@ -1970,6 +1969,25 @@
     }
   }
 
+  function updateMouseAim(clientX, clientY) {
+    const rect = ui.stage.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      return;
+    }
+    const px = clamp((clientX - rect.left) / rect.width, 0, 1);
+    const py = clamp((clientY - rect.top) / rect.height, 0, 1);
+    state.mouse.inside = true;
+    state.mouse.stageX = px;
+    state.mouse.stageY = py;
+    state.mouse.ndcX = px * 2 - 1;
+    state.mouse.ndcY = -(py * 2 - 1);
+    if (ui.crosshair) {
+      ui.crosshair.style.setProperty('--crosshair-x', `${(px * 100).toFixed(2)}%`);
+      ui.crosshair.style.setProperty('--crosshair-y', `${(py * 100).toFixed(2)}%`);
+      ui.crosshair.classList.remove('hidden');
+    }
+  }
+
   function bindEvents() {
     ui.roomInput.addEventListener('input', () => {
       ui.roomInput.value = sanitizeRoomCode(ui.roomInput.value);
@@ -1991,25 +2009,31 @@
     ui.restartBtn.addEventListener('click', restartRun);
     ui.startBtn.addEventListener('click', handleOverlayAction);
 
-    ui.stage.addEventListener('click', () => {
-      if (!state.pointerLocked && currentGame() && !currentGame()?.gameOver) {
-        requestAimLock();
-      }
+    ui.stage.addEventListener('mousemove', (event) => {
+      updateMouseAim(event.clientX, event.clientY);
     });
-
+    ui.stage.addEventListener('mouseenter', (event) => {
+      updateMouseAim(event.clientX, event.clientY);
+    });
     ui.stage.addEventListener('mousedown', (event) => {
       if (event.button !== 0) {
         return;
       }
-      if (!state.pointerLocked) {
-        requestAimLock();
+      if (!currentGame() || currentGame()?.gameOver) {
         return;
       }
+      updateMouseAim(event.clientX, event.clientY);
       state.keys.fire = true;
     });
 
     window.addEventListener('mouseup', () => {
       state.keys.fire = false;
+    });
+
+    ui.stage.addEventListener('mouseleave', () => {
+      state.mouse.inside = false;
+      state.keys.fire = false;
+      ui.crosshair?.classList.add('hidden');
     });
 
     window.addEventListener('keydown', (event) => {
@@ -2025,21 +2049,6 @@
         event.preventDefault();
       }
     }, { passive: false });
-
-    document.addEventListener('pointerlockchange', () => {
-      state.pointerLocked = document.pointerLockElement === ui.stage;
-      if (!state.pointerLocked) {
-        state.keys.fire = false;
-      }
-      renderPanels();
-    });
-
-    document.addEventListener('mousemove', (event) => {
-      if (!state.pointerLocked) {
-        return;
-      }
-      state.input.yaw = normalizeAngle(state.input.yaw + event.movementX * MOUSE_SENSITIVITY);
-    });
 
     window.addEventListener('resize', resizeRenderer);
     window.addEventListener('beforeunload', () => {
