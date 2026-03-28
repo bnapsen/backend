@@ -58,6 +58,12 @@
     powerText: document.getElementById('powerText'),
     tableStage: document.getElementById('tableStage'),
     layout: document.getElementById('layout'),
+    startOverlay: document.getElementById('startOverlay'),
+    startNote: document.getElementById('startNote'),
+    heroSoloBtn: document.getElementById('heroSoloBtn'),
+    heroHostBtn: document.getElementById('heroHostBtn'),
+    heroJoinBtn: document.getElementById('heroJoinBtn'),
+    heroSetupBtn: document.getElementById('heroSetupBtn'),
   };
 
   const state = {
@@ -118,19 +124,19 @@
     guideCueDeflectLength: 82,
     guideMarkerSpacing: 24,
     guideMarkerRadius: 2.2,
-    gripRadius: 32,
-    lockPullback: 12,
-    unlockPullback: 5,
-    lockLateral: 54,
-    unlockLateral: 122,
-    aimDeadZone: 30,
-    aimPrecisionRange: 190,
+    gripRadius: 36,
+    lockPullback: 10,
+    unlockPullback: 4,
+    lockLateral: 64,
+    unlockLateral: 140,
+    aimDeadZone: 26,
+    aimPrecisionRange: 210,
     aimSmoothing: 0.22,
     stickAimSmoothing: 0.16,
     powerSmoothing: 0.26,
-    aimLerpPerSecond: 20,
-    stickAimLerpPerSecond: 13,
-    powerLerpPerSecond: 16,
+    aimLerpPerSecond: 22,
+    stickAimLerpPerSecond: 14,
+    powerLerpPerSecond: 18,
     scenePadding: 132,
     minCueVisualScale: 0.52,
   });
@@ -637,6 +643,52 @@
     localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, state.sidebarCollapsed ? '1' : '0');
   }
 
+  function setPanelVisibility(options = {}) {
+    const nextSetup = typeof options.setupCollapsed === 'boolean'
+      ? options.setupCollapsed
+      : state.setupCollapsed;
+    const nextSidebar = typeof options.sidebarCollapsed === 'boolean'
+      ? options.sidebarCollapsed
+      : state.sidebarCollapsed;
+    const changed = nextSetup !== state.setupCollapsed || nextSidebar !== state.sidebarCollapsed;
+    state.setupCollapsed = nextSetup;
+    state.sidebarCollapsed = nextSidebar;
+    savePanelPrefs();
+    if (changed) {
+      updateLayoutChrome();
+    }
+  }
+
+  function collapsePlayChrome() {
+    setPanelVisibility({
+      setupCollapsed: true,
+      sidebarCollapsed: true,
+    });
+  }
+
+  function revealSetupPanel(message, focusTarget = ui.nameInput) {
+    setPanelVisibility({
+      setupCollapsed: false,
+      sidebarCollapsed: true,
+    });
+    if (message) {
+      setStatus(message);
+    }
+    renderUi();
+    requestAnimationFrame(() => {
+      if (focusTarget && typeof focusTarget.focus === 'function') {
+        focusTarget.focus();
+        if (typeof focusTarget.select === 'function') {
+          focusTarget.select();
+        }
+      }
+    });
+  }
+
+  function isSocketConnecting() {
+    return Boolean(state.socket && state.socket.readyState === WebSocket.CONNECTING);
+  }
+
   function updateLayoutChrome() {
     if (!ui.layout) {
       return;
@@ -645,9 +697,11 @@
     ui.layout.classList.toggle('sidebar-collapsed', state.sidebarCollapsed);
     if (ui.toggleSetupBtn) {
       ui.toggleSetupBtn.textContent = state.setupCollapsed ? 'Show setup' : 'Hide setup';
+      ui.toggleSetupBtn.dataset.active = state.setupCollapsed ? 'false' : 'true';
     }
     if (ui.toggleSidebarBtn) {
       ui.toggleSidebarBtn.textContent = state.sidebarCollapsed ? 'Show feed' : 'Hide feed';
+      ui.toggleSidebarBtn.dataset.active = state.sidebarCollapsed ? 'false' : 'true';
     }
     requestAnimationFrame(resizeCanvas);
   }
@@ -886,6 +940,7 @@
       return;
     }
     disconnectSocket();
+    collapsePlayChrome();
     resetAimState();
     state.mode = 'solo';
     state.localGame = core.createGameState({ variantId: selectedVariantId() });
@@ -1424,6 +1479,43 @@
     }
   }
 
+  function renderStartOverlay() {
+    if (!ui.startOverlay) {
+      return;
+    }
+    const show = !state.snapshot;
+    ui.startOverlay.hidden = !show;
+    ui.startOverlay.dataset.visible = show ? 'true' : 'false';
+    if (!show) {
+      return;
+    }
+    const busy = isSocketConnecting();
+    const roomCode = sanitizeRoomCode(ui.roomInput.value);
+    const variant = selectedVariant();
+    if (ui.heroSoloBtn) {
+      ui.heroSoloBtn.disabled = busy;
+    }
+    if (ui.heroHostBtn) {
+      ui.heroHostBtn.disabled = busy;
+    }
+    if (ui.heroJoinBtn) {
+      ui.heroJoinBtn.disabled = busy;
+      ui.heroJoinBtn.textContent = roomCode ? 'Join room' : 'Join with code';
+    }
+    if (ui.heroSetupBtn) {
+      ui.heroSetupBtn.textContent = state.setupCollapsed ? 'Open setup options' : 'Focus setup options';
+    }
+    if (ui.startNote) {
+      if (busy) {
+        ui.startNote.textContent = 'Connecting to the live table. The setup rail will tuck away as soon as the table opens.';
+      } else if (state.setupCollapsed) {
+        ui.startNote.textContent = `Play ${variant ? variant.label : 'solo'} instantly, or open setup to change your name, room code, and format before the break.`;
+      } else {
+        ui.startNote.textContent = `Play ${variant ? variant.label : 'solo'} instantly, or use setup on the left to tune your name, room code, and format before the break.`;
+      }
+    }
+  }
+
   function renderUi() {
     updateSoundToggleUi();
     ui.inviteInput.value = state.roomCode ? buildInviteUrl() : '';
@@ -1446,6 +1538,7 @@
     renderSummary();
     renderPlayers();
     renderEvents();
+    renderStartOverlay();
     updatePowerUi();
   }
 
@@ -2053,14 +2146,14 @@
 
   function drawOverlay() {
     const snapshot = state.snapshot;
+    if (!snapshot) {
+      return;
+    }
     const table = activeTable();
     let title = '';
     let subtitle = '';
 
-    if (!snapshot) {
-      title = 'Mini Pool Showdown';
-      subtitle = 'Open a live table to start playing.';
-    } else if (snapshot.winner) {
+    if (snapshot.winner) {
       title = `${capitalize(snapshot.winner)} wins`;
       subtitle = `Final score ${snapshot.scores.white} - ${snapshot.scores.black}`;
     } else if (snapshot.drawReason) {
@@ -2157,11 +2250,12 @@
   function connect(mode) {
     const roomCode = sanitizeRoomCode(ui.roomInput.value);
     if (mode === 'join' && !roomCode) {
-      setStatus('Enter a room code before joining.');
+      revealSetupPanel('Enter a room code before joining.', ui.roomInput);
       return;
     }
 
     savePrefs();
+    collapsePlayChrome();
     resetAimState();
     state.mode = 'online';
     state.localGame = null;
@@ -2417,7 +2511,7 @@
     const storedSidebarPref = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed);
     const storedSoundPref = localStorage.getItem(STORAGE_KEYS.soundEnabled);
     state.setupCollapsed = storedSetupPref === null ? false : storedSetupPref === '1';
-    state.sidebarCollapsed = storedSidebarPref === null ? window.innerWidth < 1460 : storedSidebarPref === '1';
+    state.sidebarCollapsed = storedSidebarPref === null ? true : storedSidebarPref === '1';
     state.soundEnabled = storedSoundPref === null ? true : storedSoundPref === '1';
     state.audioTelemetry = summarizeAudioSnapshot(null);
     updateLayoutChrome();
@@ -2430,6 +2524,26 @@
   ui.hostBtn.addEventListener('click', () => connect('host'));
   ui.joinBtn.addEventListener('click', () => connect('join'));
   ui.soloBtn.addEventListener('click', startSoloGame);
+  if (ui.heroSoloBtn) {
+    ui.heroSoloBtn.addEventListener('click', startSoloGame);
+  }
+  if (ui.heroHostBtn) {
+    ui.heroHostBtn.addEventListener('click', () => connect('host'));
+  }
+  if (ui.heroJoinBtn) {
+    ui.heroJoinBtn.addEventListener('click', () => {
+      if (!sanitizeRoomCode(ui.roomInput.value)) {
+        revealSetupPanel('Enter a room code, then join the live table.', ui.roomInput);
+        return;
+      }
+      connect('join');
+    });
+  }
+  if (ui.heroSetupBtn) {
+    ui.heroSetupBtn.addEventListener('click', () => {
+      revealSetupPanel('Tune your name, room code, or format here before the break.', ui.nameInput);
+    });
+  }
   ui.soundToggleBtn.addEventListener('click', () => {
     setSoundEnabled(!state.soundEnabled, { preview: !state.soundEnabled });
   });
