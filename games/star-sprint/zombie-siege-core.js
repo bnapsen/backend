@@ -7,7 +7,7 @@
 })(typeof self !== 'undefined' ? self : globalThis, function () {
   'use strict';
 
-  const ARENA = { width: 232, depth: 232 };
+  const ARENA = { width: 304, depth: 304 };
   const MAX_PLAYERS = 4;
   const MAX_EVENTS = 28;
   const PLAYER_COLORS = ['#73d9ff', '#ffd57a', '#ff9fc5', '#91f5a8'];
@@ -22,6 +22,9 @@
   const PLAYER_MAX_HEALTH = 100;
   const PLAYER_JUMP_VELOCITY = 9.4;
   const PLAYER_GRAVITY = 28;
+  const PLAYER_BOUND_FACTOR = 0.495;
+  const ZOMBIE_BOUND_FACTOR = 0.5;
+  const PROJECTILE_BOUND_FACTOR = 0.535;
   const GRENADE_COOLDOWN = 3.9;
   const GRENADE_SPEED = 20.5;
   const GRENADE_UPWARD = 8.4;
@@ -34,7 +37,7 @@
   const SPITTER_SPLASH_RADIUS = 2.8;
   const SPITTER_SPLASH_DAMAGE = 13;
   const RESPAWN_TIME = 5.5;
-  const WAVE_START_DELAY = 2.3;
+  const WAVE_START_DELAY = 2.0;
   const BOSS_WAVE_INTERVAL = 4;
   const RELAY_CAPTURE_SECONDS = 5.5;
   const EXTRACTION_HOLD_SECONDS = 11;
@@ -102,8 +105,8 @@
     crawler: {
       key: 'crawler',
       label: 'Crawler',
-      hp: 22,
-      speed: 4.85,
+      hp: 24,
+      speed: 5.1,
       radius: 0.54,
       damage: 7,
       attackCooldown: 0.64,
@@ -113,11 +116,11 @@
     spitter: {
       key: 'spitter',
       label: 'Spitter',
-      hp: 48,
+      hp: 54,
       speed: 2.3,
       radius: 0.78,
       damage: 10,
-      attackCooldown: 1.95,
+      attackCooldown: 1.78,
       score: 210,
       tint: '#7ca870',
       preferredDistance: 16,
@@ -323,6 +326,39 @@
       maxZ: 84,
     })) {
       height = Math.max(height, rampHeight(x, -22, -10, 3.8, 7.4));
+    }
+
+    if (rectContains(x, z, {
+      minX: -98,
+      maxX: -58,
+      minZ: -4,
+      maxZ: 30,
+    })) {
+      height = Math.max(height, 4.8);
+    }
+    if (rectContains(x, z, {
+      minX: -112,
+      maxX: -98,
+      minZ: 6,
+      maxZ: 22,
+    })) {
+      height = Math.max(height, rampHeight(x, -112, -98, 0, 4.8));
+    }
+    if (rectContains(x, z, {
+      minX: -82,
+      maxX: -62,
+      minZ: 4,
+      maxZ: 22,
+    })) {
+      height = Math.max(height, 9.4);
+    }
+    if (rectContains(x, z, {
+      minX: -98,
+      maxX: -82,
+      minZ: 4,
+      maxZ: 22,
+    })) {
+      height = Math.max(height, rampHeight(x, -98, -82, 4.8, 9.4));
     }
 
     return Number(height.toFixed(3));
@@ -811,9 +847,10 @@
       progress: 0,
       goal: EXTRACTION_HOLD_SECONDS,
     };
-    state.spawnBudget += 8 + state.players.length * 2;
+    state.spawnBudget += 14 + state.players.length * 4;
     spawnZombie(state, 'boss');
     spawnZombie(state, 'spitter');
+    spawnZombie(state, 'brute');
     setStatus(state, 'Mission update: evac shuttle inbound. Reach the rooftop pad and hold it.');
     updateMissionObjective(state);
     pushEvent(state, 'mission-stage', {
@@ -883,9 +920,9 @@
     state.intermission = 0;
     const playerCount = Math.max(1, state.players.length);
     const bossWave = state.wave % BOSS_WAVE_INTERVAL === 0;
-    state.spawnBudget = 8 + state.wave * 3 + playerCount * 3;
+    state.spawnBudget = 12 + state.wave * 4 + playerCount * 5;
     if (bossWave) {
-      state.spawnBudget += 3;
+      state.spawnBudget += 5;
       spawnZombie(state, 'boss');
       pushEvent(state, 'boss-wave', {
         wave: state.wave,
@@ -1174,8 +1211,8 @@
     player.vz += Math.cos(angle) * 2.2;
     player.x += Math.sin(angle) * 0.4;
     player.z += Math.cos(angle) * 0.4;
-    player.x = clamp(player.x, -ARENA.width * 0.47, ARENA.width * 0.47);
-    player.z = clamp(player.z, -ARENA.depth * 0.47, ARENA.depth * 0.47);
+    player.x = clamp(player.x, -ARENA.width * PLAYER_BOUND_FACTOR, ARENA.width * PLAYER_BOUND_FACTOR);
+    player.z = clamp(player.z, -ARENA.depth * PLAYER_BOUND_FACTOR, ARENA.depth * PLAYER_BOUND_FACTOR);
     player.y = groundHeightAt(player.x, player.z);
     player.vy = 0;
     player.grounded = true;
@@ -1379,8 +1416,8 @@
 
     player.x += player.vx * dt;
     player.z += player.vz * dt;
-    player.x = clamp(player.x, -ARENA.width * 0.47, ARENA.width * 0.47);
-    player.z = clamp(player.z, -ARENA.depth * 0.47, ARENA.depth * 0.47);
+    player.x = clamp(player.x, -ARENA.width * PLAYER_BOUND_FACTOR, ARENA.width * PLAYER_BOUND_FACTOR);
+    player.z = clamp(player.z, -ARENA.depth * PLAYER_BOUND_FACTOR, ARENA.depth * PLAYER_BOUND_FACTOR);
     const groundY = groundHeightAt(player.x, player.z);
     player.vy -= PLAYER_GRAVITY * dt;
     player.y += player.vy * dt;
@@ -1486,8 +1523,8 @@
         zombie.x += (dx / distance) * zombie.speed * dt;
         zombie.z += (dz / distance) * zombie.speed * dt;
       }
-      zombie.x = clamp(zombie.x, -ARENA.width * 0.49, ARENA.width * 0.49);
-      zombie.z = clamp(zombie.z, -ARENA.depth * 0.49, ARENA.depth * 0.49);
+    zombie.x = clamp(zombie.x, -ARENA.width * ZOMBIE_BOUND_FACTOR, ARENA.width * ZOMBIE_BOUND_FACTOR);
+    zombie.z = clamp(zombie.z, -ARENA.depth * ZOMBIE_BOUND_FACTOR, ARENA.depth * ZOMBIE_BOUND_FACTOR);
       zombie.y = groundHeightAt(zombie.x, zombie.z);
       applyZombieAttacks(state, zombie, target);
     }
@@ -1501,8 +1538,8 @@
       projectile.y += projectile.vy * dt;
       projectile.z += projectile.vz * dt;
       projectile.vy -= 5.6 * dt;
-      projectile.x = clamp(projectile.x, -ARENA.width * 0.52, ARENA.width * 0.52);
-      projectile.z = clamp(projectile.z, -ARENA.depth * 0.52, ARENA.depth * 0.52);
+    projectile.x = clamp(projectile.x, -ARENA.width * PROJECTILE_BOUND_FACTOR, ARENA.width * PROJECTILE_BOUND_FACTOR);
+    projectile.z = clamp(projectile.z, -ARENA.depth * PROJECTILE_BOUND_FACTOR, ARENA.depth * PROJECTILE_BOUND_FACTOR);
 
       let removed = false;
       for (const player of livingPlayers(state)) {
@@ -1730,16 +1767,17 @@
     if (state.spawnBudget > 0) {
       state.spawnTimer -= dt;
       if (state.spawnTimer <= 0) {
-        const pool = state.wave >= 8
-          ? ['walker', 'runner', 'runner', 'crawler', 'crawler', 'spitter', 'brute', 'brute']
-          : state.wave >= 5
-            ? ['walker', 'walker', 'runner', 'runner', 'crawler', 'spitter', 'brute', 'brute']
-          : state.wave >= 3
+        const pool = state.wave >= 10
+          ? ['runner', 'runner', 'crawler', 'crawler', 'crawler', 'spitter', 'spitter', 'brute', 'brute']
+          : state.wave >= 7
+            ? ['walker', 'runner', 'runner', 'crawler', 'crawler', 'spitter', 'spitter', 'brute', 'brute']
+          : state.wave >= 4
             ? ['walker', 'walker', 'runner', 'runner', 'crawler', 'spitter', 'brute']
             : ['walker', 'walker', 'walker', 'runner'];
         spawnZombie(state, pool[Math.floor(Math.random() * pool.length)]);
         state.spawnBudget -= 1;
-        state.spawnTimer = Math.max(0.24, 0.88 - state.wave * 0.05 - state.players.length * 0.05);
+        const missionPressure = state.missionStage === 'breach' ? 0 : state.missionStage === 'relays' ? 0.04 : state.missionStage === 'nests' ? 0.08 : 0.12;
+        state.spawnTimer = Math.max(0.16, 0.76 - state.wave * 0.045 - state.players.length * 0.04 - missionPressure);
       }
       return;
     }
