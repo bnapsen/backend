@@ -511,6 +511,10 @@
       if (!state.voiceJoined) {
         return;
       }
+      const selfPlayer = selfSnapshotPlayer();
+      if (!selfPlayer || !Object.prototype.hasOwnProperty.call(selfPlayer, 'voicePreset')) {
+        return;
+      }
       sendJson({
         action: 'voice-style',
         preset: currentVoicePresetLabel(),
