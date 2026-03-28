@@ -16,6 +16,7 @@
   const INPUT_SEND_MS = 50;
   const PLAYER_HEIGHT = 1.72;
   const CAMERA_DEFAULT_YAW = 0;
+  const LOOK_TURN_SPEED = 2.8;
   const query = new URLSearchParams(window.location.search);
 
   const ui = {
@@ -96,6 +97,8 @@
       back: false,
       left: false,
       right: false,
+      lookLeft: false,
+      lookRight: false,
       sprint: false,
       fire: false,
       jump: false,
@@ -227,7 +230,7 @@
         : 'Live room connected.';
     }
     if (state.mode === 'solo') {
-      return 'Solo run is live. Move the mouse over the arena to aim, then light up the breach.';
+      return 'Solo run is live. Turn with Q/E or Left/Right, then light up the breach.';
     }
     return 'Host a live room, join by room code, or jump into a solo run instantly.';
   }
@@ -1477,35 +1480,9 @@
   }
 
   function resolveAimTarget(game, player) {
-    const world = state.world;
-    if (!world || !player || !state.camera) {
+    if (!player) {
       return null;
     }
-
-    if (!state.mouse.inside) {
-      return {
-        x: player.x + Math.sin(state.input.yaw) * 36,
-        z: player.z - Math.cos(state.input.yaw) * 36,
-      };
-    }
-
-    const raycaster = world.raycaster;
-    raycaster.setFromCamera(new THREE.Vector2(state.mouse.ndcX, state.mouse.ndcY), state.camera);
-    const ray = raycaster.ray;
-    const hitPoint = world.tempVecA;
-
-    const planeHit = ray.intersectPlane(world.aimPlane, hitPoint);
-    if (planeHit) {
-      const dx = hitPoint.x - player.x;
-      const dz = hitPoint.z - player.z;
-      const distance = Math.hypot(dx, dz) || 1;
-      const clampedDistance = clamp(distance, 4, 58);
-      return {
-        x: clamp(player.x + (dx / distance) * clampedDistance, -Core.ARENA.width * 0.56, Core.ARENA.width * 0.56),
-        z: clamp(player.z + (dz / distance) * clampedDistance, -Core.ARENA.depth * 0.56, Core.ARENA.depth * 0.56),
-      };
-    }
-
     return {
       x: player.x + Math.sin(state.input.yaw) * 48,
       z: player.z - Math.cos(state.input.yaw) * 48,
@@ -1742,6 +1719,8 @@
     state.input.moveDirX = 0;
     state.input.moveDirZ = 0;
     state.input.jump = false;
+    state.keys.lookLeft = false;
+    state.keys.lookRight = false;
     state.keys.jump = false;
     state.keys.fire = false;
     if (state.world) {
@@ -1985,8 +1964,8 @@
 
     if (!game) {
       ui.overlayTitle.textContent = 'Zombie Siege 3D Live';
-      ui.overlayCopy.textContent = 'Host a room, join a friend, or start solo. Move the mouse to look and aim, press Space to jump, and click to fire.';
-      ui.overlayMeta.textContent = 'Controls: WASD move, mouse looks and aims, Left Click fires, Space jumps, Shift sprints, 1 2 3 swaps weapons.';
+      ui.overlayCopy.textContent = 'Host a room, join a friend, or start solo. Turn with Q/E or Left/Right, jump with Space, and click to fire.';
+      ui.overlayMeta.textContent = 'Controls: WASD move, Q/E or Left/Right turns, Left Click fires, Space jumps, Shift sprints, 1 2 3 swaps weapons.';
       ui.startBtn.textContent = 'Start solo instantly';
       return;
     }
@@ -2001,9 +1980,9 @@
 
     ui.overlayTitle.textContent = state.mode === 'online' ? 'Back to the yard' : 'Resume the solo siege';
     ui.overlayCopy.textContent = state.mode === 'online'
-      ? 'The room is still live. Move the mouse to look, jump with Space, and click to fire.'
-      : 'Move the mouse to look, jump with Space, and click to fire. No mouse lock needed.';
-    ui.overlayMeta.textContent = `Current weapon: ${currentWeaponLabel(game)}. Use 1, 2, and 3 to swap instantly, and press Space to jump.`;
+      ? 'The room is still live. Turn with Q/E or Left/Right, jump with Space, and click to fire.'
+      : 'Turn with Q/E or Left/Right, jump with Space, and click to fire. No mouse lock needed.';
+    ui.overlayMeta.textContent = `Current weapon: ${currentWeaponLabel(game)}. Use Q/E or Left/Right to turn, 1 2 3 to swap weapons, and Space to jump.`;
     ui.startBtn.textContent = 'Continue';
   }
 
@@ -2046,7 +2025,7 @@
       setModePill('No room active');
     }
 
-    ui.controlHint.textContent = 'WASD moves. Mouse looks and aims. Left Click fires. Space jumps. Shift sprints. Press 1, 2, or 3 for rifle, SMG, and shotgun.';
+    ui.controlHint.textContent = 'WASD moves. Q/E or Left/Right turns. Left Click fires. Space jumps. Shift sprints. Press 1, 2, or 3 for rifle, SMG, and shotgun.';
     ui.restartBtn.disabled = !game;
     ui.stage.classList.toggle('live', Boolean(game && !game.gameOver));
     updateInviteUi();
@@ -2070,7 +2049,7 @@
     state.hasYawSeed = true;
   }
 
-  function composeInput(game) {
+  function composeInput(game, dt) {
     let moveX = (state.keys.right ? 1 : 0) - (state.keys.left ? 1 : 0);
     let moveY = (state.keys.forward ? 1 : 0) - (state.keys.back ? 1 : 0);
     const magnitude = Math.hypot(moveX, moveY) || 1;
@@ -2083,51 +2062,36 @@
     state.input.fire = state.keys.fire;
     state.input.jump = state.keys.jump;
     state.input.sprint = state.keys.sprint;
+    const lookTurn = (state.keys.lookRight ? 1 : 0) - (state.keys.lookLeft ? 1 : 0);
+    if (lookTurn) {
+      state.input.yaw = normalizeAngle(state.input.yaw + lookTurn * LOOK_TURN_SPEED * dt);
+      if (state.world) {
+        state.world.cameraYaw = state.input.yaw;
+      }
+    }
     const player = localPlayer(game);
-    let desiredYaw = state.input.yaw;
     if (player) {
       const target = resolveAimTarget(game, player);
       if (target) {
         state.input.aimX = target.x;
         state.input.aimZ = target.z;
-        const dx = target.x - player.x;
-        const dz = target.z - player.z;
-        if (Math.hypot(dx, dz) > 0.05) {
-          desiredYaw = normalizeAngle(Math.atan2(dx, -dz));
-          state.input.yaw = desiredYaw;
-        }
       }
     }
 
     if (Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001) {
-      const movementChanged = !state.movement.active || moveX !== state.movement.rawX || moveY !== state.movement.rawY;
-      if (movementChanged) {
-        let worldMoveX = moveX;
-        let worldMoveZ = -moveY;
-        const movementYaw = Number.isFinite(state.input.yaw)
-          ? state.input.yaw
-          : (Number.isFinite(state.world?.cameraYaw) ? state.world.cameraYaw : CAMERA_DEFAULT_YAW);
-        const forwardX = Math.sin(movementYaw);
-        const forwardZ = -Math.cos(movementYaw);
-        const rightX = -forwardZ;
-        const rightZ = forwardX;
-        worldMoveX = rightX * moveX + forwardX * moveY;
-        worldMoveZ = rightZ * moveX + forwardZ * moveY;
-        const worldMagnitude = Math.hypot(worldMoveX, worldMoveZ) || 1;
-        state.movement.worldX = worldMoveX / worldMagnitude;
-        state.movement.worldZ = worldMoveZ / worldMagnitude;
-        state.movement.rawX = moveX;
-        state.movement.rawY = moveY;
-        state.movement.active = true;
-      }
-      state.input.moveDirX = state.movement.worldX;
-      state.input.moveDirZ = state.movement.worldZ;
+      const movementYaw = Number.isFinite(state.input.yaw)
+        ? state.input.yaw
+        : (Number.isFinite(state.world?.cameraYaw) ? state.world.cameraYaw : CAMERA_DEFAULT_YAW);
+      const forwardX = Math.sin(movementYaw);
+      const forwardZ = -Math.cos(movementYaw);
+      const rightX = -forwardZ;
+      const rightZ = forwardX;
+      const worldMoveX = rightX * moveX + forwardX * moveY;
+      const worldMoveZ = rightZ * moveX + forwardZ * moveY;
+      const worldMagnitude = Math.hypot(worldMoveX, worldMoveZ) || 1;
+      state.input.moveDirX = worldMoveX / worldMagnitude;
+      state.input.moveDirZ = worldMoveZ / worldMagnitude;
     } else {
-      state.movement.active = false;
-      state.movement.rawX = 0;
-      state.movement.rawY = 0;
-      state.movement.worldX = 0;
-      state.movement.worldZ = 0;
       state.input.moveDirX = 0;
       state.input.moveDirZ = 0;
     }
@@ -2164,7 +2128,7 @@
 
     const preGame = currentGame();
     seedYawIfNeeded(preGame);
-    composeInput(preGame);
+    composeInput(preGame, dt);
     updateSolo(dt);
     const game = currentGame();
     processEvents(game);
@@ -2207,12 +2171,18 @@
         state.keys.back = pressed;
         return true;
       case 'KeyA':
-      case 'ArrowLeft':
         state.keys.left = pressed;
         return true;
       case 'KeyD':
-      case 'ArrowRight':
         state.keys.right = pressed;
+        return true;
+      case 'KeyQ':
+      case 'ArrowLeft':
+        state.keys.lookLeft = pressed;
+        return true;
+      case 'KeyE':
+      case 'ArrowRight':
+        state.keys.lookRight = pressed;
         return true;
       case 'ShiftLeft':
       case 'ShiftRight':
@@ -2245,20 +2215,8 @@
   }
 
   function updateMouseAim(clientX, clientY) {
-    const rect = ui.stage.getBoundingClientRect();
-    if (!rect.width || !rect.height) {
-      return;
-    }
-    const px = clamp((clientX - rect.left) / rect.width, 0, 1);
-    const py = clamp((clientY - rect.top) / rect.height, 0, 1);
     state.mouse.inside = true;
-    state.mouse.stageX = px;
-    state.mouse.stageY = py;
-    state.mouse.ndcX = px * 2 - 1;
-    state.mouse.ndcY = -(py * 2 - 1);
     if (ui.crosshair) {
-      ui.crosshair.style.setProperty('--crosshair-x', `${(px * 100).toFixed(2)}%`);
-      ui.crosshair.style.setProperty('--crosshair-y', `${(py * 100).toFixed(2)}%`);
       ui.crosshair.classList.remove('hidden');
     }
   }

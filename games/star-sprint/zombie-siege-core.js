@@ -684,17 +684,8 @@
     player.hurtTimer = Math.max(0, player.hurtTimer - dt);
     player.fireCooldown = Math.max(0, player.fireCooldown - dt);
     player.yaw = normalizeAngle(player.yaw);
-    let moveBasisYaw = normalizeAngle(player.input.yaw);
-    if (Number.isFinite(player.input.aimX) && Number.isFinite(player.input.aimZ)) {
-      const dx = player.input.aimX - player.x;
-      const dz = player.input.aimZ - player.z;
-      if (Math.hypot(dx, dz) > 0.05) {
-        moveBasisYaw = Math.atan2(dx, -dz);
-        player.yaw = rotateToward(player.yaw, moveBasisYaw, PLAYER_TURN_SPEED * dt);
-      }
-    } else {
-      player.yaw = rotateToward(player.yaw, moveBasisYaw, PLAYER_TURN_SPEED * dt);
-    }
+    const moveBasisYaw = normalizeAngle(player.input.yaw);
+    player.yaw = rotateToward(player.yaw, moveBasisYaw, PLAYER_TURN_SPEED * dt);
     player.weaponKey = WEAPONS[player.input.weaponKey] ? player.input.weaponKey : player.weaponKey;
 
     if (!player.alive) {
