@@ -7,6 +7,7 @@
     variantId: 'miniPoolShowdown.variantId',
     setupCollapsed: 'miniPoolShowdown.setupCollapsed',
     sidebarCollapsed: 'miniPoolShowdown.sidebarCollapsed',
+    soundEnabled: 'miniPoolShowdown.soundEnabled',
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const query = new URLSearchParams(window.location.search);
@@ -25,6 +26,7 @@
     soloBtn: document.getElementById('soloBtn'),
     toggleSetupBtn: document.getElementById('toggleSetupBtn'),
     toggleSidebarBtn: document.getElementById('toggleSidebarBtn'),
+    soundToggleBtn: document.getElementById('soundToggleBtn'),
     openLoungeBtn: document.getElementById('openLoungeBtn'),
     shareLoungeBtn: document.getElementById('shareLoungeBtn'),
     copyBtn: document.getElementById('copyBtn'),
@@ -86,6 +88,10 @@
     summarySignature: '',
     setupCollapsed: false,
     sidebarCollapsed: false,
+    soundEnabled: true,
+    audioTelemetry: null,
+    lastShotSoundAt: 0,
+    pendingLocalShotCount: 0,
     frameHandle: 0,
     view: {
       width: 0,
@@ -151,6 +157,11 @@
     felt: loadTextureAsset(TABLE_ART.feltSrc),
     wood: loadTextureAsset(TABLE_ART.woodSrc),
   };
+  const audioState = {
+    ctx: null,
+    master: null,
+    noiseBuffer: null,
+  };
 
   function capitalize(value) {
     return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
@@ -198,6 +209,190 @@
     ctx.drawImage(asset.image, x, y, width, height);
     ctx.restore();
     return true;
+  }
+
+  function updateSoundToggleUi() {
+    if (!ui.soundToggleBtn) {
+      return;
+    }
+    ui.soundToggleBtn.textContent = state.soundEnabled ? 'Sound on' : 'Sound off';
+    ui.soundToggleBtn.dataset.active = state.soundEnabled ? 'true' : 'false';
+  }
+
+  function createNoiseBuffer(ctx) {
+    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.35), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < data.length; index += 1) {
+      data[index] = (Math.random() * 2 - 1) * Math.pow(1 - index / data.length, 1.6);
+    }
+    return buffer;
+  }
+
+  function ensureAudioContext() {
+    if (!state.soundEnabled) {
+      return null;
+    }
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) {
+      return null;
+    }
+    if (!audioState.ctx) {
+      const ctx = new AudioCtx();
+      const master = ctx.createGain();
+      master.gain.value = 0.18;
+      master.connect(ctx.destination);
+      audioState.ctx = ctx;
+      audioState.master = master;
+      audioState.noiseBuffer = createNoiseBuffer(ctx);
+    }
+    if (audioState.ctx.state === 'suspended') {
+      audioState.ctx.resume().catch(() => {});
+    }
+    return audioState.ctx;
+  }
+
+  function primeAudio() {
+    ensureAudioContext();
+  }
+
+  function playTone(options = {}) {
+    const ctx = ensureAudioContext();
+    if (!ctx || !audioState.master) {
+      return;
+    }
+    const now = ctx.currentTime + (options.delay || 0);
+    const duration = Math.max(0.02, options.duration || 0.12);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = options.type || 'triangle';
+    const startFreq = options.startFreq || 320;
+    const endFreq = options.endFreq || startFreq;
+    osc.frequency.setValueAtTime(startFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(30, endFreq), now + duration);
+    const peak = options.gain || 0.15;
+    const attack = Math.min(duration * 0.18, options.attack || 0.012);
+    const release = Math.max(0.012, options.release || duration);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(peak, now + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + release);
+    osc.connect(gain);
+    gain.connect(audioState.master);
+    osc.start(now);
+    osc.stop(now + duration + 0.03);
+  }
+
+  function playNoiseBurst(options = {}) {
+    const ctx = ensureAudioContext();
+    if (!ctx || !audioState.master || !audioState.noiseBuffer) {
+      return;
+    }
+    const now = ctx.currentTime + (options.delay || 0);
+    const duration = Math.max(0.02, options.duration || 0.09);
+    const source = ctx.createBufferSource();
+    source.buffer = audioState.noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = options.filterType || 'bandpass';
+    filter.frequency.value = options.frequency || 780;
+    filter.Q.value = options.q || 1.2;
+    const gain = ctx.createGain();
+    const peak = options.gain || 0.08;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(peak, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioState.master);
+    source.start(now);
+    source.stop(now + duration + 0.02);
+  }
+
+  function playToggleSound() {
+    playTone({ type: 'sine', startFreq: 620, endFreq: 880, duration: 0.08, gain: 0.05 });
+    playTone({ type: 'triangle', startFreq: 940, endFreq: 1220, duration: 0.06, delay: 0.015, gain: 0.035 });
+  }
+
+  function playShotSound(strength = 1) {
+    const amount = clamp(strength, 0.4, 2.2);
+    playNoiseBurst({ duration: 0.05, gain: 0.05 * amount, frequency: 1320, q: 0.85 });
+    playTone({ type: 'triangle', startFreq: 172 - amount * 16, endFreq: 72, duration: 0.16, gain: 0.12 * amount });
+    playTone({ type: 'sine', startFreq: 102, endFreq: 54, duration: 0.2, delay: 0.008, gain: 0.08 * amount });
+    state.lastShotSoundAt = performance.now();
+  }
+
+  function playPocketSound(brightness = 1) {
+    const amount = clamp(brightness, 0.8, 1.4);
+    playTone({ type: 'sine', startFreq: 480 * amount, endFreq: 220, duration: 0.18, gain: 0.08 * amount });
+    playTone({ type: 'triangle', startFreq: 280 * amount, endFreq: 148, duration: 0.22, delay: 0.018, gain: 0.075 });
+    playNoiseBurst({ duration: 0.08, gain: 0.035, frequency: 540, q: 0.7 });
+  }
+
+  function playFoulSound() {
+    playTone({ type: 'sawtooth', startFreq: 210, endFreq: 120, duration: 0.18, gain: 0.06 });
+    playTone({ type: 'triangle', startFreq: 164, endFreq: 88, duration: 0.22, delay: 0.028, gain: 0.05 });
+  }
+
+  function playWinSound() {
+    playTone({ type: 'triangle', startFreq: 520, endFreq: 520, duration: 0.18, gain: 0.06 });
+    playTone({ type: 'triangle', startFreq: 660, endFreq: 660, duration: 0.2, delay: 0.08, gain: 0.06 });
+    playTone({ type: 'triangle', startFreq: 880, endFreq: 880, duration: 0.24, delay: 0.16, gain: 0.07 });
+  }
+
+  function summarizeAudioSnapshot(snapshot) {
+    return snapshot ? {
+      shotCount: snapshot.shotCount || 0,
+      moving: Boolean(snapshot.moving),
+      winner: snapshot.winner || '',
+      drawReason: snapshot.drawReason || '',
+      latestEventId: Array.isArray(snapshot.events) && snapshot.events.length ? snapshot.events[0].id : '',
+      latestEventText: Array.isArray(snapshot.events) && snapshot.events.length ? snapshot.events[0].text || '' : '',
+    } : {
+      shotCount: 0,
+      moving: false,
+      winner: '',
+      drawReason: '',
+      latestEventId: '',
+      latestEventText: '',
+    };
+  }
+
+  function updateSnapshotAudio(snapshot) {
+    const next = summarizeAudioSnapshot(snapshot);
+    const previous = state.audioTelemetry;
+    state.audioTelemetry = next;
+    if (!state.soundEnabled || !snapshot || !previous) {
+      return;
+    }
+    const now = performance.now();
+    if (next.shotCount > previous.shotCount) {
+      if (state.pendingLocalShotCount && next.shotCount >= state.pendingLocalShotCount) {
+        state.pendingLocalShotCount = 0;
+      } else if (now - state.lastShotSoundAt > 140) {
+        playShotSound(0.86);
+      }
+    }
+    if (next.latestEventId && next.latestEventId !== previous.latestEventId) {
+      const text = next.latestEventText.toLowerCase();
+      if (text.includes('pockets') || text.includes('rack clear') || text.includes('crown')) {
+        playPocketSound(text.includes('crown') ? 1.18 : 1);
+      } else if (text.includes('jammer') || text.includes('scratch') || text.includes('penalty')) {
+        playFoulSound();
+      }
+    }
+    if (!previous.winner && next.winner) {
+      playWinSound();
+    }
+  }
+
+  function setSoundEnabled(enabled, options = {}) {
+    state.soundEnabled = Boolean(enabled);
+    localStorage.setItem(STORAGE_KEYS.soundEnabled, state.soundEnabled ? '1' : '0');
+    updateSoundToggleUi();
+    if (state.soundEnabled) {
+      primeAudio();
+      if (options.preview) {
+        playToggleSound();
+      }
+    }
   }
 
   function lerp(start, end, amount) {
@@ -513,6 +708,7 @@
   function refreshLocalSnapshot(options = {}) {
     const snapshot = buildSoloSnapshot();
     state.snapshot = snapshot;
+    updateSnapshotAudio(snapshot);
     if (!snapshot) {
       return;
     }
@@ -677,6 +873,8 @@
     state.localGame = core.createGameState({ variantId: selectedVariantId() });
     state.localPlayers = buildSoloPlayers();
     state.roomCode = 'SOLO';
+    state.audioTelemetry = summarizeAudioSnapshot(null);
+    state.pendingLocalShotCount = 0;
     state.playerId = state.localPlayers[0].id;
     state.yourColor = 'white';
     state.soloBotDueAt = 0;
@@ -1170,6 +1368,7 @@
   }
 
   function renderUi() {
+    updateSoundToggleUi();
     ui.inviteInput.value = state.roomCode ? buildInviteUrl() : '';
     ui.copyBtn.disabled = !state.roomCode || isSoloMode();
     ui.copyCodeBtn.disabled = !state.roomCode || isSoloMode();
@@ -1773,6 +1972,7 @@
     state.localPlayers = [];
     state.soloBotDueAt = 0;
     state.snapshot = payload.snapshot || null;
+    updateSnapshotAudio(state.snapshot);
     if (state.snapshot && state.snapshot.roomCode) {
       state.roomCode = sanitizeRoomCode(state.snapshot.roomCode);
       ui.roomInput.value = state.roomCode;
@@ -1809,6 +2009,8 @@
     state.snapshot = null;
     state.playerId = '';
     state.yourColor = null;
+    state.audioTelemetry = summarizeAudioSnapshot(null);
+    state.pendingLocalShotCount = 0;
     state.summarySignature = snapshotSignature(null);
     state.lastFrameAt = performance.now();
     if (mode === 'host') {
@@ -1885,6 +2087,7 @@
     if (!canShoot()) {
       return;
     }
+    primeAudio();
     const point = boardPointFromClient(event.clientX, event.clientY, 'scene');
     const cue = activeCue();
     if (!point || !cue) {
@@ -2005,12 +2208,17 @@
       return;
     }
 
+    state.pendingLocalShotCount = (state.snapshot && state.snapshot.shotCount ? state.snapshot.shotCount : 0) + 1;
     if (isSoloMode()) {
-      playSoloShot('white', {
+      if (playSoloShot('white', {
         vectorX: direction.x,
         vectorY: direction.y,
         power,
-      }, 'Shot fired. Orbit Bot is watching the table.');
+      }, 'Shot fired. Orbit Bot is watching the table.')) {
+        playShotSound(power);
+      } else {
+        state.pendingLocalShotCount = 0;
+      }
     } else {
       const legacyVectorScale = power * 320;
       if (sendJson({
@@ -2019,7 +2227,10 @@
         vectorY: direction.y * legacyVectorScale,
         power,
       })) {
+        playShotSound(power);
         setStatus('Shot sent. Waiting for the table physics to resolve.');
+      } else {
+        state.pendingLocalShotCount = 0;
       }
     }
     updatePowerUi();
@@ -2036,9 +2247,13 @@
     state.lastFrameAt = performance.now();
     const storedSetupPref = localStorage.getItem(STORAGE_KEYS.setupCollapsed);
     const storedSidebarPref = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed);
+    const storedSoundPref = localStorage.getItem(STORAGE_KEYS.soundEnabled);
     state.setupCollapsed = storedSetupPref === null ? false : storedSetupPref === '1';
     state.sidebarCollapsed = storedSidebarPref === null ? window.innerWidth < 1460 : storedSidebarPref === '1';
+    state.soundEnabled = storedSoundPref === null ? true : storedSoundPref === '1';
+    state.audioTelemetry = summarizeAudioSnapshot(null);
     updateLayoutChrome();
+    updateSoundToggleUi();
     setNetworkStatus('offline', 'Offline');
     setStatus('Host a duel, join by room code, or start a solo showdown against Orbit Bot.');
     renderUi();
@@ -2047,6 +2262,9 @@
   ui.hostBtn.addEventListener('click', () => connect('host'));
   ui.joinBtn.addEventListener('click', () => connect('join'));
   ui.soloBtn.addEventListener('click', startSoloGame);
+  ui.soundToggleBtn.addEventListener('click', () => {
+    setSoundEnabled(!state.soundEnabled, { preview: !state.soundEnabled });
+  });
   ui.toggleSetupBtn.addEventListener('click', () => {
     state.setupCollapsed = !state.setupCollapsed;
     savePanelPrefs();

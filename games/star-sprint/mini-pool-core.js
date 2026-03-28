@@ -22,6 +22,7 @@ const SHOT_MIN_POWER = 0.04;
 const SHOT_MIN_SPEED = 1.05;
 const SHOT_SPEED = 17.4;
 const SHOT_BOOST_SPEED = 27.8;
+const BALL_RADIUS = 12;
 const SCRATCH_PENALTY = 6;
 const BLOCKER_PENALTY = 8;
 const STOP_EPSILON = 0.014;
@@ -43,7 +44,7 @@ const VARIANTS = Object.freeze({
     rackBonus: 14,
     intro: 'Mini Pool Showdown is ready. First player breaks when both seats are filled.',
     status: 'Pocket the glowing targets, dodge the jammers, and race for the best score.',
-    layout: Object.freeze({ startXFactor: 0.665, spacing: 23.5 }),
+    layout: Object.freeze({ startXFactor: 0.665, spacing: 25.2 }),
     rack: Object.freeze([
       ['flare-1', '#ff5f96', '1', TARGET_VALUE],
       ['flare-2', '#f7ca45', '2', TARGET_VALUE],
@@ -65,7 +66,7 @@ const VARIANTS = Object.freeze({
     rackBonus: 11,
     intro: 'Crown Rush is live. Faster racks, wider lanes, and a massive crown bonus.',
     status: 'Hunt the crown fast, steal the big points, and finish the short race before your rival settles in.',
-    layout: Object.freeze({ startXFactor: 0.69, spacing: 24.5 }),
+    layout: Object.freeze({ startXFactor: 0.69, spacing: 26.2 }),
     rack: Object.freeze([
       ['flare-1', '#ff7d97', '1', 9],
       ['flare-2', '#ffd86c', '2', 9],
@@ -84,7 +85,7 @@ const VARIANTS = Object.freeze({
     rackBonus: 8,
     intro: 'Clean Sweep is live. No blockers, no freebies, just pure shot making.',
     status: 'Run the clean rack, keep the cue, and turn every open line into points.',
-    layout: Object.freeze({ startXFactor: 0.675, spacing: 22.5 }),
+    layout: Object.freeze({ startXFactor: 0.675, spacing: 24.2 }),
     rack: Object.freeze([
       ['flare-1', '#ff7095', '1', 8],
       ['flare-2', '#ffb15a', '2', 8],
@@ -143,7 +144,7 @@ function makeBall(id, x, y, color, kind, label, points = 0) {
     y,
     vx: 0,
     vy: 0,
-    r: 11,
+    r: BALL_RADIUS,
     color,
     kind,
     label,

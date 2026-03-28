@@ -157,6 +157,13 @@ h2 {
   text-transform: uppercase;
 }
 
+.toolbar-btn[data-active="true"] {
+  color: #041913;
+  border-color: rgba(113, 241, 209, 0.5);
+  background: linear-gradient(135deg, rgba(113, 241, 209, 0.96), rgba(220, 255, 243, 0.96));
+  box-shadow: 0 10px 24px rgba(113, 241, 209, 0.16);
+}
+
 .layout {
   align-items: start;
   margin-top: 16px;
