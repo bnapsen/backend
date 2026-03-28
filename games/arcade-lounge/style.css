@@ -559,6 +559,179 @@ button:disabled {
   color: #ff9b9b;
 }
 
+.voice-lab-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.voice-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.voice-preset-btn {
+  display: grid;
+  gap: 4px;
+  min-height: 88px;
+  padding: 14px;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 42%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.voice-preset-btn strong,
+.voice-preset-btn span {
+  display: block;
+}
+
+.voice-preset-btn strong {
+  font-size: 0.95rem;
+}
+
+.voice-preset-btn span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.voice-preset-btn.is-active {
+  color: #04100d;
+  border-color: rgba(126, 243, 220, 0.42);
+  background: linear-gradient(145deg, rgba(126, 243, 220, 0.98), rgba(255, 191, 114, 0.92));
+  box-shadow: 0 16px 30px rgba(126, 243, 220, 0.16);
+}
+
+.voice-preset-btn.is-active span {
+  color: rgba(7, 17, 29, 0.82);
+}
+
+.voice-meter-stack,
+.voice-slider-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.voice-meter-stack {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.voice-meter-block {
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.voice-meter-head,
+.voice-slider-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.voice-meter-head span,
+.voice-slider-head span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.voice-meter-head strong,
+.voice-slider-head strong {
+  font-size: 0.82rem;
+}
+
+.voice-meter {
+  position: relative;
+  height: 12px;
+  margin-top: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.voice-meter span {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(126, 243, 220, 0.92), rgba(255, 191, 114, 0.94));
+  box-shadow: 0 0 18px rgba(126, 243, 220, 0.24);
+  transition: width 80ms linear;
+}
+
+.voice-meter-output span {
+  background: linear-gradient(90deg, rgba(143, 184, 255, 0.94), rgba(255, 191, 114, 0.94));
+  box-shadow: 0 0 18px rgba(143, 184, 255, 0.22);
+}
+
+.voice-slider {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.voice-slider input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.voice-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(126, 243, 220, 0.12), rgba(143, 184, 255, 0.18));
+}
+
+.voice-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -5px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #effbff, var(--accent-2));
+  box-shadow: 0 0 0 3px rgba(126, 243, 220, 0.12);
+}
+
+.voice-slider input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(126, 243, 220, 0.12), rgba(143, 184, 255, 0.18));
+}
+
+.voice-slider input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #effbff, var(--accent-2));
+  box-shadow: 0 0 0 3px rgba(126, 243, 220, 0.12);
+}
+
+.voice-lab-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.voice-lab-actions button {
+  flex: 1 1 170px;
+}
+
 .voice-btn[data-state="live"] {
   color: #04140f;
   background: linear-gradient(135deg, var(--accent), #dffcf3);
@@ -630,6 +803,12 @@ button:disabled {
   color: #2b1707;
   border-color: rgba(255, 191, 114, 0.45);
   background: linear-gradient(135deg, rgba(255, 191, 114, 0.94), rgba(255, 226, 185, 0.98));
+}
+
+.chip.voice-preset-chip {
+  color: #d9f4ff;
+  border-color: rgba(143, 184, 255, 0.32);
+  background: rgba(143, 184, 255, 0.12);
 }
 
 .invite-card {
@@ -740,5 +919,10 @@ button:disabled {
 
   .message-list {
     max-height: none;
+  }
+
+  .voice-preset-grid,
+  .voice-meter-stack {
+    grid-template-columns: 1fr;
   }
 }

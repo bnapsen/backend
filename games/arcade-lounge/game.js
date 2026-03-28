@@ -5,6 +5,7 @@
     name: 'novaArcadeLounge.name',
     serverUrl: 'novaArcadeLounge.serverUrl',
     roomCode: 'novaArcadeLounge.roomCode',
+    voiceProfile: 'novaArcadeLounge.voiceProfile',
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const PUBLIC_ROOM_CODE = 'ARCADECHAT';
@@ -60,6 +61,39 @@
       video: false,
     },
   };
+  const VOICE_PRESETS = Object.freeze({
+    clean: {
+      label: 'Clean Comms',
+      summary: 'Stable and clear',
+      settings: { body: 50, clarity: 56, drive: 0, glitch: 0, echo: 0, monitor: 0 },
+    },
+    arena: {
+      label: 'Arena Announcer',
+      summary: 'Broadcast punch',
+      settings: { body: 68, clarity: 72, drive: 8, glitch: 6, echo: 20, monitor: 0 },
+    },
+    radio: {
+      label: 'Radio Bot',
+      summary: 'Thin and crunchy',
+      settings: { body: 28, clarity: 78, drive: 38, glitch: 42, echo: 8, monitor: 0 },
+    },
+    titan: {
+      label: 'Titan',
+      summary: 'Heavy and huge',
+      settings: { body: 84, clarity: 38, drive: 12, glitch: 0, echo: 10, monitor: 0 },
+    },
+    specter: {
+      label: 'Specter',
+      summary: 'Ghostly wash',
+      settings: { body: 24, clarity: 68, drive: 16, glitch: 24, echo: 46, monitor: 0 },
+    },
+    robot: {
+      label: 'Robot Relay',
+      summary: 'Machine pulse',
+      settings: { body: 42, clarity: 70, drive: 28, glitch: 72, echo: 12, monitor: 0 },
+    },
+  });
+  const DEFAULT_VOICE_PRESET = 'clean';
   const query = new URLSearchParams(window.location.search);
   const state = {
     socket: null,
@@ -76,6 +110,13 @@
     voiceMuted: false,
     voicePeers: new Map(),
     voiceAudioElements: new Map(),
+    voiceLab: {
+      profile: null,
+      engine: null,
+      rawStream: null,
+      meterFrame: 0,
+      styleSyncTimer: 0,
+    },
   };
 
   const ui = {
@@ -103,6 +144,26 @@
     muteVoiceBtn: document.getElementById('muteVoiceBtn'),
     voiceStatus: document.getElementById('voiceStatus'),
     voiceAudioHost: document.getElementById('voiceAudioHost'),
+    voiceLabStatus: document.getElementById('voiceLabStatus'),
+    voicePresetButtons: Array.from(document.querySelectorAll('[data-voice-preset]')),
+    voiceInputMeterFill: document.getElementById('voiceInputMeterFill'),
+    voiceOutputMeterFill: document.getElementById('voiceOutputMeterFill'),
+    voiceInputMeterText: document.getElementById('voiceInputMeterText'),
+    voiceOutputMeterText: document.getElementById('voiceOutputMeterText'),
+    voiceBodyRange: document.getElementById('voiceBodyRange'),
+    voiceClarityRange: document.getElementById('voiceClarityRange'),
+    voiceDriveRange: document.getElementById('voiceDriveRange'),
+    voiceGlitchRange: document.getElementById('voiceGlitchRange'),
+    voiceEchoRange: document.getElementById('voiceEchoRange'),
+    voiceMonitorRange: document.getElementById('voiceMonitorRange'),
+    voiceBodyValue: document.getElementById('voiceBodyValue'),
+    voiceClarityValue: document.getElementById('voiceClarityValue'),
+    voiceDriveValue: document.getElementById('voiceDriveValue'),
+    voiceGlitchValue: document.getElementById('voiceGlitchValue'),
+    voiceEchoValue: document.getElementById('voiceEchoValue'),
+    voiceMonitorValue: document.getElementById('voiceMonitorValue'),
+    randomVoiceBtn: document.getElementById('randomVoiceBtn'),
+    resetVoiceBtn: document.getElementById('resetVoiceBtn'),
     sendBtn: document.getElementById('sendBtn'),
     composerHint: document.getElementById('composerHint'),
     gameSelect: document.getElementById('gameSelect'),
@@ -164,6 +225,73 @@
     return value;
   }
 
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function voicePresetMeta(presetId) {
+    return VOICE_PRESETS[presetId] || {
+      label: 'Custom Mix',
+      summary: 'Hand-tuned voice chain',
+      settings: VOICE_PRESETS[DEFAULT_VOICE_PRESET].settings,
+    };
+  }
+
+  function createVoiceProfile(presetId) {
+    const basePreset = VOICE_PRESETS[presetId] ? presetId : DEFAULT_VOICE_PRESET;
+    return {
+      preset: basePreset,
+      ...VOICE_PRESETS[basePreset].settings,
+    };
+  }
+
+  function normalizeVoiceProfile(raw) {
+    const fallback = createVoiceProfile(DEFAULT_VOICE_PRESET);
+    const preset = raw && (raw.preset === 'custom' || VOICE_PRESETS[raw.preset]) ? raw.preset : fallback.preset;
+    const profile = preset === 'custom'
+      ? { ...fallback }
+      : createVoiceProfile(preset);
+    const next = {
+      ...profile,
+      preset,
+      body: clamp(Number(raw && raw.body), 0, 100),
+      clarity: clamp(Number(raw && raw.clarity), 0, 100),
+      drive: clamp(Number(raw && raw.drive), 0, 100),
+      glitch: clamp(Number(raw && raw.glitch), 0, 100),
+      echo: clamp(Number(raw && raw.echo), 0, 100),
+      monitor: clamp(Number(raw && raw.monitor), 0, 100),
+    };
+    if (!Number.isFinite(next.body)) next.body = profile.body;
+    if (!Number.isFinite(next.clarity)) next.clarity = profile.clarity;
+    if (!Number.isFinite(next.drive)) next.drive = profile.drive;
+    if (!Number.isFinite(next.glitch)) next.glitch = profile.glitch;
+    if (!Number.isFinite(next.echo)) next.echo = profile.echo;
+    if (!Number.isFinite(next.monitor)) next.monitor = profile.monitor;
+    return next;
+  }
+
+  function currentVoicePresetLabel() {
+    return voicePresetMeta(state.voiceLab.profile && state.voiceLab.profile.preset).label;
+  }
+
+  function persistVoiceProfile() {
+    if (!state.voiceLab.profile) {
+      return;
+    }
+    localStorage.setItem(STORAGE_KEYS.voiceProfile, JSON.stringify(state.voiceLab.profile));
+  }
+
+  function createDistortionCurve(amount) {
+    const samples = 256;
+    const curve = new Float32Array(samples);
+    const k = 1 + amount * 40;
+    for (let index = 0; index < samples; index += 1) {
+      const x = (index * 2) / (samples - 1) - 1;
+      curve[index] = ((1 + k) * x) / (1 + k * Math.abs(x));
+    }
+    return curve;
+  }
+
   function voiceChatSupported() {
     return Boolean(
       navigator.mediaDevices
@@ -178,6 +306,314 @@
     }
     ui.voiceStatus.textContent = message;
     ui.voiceStatus.dataset.tone = tone || 'idle';
+  }
+
+  function setMeterLevel(element, level) {
+    if (!element) {
+      return;
+    }
+    element.style.width = `${Math.round(clamp(level, 0, 1) * 100)}%`;
+  }
+
+  function resetVoiceMeters() {
+    setMeterLevel(ui.voiceInputMeterFill, 0);
+    setMeterLevel(ui.voiceOutputMeterFill, 0);
+    if (ui.voiceInputMeterText) {
+      ui.voiceInputMeterText.textContent = 'Idle';
+    }
+    if (ui.voiceOutputMeterText) {
+      ui.voiceOutputMeterText.textContent = currentVoicePresetLabel();
+    }
+  }
+
+  function readAnalyserLevel(analyser) {
+    if (!analyser) {
+      return 0;
+    }
+    const buffer = analyser._buffer || new Float32Array(analyser.fftSize);
+    analyser._buffer = buffer;
+    analyser.getFloatTimeDomainData(buffer);
+    let sumSquares = 0;
+    for (let index = 0; index < buffer.length; index += 1) {
+      const sample = buffer[index];
+      sumSquares += sample * sample;
+    }
+    const rms = Math.sqrt(sumSquares / buffer.length);
+    return clamp(rms * 3.1, 0, 1);
+  }
+
+  function stopVoiceMeterLoop() {
+    if (state.voiceLab.meterFrame) {
+      cancelAnimationFrame(state.voiceLab.meterFrame);
+      state.voiceLab.meterFrame = 0;
+    }
+    resetVoiceMeters();
+  }
+
+  function startVoiceMeterLoop() {
+    stopVoiceMeterLoop();
+    const engine = state.voiceLab.engine;
+    if (!engine) {
+      return;
+    }
+    const tick = () => {
+      if (state.voiceLab.engine !== engine) {
+        return;
+      }
+      const input = readAnalyserLevel(engine.inputAnalyser);
+      const output = readAnalyserLevel(engine.outputAnalyser);
+      setMeterLevel(ui.voiceInputMeterFill, input);
+      setMeterLevel(ui.voiceOutputMeterFill, output);
+      if (ui.voiceInputMeterText) {
+        ui.voiceInputMeterText.textContent = input > 0.02 ? `${Math.round(input * 100)}%` : 'Idle';
+      }
+      if (ui.voiceOutputMeterText) {
+        ui.voiceOutputMeterText.textContent = output > 0.02 ? `${Math.round(output * 100)}%` : currentVoicePresetLabel();
+      }
+      state.voiceLab.meterFrame = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  function createVoiceEngine(rawStream) {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) {
+      return null;
+    }
+    const ctx = new AudioCtor();
+    const source = ctx.createMediaStreamSource(rawStream);
+    const inputHighpass = ctx.createBiquadFilter();
+    inputHighpass.type = 'highpass';
+    inputHighpass.frequency.value = 85;
+
+    const lowShelf = ctx.createBiquadFilter();
+    lowShelf.type = 'lowshelf';
+    lowShelf.frequency.value = 180;
+
+    const highShelf = ctx.createBiquadFilter();
+    highShelf.type = 'highshelf';
+    highShelf.frequency.value = 2600;
+
+    const preDrive = ctx.createGain();
+    const shaper = ctx.createWaveShaper();
+    shaper.oversample = '4x';
+
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = -18;
+    compressor.knee.value = 22;
+    compressor.ratio.value = 3.4;
+    compressor.attack.value = 0.004;
+    compressor.release.value = 0.16;
+
+    const tremoloGain = ctx.createGain();
+    const tremoloOffset = ctx.createConstantSource();
+    const tremoloDepth = ctx.createGain();
+    const tremoloOsc = ctx.createOscillator();
+    tremoloOsc.type = 'triangle';
+    tremoloOffset.connect(tremoloGain.gain);
+    tremoloOsc.connect(tremoloDepth);
+    tremoloDepth.connect(tremoloGain.gain);
+    tremoloOffset.start();
+    tremoloOsc.start();
+
+    const delay = ctx.createDelay(0.8);
+    const feedback = ctx.createGain();
+    const delayWet = ctx.createGain();
+    delay.connect(feedback);
+    feedback.connect(delay);
+
+    const dryGain = ctx.createGain();
+    const mixGain = ctx.createGain();
+    const outputAnalyser = ctx.createAnalyser();
+    outputAnalyser.fftSize = 256;
+    const inputAnalyser = ctx.createAnalyser();
+    inputAnalyser.fftSize = 256;
+    const monitorGain = ctx.createGain();
+    const destination = ctx.createMediaStreamDestination();
+
+    source.connect(inputAnalyser);
+    source.connect(inputHighpass);
+    inputHighpass.connect(lowShelf);
+    lowShelf.connect(highShelf);
+    highShelf.connect(preDrive);
+    preDrive.connect(shaper);
+    shaper.connect(compressor);
+    compressor.connect(tremoloGain);
+    tremoloGain.connect(dryGain);
+    tremoloGain.connect(delay);
+    dryGain.connect(mixGain);
+    delay.connect(delayWet);
+    delayWet.connect(mixGain);
+    mixGain.connect(outputAnalyser);
+    outputAnalyser.connect(destination);
+    outputAnalyser.connect(monitorGain);
+    monitorGain.connect(ctx.destination);
+
+    return {
+      ctx,
+      source,
+      inputHighpass,
+      lowShelf,
+      highShelf,
+      preDrive,
+      shaper,
+      compressor,
+      tremoloGain,
+      tremoloOffset,
+      tremoloDepth,
+      tremoloOsc,
+      delay,
+      feedback,
+      delayWet,
+      dryGain,
+      mixGain,
+      inputAnalyser,
+      outputAnalyser,
+      monitorGain,
+      destination,
+    };
+  }
+
+  function applyVoiceProfileToEngine() {
+    const engine = state.voiceLab.engine;
+    const profile = state.voiceLab.profile;
+    if (!engine || !profile) {
+      return;
+    }
+    const time = engine.ctx.currentTime;
+    const body = (profile.body - 50) * 0.36;
+    const clarity = (profile.clarity - 50) * 0.42;
+    const driveAmount = profile.drive / 100;
+    const glitchAmount = profile.glitch / 100;
+    const echoAmount = profile.echo / 100;
+    const monitorAmount = profile.monitor / 100;
+
+    engine.lowShelf.gain.setTargetAtTime(body, time, 0.035);
+    engine.highShelf.gain.setTargetAtTime(clarity, time, 0.035);
+    engine.preDrive.gain.setTargetAtTime(1 + driveAmount * 4.8, time, 0.04);
+    engine.shaper.curve = createDistortionCurve(driveAmount);
+    engine.delay.delayTime.setTargetAtTime(0.06 + echoAmount * 0.26, time, 0.04);
+    engine.feedback.gain.setTargetAtTime(echoAmount * 0.48, time, 0.04);
+    engine.delayWet.gain.setTargetAtTime(echoAmount * 0.34, time, 0.04);
+    engine.dryGain.gain.setTargetAtTime(1 - echoAmount * 0.14, time, 0.04);
+    engine.tremoloOffset.offset.setTargetAtTime(1 - glitchAmount * 0.48, time, 0.04);
+    engine.tremoloDepth.gain.setTargetAtTime(glitchAmount * 0.48, time, 0.04);
+    engine.tremoloOsc.frequency.setTargetAtTime(1.5 + glitchAmount * 17, time, 0.04);
+    engine.monitorGain.gain.setTargetAtTime(monitorAmount * 0.42, time, 0.04);
+  }
+
+  function scheduleVoiceStyleSync() {
+    if (state.voiceLab.styleSyncTimer) {
+      clearTimeout(state.voiceLab.styleSyncTimer);
+    }
+    state.voiceLab.styleSyncTimer = window.setTimeout(() => {
+      state.voiceLab.styleSyncTimer = 0;
+      if (!state.voiceJoined) {
+        return;
+      }
+      sendJson({
+        action: 'voice-style',
+        preset: currentVoicePresetLabel(),
+      });
+    }, 180);
+  }
+
+  function renderVoiceLab() {
+    const profile = state.voiceLab.profile || createVoiceProfile(DEFAULT_VOICE_PRESET);
+    const presetLabel = voicePresetMeta(profile.preset).label;
+
+    const sliderMap = [
+      [ui.voiceBodyRange, ui.voiceBodyValue, profile.body],
+      [ui.voiceClarityRange, ui.voiceClarityValue, profile.clarity],
+      [ui.voiceDriveRange, ui.voiceDriveValue, profile.drive],
+      [ui.voiceGlitchRange, ui.voiceGlitchValue, profile.glitch],
+      [ui.voiceEchoRange, ui.voiceEchoValue, profile.echo],
+      [ui.voiceMonitorRange, ui.voiceMonitorValue, profile.monitor],
+    ];
+    sliderMap.forEach(([input, output, value]) => {
+      if (input) {
+        input.value = String(value);
+      }
+      if (output) {
+        output.textContent = `${value}%`;
+      }
+    });
+
+    ui.voicePresetButtons.forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.voicePreset === profile.preset);
+    });
+
+    if (ui.voiceLabStatus) {
+      if (!voiceChatSupported()) {
+        ui.voiceLabStatus.textContent = 'WebRTC mic effects are not available in this browser.';
+      } else if (state.voiceJoining) {
+        ui.voiceLabStatus.textContent = `Opening your mic with ${presetLabel}...`;
+      } else if (state.voiceJoined) {
+        ui.voiceLabStatus.textContent = `${presetLabel} is live. Headphones are best if you raise Monitor.`;
+      } else {
+        ui.voiceLabStatus.textContent = `${presetLabel} is armed. Join voice to stream it live.`;
+      }
+    }
+
+    if (!state.voiceLab.engine) {
+      resetVoiceMeters();
+    } else if (ui.voiceOutputMeterText) {
+      ui.voiceOutputMeterText.textContent = presetLabel;
+    }
+  }
+
+  function setVoiceProfile(nextProfile, options = {}) {
+    state.voiceLab.profile = normalizeVoiceProfile(nextProfile);
+    persistVoiceProfile();
+    applyVoiceProfileToEngine();
+    renderVoiceLab();
+    if (!options.skipSync) {
+      scheduleVoiceStyleSync();
+    }
+  }
+
+  function setVoicePreset(presetId) {
+    const preset = VOICE_PRESETS[presetId];
+    if (!preset) {
+      return;
+    }
+    const next = {
+      preset: presetId,
+      ...preset.settings,
+      monitor: state.voiceLab.profile ? state.voiceLab.profile.monitor : preset.settings.monitor,
+    };
+    setVoiceProfile(next);
+    setStatus(`${preset.label} is armed for your next lounge voice session.`);
+  }
+
+  function updateVoiceSlider(key, value) {
+    const current = state.voiceLab.profile || createVoiceProfile(DEFAULT_VOICE_PRESET);
+    setVoiceProfile({
+      ...current,
+      preset: 'custom',
+      [key]: clamp(Number(value), 0, 100),
+    });
+  }
+
+  function randomizeVoiceProfile() {
+    const ranges = {
+      body: [18, 88],
+      clarity: [24, 82],
+      drive: [0, 72],
+      glitch: [0, 82],
+      echo: [0, 58],
+    };
+    const randomValue = ([min, max]) => min + Math.round(Math.random() * (max - min));
+    setVoiceProfile({
+      preset: 'custom',
+      body: randomValue(ranges.body),
+      clarity: randomValue(ranges.clarity),
+      drive: randomValue(ranges.drive),
+      glitch: randomValue(ranges.glitch),
+      echo: randomValue(ranges.echo),
+      monitor: state.voiceLab.profile ? state.voiceLab.profile.monitor : 0,
+    });
+    setStatus('Rolled a fresh custom voice. Join voice to hear the new mix live.');
   }
 
   function currentPlayers() {
@@ -260,13 +696,27 @@
   }
 
   function stopLocalVoiceStream() {
-    if (!state.voiceStream) {
-      return;
+    stopVoiceMeterLoop();
+    if (state.voiceLab.styleSyncTimer) {
+      clearTimeout(state.voiceLab.styleSyncTimer);
+      state.voiceLab.styleSyncTimer = 0;
     }
-    for (const track of state.voiceStream.getTracks()) {
-      track.stop();
+    if (state.voiceStream) {
+      for (const track of state.voiceStream.getTracks()) {
+        track.stop();
+      }
+      state.voiceStream = null;
     }
-    state.voiceStream = null;
+    if (state.voiceLab.rawStream) {
+      for (const track of state.voiceLab.rawStream.getTracks()) {
+        track.stop();
+      }
+      state.voiceLab.rawStream = null;
+    }
+    if (state.voiceLab.engine && state.voiceLab.engine.ctx && state.voiceLab.engine.ctx.state !== 'closed') {
+      state.voiceLab.engine.ctx.close().catch(() => {});
+    }
+    state.voiceLab.engine = null;
   }
 
   function updateVoiceUi() {
@@ -558,16 +1008,25 @@
     setStatus('Requesting microphone access for direct lounge voice chat.');
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(VOICE_CHAT_CONFIG.mediaConstraints);
-      state.voiceStream = stream;
+      const rawStream = await navigator.mediaDevices.getUserMedia(VOICE_CHAT_CONFIG.mediaConstraints);
+      const engine = createVoiceEngine(rawStream);
+      if (engine && engine.ctx.state === 'suspended') {
+        await engine.ctx.resume();
+      }
+      state.voiceLab.rawStream = rawStream;
+      state.voiceLab.engine = engine;
+      state.voiceStream = engine ? engine.destination.stream : rawStream;
       state.voiceJoined = true;
       state.voiceMuted = false;
       state.voiceJoining = false;
+      applyVoiceProfileToEngine();
       setLocalVoiceTracksEnabled(true);
+      startVoiceMeterLoop();
 
       if (!sendJson({
         action: 'voice-join',
         muted: false,
+        preset: currentVoicePresetLabel(),
       })) {
         throw new Error('Could not connect you to lounge voice chat.');
       }
@@ -576,6 +1035,7 @@
       setStatus('You joined lounge voice chat.');
       ensureVoiceConnections();
       updateControlState();
+      renderVoiceLab();
       renderPlayers();
     } catch (error) {
       resetVoiceChatState();
@@ -587,6 +1047,7 @@
       setVoiceStatus(message, 'error');
       setStatus(message);
       updateControlState();
+      renderVoiceLab();
     }
   }
 
@@ -612,6 +1073,7 @@
       setStatus('You left lounge voice chat.');
     }
     updateControlState();
+    renderVoiceLab();
     renderPlayers();
   }
 
@@ -632,6 +1094,7 @@
       state.voiceMuted ? 'ready' : 'live'
     );
     updateControlState();
+    renderVoiceLab();
     renderPlayers();
   }
 
@@ -871,11 +1334,14 @@
         player.voiceJoined
           ? `<span class="chip ${player.voiceMuted ? 'voice-muted' : 'voice-live'}">${player.voiceMuted ? 'Muted' : 'Voice live'}</span>`
           : '',
+        player.voiceJoined && player.voicePreset
+          ? `<span class="chip voice-preset-chip">${escapeHtml(player.voicePreset)}</span>`
+          : '',
       ].filter(Boolean).join('');
       const description = player.voiceJoined
         ? player.voiceMuted
-          ? 'In voice chat with mic muted.'
-          : 'Talking live in lounge voice chat.'
+          ? `In voice chat with ${escapeHtml(player.voicePreset || 'their current mix')} muted.`
+          : `Talking live in lounge voice chat with ${escapeHtml(player.voicePreset || 'their current mix')}.`
         : player.id === state.playerId
           ? 'Connected from this browser.'
           : 'Live in this lounge right now.';
@@ -962,14 +1428,29 @@
 
   function updateControlState() {
     const connected = Boolean(state.socket && state.socket.readyState === WebSocket.OPEN && state.snapshot);
+    const voiceEffectsAvailable = voiceChatSupported();
     ui.messageInput.disabled = !connected;
     ui.sendBtn.disabled = !connected;
-    ui.voiceBtn.disabled = !connected || !voiceChatSupported() || state.voiceJoining;
+    ui.voiceBtn.disabled = !connected || !voiceEffectsAvailable || state.voiceJoining;
     ui.muteVoiceBtn.disabled = !connected || !state.voiceJoined;
     ui.gameSelect.disabled = !connected;
     ui.gameRoomInput.disabled = !connected;
     ui.inviteNoteInput.disabled = !connected;
-    if (!voiceChatSupported()) {
+    [
+      ui.voiceBodyRange,
+      ui.voiceClarityRange,
+      ui.voiceDriveRange,
+      ui.voiceGlitchRange,
+      ui.voiceEchoRange,
+      ui.voiceMonitorRange,
+      ui.randomVoiceBtn,
+      ui.resetVoiceBtn,
+    ].forEach((control) => {
+      if (control) {
+        control.disabled = !voiceEffectsAvailable;
+      }
+    });
+    if (!voiceEffectsAvailable) {
       setVoiceStatus('Voice chat needs microphone access and WebRTC support.', 'error');
     } else if (!connected) {
       setVoiceStatus('Join a lounge, then open direct voice chat with your mic.', 'idle');
@@ -994,6 +1475,7 @@
     renderMessages();
     renderPlayers();
     renderInvites();
+    renderVoiceLab();
     updateLoungeInviteUi();
     updateControlState();
   }
@@ -1100,6 +1582,7 @@
         setVoiceStatus('Reconnect to the lounge to open live voice chat again.', 'idle');
       }
       updateControlState();
+      renderVoiceLab();
       renderPlayers();
     });
 
@@ -1154,6 +1637,14 @@
     const queryName = sanitizeText(query.get('name'), 18);
     ui.nameInput.value = queryName || (localStorage.getItem(STORAGE_KEYS.name) || '').slice(0, 18);
     ui.serverUrlInput.value = normalizeServerUrl(localStorage.getItem(STORAGE_KEYS.serverUrl) || defaultServerUrl());
+    try {
+      state.voiceLab.profile = normalizeVoiceProfile(JSON.parse(localStorage.getItem(STORAGE_KEYS.voiceProfile) || 'null'));
+    } catch (error) {
+      state.voiceLab.profile = createVoiceProfile(DEFAULT_VOICE_PRESET);
+    }
+    if (!state.voiceLab.profile) {
+      state.voiceLab.profile = createVoiceProfile(DEFAULT_VOICE_PRESET);
+    }
     const queryRoom = sanitizeRoomCode(query.get('room'));
     const storedRoom = sanitizeRoomCode(localStorage.getItem(STORAGE_KEYS.roomCode));
     ui.roomInput.value = queryRoom && !isPublicRoom(queryRoom)
@@ -1221,6 +1712,28 @@
   ui.shareInviteBtn.addEventListener('click', () => handleInviteShare());
   ui.voiceBtn.addEventListener('click', toggleVoiceChat);
   ui.muteVoiceBtn.addEventListener('click', toggleVoiceMute);
+  ui.voicePresetButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      setVoicePreset(button.dataset.voicePreset);
+    });
+  });
+  [
+    [ui.voiceBodyRange, 'body'],
+    [ui.voiceClarityRange, 'clarity'],
+    [ui.voiceDriveRange, 'drive'],
+    [ui.voiceGlitchRange, 'glitch'],
+    [ui.voiceEchoRange, 'echo'],
+    [ui.voiceMonitorRange, 'monitor'],
+  ].forEach(([control, key]) => {
+    control.addEventListener('input', () => {
+      updateVoiceSlider(key, control.value);
+    });
+  });
+  ui.randomVoiceBtn.addEventListener('click', randomizeVoiceProfile);
+  ui.resetVoiceBtn.addEventListener('click', () => {
+    setVoicePreset(DEFAULT_VOICE_PRESET);
+    setStatus('Voice Lab reset to Clean Comms.');
+  });
   ui.composerForm.addEventListener('submit', handleMessageSubmit);
   ui.messageInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {

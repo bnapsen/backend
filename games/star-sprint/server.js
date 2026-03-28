@@ -451,6 +451,7 @@ function listPlayers(room) {
     seat: player.seat,
     voiceJoined: Boolean(player.voiceJoined),
     voiceMuted: Boolean(player.voiceMuted),
+    voicePreset: String(player.voicePreset || ''),
   }));
 }
 
@@ -622,6 +623,7 @@ function handleJoin(socket, payload) {
     socket,
     voiceJoined: false,
     voiceMuted: false,
+    voicePreset: 'Clean Comms',
   };
 
   if (!addPlayerToGame(room, player)) {
@@ -930,6 +932,7 @@ function handleVoiceJoin(socket, payload) {
 
   player.voiceJoined = true;
   player.voiceMuted = Boolean(payload && payload.muted);
+  player.voicePreset = String(payload && payload.preset || player.voicePreset || 'Clean Comms').trim().slice(0, 24) || 'Clean Comms';
   broadcastState(room);
 }
 
@@ -968,6 +971,22 @@ function handleVoiceMute(socket, payload) {
   }
 
   player.voiceMuted = Boolean(payload && payload.muted);
+  broadcastState(room);
+}
+
+function handleVoiceStyle(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'arcade-chat') {
+    sendError(socket, 'Voice Lab is only available in Arcade Lounge rooms.');
+    return;
+  }
+
+  player.voicePreset = String(payload && payload.preset || 'Clean Comms').trim().slice(0, 24) || 'Clean Comms';
   broadcastState(room);
 }
 
@@ -1308,6 +1327,9 @@ wss.on('connection', (socket) => {
         break;
       case 'voice-signal':
         handleVoiceSignal(socket, payload);
+        break;
+      case 'voice-style':
+        handleVoiceStyle(socket, payload);
         break;
       case 'shoot':
         handleShot(socket, payload);

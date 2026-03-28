@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/arcade-lounge/style.css?v=20260326h" />
+  <link rel="stylesheet" href="games/arcade-lounge/style.css?v=20260328i" />
 </head>
 <body>
   <div class="page-shell">
@@ -94,6 +94,114 @@
 
           <p class="status-text" id="statusText">Open the public lounge to meet players, or use a private room code for a side chat.</p>
         </section>
+
+        <section class="panel voice-lab-panel">
+          <div class="panel-head">
+            <div>
+              <p class="label">Voice Lab</p>
+              <h2>Shape your mic like a power-up</h2>
+            </div>
+            <p class="mini-status" id="voiceLabStatus">Effects are armed. Join voice to stream them live.</p>
+          </div>
+
+          <div class="voice-preset-grid" id="voicePresetGrid">
+            <button class="voice-preset-btn" type="button" data-voice-preset="clean">
+              <strong>Clean Comms</strong>
+              <span>Stable and clear</span>
+            </button>
+            <button class="voice-preset-btn" type="button" data-voice-preset="arena">
+              <strong>Arena Announcer</strong>
+              <span>Broadcast punch</span>
+            </button>
+            <button class="voice-preset-btn" type="button" data-voice-preset="radio">
+              <strong>Radio Bot</strong>
+              <span>Thin and crunchy</span>
+            </button>
+            <button class="voice-preset-btn" type="button" data-voice-preset="titan">
+              <strong>Titan</strong>
+              <span>Heavy and huge</span>
+            </button>
+            <button class="voice-preset-btn" type="button" data-voice-preset="specter">
+              <strong>Specter</strong>
+              <span>Ghostly wash</span>
+            </button>
+            <button class="voice-preset-btn" type="button" data-voice-preset="robot">
+              <strong>Robot Relay</strong>
+              <span>Machine pulse</span>
+            </button>
+          </div>
+
+          <div class="voice-meter-stack">
+            <div class="voice-meter-block">
+              <div class="voice-meter-head">
+                <span>Mic input</span>
+                <strong id="voiceInputMeterText">Idle</strong>
+              </div>
+              <div class="voice-meter">
+                <span id="voiceInputMeterFill"></span>
+              </div>
+            </div>
+            <div class="voice-meter-block">
+              <div class="voice-meter-head">
+                <span>FX output</span>
+                <strong id="voiceOutputMeterText">Clean Comms</strong>
+              </div>
+              <div class="voice-meter voice-meter-output">
+                <span id="voiceOutputMeterFill"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="voice-slider-grid">
+            <label class="voice-slider">
+              <div class="voice-slider-head">
+                <span>Body</span>
+                <strong id="voiceBodyValue">50%</strong>
+              </div>
+              <input id="voiceBodyRange" type="range" min="0" max="100" step="1" value="50" />
+            </label>
+            <label class="voice-slider">
+              <div class="voice-slider-head">
+                <span>Clarity</span>
+                <strong id="voiceClarityValue">56%</strong>
+              </div>
+              <input id="voiceClarityRange" type="range" min="0" max="100" step="1" value="56" />
+            </label>
+            <label class="voice-slider">
+              <div class="voice-slider-head">
+                <span>Drive</span>
+                <strong id="voiceDriveValue">0%</strong>
+              </div>
+              <input id="voiceDriveRange" type="range" min="0" max="100" step="1" value="0" />
+            </label>
+            <label class="voice-slider">
+              <div class="voice-slider-head">
+                <span>Glitch</span>
+                <strong id="voiceGlitchValue">0%</strong>
+              </div>
+              <input id="voiceGlitchRange" type="range" min="0" max="100" step="1" value="0" />
+            </label>
+            <label class="voice-slider">
+              <div class="voice-slider-head">
+                <span>Echo</span>
+                <strong id="voiceEchoValue">0%</strong>
+              </div>
+              <input id="voiceEchoRange" type="range" min="0" max="100" step="1" value="0" />
+            </label>
+            <label class="voice-slider">
+              <div class="voice-slider-head">
+                <span>Monitor</span>
+                <strong id="voiceMonitorValue">0%</strong>
+              </div>
+              <input id="voiceMonitorRange" type="range" min="0" max="100" step="1" value="0" />
+            </label>
+          </div>
+
+          <div class="voice-lab-actions">
+            <button id="randomVoiceBtn" class="secondary" type="button">Randomize voice</button>
+            <button id="resetVoiceBtn" class="secondary" type="button">Reset clean</button>
+          </div>
+        </section>
       </aside>
 
       <section class="feed-column">
@@ -137,7 +245,7 @@
             </label>
             <div class="composer-actions">
               <div class="composer-meta">
-                <p id="composerHint">Press Enter to send. Use Shift+Enter for a new line. Use voice for live lobby chat.</p>
+                <p id="composerHint">Press Enter to send. Use Shift+Enter for a new line. Voice Lab lets you reshape your mic before you join voice.</p>
                 <p id="voiceStatus" class="voice-status" data-tone="idle">Join a lounge, then open direct voice chat with your mic.</p>
               </div>
               <div class="composer-button-row">
@@ -219,6 +327,6 @@
 
   <div id="voiceAudioHost" class="voice-audio-host" aria-hidden="true"></div>
 
-  <script src="games/arcade-lounge/game.js?v=20260326h"></script>
+  <script src="games/arcade-lounge/game.js?v=20260328i"></script>
 </body>
 </html>
