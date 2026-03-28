@@ -77,6 +77,7 @@
     aimAnchor: { x: 0, y: 0 },
     aimLocked: false,
     aimFromStick: false,
+    stickGrabDistance: 0,
     localGame: null,
     localPlayers: [],
     soloBotDueAt: 0,
@@ -257,6 +258,7 @@
     state.aimAnchor.y = 0;
     state.aimLocked = false;
     state.aimFromStick = false;
+    state.stickGrabDistance = 0;
   }
 
   function normalizeAngle(value) {
@@ -299,10 +301,20 @@
 
   function computeCuePullState(cue, point) {
     const direction = cueDirection();
-    const dragX = state.aimAnchor.x - point.x;
-    const dragY = state.aimAnchor.y - point.y;
-    const pullback = dragX * direction.x + dragY * direction.y;
-    const lateral = Math.abs(dragX * -direction.y + dragY * direction.x);
+    let pullback;
+    let lateral;
+    if (state.aimFromStick) {
+      const pointerDx = point.x - cue.x;
+      const pointerDy = point.y - cue.y;
+      const currentBackDistance = Math.max(0, -(pointerDx * direction.x + pointerDy * direction.y));
+      pullback = currentBackDistance - state.stickGrabDistance;
+      lateral = Math.abs(pointerDx * -direction.y + pointerDy * direction.x);
+    } else {
+      const dragX = state.aimAnchor.x - point.x;
+      const dragY = state.aimAnchor.y - point.y;
+      pullback = dragX * direction.x + dragY * direction.y;
+      lateral = Math.abs(dragX * -direction.y + dragY * direction.x);
+    }
     const viewportBounds = pointerViewportBounds();
     const availablePullback = distanceToRectEdge(state.aimAnchor, { x: -direction.x, y: -direction.y }, viewportBounds);
     const adaptiveRange = availablePullback > 0
@@ -1586,9 +1598,18 @@
     state.pointer = point;
     state.aimAnchor.x = point.x;
     state.aimAnchor.y = point.y;
-    state.aimLocked = false;
     state.aimFromStick = forwardDot < 0;
     updateAimAngleFromPoint(cue, point, state.aimFromStick, { immediate: true });
+    if (state.aimFromStick) {
+      const direction = cueDirection();
+      const stickDx = point.x - cue.x;
+      const stickDy = point.y - cue.y;
+      state.stickGrabDistance = Math.max(0, -(stickDx * direction.x + stickDy * direction.y));
+      state.aimLocked = true;
+    } else {
+      state.stickGrabDistance = 0;
+      state.aimLocked = false;
+    }
     state.power = 0;
     state.powerTarget = 0;
     updatePowerUi();
@@ -1611,10 +1632,14 @@
     state.pointer = point;
     const cue = activeCue();
     if (cue) {
-      const dx = point.x - cue.x;
-      const dy = point.y - cue.y;
-      const distance = Math.hypot(dx, dy);
-      if (state.aimFromStick || !state.aimLocked) {
+      if (state.aimFromStick) {
+        updateAimAngleFromPoint(cue, point, state.aimFromStick);
+        const pullState = computeCuePullState(cue, rawPoint);
+        state.powerTarget = pullState.power;
+        updatePowerUi();
+        return;
+      }
+      if (!state.aimLocked) {
         updateAimAngleFromPoint(cue, point, state.aimFromStick);
       }
       const pullState = computeCuePullState(cue, rawPoint);
@@ -1656,25 +1681,28 @@
     const point = boardPointFromClient(event.clientX, event.clientY, 'scene') || state.pointer;
     const rawPoint = boardPointFromClient(event.clientX, event.clientY, 'none') || point;
     const cue = activeCue();
+    const power = cue && point && canShoot()
+      ? normalizedShotPower(computeCuePullState(cue, rawPoint).power)
+      : 0;
+    const direction = cue ? cueDirection() : null;
     state.aiming = false;
     state.pointerId = null;
     state.power = 0;
     state.powerTarget = 0;
     state.aimLocked = false;
     state.aimFromStick = false;
+    state.stickGrabDistance = 0;
 
     if (!cue || !point || !canShoot()) {
       updatePowerUi();
       return;
     }
 
-    const power = normalizedShotPower(computeCuePullState(cue, rawPoint).power);
     if (power < CUE_UI.minPower) {
       updatePowerUi();
       return;
     }
 
-    const direction = cueDirection();
     if (isSoloMode()) {
       playSoloShot('white', {
         vectorX: direction.x,
