@@ -74,6 +74,7 @@
     aimAngle: 0,
     aimAnchor: { x: 0, y: 0 },
     aimLocked: false,
+    aimFromStick: false,
     localGame: null,
     localPlayers: [],
     soloBotDueAt: 0,
@@ -236,6 +237,23 @@
     state.aimAnchor.x = 0;
     state.aimAnchor.y = 0;
     state.aimLocked = false;
+    state.aimFromStick = false;
+  }
+
+  function normalizeAngle(value) {
+    let angle = Number(value) || 0;
+    while (angle <= -Math.PI) {
+      angle += Math.PI * 2;
+    }
+    while (angle > Math.PI) {
+      angle -= Math.PI * 2;
+    }
+    return angle;
+  }
+
+  function resolveAimAngle(cue, point, fromStick) {
+    const rawAngle = Math.atan2(point.y - cue.y, point.x - cue.x);
+    return fromStick ? normalizeAngle(rawAngle + Math.PI) : rawAngle;
   }
 
   function disconnectSocket() {
@@ -785,8 +803,8 @@
     if (state.aiming && canShoot()) {
       const percent = Math.max(5, Math.round(state.power * 100));
       ui.powerText.textContent = percent > 100
-        ? `Release to fire at ${percent}% boost power. Pull straight back for a heavy break.`
-        : `Release to fire at ${percent}% power. Pull straight back from the cue ball to load more speed.`;
+        ? `Release to fire at ${percent}% boost power. Grab the cue and pull straight back for a heavy break.`
+        : `Release to fire at ${percent}% power. Aim from the table or the cue, then pull straight back to load more speed.`;
       return;
     }
     if (!state.snapshot) {
@@ -802,7 +820,7 @@
       return;
     }
     if (canShoot()) {
-    ui.powerText.textContent = 'Click or touch to aim, then pull the cue straight backward to load power. Pull farther back for a heavier break shot.';
+    ui.powerText.textContent = 'Click or touch to aim from the table or grab the cue itself, then pull straight backward to load power.';
       return;
     }
     ui.powerText.textContent = isSoloMode()
@@ -942,8 +960,8 @@
       ui.modePill.textContent = 'Waiting for opponent';
     } else if (canShoot()) {
       ui.turnNote.textContent = isSoloMode()
-        ? 'You have the cue. Aim on the table, pull the stick straight back to load power, and release to shoot. Pull longer for a boosted break.'
-        : 'You have the cue. Aim on the table, pull the stick straight back to load power, and release to shoot.';
+        ? 'You have the cue. Aim on the table or grab the stick, pull it straight back to load power, and release to shoot. Pull longer for a boosted break.'
+        : 'You have the cue. Aim on the table or grab the stick, pull it straight back to load power, and release to shoot.';
       ui.modePill.textContent = isSoloMode() ? 'Solo turn' : 'Your turn';
     } else {
       ui.turnNote.textContent = isSoloMode()
@@ -1434,14 +1452,17 @@
     const dx = point.x - cue.x;
     const dy = point.y - cue.y;
     const distance = Math.hypot(dx, dy);
+    const currentDirection = cueDirection();
+    const forwardDot = dx * currentDirection.x + dy * currentDirection.y;
     state.aiming = true;
     state.pointerId = event.pointerId;
     state.pointer = point;
     state.aimAnchor.x = point.x;
     state.aimAnchor.y = point.y;
     state.aimLocked = false;
+    state.aimFromStick = forwardDot < 0;
     if (distance > 0.0001) {
-      state.aimAngle = Math.atan2(dy, dx);
+      state.aimAngle = resolveAimAngle(cue, point, state.aimFromStick);
     }
     state.power = 0;
     updatePowerUi();
@@ -1467,7 +1488,7 @@
       const dy = point.y - cue.y;
       const distance = Math.hypot(dx, dy);
       if (!state.aimLocked && distance > 0.0001) {
-        state.aimAngle = Math.atan2(dy, dx);
+        state.aimAngle = resolveAimAngle(cue, point, state.aimFromStick);
       }
       const direction = cueDirection();
       const dragX = state.aimAnchor.x - point.x;
@@ -1488,7 +1509,7 @@
       if (state.aimLocked && (pullback < CUE_UI.unlockPullback || lateral > CUE_UI.unlockLateral)) {
         state.aimLocked = false;
         if (distance > 0.0001) {
-          state.aimAngle = Math.atan2(dy, dx);
+          state.aimAngle = resolveAimAngle(cue, point, state.aimFromStick);
         }
         state.aimAnchor.x = point.x;
         state.aimAnchor.y = point.y;
@@ -1516,6 +1537,7 @@
     state.pointerId = null;
     state.power = 0;
     state.aimLocked = false;
+    state.aimFromStick = false;
 
     if (!cue || !point || !canShoot()) {
       updatePowerUi();
