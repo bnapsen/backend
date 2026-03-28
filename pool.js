@@ -123,6 +123,33 @@
   });
   const SOLO_BOT_NAME = 'Orbit Bot';
   const MAX_RAW_POWER = 1 + Math.pow(CUE_UI.maxPower - 1, 1 / 0.82);
+  const TABLE_ART = Object.freeze({
+    feltSrc: 'assets/pool/felt-green-gradient-cc0.png',
+    woodSrc: 'assets/pool/synthetic-wood-polyhaven-1k.jpg',
+  });
+
+  function loadTextureAsset(src) {
+    const image = new Image();
+    const asset = {
+      image,
+      ready: false,
+    };
+    image.decoding = 'async';
+    image.addEventListener('load', () => {
+      asset.ready = true;
+      requestAnimationFrame(drawFrame);
+    });
+    image.addEventListener('error', () => {
+      asset.ready = false;
+    });
+    image.src = src;
+    return asset;
+  }
+
+  const textureAssets = {
+    felt: loadTextureAsset(TABLE_ART.feltSrc),
+    wood: loadTextureAsset(TABLE_ART.woodSrc),
+  };
 
   function capitalize(value) {
     return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
@@ -130,6 +157,46 @@
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
+  }
+
+  function hexToRgb(hex) {
+    const value = String(hex || '#000000').replace('#', '');
+    const normalized = value.length === 3
+      ? value.split('').map((char) => `${char}${char}`).join('')
+      : value.padEnd(6, '0').slice(0, 6);
+    const num = Number.parseInt(normalized, 16);
+    return {
+      r: (num >> 16) & 0xff,
+      g: (num >> 8) & 0xff,
+      b: num & 0xff,
+    };
+  }
+
+  function rgba(hex, alpha) {
+    const { r, g, b } = hexToRgb(hex);
+    return `rgba(${r}, ${g}, ${b}, ${clamp(alpha, 0, 1)})`;
+  }
+
+  function roundedRectPath(x, y, width, height, radius) {
+    const corner = clamp(radius, 0, Math.min(width, height) / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + corner, y);
+    ctx.arcTo(x + width, y, x + width, y + height, corner);
+    ctx.arcTo(x + width, y + height, x, y + height, corner);
+    ctx.arcTo(x, y + height, x, y, corner);
+    ctx.arcTo(x, y, x + width, y, corner);
+    ctx.closePath();
+  }
+
+  function drawTexture(asset, x, y, width, height, alpha = 1) {
+    if (!asset || !asset.ready) {
+      return false;
+    }
+    ctx.save();
+    ctx.globalAlpha = clamp(alpha, 0, 1);
+    ctx.drawImage(asset.image, x, y, width, height);
+    ctx.restore();
+    return true;
   }
 
   function lerp(start, end, amount) {
@@ -1127,6 +1194,27 @@
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, offsetX * dpr, offsetY * dpr);
   }
 
+  function drawRailSight(x, y, rotation = 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    const diamondGradient = ctx.createLinearGradient(-8, 0, 8, 0);
+    diamondGradient.addColorStop(0, '#f8ecd3');
+    diamondGradient.addColorStop(1, '#b99558');
+    ctx.beginPath();
+    ctx.moveTo(0, -6.5);
+    ctx.lineTo(7.5, 0);
+    ctx.lineTo(0, 6.5);
+    ctx.lineTo(-7.5, 0);
+    ctx.closePath();
+    ctx.fillStyle = diamondGradient;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(65, 38, 16, 0.56)';
+    ctx.lineWidth = 1.35;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawTable() {
     const table = activeTable();
     const feltX = table.rail;
@@ -1134,29 +1222,66 @@
     const feltW = table.width - table.rail * 2;
     const feltH = table.height - table.rail * 2;
     const breakX = feltX + feltW * 0.27;
+    const outerInset = 10;
+    const outerW = table.width - outerInset * 2;
+    const outerH = table.height - outerInset * 2;
 
-    ctx.fillStyle = '#3e2817';
-    ctx.fillRect(0, 0, table.width, table.height);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+    ctx.shadowBlur = 42;
+    ctx.shadowOffsetY = 18;
+    roundedRectPath(outerInset, outerInset, outerW, outerH, 28);
+    ctx.fillStyle = '#1f130c';
+    ctx.fill();
+    ctx.restore();
 
-    const woodGradient = ctx.createLinearGradient(0, 0, table.width, table.height);
-    woodGradient.addColorStop(0, '#5e3d22');
-    woodGradient.addColorStop(0.5, '#2c1b10');
-    woodGradient.addColorStop(1, '#654327');
-    ctx.fillStyle = woodGradient;
-    ctx.fillRect(0, 0, table.width, table.height);
+    roundedRectPath(outerInset, outerInset, outerW, outerH, 28);
+    ctx.fillStyle = '#4a2b16';
+    ctx.fill();
+    ctx.save();
+    roundedRectPath(outerInset, outerInset, outerW, outerH, 28);
+    ctx.clip();
+    drawTexture(textureAssets.wood, outerInset, outerInset, outerW, outerH, 0.8);
+    const woodTint = ctx.createLinearGradient(0, 0, table.width, table.height);
+    woodTint.addColorStop(0, 'rgba(122, 77, 39, 0.56)');
+    woodTint.addColorStop(0.55, 'rgba(42, 23, 12, 0.46)');
+    woodTint.addColorStop(1, 'rgba(152, 103, 57, 0.34)');
+    ctx.fillStyle = woodTint;
+    ctx.fillRect(outerInset, outerInset, outerW, outerH);
+    ctx.restore();
 
-    const feltGradient = ctx.createLinearGradient(feltX, feltY, feltX, feltY + feltH);
-    feltGradient.addColorStop(0, '#138b93');
-    feltGradient.addColorStop(0.5, '#0f6470');
-    feltGradient.addColorStop(1, '#0a4551');
+    const railGlow = ctx.createLinearGradient(feltX - 18, feltY - 18, feltX + feltW + 18, feltY + feltH + 18);
+    railGlow.addColorStop(0, 'rgba(247, 231, 205, 0.18)');
+    railGlow.addColorStop(0.5, 'rgba(108, 68, 32, 0)');
+    railGlow.addColorStop(1, 'rgba(247, 231, 205, 0.22)');
+    ctx.strokeStyle = railGlow;
+    ctx.lineWidth = 24;
+    ctx.strokeRect(feltX - 12, feltY - 12, feltW + 24, feltH + 24);
+
+    ctx.fillStyle = '#0b4727';
+    ctx.fillRect(feltX, feltY, feltW, feltH);
+    drawTexture(textureAssets.felt, feltX, feltY, feltW, feltH, 0.44);
+
+    const feltGradient = ctx.createLinearGradient(feltX, feltY, feltX + feltW, feltY + feltH);
+    feltGradient.addColorStop(0, 'rgba(16, 102, 58, 0.7)');
+    feltGradient.addColorStop(0.52, 'rgba(8, 74, 44, 0.32)');
+    feltGradient.addColorStop(1, 'rgba(11, 92, 61, 0.62)');
     ctx.fillStyle = feltGradient;
     ctx.fillRect(feltX, feltY, feltW, feltH);
 
-    const sheen = ctx.createRadialGradient(table.width * 0.45, table.height * 0.2, 40, table.width * 0.45, table.height * 0.3, table.width * 0.5);
-    sheen.addColorStop(0, 'rgba(255,255,255,0.12)');
+    const sheen = ctx.createRadialGradient(table.width * 0.46, table.height * 0.26, 18, table.width * 0.46, table.height * 0.26, table.width * 0.46);
+    sheen.addColorStop(0, 'rgba(255,255,255,0.18)');
+    sheen.addColorStop(0.34, 'rgba(255,255,255,0.08)');
     sheen.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = sheen;
     ctx.fillRect(feltX, feltY, feltW, feltH);
+
+    ctx.strokeStyle = 'rgba(245, 248, 251, 0.12)';
+    ctx.lineWidth = 2.8;
+    ctx.strokeRect(feltX + 1.5, feltY + 1.5, feltW - 3, feltH - 3);
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(feltX - 1.5, feltY - 1.5, feltW + 3, feltH + 3);
 
     ctx.strokeStyle = 'rgba(244, 246, 255, 0.18)';
     ctx.lineWidth = 2;
@@ -1169,14 +1294,77 @@
     ctx.arc(breakX, table.height / 2, 62, Math.PI / 2, -Math.PI / 2, true);
     ctx.stroke();
 
+    ctx.beginPath();
+    ctx.arc(breakX, table.height / 2, 3.3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(250, 252, 255, 0.66)';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(feltX + feltW * 0.75, table.height / 2, 2.6, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(250, 252, 255, 0.44)';
+    ctx.fill();
+
+    const topBottomSights = [0.18, 0.5, 0.82];
+    for (const factor of topBottomSights) {
+      const x = feltX + feltW * factor;
+      drawRailSight(x, feltY - table.rail * 0.45);
+      drawRailSight(x, feltY + feltH + table.rail * 0.45);
+    }
+    const sideSights = [0.22, 0.5, 0.78];
+    for (const factor of sideSights) {
+      const y = feltY + feltH * factor;
+      drawRailSight(feltX - table.rail * 0.45, y, Math.PI / 2);
+      drawRailSight(feltX + feltW + table.rail * 0.45, y, Math.PI / 2);
+    }
+
     for (const pocket of pocketCoords(table)) {
-      const pocketGradient = ctx.createRadialGradient(pocket.x - 4, pocket.y - 4, 1, pocket.x, pocket.y, table.pocketR);
-      pocketGradient.addColorStop(0, '#505050');
-      pocketGradient.addColorStop(1, '#050505');
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.42)';
+      ctx.shadowBlur = 18;
+      ctx.shadowOffsetY = 6;
       ctx.beginPath();
-      ctx.arc(pocket.x, pocket.y, table.pocketR, 0, Math.PI * 2);
+      ctx.arc(pocket.x, pocket.y, table.pocketR + 9, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(61, 33, 17, 0.95)';
+      ctx.fill();
+      ctx.restore();
+
+      const leatherGradient = ctx.createRadialGradient(
+        pocket.x - 5,
+        pocket.y - 6,
+        1,
+        pocket.x,
+        pocket.y,
+        table.pocketR + 8
+      );
+      leatherGradient.addColorStop(0, '#8e5a2a');
+      leatherGradient.addColorStop(0.55, '#523016');
+      leatherGradient.addColorStop(1, '#1a100a');
+      ctx.beginPath();
+      ctx.arc(pocket.x, pocket.y, table.pocketR + 8, 0, Math.PI * 2);
+      ctx.fillStyle = leatherGradient;
+      ctx.fill();
+
+      const pocketGradient = ctx.createRadialGradient(
+        pocket.x - 4,
+        pocket.y - 4,
+        1,
+        pocket.x,
+        pocket.y,
+        table.pocketR
+      );
+      pocketGradient.addColorStop(0, '#454545');
+      pocketGradient.addColorStop(0.4, '#171717');
+      pocketGradient.addColorStop(1, '#020202');
+      ctx.beginPath();
+      ctx.arc(pocket.x, pocket.y, table.pocketR - 1.5, 0, Math.PI * 2);
       ctx.fillStyle = pocketGradient;
       ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(pocket.x, pocket.y, table.pocketR + 1.5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 235, 214, 0.18)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
     }
   }
 
@@ -1206,44 +1394,144 @@
   }
 
   function drawBall(ball) {
+    ctx.save();
+
+    const shadowGradient = ctx.createRadialGradient(
+      ball.x + ball.r * 0.16,
+      ball.y + ball.r * 0.72,
+      1,
+      ball.x + ball.r * 0.16,
+      ball.y + ball.r * 0.72,
+      ball.r * 1.45
+    );
+    shadowGradient.addColorStop(0, 'rgba(0, 0, 0, 0.24)');
+    shadowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
-    const gradient = ctx.createRadialGradient(ball.x - ball.r * 0.35, ball.y - ball.r * 0.4, 1, ball.x, ball.y, ball.r * 1.35);
-    gradient.addColorStop(0, '#ffffff');
-    gradient.addColorStop(0.22, ball.kind === 'cue' ? '#f7f7f7' : ball.color);
-    gradient.addColorStop(1, ball.kind === 'cue' ? '#dbdbdb' : shade(ball.color, -30));
-    ctx.fillStyle = gradient;
+    ctx.ellipse(ball.x + ball.r * 0.14, ball.y + ball.r * 0.7, ball.r * 0.98, ball.r * 0.58, -0.08, 0, Math.PI * 2);
+    ctx.fillStyle = shadowGradient;
     ctx.fill();
 
-    if (ball.kind === 'target' || ball.kind === 'crown') {
+    const baseLight = ball.kind === 'cue' ? '#ffffff' : ball.kind === 'crown' ? '#fff6c7' : shade(ball.color, 32);
+    const baseMid = ball.kind === 'cue' ? '#f5f6f7' : ball.kind === 'crown' ? '#f4ca53' : ball.color;
+    const baseDark = ball.kind === 'cue' ? '#d2d7db' : ball.kind === 'crown' ? '#6b4814' : shade(ball.color, -34);
+    const shellGradient = ctx.createRadialGradient(
+      ball.x - ball.r * 0.4,
+      ball.y - ball.r * 0.46,
+      1,
+      ball.x,
+      ball.y,
+      ball.r * 1.25
+    );
+    shellGradient.addColorStop(0, baseLight);
+    shellGradient.addColorStop(0.28, baseMid);
+    shellGradient.addColorStop(1, baseDark);
+
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fillStyle = shellGradient;
+    ctx.fill();
+
+    if (ball.kind === 'target') {
+      ctx.save();
       ctx.beginPath();
-      ctx.arc(ball.x, ball.y, ball.r * 0.46, 0, Math.PI * 2);
-      ctx.fillStyle = ball.kind === 'crown' ? 'rgba(32, 22, 6, 0.85)' : 'rgba(255,255,255,0.9)';
+      ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+      ctx.clip();
+      const stripeGradient = ctx.createLinearGradient(ball.x - ball.r, ball.y, ball.x + ball.r, ball.y);
+      stripeGradient.addColorStop(0, 'rgba(255,255,255,0.96)');
+      stripeGradient.addColorStop(0.5, 'rgba(255,255,255,0.9)');
+      stripeGradient.addColorStop(1, 'rgba(227,233,237,0.96)');
+      ctx.beginPath();
+      ctx.ellipse(ball.x, ball.y + ball.r * 0.03, ball.r * 0.98, ball.r * 0.56, 0, 0, Math.PI * 2);
+      ctx.fillStyle = stripeGradient;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(ball.x, ball.y + ball.r * 0.03, ball.r * 0.98, ball.r * 0.56, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = rgba(ball.color, 0.38);
+      ctx.lineWidth = 1.15;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (ball.kind === 'blocker') {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.translate(ball.x, ball.y);
+      ctx.rotate(-Math.PI / 5);
+      for (let offset = -ball.r * 2; offset <= ball.r * 2; offset += ball.r * 0.52) {
+        ctx.fillStyle = offset / (ball.r * 0.52) % 2 === 0 ? 'rgba(255, 175, 64, 0.92)' : 'rgba(31, 35, 43, 0.9)';
+        ctx.fillRect(offset, -ball.r * 1.4, ball.r * 0.34, ball.r * 2.8);
+      }
+      ctx.restore();
+    }
+
+    const plateRadius = ball.kind === 'cue' ? ball.r * 0.28 : ball.kind === 'crown' ? ball.r * 0.48 : ball.r * 0.4;
+    if (ball.kind !== 'cue') {
+      const plateGradient = ctx.createRadialGradient(
+        ball.x - plateRadius * 0.25,
+        ball.y - plateRadius * 0.28,
+        1,
+        ball.x,
+        ball.y,
+        plateRadius * 1.35
+      );
+      plateGradient.addColorStop(0, ball.kind === 'crown' ? '#2e1d0b' : '#fcfeff');
+      plateGradient.addColorStop(1, ball.kind === 'crown' ? '#120a05' : '#d8e0e7');
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, plateRadius, 0, Math.PI * 2);
+      ctx.fillStyle = plateGradient;
+      ctx.fill();
+      ctx.strokeStyle = ball.kind === 'crown' ? 'rgba(255, 216, 120, 0.45)' : 'rgba(71, 84, 98, 0.22)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(ball.x + ball.r * 0.06, ball.y + ball.r * 0.04, plateRadius, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(216, 224, 232, 0.92)';
       ctx.fill();
     }
 
     if (ball.kind === 'blocker') {
-      ctx.strokeStyle = 'rgba(255, 106, 106, 0.88)';
+      ctx.strokeStyle = 'rgba(255, 106, 106, 0.9)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(ball.x - ball.r * 0.55, ball.y - ball.r * 0.55);
-      ctx.lineTo(ball.x + ball.r * 0.55, ball.y + ball.r * 0.55);
-      ctx.moveTo(ball.x + ball.r * 0.55, ball.y - ball.r * 0.55);
-      ctx.lineTo(ball.x - ball.r * 0.55, ball.y + ball.r * 0.55);
+      ctx.moveTo(ball.x - ball.r * 0.52, ball.y - ball.r * 0.52);
+      ctx.lineTo(ball.x + ball.r * 0.52, ball.y + ball.r * 0.52);
+      ctx.moveTo(ball.x + ball.r * 0.52, ball.y - ball.r * 0.52);
+      ctx.lineTo(ball.x - ball.r * 0.52, ball.y + ball.r * 0.52);
       ctx.stroke();
     }
 
     if (ball.label) {
-      ctx.fillStyle = ball.kind === 'crown' ? '#ffeaa8' : '#0f1822';
+      ctx.fillStyle = ball.kind === 'crown' ? '#ffe18c' : '#0e1720';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.font = `700 ${Math.max(10, Math.round(ball.r * 0.95))}px system-ui`;
-      ctx.fillText(ball.label, ball.x, ball.y + 0.5);
+      ctx.font = `700 ${Math.max(10, Math.round(ball.r * 0.92))}px "Space Grotesk", system-ui, sans-serif`;
+      ctx.fillText(ball.label, ball.x, ball.y + 0.4);
     }
 
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    const edgeHighlight = ctx.createLinearGradient(ball.x - ball.r, ball.y - ball.r, ball.x + ball.r, ball.y + ball.r);
+    edgeHighlight.addColorStop(0, 'rgba(255,255,255,0.26)');
+    edgeHighlight.addColorStop(0.55, 'rgba(255,255,255,0)');
+    edgeHighlight.addColorStop(1, 'rgba(0,0,0,0.22)');
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r - 0.3, 0, Math.PI * 2);
+    ctx.strokeStyle = edgeHighlight;
     ctx.lineWidth = 1.2;
     ctx.stroke();
+
+    ctx.beginPath();
+    ctx.ellipse(ball.x - ball.r * 0.36, ball.y - ball.r * 0.42, ball.r * 0.33, ball.r * 0.22, -0.65, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.42)';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.34)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
   }
 
   function drawBalls() {
