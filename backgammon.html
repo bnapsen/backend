@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/backgammon-blitz/style.css?v=20260328c" />
+  <link rel="stylesheet" href="games/backgammon-blitz/style.css?v=20260328d" />
 </head>
 <body>
   <div class="page-shell">
@@ -67,9 +67,9 @@
           </div>
 
           <div class="hero-actions">
-            <button id="hostBtn" class="primary">Host match</button>
+            <button id="soloBtn" class="primary">Play solo now</button>
+            <button id="hostBtn">Host match</button>
             <button id="joinBtn">Join match</button>
-            <button id="soloBtn">Play solo</button>
           </div>
 
           <div class="invite-panel">
@@ -183,6 +183,19 @@
               </div>
             </div>
             <canvas id="board" width="1240" height="760" aria-label="Backgammon board"></canvas>
+            <div class="start-overlay" id="startOverlay" aria-live="polite">
+              <div class="start-card">
+                <p class="start-kicker">Fastest way in</p>
+                <h2>Play a solo match right away</h2>
+                <p class="start-copy">Jump straight into a polished solo game against Deep Blitz Bot, or spin up a live room and share it once someone is ready.</p>
+                <div class="start-actions">
+                  <button id="heroSoloBtn" class="primary start-primary" type="button">Play solo vs Deep Blitz Bot</button>
+                  <button id="heroHostBtn" class="secondary" type="button">Host live match</button>
+                  <button id="heroJoinBtn" type="button">Join with code</button>
+                </div>
+                <p class="start-note" id="startHint">Solo starts instantly. Hosting creates a room code you can copy and send.</p>
+              </div>
+            </div>
           </div>
 
           <div class="board-footer">
@@ -247,6 +260,6 @@
 
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
   <script src="games/star-sprint/backgammon-core.js?v=20260328a"></script>
-  <script src="games/backgammon-blitz/game.js?v=20260328c"></script>
+  <script src="games/backgammon-blitz/game.js?v=20260328d"></script>
 </body>
 </html>

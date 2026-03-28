@@ -52,6 +52,11 @@
     modePill: document.getElementById('modePill'),
     statusText: document.getElementById('statusText'),
     boardStage: document.querySelector('.board-stage'),
+    startOverlay: document.getElementById('startOverlay'),
+    heroSoloBtn: document.getElementById('heroSoloBtn'),
+    heroHostBtn: document.getElementById('heroHostBtn'),
+    heroJoinBtn: document.getElementById('heroJoinBtn'),
+    startHint: document.getElementById('startHint'),
     die1: document.getElementById('die1'),
     die2: document.getElementById('die2'),
     dieShell1: document.getElementById('dieShell1'),
@@ -215,7 +220,7 @@
 
   function renderStatus() {
     const base = state.snapshot?.status || '';
-    ui.statusText.textContent = state.statusMessage || base || 'Host a room to invite a friend, join with a room code, or play a solo warm-up against the bot.';
+    ui.statusText.textContent = state.statusMessage || base || 'Play solo instantly, host a room for a friend, or join by room code when someone sends you an invite.';
   }
 
   function inviteUrl() {
@@ -352,7 +357,7 @@
     if (!state.snapshot) {
       ui.roomCodeLabel.textContent = '-';
       ui.turnText.textContent = 'White to roll';
-      ui.phaseText.textContent = 'Start a match to begin.';
+      ui.phaseText.textContent = 'Play solo or host a match to begin.';
       ui.diceLabel.textContent = 'Roll to start';
       ui.diceText.textContent = 'Roll to start';
       ui.diceStageLabel.textContent = 'Top rail ready';
@@ -424,6 +429,37 @@
     ui.boardStage.classList.toggle('throwing', Boolean(state.diceGrab));
   }
 
+  function renderStartOverlay() {
+    const pendingConnection = Boolean(state.socket && state.socket.readyState === WebSocket.CONNECTING);
+    const canJoin = Boolean(sanitizeRoomCode(ui.roomInput.value));
+    const showOverlay = !state.snapshot;
+
+    ui.boardStage.classList.toggle('show-start-overlay', showOverlay);
+    ui.startOverlay?.setAttribute('aria-hidden', showOverlay ? 'false' : 'true');
+
+    if (ui.heroSoloBtn) {
+      ui.heroSoloBtn.disabled = pendingConnection;
+    }
+    if (ui.heroHostBtn) {
+      ui.heroHostBtn.disabled = pendingConnection;
+    }
+    if (ui.heroJoinBtn) {
+      ui.heroJoinBtn.disabled = pendingConnection;
+    }
+    if (!ui.startHint) {
+      return;
+    }
+    if (pendingConnection) {
+      ui.startHint.textContent = state.statusMessage || 'Connecting to the live board...';
+      return;
+    }
+    if (canJoin) {
+      ui.startHint.textContent = `Room ${sanitizeRoomCode(ui.roomInput.value)} is ready to join.`;
+      return;
+    }
+    ui.startHint.textContent = 'Solo starts instantly. Hosting creates a room code you can copy and send.';
+  }
+
   function audioSupported() {
     return Boolean(window.AudioContext || window.webkitAudioContext);
   }
@@ -460,6 +496,7 @@
     renderSummary();
     renderPlayers();
     renderControls();
+    renderStartOverlay();
     renderSoundToggle();
     scheduleDraw();
   }
@@ -879,6 +916,30 @@
     ui.toggleSidebarBtn.textContent = state.panels.infoCollapsed ? 'Show info' : 'Hide info';
     persistSettings();
     window.setTimeout(syncDiceRestPose, 40);
+  }
+
+  function revealSetup(focusTarget) {
+    if (state.panels.setupCollapsed) {
+      setPanelCollapse('setupCollapsed', false);
+    }
+    if (focusTarget === 'room') {
+      window.setTimeout(() => {
+        ui.roomInput.focus();
+        ui.roomInput.select();
+      }, 70);
+    }
+  }
+
+  function beginJoinFlow() {
+    const roomCode = sanitizeRoomCode(ui.roomInput.value);
+    revealSetup('room');
+    if (roomCode) {
+      connectOnline('join');
+      return;
+    }
+    setStatusMessage('Enter a room code or open an invite link, then join the live match.');
+    render();
+    showToast('Enter a room code to join a live match.');
   }
 
   function overlayPointFromEvent(event) {
@@ -1564,6 +1625,38 @@
     ctx.fillRect(feltX, feltY, feltW, feltH);
     ctx.restore();
 
+    roundRectPath(feltX + 8, feltY + 8, feltW - 16, feltH - 16, 16);
+    ctx.strokeStyle = 'rgba(255, 236, 205, 0.12)';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    const studPoints = [
+      [feltX + 18, feltY + 18],
+      [feltX + feltW - 18, feltY + 18],
+      [feltX + 18, feltY + feltH - 18],
+      [feltX + feltW - 18, feltY + feltH - 18],
+    ];
+    studPoints.forEach(([x, y]) => {
+      const stud = ctx.createRadialGradient(x - 2, y - 3, 1, x, y, 9);
+      stud.addColorStop(0, 'rgba(255, 246, 219, 0.95)');
+      stud.addColorStop(0.5, 'rgba(211, 170, 98, 0.94)');
+      stud.addColorStop(1, 'rgba(86, 55, 26, 0.92)');
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.fillStyle = stud;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(45, 28, 10, 0.5)';
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+    });
+
+    ctx.beginPath();
+    ctx.moveTo(feltX + 28, H / 2);
+    ctx.lineTo(feltX + feltW - 28, H / 2);
+    ctx.strokeStyle = 'rgba(255, 237, 205, 0.08)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
     const trayInset = 8;
     for (const player of [Core.BLACK, Core.WHITE]) {
       const tray = offTargetRect(player);
@@ -2038,6 +2131,7 @@
     ui.roomInput.addEventListener('input', () => {
       ui.roomInput.value = sanitizeRoomCode(ui.roomInput.value);
       renderControls();
+      renderStartOverlay();
     });
     ui.serverUrlInput.addEventListener('change', () => {
       state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
@@ -2048,6 +2142,12 @@
     ui.hostBtn.addEventListener('click', () => connectOnline('host'));
     ui.joinBtn.addEventListener('click', () => connectOnline('join'));
     ui.soloBtn.addEventListener('click', startSolo);
+    ui.heroSoloBtn?.addEventListener('click', startSolo);
+    ui.heroHostBtn?.addEventListener('click', () => {
+      revealSetup();
+      connectOnline('host');
+    });
+    ui.heroJoinBtn?.addEventListener('click', beginJoinFlow);
     ui.toggleSetupBtn.addEventListener('click', () => setPanelCollapse('setupCollapsed', !state.panels.setupCollapsed));
     ui.toggleSidebarBtn.addEventListener('click', () => setPanelCollapse('infoCollapsed', !state.panels.infoCollapsed));
     ui.soundToggleBtn.addEventListener('click', () => setSoundEnabled(!state.audio.enabled));
@@ -2152,8 +2252,10 @@
     state.serverUrl = sanitizeServerUrl(localStorage.getItem(STORAGE_KEYS.serverUrl) || query.get('server') || '');
     ui.serverUrlInput.value = state.serverUrl;
     ui.roomInput.value = sanitizeRoomCode(query.get('room') || '');
-    state.panels.setupCollapsed = localStorage.getItem(STORAGE_KEYS.setupCollapsed) === '1';
-    state.panels.infoCollapsed = localStorage.getItem(STORAGE_KEYS.infoCollapsed) === '1';
+    const savedSetup = localStorage.getItem(STORAGE_KEYS.setupCollapsed);
+    const savedInfo = localStorage.getItem(STORAGE_KEYS.infoCollapsed);
+    state.panels.setupCollapsed = savedSetup === '1';
+    state.panels.infoCollapsed = savedInfo === null ? true : savedInfo === '1';
     state.audio.enabled = audioSupported() && localStorage.getItem(STORAGE_KEYS.soundEnabled) !== '0';
     setPanelCollapse('setupCollapsed', state.panels.setupCollapsed);
     setPanelCollapse('infoCollapsed', state.panels.infoCollapsed);
