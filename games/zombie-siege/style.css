@@ -45,9 +45,9 @@ body::before {
 }
 
 .page-shell {
-  width: min(1940px, calc(100vw - 16px));
+  width: min(2060px, calc(100vw - 10px));
   margin: 0 auto;
-  padding: 14px 0 24px;
+  padding: 12px 0 20px;
 }
 
 .topbar,
@@ -168,9 +168,9 @@ h2,
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(228px, 272px) minmax(0, 1fr) minmax(192px, 236px);
-  gap: 10px;
-  margin-top: 14px;
+  grid-template-columns: minmax(210px, 248px) minmax(0, 1fr) minmax(176px, 214px);
+  gap: 8px;
+  margin-top: 12px;
   align-items: start;
 }
 
@@ -178,7 +178,7 @@ h2,
 .arena-column,
 .sidebar {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .panel {
@@ -188,7 +188,7 @@ h2,
     radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 28%),
     linear-gradient(180deg, var(--panel), var(--panel-strong));
   box-shadow: var(--shadow);
-  padding: 14px;
+  padding: 13px;
   backdrop-filter: blur(16px);
 }
 
@@ -344,7 +344,7 @@ button.secondary {
 }
 
 .arena-panel {
-  padding: 12px;
+  padding: 10px;
 }
 
 .arena-header {
@@ -386,9 +386,9 @@ button.secondary {
 
 .arena-stage {
   position: relative;
-  margin-top: 10px;
+  margin-top: 8px;
   aspect-ratio: 16 / 9;
-  min-height: clamp(620px, 79vh, 1120px);
+  min-height: clamp(680px, 82vh, 1240px);
   border-radius: 28px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -569,7 +569,7 @@ button.secondary {
 
 @media (max-width: 1280px) {
   .layout {
-    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+    grid-template-columns: minmax(236px, 280px) minmax(0, 1fr);
   }
 
   .sidebar {

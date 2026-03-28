@@ -87,6 +87,7 @@
       aimX: 0,
       aimZ: 0,
       fire: false,
+      jump: false,
       sprint: false,
       weaponKey: 'rifle',
     },
@@ -97,6 +98,7 @@
       right: false,
       sprint: false,
       fire: false,
+      jump: false,
     },
     mouse: {
       inside: false,
@@ -1117,9 +1119,10 @@
       rifle,
       walkPhase: Math.random() * Math.PI * 2,
       flash: 0,
-      labelHeight: 3.5,
+      labelHeight: 3.05,
       targetX: player.x,
       targetZ: player.z,
+      targetY: player.y || 0,
       targetYaw: player.yaw,
       targetAlive: player.alive,
       health: player.health,
@@ -1412,6 +1415,7 @@
         (mesh, player) => {
           mesh.userData.targetX = player.x;
           mesh.userData.targetZ = player.z;
+          mesh.userData.targetY = player.y || 0;
           mesh.userData.targetYaw = player.yaw;
           mesh.userData.targetAlive = player.alive;
           mesh.userData.health = player.health;
@@ -1519,9 +1523,17 @@
     const lookAt = new THREE.Vector3();
 
     if (local) {
-      const cameraYaw = Number.isFinite(world.cameraYaw) ? world.cameraYaw : CAMERA_DEFAULT_YAW;
+      const desiredLookYaw = Number.isFinite(state.input.yaw) ? state.input.yaw : local.yaw;
+      const yawBlend = 1 - Math.pow(0.05, dt * 6.4);
+      world.cameraYaw = lerpAngle(
+        Number.isFinite(world.cameraYaw) ? world.cameraYaw : CAMERA_DEFAULT_YAW,
+        desiredLookYaw,
+        yawBlend
+      );
+      const cameraYaw = world.cameraYaw;
       const forward = new THREE.Vector3(Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
       const right = new THREE.Vector3(-forward.z, 0, forward.x);
+      const lift = (Number(local.y) || 0) * 0.72;
       const desiredAim = new THREE.Vector3(
         Number.isFinite(state.input.aimX) ? state.input.aimX : local.x + forward.x * 40,
         1.55,
@@ -1529,22 +1541,22 @@
       );
       const aimBlend = 1 - Math.pow(0.22, dt * 7);
       world.aimTarget.lerp(desiredAim, aimBlend);
-      const distance = game?.gameOver ? 10.5 : 8.8;
-      const shoulder = new THREE.Vector3(local.x, PLAYER_HEIGHT + 0.45, local.z)
+      const distance = game?.gameOver ? 11.3 : 9.4;
+      const shoulder = new THREE.Vector3(local.x, PLAYER_HEIGHT + 0.45 + lift, local.z)
         .addScaledVector(right, 0.92);
       targetPos.copy(shoulder)
         .addScaledVector(forward, -distance)
-        .addScaledVector(right, 0.88)
-        .add(new THREE.Vector3(0, game?.gameOver ? 4.8 : 3.55, 0));
+        .addScaledVector(right, 1.08)
+        .add(new THREE.Vector3(0, game?.gameOver ? 5.1 : 3.85, 0));
       const aimDir = new THREE.Vector3(world.aimTarget.x - local.x, 0, world.aimTarget.z - local.z);
       if (aimDir.lengthSq() > 0.001) {
         aimDir.normalize();
       } else {
         aimDir.copy(forward);
       }
-      lookAt.set(local.x, PLAYER_HEIGHT + 0.8, local.z)
-        .addScaledVector(forward, 5.4)
-        .addScaledVector(aimDir, 1.6);
+      lookAt.set(local.x, PLAYER_HEIGHT + 0.74 + lift * 0.6, local.z)
+        .addScaledVector(forward, 6.4)
+        .addScaledVector(aimDir, 2.3);
     } else {
       const orbit = performance.now() * 0.00012;
       targetPos.set(Math.cos(orbit) * 30, 12, Math.sin(orbit) * 26);
@@ -1626,24 +1638,26 @@
     for (const mesh of state.world.players.values()) {
       const moveDelta = Math.hypot(mesh.userData.targetX - mesh.position.x, mesh.userData.targetZ - mesh.position.z);
       const moving = mesh.userData.targetAlive && moveDelta > 0.025;
+      const jumpLift = mesh.userData.targetY || 0;
+      const airborne = mesh.userData.targetAlive && jumpLift > 0.04;
       mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
       mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
       mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetYaw, blend);
-      mesh.userData.walkPhase += dt * (moving ? 10.8 : 3.2);
-      const bob = moving ? Math.sin(mesh.userData.walkPhase) * 0.07 : 0;
+      mesh.userData.walkPhase += dt * (airborne ? 5.6 : moving ? 10.8 : 3.2);
+      const bob = !airborne && moving ? Math.sin(mesh.userData.walkPhase) * 0.07 : 0;
       const recoil = clamp(mesh.userData.flash || 0, 0, 1);
-      mesh.position.y = mesh.userData.targetAlive ? bob : -0.55;
+      mesh.position.y = mesh.userData.targetAlive ? bob + jumpLift : -0.55;
       mesh.scale.y = lerp(mesh.scale.y, mesh.userData.targetAlive ? 1 : 0.85, blend);
-      mesh.userData.thighs[0].rotation.x = Math.sin(mesh.userData.walkPhase) * 0.34;
-      mesh.userData.thighs[1].rotation.x = Math.sin(mesh.userData.walkPhase + Math.PI) * 0.34;
-      mesh.userData.shins[0].rotation.x = Math.max(0, -Math.sin(mesh.userData.walkPhase)) * 0.24;
-      mesh.userData.shins[1].rotation.x = Math.max(0, -Math.sin(mesh.userData.walkPhase + Math.PI)) * 0.24;
-      mesh.userData.upperArms[0].rotation.x = -0.26 + Math.sin(mesh.userData.walkPhase + Math.PI) * 0.18;
+      mesh.userData.thighs[0].rotation.x = airborne ? -0.42 : Math.sin(mesh.userData.walkPhase) * 0.34;
+      mesh.userData.thighs[1].rotation.x = airborne ? 0.28 : Math.sin(mesh.userData.walkPhase + Math.PI) * 0.34;
+      mesh.userData.shins[0].rotation.x = airborne ? 0.62 : Math.max(0, -Math.sin(mesh.userData.walkPhase)) * 0.24;
+      mesh.userData.shins[1].rotation.x = airborne ? 0.42 : Math.max(0, -Math.sin(mesh.userData.walkPhase + Math.PI)) * 0.24;
+      mesh.userData.upperArms[0].rotation.x = airborne ? -0.4 : -0.26 + Math.sin(mesh.userData.walkPhase + Math.PI) * 0.18;
       mesh.userData.upperArms[1].rotation.x = -0.5 + recoil * 0.3;
-      mesh.userData.forearms[0].rotation.x = -0.42 + Math.max(0, Math.sin(mesh.userData.walkPhase + Math.PI)) * 0.1;
+      mesh.userData.forearms[0].rotation.x = airborne ? -0.56 : -0.42 + Math.max(0, Math.sin(mesh.userData.walkPhase + Math.PI)) * 0.1;
       mesh.userData.forearms[1].rotation.x = -0.52 - recoil * 0.18;
       mesh.userData.rifle.rotation.x = 0.06 + recoil * 0.12;
-      mesh.userData.rifle.position.y = 1.58 + bob * 0.22;
+      mesh.userData.rifle.position.y = 1.58 + bob * 0.22 + (airborne ? 0.04 : 0);
       mesh.userData.backpack.rotation.x = Math.sin(mesh.userData.walkPhase * 0.5) * 0.03;
       mesh.userData.visorMat.emissiveIntensity = 0.42 + recoil * 1.1;
       mesh.userData.muzzleMat.opacity = recoil * 0.95;
@@ -1727,6 +1741,9 @@
     state.movement.worldZ = 0;
     state.input.moveDirX = 0;
     state.input.moveDirZ = 0;
+    state.input.jump = false;
+    state.keys.jump = false;
+    state.keys.fire = false;
     if (state.world) {
       state.world.cameraYaw = CAMERA_DEFAULT_YAW;
     }
@@ -1788,6 +1805,9 @@
           const player = localPlayer(payload.snapshot);
           if (player) {
             state.input.yaw = player.yaw;
+            if (state.world) {
+              state.world.cameraYaw = player.yaw;
+            }
             state.hasYawSeed = true;
           }
         }
@@ -1840,6 +1860,10 @@
     state.yourPlayerId = 'solo-survivor';
     state.roomCode = 'SOLO';
     state.input.yaw = -Math.PI / 2;
+    state.input.jump = false;
+    if (state.world) {
+      state.world.cameraYaw = state.input.yaw;
+    }
     state.hasYawSeed = true;
     state.statusMessage = '';
     updateInviteUi();
@@ -1961,8 +1985,8 @@
 
     if (!game) {
       ui.overlayTitle.textContent = 'Zombie Siege 3D Live';
-      ui.overlayCopy.textContent = 'Host a room, join a friend, or start solo. Move the mouse over the arena to aim and click to fire.';
-      ui.overlayMeta.textContent = 'Controls: WASD move, move the mouse to aim, Left Click fires, Shift sprints, 1 2 3 swaps weapons.';
+      ui.overlayCopy.textContent = 'Host a room, join a friend, or start solo. Move the mouse to look and aim, press Space to jump, and click to fire.';
+      ui.overlayMeta.textContent = 'Controls: WASD move, mouse looks and aims, Left Click fires, Space jumps, Shift sprints, 1 2 3 swaps weapons.';
       ui.startBtn.textContent = 'Start solo instantly';
       return;
     }
@@ -1977,9 +2001,9 @@
 
     ui.overlayTitle.textContent = state.mode === 'online' ? 'Back to the yard' : 'Resume the solo siege';
     ui.overlayCopy.textContent = state.mode === 'online'
-      ? 'The room is still live. Move the mouse over the arena and click to fire.'
-      : 'Move the mouse over the arena and click to fire. No mouse lock needed.';
-    ui.overlayMeta.textContent = `Current weapon: ${currentWeaponLabel(game)}. Use 1, 2, and 3 to swap instantly.`;
+      ? 'The room is still live. Move the mouse to look, jump with Space, and click to fire.'
+      : 'Move the mouse to look, jump with Space, and click to fire. No mouse lock needed.';
+    ui.overlayMeta.textContent = `Current weapon: ${currentWeaponLabel(game)}. Use 1, 2, and 3 to swap instantly, and press Space to jump.`;
     ui.startBtn.textContent = 'Continue';
   }
 
@@ -2022,7 +2046,7 @@
       setModePill('No room active');
     }
 
-    ui.controlHint.textContent = 'WASD moves. Move the mouse over the arena to aim. Left Click fires. Shift sprints. Press 1, 2, or 3 for rifle, SMG, and shotgun.';
+    ui.controlHint.textContent = 'WASD moves. Mouse looks and aims. Left Click fires. Space jumps. Shift sprints. Press 1, 2, or 3 for rifle, SMG, and shotgun.';
     ui.restartBtn.disabled = !game;
     ui.stage.classList.toggle('live', Boolean(game && !game.gameOver));
     updateInviteUi();
@@ -2040,6 +2064,9 @@
       return;
     }
     state.input.yaw = player.yaw;
+    if (state.world) {
+      state.world.cameraYaw = player.yaw;
+    }
     state.hasYawSeed = true;
   }
 
@@ -2054,6 +2081,7 @@
     state.input.moveX = moveX;
     state.input.moveY = moveY;
     state.input.fire = state.keys.fire;
+    state.input.jump = state.keys.jump;
     state.input.sprint = state.keys.sprint;
     const player = localPlayer(game);
     let desiredYaw = state.input.yaw;
@@ -2076,7 +2104,9 @@
       if (movementChanged) {
         let worldMoveX = moveX;
         let worldMoveZ = -moveY;
-        const movementYaw = Number.isFinite(state.world?.cameraYaw) ? state.world.cameraYaw : CAMERA_DEFAULT_YAW;
+        const movementYaw = Number.isFinite(state.input.yaw)
+          ? state.input.yaw
+          : (Number.isFinite(state.world?.cameraYaw) ? state.world.cameraYaw : CAMERA_DEFAULT_YAW);
         const forwardX = Math.sin(movementYaw);
         const forwardZ = -Math.cos(movementYaw);
         const rightX = -forwardZ;
@@ -2187,6 +2217,9 @@
       case 'ShiftLeft':
       case 'ShiftRight':
         state.keys.sprint = pressed;
+        return true;
+      case 'Space':
+        state.keys.jump = pressed;
         return true;
       case 'Digit1':
         if (pressed) {

@@ -7,15 +7,17 @@
 })(typeof self !== 'undefined' ? self : globalThis, function () {
   'use strict';
 
-  const ARENA = { width: 108, depth: 108 };
+  const ARENA = { width: 136, depth: 136 };
   const MAX_PLAYERS = 4;
   const MAX_EVENTS = 28;
   const PLAYER_COLORS = ['#73d9ff', '#ffd57a', '#ff9fc5', '#91f5a8'];
   const PLAYER_SPEED = 6.9;
   const PLAYER_SPRINT_SPEED = 9.8;
-  const PLAYER_TURN_SPEED = 11.6;
+  const PLAYER_TURN_SPEED = 15.2;
   const PLAYER_RADIUS = 0.72;
   const PLAYER_MAX_HEALTH = 100;
+  const PLAYER_JUMP_VELOCITY = 9.4;
+  const PLAYER_GRAVITY = 28;
   const RESPAWN_TIME = 5.5;
   const WAVE_START_DELAY = 2.3;
   const BOSS_WAVE_INTERVAL = 4;
@@ -159,6 +161,7 @@
       aimX: null,
       aimZ: null,
       fire: false,
+      jump: false,
       sprint: false,
       weaponKey: 'rifle',
     };
@@ -172,6 +175,8 @@
       seat,
       x: seat < 2 ? -7 + seat * 6 : -7 + (seat - 2) * 6,
       z: seat < 2 ? 14 : 19,
+      y: 0,
+      vy: 0,
       yaw: -Math.PI / 2,
       radius: PLAYER_RADIUS,
       health: PLAYER_MAX_HEALTH,
@@ -187,6 +192,8 @@
       weaponKey: 'rifle',
       flash: 0,
       hurtTimer: 0,
+      grounded: true,
+      jumpLatch: false,
       input: defaultInput(),
     };
   }
@@ -199,6 +206,8 @@
       seat: player.seat,
       x: player.x,
       z: player.z,
+      y: player.y,
+      vy: player.vy,
       yaw: player.yaw,
       radius: player.radius,
       health: player.health,
@@ -214,6 +223,7 @@
       weaponKey: player.weaponKey,
       flash: player.flash,
       hurtTimer: player.hurtTimer,
+      grounded: player.grounded,
       input: { ...player.input },
     };
   }
@@ -429,6 +439,7 @@
       ? clamp(Number(next.aimZ), -ARENA.depth * 0.65, ARENA.depth * 0.65)
       : null;
     player.input.fire = Boolean(next.fire);
+    player.input.jump = Boolean(next.jump);
     player.input.sprint = Boolean(next.sprint);
     if (WEAPONS[next.weaponKey]) {
       player.input.weaponKey = next.weaponKey;
@@ -687,6 +698,10 @@
     player.weaponKey = WEAPONS[player.input.weaponKey] ? player.input.weaponKey : player.weaponKey;
 
     if (!player.alive) {
+      player.y = 0;
+      player.vy = 0;
+      player.grounded = true;
+      player.jumpLatch = false;
       if (livingPlayers(state).length > 0) {
         player.respawnTimer = Math.max(0, player.respawnTimer - dt);
         if (player.respawnTimer <= 0) {
@@ -695,6 +710,9 @@
           player.health = Math.max(42, Math.round(player.maxHealth * 0.55));
           player.x = point.x;
           player.z = point.z;
+          player.y = 0;
+          player.vy = 0;
+          player.grounded = true;
           player.hurtTimer = 0;
           setStatus(state, `${player.name} fought their way back into the yard.`);
           pushEvent(state, 'player-respawn', {
@@ -706,13 +724,22 @@
       return;
     }
 
+    if (player.input.jump && !player.jumpLatch && player.grounded) {
+      player.vy = PLAYER_JUMP_VELOCITY;
+      player.grounded = false;
+      player.jumpLatch = true;
+    } else if (!player.input.jump) {
+      player.jumpLatch = false;
+    }
+
     let moveDirX = player.input.moveDirX;
     let moveDirZ = player.input.moveDirZ;
     if (Math.abs(moveDirX) > 0.001 || Math.abs(moveDirZ) > 0.001) {
       const magnitude = Math.hypot(moveDirX, moveDirZ) || 1;
       moveDirX /= magnitude;
       moveDirZ /= magnitude;
-      const speed = player.input.sprint ? player.sprintSpeed : player.moveSpeed;
+      const airControl = player.grounded ? 1 : 0.9;
+      const speed = (player.input.sprint ? player.sprintSpeed : player.moveSpeed) * airControl;
       player.x += moveDirX * speed * dt;
       player.z += moveDirZ * speed * dt;
     } else {
@@ -722,7 +749,8 @@
         const magnitude = Math.hypot(moveX, moveY) || 1;
         moveX /= magnitude;
         moveY /= magnitude;
-        const speed = player.input.sprint ? player.sprintSpeed : player.moveSpeed;
+        const airControl = player.grounded ? 1 : 0.9;
+        const speed = (player.input.sprint ? player.sprintSpeed : player.moveSpeed) * airControl;
         const forwardX = Math.sin(moveBasisYaw);
         const forwardZ = -Math.cos(moveBasisYaw);
         const rightX = -forwardZ;
@@ -733,6 +761,15 @@
     }
     player.x = clamp(player.x, -ARENA.width * 0.47, ARENA.width * 0.47);
     player.z = clamp(player.z, -ARENA.depth * 0.47, ARENA.depth * 0.47);
+    player.vy -= PLAYER_GRAVITY * dt;
+    player.y += player.vy * dt;
+    if (player.y <= 0) {
+      player.y = 0;
+      player.vy = 0;
+      player.grounded = true;
+    } else {
+      player.grounded = false;
+    }
 
     if (player.input.fire && player.fireCooldown <= 0) {
       fireWeapon(state, player);
@@ -760,6 +797,9 @@
     const angle = Math.atan2(player.x - zombie.x, player.z - zombie.z);
     player.x += Math.sin(angle) * 0.6;
     player.z += Math.cos(angle) * 0.6;
+    player.y = 0;
+    player.vy = 0;
+    player.grounded = true;
     if (player.health <= 0) {
       player.health = 0;
       player.alive = false;
