@@ -113,17 +113,23 @@
     cueLength: 264,
     guideLength: 640,
     guideBounceLength: 124,
+    guideSecondaryLength: 96,
+    guideObjectLength: 146,
+    guideCueDeflectLength: 82,
+    guideMarkerSpacing: 24,
+    guideMarkerRadius: 2.2,
     gripRadius: 32,
     lockPullback: 12,
     unlockPullback: 5,
     lockLateral: 54,
     unlockLateral: 122,
-    aimDeadZone: 26,
-    aimSmoothing: 0.26,
+    aimDeadZone: 30,
+    aimPrecisionRange: 190,
+    aimSmoothing: 0.22,
     stickAimSmoothing: 0.16,
     powerSmoothing: 0.26,
-    aimLerpPerSecond: 18,
-    stickAimLerpPerSecond: 12,
+    aimLerpPerSecond: 20,
+    stickAimLerpPerSecond: 13,
     powerLerpPerSecond: 16,
     scenePadding: 132,
     minCueVisualScale: 0.52,
@@ -545,6 +551,14 @@
     return fromStick ? normalizeAngle(rawAngle + Math.PI) : rawAngle;
   }
 
+  function normalizeVector(x, y) {
+    const length = Math.hypot(x, y) || 1;
+    return {
+      x: x / length,
+      y: y / length,
+    };
+  }
+
   function updateAimAngleFromPoint(cue, point, fromStick, options = {}) {
     const dx = point.x - cue.x;
     const dy = point.y - cue.y;
@@ -558,7 +572,11 @@
       state.aimAngleTarget = targetAngle;
       return true;
     }
-    state.aimAngleTarget = targetAngle;
+    const precisionFactor = clamp((distance - CUE_UI.aimDeadZone) / CUE_UI.aimPrecisionRange, 0, 1);
+    const blendFloor = fromStick ? CUE_UI.stickAimSmoothing * 0.78 : CUE_UI.aimSmoothing * 0.68;
+    const blendCeiling = fromStick ? CUE_UI.stickAimSmoothing * 1.34 : CUE_UI.aimSmoothing * 1.26;
+    const blend = lerp(blendFloor, blendCeiling, precisionFactor);
+    state.aimAngleTarget = lerpAngle(state.aimAngleTarget, targetAngle, blend);
     return true;
   }
 
@@ -1064,6 +1082,40 @@
     return distance;
   }
 
+  function projectRailGuide(origin, direction, radius, bounds, maxDistance) {
+    let bestHit = null;
+    const candidates = [];
+    if (direction.x > 0.0001) {
+      candidates.push({ distance: (bounds.maxX - radius - origin.x) / direction.x, normal: { x: -1, y: 0 } });
+    } else if (direction.x < -0.0001) {
+      candidates.push({ distance: (bounds.minX + radius - origin.x) / direction.x, normal: { x: 1, y: 0 } });
+    }
+    if (direction.y > 0.0001) {
+      candidates.push({ distance: (bounds.maxY - radius - origin.y) / direction.y, normal: { x: 0, y: -1 } });
+    } else if (direction.y < -0.0001) {
+      candidates.push({ distance: (bounds.minY + radius - origin.y) / direction.y, normal: { x: 0, y: 1 } });
+    }
+
+    for (const candidate of candidates) {
+      if (!Number.isFinite(candidate.distance) || candidate.distance <= 0.001 || candidate.distance >= maxDistance) {
+        continue;
+      }
+      const hitX = origin.x + direction.x * candidate.distance;
+      const hitY = origin.y + direction.y * candidate.distance;
+      if (hitX < bounds.minX || hitX > bounds.maxX || hitY < bounds.minY || hitY > bounds.maxY) {
+        continue;
+      }
+      bestHit = {
+        type: 'rail',
+        distance: candidate.distance,
+        point: { x: hitX, y: hitY },
+        normal: candidate.normal,
+      };
+      maxDistance = candidate.distance;
+    }
+    return bestHit;
+  }
+
   function projectAimGuide(cue, direction) {
     const bounds = feltBounds();
     const maxDistance = CUE_UI.guideLength;
@@ -1076,41 +1128,21 @@
       },
       normal: null,
     };
-
-    const candidates = [];
-    if (direction.x > 0.0001) {
-      const distance = (bounds.maxX - cue.r - cue.x) / direction.x;
-      candidates.push({ distance, normal: { x: -1, y: 0 } });
-    } else if (direction.x < -0.0001) {
-      const distance = (bounds.minX + cue.r - cue.x) / direction.x;
-      candidates.push({ distance, normal: { x: 1, y: 0 } });
-    }
-    if (direction.y > 0.0001) {
-      const distance = (bounds.maxY - cue.r - cue.y) / direction.y;
-      candidates.push({ distance, normal: { x: 0, y: -1 } });
-    } else if (direction.y < -0.0001) {
-      const distance = (bounds.minY + cue.r - cue.y) / direction.y;
-      candidates.push({ distance, normal: { x: 0, y: 1 } });
-    }
-
-    for (const candidate of candidates) {
-      if (!Number.isFinite(candidate.distance) || candidate.distance <= 0 || candidate.distance >= bestHit.distance) {
-        continue;
-      }
-      const hitX = cue.x + direction.x * candidate.distance;
-      const hitY = cue.y + direction.y * candidate.distance;
-      if (hitX < bounds.minX || hitX > bounds.maxX || hitY < bounds.minY || hitY > bounds.maxY) {
-        continue;
-      }
-      bestHit = {
-        type: 'rail',
-        distance: candidate.distance,
-        point: { x: hitX, y: hitY },
-        normal: candidate.normal,
-      };
+    const railHit = projectRailGuide(cue, direction, cue.r, bounds, maxDistance);
+    if (railHit) {
+      bestHit = railHit;
     }
 
     if (!state.snapshot || !Array.isArray(state.snapshot.balls)) {
+      if (bestHit.type === 'rail' && bestHit.normal) {
+        const bounceDirection = reflectDirection(direction, bestHit.normal);
+        const secondOrigin = {
+          x: bestHit.point.x + bounceDirection.x * 0.8,
+          y: bestHit.point.y + bounceDirection.y * 0.8,
+        };
+        bestHit.bounceDirection = bounceDirection;
+        bestHit.bounce = projectRailGuide(secondOrigin, bounceDirection, cue.r, bounds, CUE_UI.guideSecondaryLength);
+      }
       return bestHit;
     }
 
@@ -1129,18 +1161,43 @@
       const normalX = ball.x - cueImpact.x;
       const normalY = ball.y - cueImpact.y;
       const normalLength = Math.hypot(normalX, normalY) || 1;
+      const objectDirection = {
+        x: normalX / normalLength,
+        y: normalY / normalLength,
+      };
+      const cueDeflectRaw = {
+        x: direction.x - objectDirection.x * (direction.x * objectDirection.x + direction.y * objectDirection.y),
+        y: direction.y - objectDirection.y * (direction.x * objectDirection.x + direction.y * objectDirection.y),
+      };
       bestHit = {
         type: 'ball',
         distance,
         point: cueImpact,
         objectBall: ball,
-        normal: {
-          x: normalX / normalLength,
-          y: normalY / normalLength,
+        cueContactPoint: {
+          x: cueImpact.x + objectDirection.x * cue.r,
+          y: cueImpact.y + objectDirection.y * cue.r,
         },
+        objectContactPoint: {
+          x: ball.x - objectDirection.x * ball.r,
+          y: ball.y - objectDirection.y * ball.r,
+        },
+        normal: objectDirection,
+        cueDeflectDirection: Math.hypot(cueDeflectRaw.x, cueDeflectRaw.y) > 0.0001
+          ? normalizeVector(cueDeflectRaw.x, cueDeflectRaw.y)
+          : null,
       };
     }
 
+    if (bestHit.type === 'rail' && bestHit.normal) {
+      const bounceDirection = reflectDirection(direction, bestHit.normal);
+      const secondOrigin = {
+        x: bestHit.point.x + bounceDirection.x * 0.8,
+        y: bestHit.point.y + bounceDirection.y * 0.8,
+      };
+      bestHit.bounceDirection = bounceDirection;
+      bestHit.bounce = projectRailGuide(secondOrigin, bounceDirection, cue.r, bounds, CUE_UI.guideSecondaryLength);
+    }
     return bestHit;
   }
 
@@ -1750,6 +1807,30 @@
     }
   }
 
+  function drawGuideMarkers(start, direction, distance, color, options = {}) {
+    if (distance <= 18) {
+      return;
+    }
+    const spacing = options.spacing || CUE_UI.guideMarkerSpacing;
+    const radius = options.radius || CUE_UI.guideMarkerRadius;
+    const startOffset = options.startOffset || spacing;
+    const fade = options.fade || 0.82;
+    const rgb = hexToRgb(color);
+    for (let step = startOffset; step < distance; step += spacing) {
+      const alpha = clamp((1 - step / Math.max(distance, spacing)) * fade, 0.12, fade);
+      ctx.beginPath();
+      ctx.arc(
+        start.x + direction.x * step,
+        start.y + direction.y * step,
+        radius,
+        0,
+        Math.PI * 2
+      );
+      ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+      ctx.fill();
+    }
+  }
+
   function drawCueAndGuide() {
     const cue = activeCue();
     if (!cue || !canShoot()) {
@@ -1805,43 +1886,130 @@
     ctx.beginPath();
     ctx.moveTo(cue.x, cue.y);
     ctx.lineTo(guide.point.x, guide.point.y);
+    ctx.strokeStyle = power > 1 ? 'rgba(255, 224, 168, 0.22)' : state.aiming ? 'rgba(113, 241, 209, 0.18)' : 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = power > 1 ? 8 : 6;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(cue.x, cue.y);
+    ctx.lineTo(guide.point.x, guide.point.y);
     ctx.strokeStyle = power > 1 ? 'rgba(255, 245, 214, 0.96)' : state.aiming ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.58)';
     ctx.lineWidth = power > 1 ? 3 : state.aiming ? 2.5 : 1.8;
     ctx.setLineDash(state.aiming ? [12, 8] : [8, 8]);
     ctx.stroke();
     ctx.setLineDash([]);
+    drawGuideMarkers(
+      cue,
+      direction,
+      Math.min(guide.distance, CUE_UI.guideLength),
+      power > 1 ? '#ffe08a' : state.aiming ? '#9af5df' : '#e9f1ff',
+      { radius: power > 1 ? 2.4 : 2.1, fade: state.aiming ? 0.88 : 0.58 }
+    );
 
     if (guide.type === 'ball' && guide.objectBall) {
+      if (guide.cueContactPoint) {
+        ctx.beginPath();
+        ctx.arc(guide.cueContactPoint.x, guide.cueContactPoint.y, 3.4, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.88)';
+        ctx.fill();
+      }
+      if (guide.objectContactPoint) {
+        ctx.beginPath();
+        ctx.arc(guide.objectContactPoint.x, guide.objectContactPoint.y, 4.2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 213, 124, 0.92)';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(guide.objectContactPoint.x, guide.objectContactPoint.y, 8.5, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 213, 124, 0.44)';
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+      }
       ctx.beginPath();
       ctx.arc(cueGhost.x, cueGhost.y, cue.r, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(255,255,255,0.42)';
       ctx.lineWidth = 1.7;
       ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cueGhost.x, cueGhost.y, cue.r - 2.6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fill();
 
       ctx.beginPath();
       ctx.moveTo(guide.objectBall.x, guide.objectBall.y);
       ctx.lineTo(
-        guide.objectBall.x + guide.normal.x * 120,
-        guide.objectBall.y + guide.normal.y * 120
+        guide.objectBall.x + guide.normal.x * CUE_UI.guideObjectLength,
+        guide.objectBall.y + guide.normal.y * CUE_UI.guideObjectLength
       );
       ctx.strokeStyle = 'rgba(255, 213, 124, 0.78)';
-      ctx.lineWidth = 1.7;
-      ctx.setLineDash([7, 7]);
+      ctx.lineWidth = 2.1;
+      ctx.setLineDash([9, 7]);
       ctx.stroke();
       ctx.setLineDash([]);
+      drawGuideMarkers(
+        guide.objectBall,
+        guide.normal,
+        CUE_UI.guideObjectLength,
+        '#ffd57c',
+        { startOffset: 18, radius: 2.1, fade: 0.72 }
+      );
+      if (guide.cueDeflectDirection) {
+        ctx.beginPath();
+        ctx.moveTo(cueGhost.x, cueGhost.y);
+        ctx.lineTo(
+          cueGhost.x + guide.cueDeflectDirection.x * CUE_UI.guideCueDeflectLength,
+          cueGhost.y + guide.cueDeflectDirection.y * CUE_UI.guideCueDeflectLength
+        );
+        ctx.strokeStyle = 'rgba(165, 222, 255, 0.72)';
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([6, 8]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        drawGuideMarkers(
+          cueGhost,
+          guide.cueDeflectDirection,
+          CUE_UI.guideCueDeflectLength,
+          '#a5deff',
+          { startOffset: 14, radius: 1.8, fade: 0.5 }
+        );
+      }
     } else if (guide.type === 'rail' && guide.normal) {
-      const bounce = reflectDirection(direction, guide.normal);
+      const bounce = guide.bounceDirection || reflectDirection(direction, guide.normal);
+      const bounceEnd = guide.bounce && guide.bounce.point
+        ? guide.bounce.point
+        : {
+            x: guide.point.x + bounce.x * CUE_UI.guideBounceLength,
+            y: guide.point.y + bounce.y * CUE_UI.guideBounceLength,
+          };
       ctx.beginPath();
       ctx.moveTo(guide.point.x, guide.point.y);
-      ctx.lineTo(
-        guide.point.x + bounce.x * CUE_UI.guideBounceLength,
-        guide.point.y + bounce.y * CUE_UI.guideBounceLength
-      );
+      ctx.lineTo(bounceEnd.x, bounceEnd.y);
       ctx.strokeStyle = 'rgba(113, 241, 209, 0.6)';
-      ctx.lineWidth = 1.6;
-      ctx.setLineDash([7, 8]);
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([8, 8]);
       ctx.stroke();
       ctx.setLineDash([]);
+      drawGuideMarkers(
+        guide.point,
+        bounce,
+        guide.bounce ? Math.min(guide.bounce.distance, CUE_UI.guideSecondaryLength) : CUE_UI.guideBounceLength,
+        '#7df1d1',
+        { startOffset: 14, radius: 1.9, fade: 0.52 }
+      );
+      ctx.beginPath();
+      ctx.arc(guide.point.x, guide.point.y, 4.2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(113, 241, 209, 0.82)';
+      ctx.fill();
+      if (guide.bounce && guide.bounce.point) {
+        ctx.beginPath();
+        ctx.moveTo(guide.point.x, guide.point.y);
+        ctx.lineTo(guide.bounce.point.x, guide.bounce.point.y);
+        ctx.strokeStyle = 'rgba(113, 241, 209, 0.34)';
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([4, 7]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
 
     const cueGradient = ctx.createLinearGradient(cueButt.x, cueButt.y, cueTip.x, cueTip.y);
