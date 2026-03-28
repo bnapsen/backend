@@ -2026,6 +2026,7 @@
     state.input.fire = state.keys.fire;
     state.input.sprint = state.keys.sprint;
     const player = localPlayer(game);
+    let desiredYaw = state.input.yaw;
     if (player) {
       const target = resolveAimTarget(game, player);
       if (target) {
@@ -2034,10 +2035,40 @@
         const dx = target.x - player.x;
         const dz = target.z - player.z;
         if (Math.hypot(dx, dz) > 0.05) {
-          state.input.yaw = normalizeAngle(Math.atan2(dx, -dz));
+          desiredYaw = normalizeAngle(Math.atan2(dx, -dz));
+          state.input.yaw = desiredYaw;
         }
       }
     }
+
+    if (state.camera && state.world && (Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001)) {
+      const camForward = state.world.tempVecA;
+      const camRight = state.world.tempVecB;
+      state.camera.getWorldDirection(camForward);
+      camForward.y = 0;
+      if (camForward.lengthSq() < 0.0001) {
+        camForward.set(Math.sin(desiredYaw), 0, -Math.cos(desiredYaw));
+      }
+      camForward.normalize();
+      camRight.set(-camForward.z, 0, camForward.x);
+
+      const worldMoveX = camRight.x * moveX + camForward.x * moveY;
+      const worldMoveZ = camRight.z * moveX + camForward.z * moveY;
+      const aimForwardX = Math.sin(desiredYaw);
+      const aimForwardZ = -Math.cos(desiredYaw);
+      const aimRightX = -aimForwardZ;
+      const aimRightZ = aimForwardX;
+
+      state.input.moveX = worldMoveX * aimRightX + worldMoveZ * aimRightZ;
+      state.input.moveY = worldMoveX * aimForwardX + worldMoveZ * aimForwardZ;
+
+      const correctedMagnitude = Math.hypot(state.input.moveX, state.input.moveY) || 1;
+      if (correctedMagnitude > 1) {
+        state.input.moveX /= correctedMagnitude;
+        state.input.moveY /= correctedMagnitude;
+      }
+    }
+
     return state.input;
   }
 

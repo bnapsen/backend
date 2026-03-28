@@ -669,14 +669,16 @@
     player.hurtTimer = Math.max(0, player.hurtTimer - dt);
     player.fireCooldown = Math.max(0, player.fireCooldown - dt);
     player.yaw = normalizeAngle(player.yaw);
+    let moveBasisYaw = normalizeAngle(player.input.yaw);
     if (Number.isFinite(player.input.aimX) && Number.isFinite(player.input.aimZ)) {
       const dx = player.input.aimX - player.x;
       const dz = player.input.aimZ - player.z;
       if (Math.hypot(dx, dz) > 0.05) {
-        player.yaw = rotateToward(player.yaw, Math.atan2(dx, -dz), PLAYER_TURN_SPEED * dt);
+        moveBasisYaw = Math.atan2(dx, -dz);
+        player.yaw = rotateToward(player.yaw, moveBasisYaw, PLAYER_TURN_SPEED * dt);
       }
     } else {
-      player.yaw = rotateToward(player.yaw, normalizeAngle(player.input.yaw), PLAYER_TURN_SPEED * dt);
+      player.yaw = rotateToward(player.yaw, moveBasisYaw, PLAYER_TURN_SPEED * dt);
     }
     player.weaponKey = WEAPONS[player.input.weaponKey] ? player.input.weaponKey : player.weaponKey;
 
@@ -707,8 +709,8 @@
       moveX /= magnitude;
       moveY /= magnitude;
       const speed = player.input.sprint ? player.sprintSpeed : player.moveSpeed;
-      const forwardX = Math.sin(player.yaw);
-      const forwardZ = -Math.cos(player.yaw);
+      const forwardX = Math.sin(moveBasisYaw);
+      const forwardZ = -Math.cos(moveBasisYaw);
       const rightX = -forwardZ;
       const rightZ = forwardX;
       player.x += (forwardX * moveY + rightX * moveX) * speed * dt;
