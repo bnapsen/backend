@@ -71,6 +71,7 @@
     pointerId: null,
     pointer: { x: 0, y: 0 },
     power: 0,
+    powerTarget: 0,
     aimAngle: 0,
     aimAnchor: { x: 0, y: 0 },
     aimLocked: false,
@@ -108,8 +109,9 @@
     lockLateral: 54,
     unlockLateral: 122,
     aimDeadZone: 26,
-    aimSmoothing: 0.34,
-    stickAimSmoothing: 0.22,
+    aimSmoothing: 0.26,
+    stickAimSmoothing: 0.16,
+    powerSmoothing: 0.26,
   });
   const SOLO_BOT_NAME = 'Orbit Bot';
 
@@ -119,6 +121,10 @@
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
+  }
+
+  function lerp(start, end, amount) {
+    return start + (end - start) * clamp(amount, 0, 1);
   }
 
   function sanitizeRoomCode(raw) {
@@ -237,6 +243,7 @@
     state.aiming = false;
     state.pointerId = null;
     state.power = 0;
+    state.powerTarget = 0;
     state.aimAnchor.x = 0;
     state.aimAnchor.y = 0;
     state.aimLocked = false;
@@ -279,6 +286,23 @@
     const smoothing = fromStick ? CUE_UI.stickAimSmoothing : CUE_UI.aimSmoothing;
     state.aimAngle = lerpAngle(state.aimAngle, targetAngle, smoothing);
     return true;
+  }
+
+  function computeCuePullState(cue, point) {
+    const direction = cueDirection();
+    const dragX = state.aimAnchor.x - point.x;
+    const dragY = state.aimAnchor.y - point.y;
+    const pullback = dragX * direction.x + dragY * direction.y;
+    const lateral = Math.abs(dragX * -direction.y + dragY * direction.x);
+    const rawPower = Math.max(0, pullback - 4) / CUE_UI.powerRange;
+    const easedPower = rawPower <= 1
+      ? Math.pow(rawPower, 0.9)
+      : 1 + Math.pow(rawPower - 1, 0.82);
+    return {
+      pullback,
+      lateral,
+      power: clamp(easedPower, 0, CUE_UI.maxPower),
+    };
   }
 
   function disconnectSocket() {
@@ -1491,6 +1515,7 @@
     state.aimFromStick = forwardDot < 0;
     updateAimAngleFromPoint(cue, point, state.aimFromStick, { immediate: true });
     state.power = 0;
+    state.powerTarget = 0;
     updatePowerUi();
     try {
       canvas.setPointerCapture(event.pointerId);
@@ -1516,11 +1541,9 @@
       if (state.aimFromStick || !state.aimLocked) {
         updateAimAngleFromPoint(cue, point, state.aimFromStick);
       }
-      const direction = cueDirection();
-      const dragX = state.aimAnchor.x - point.x;
-      const dragY = state.aimAnchor.y - point.y;
-      const pullback = dragX * direction.x + dragY * direction.y;
-      const lateral = Math.abs(dragX * -direction.y + dragY * direction.x);
+      const pullState = computeCuePullState(cue, point);
+      const pullback = pullState.pullback;
+      const lateral = pullState.lateral;
       const lockLateralLimit = Math.max(CUE_UI.lockLateral, pullback * 1.35);
       if (!state.aimLocked) {
         if (pullback > CUE_UI.lockPullback && lateral < lockLateralLimit) {
@@ -1528,6 +1551,7 @@
         } else {
           state.aimAnchor.x = point.x;
           state.aimAnchor.y = point.y;
+          state.powerTarget = 0;
           state.power = 0;
           updatePowerUi();
           return;
@@ -1539,15 +1563,13 @@
         updateAimAngleFromPoint(cue, point, state.aimFromStick, { immediate: true });
         state.aimAnchor.x = point.x;
         state.aimAnchor.y = point.y;
+        state.powerTarget = 0;
         state.power = 0;
         updatePowerUi();
         return;
       }
-      const rawPower = Math.max(0, pullback - 4) / CUE_UI.powerRange;
-      const easedPower = rawPower <= 1
-        ? Math.pow(rawPower, 0.9)
-        : 1 + Math.pow(rawPower - 1, 0.82);
-      state.power = clamp(easedPower, 0, CUE_UI.maxPower);
+      state.powerTarget = pullState.power;
+      state.power = lerp(state.power, state.powerTarget, CUE_UI.powerSmoothing);
     }
     updatePowerUi();
   }
@@ -1558,10 +1580,10 @@
     }
     const point = boardPointFromClient(event.clientX, event.clientY, true) || state.pointer;
     const cue = activeCue();
-    const power = normalizedShotPower(state.power);
     state.aiming = false;
     state.pointerId = null;
     state.power = 0;
+    state.powerTarget = 0;
     state.aimLocked = false;
     state.aimFromStick = false;
 
@@ -1570,6 +1592,7 @@
       return;
     }
 
+    const power = normalizedShotPower(computeCuePullState(cue, point).power);
     if (power < CUE_UI.minPower) {
       updatePowerUi();
       return;
