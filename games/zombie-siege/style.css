@@ -45,7 +45,7 @@ body::before {
 }
 
 .page-shell {
-  width: min(1600px, calc(100vw - 28px));
+  width: min(1860px, calc(100vw - 24px));
   margin: 0 auto;
   padding: 18px 0 28px;
 }
@@ -168,8 +168,8 @@ h2,
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(290px, 340px) minmax(0, 1fr) minmax(270px, 320px);
-  gap: 14px;
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(230px, 270px);
+  gap: 12px;
   margin-top: 16px;
   align-items: start;
 }
@@ -188,7 +188,7 @@ h2,
     radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 28%),
     linear-gradient(180deg, var(--panel), var(--panel-strong));
   box-shadow: var(--shadow);
-  padding: 18px;
+  padding: 16px;
   backdrop-filter: blur(16px);
 }
 
@@ -344,7 +344,7 @@ button.secondary {
 }
 
 .arena-panel {
-  padding: 16px;
+  padding: 14px;
 }
 
 .arena-header {
@@ -386,8 +386,9 @@ button.secondary {
 
 .arena-stage {
   position: relative;
-  margin-top: 12px;
+  margin-top: 10px;
   aspect-ratio: 16 / 9;
+  min-height: clamp(520px, 72vh, 940px);
   border-radius: 28px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);

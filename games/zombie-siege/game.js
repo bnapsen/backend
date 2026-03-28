@@ -75,6 +75,8 @@
       moveX: 0,
       moveY: 0,
       yaw: -Math.PI / 2,
+      aimX: 0,
+      aimZ: 0,
       fire: false,
       sprint: false,
       weaponKey: 'rifle',
@@ -372,7 +374,52 @@
     });
     hazard.repeat.set(1, 1);
 
-    return { asphalt, concrete, metal, hazard };
+    const flesh = sizedCanvasTexture(256, (ctx, size) => {
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, '#889772');
+      gradient.addColorStop(1, '#4e5644');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+      for (let index = 0; index < 1200; index += 1) {
+        const radius = 2 + Math.random() * 8;
+        ctx.fillStyle = Math.random() > 0.7 ? 'rgba(94, 20, 18, 0.18)' : 'rgba(210, 224, 180, 0.06)';
+        ctx.beginPath();
+        ctx.arc(Math.random() * size, Math.random() * size, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+
+    const zombieCloth = sizedCanvasTexture(256, (ctx, size) => {
+      ctx.fillStyle = '#2b2f29';
+      ctx.fillRect(0, 0, size, size);
+      for (let index = 0; index < 80; index += 1) {
+        ctx.fillStyle = `rgba(255,255,255,${0.03 + Math.random() * 0.04})`;
+        ctx.fillRect(0, Math.random() * size, size, 1 + Math.random() * 2);
+      }
+      for (let tear = 0; tear < 24; tear += 1) {
+        ctx.fillStyle = 'rgba(70, 16, 16, 0.2)';
+        ctx.fillRect(Math.random() * size, Math.random() * size, 6 + Math.random() * 16, 2 + Math.random() * 6);
+      }
+    });
+
+    const windows = sizedCanvasTexture(512, (ctx, size) => {
+      ctx.fillStyle = '#0e1115';
+      ctx.fillRect(0, 0, size, size);
+      const cols = 8;
+      const rows = 14;
+      const pad = 18;
+      const cellW = (size - pad * 2) / cols;
+      const cellH = (size - pad * 2) / rows;
+      for (let row = 0; row < rows; row += 1) {
+        for (let col = 0; col < cols; col += 1) {
+          const lit = Math.random() > 0.42;
+          ctx.fillStyle = lit ? `rgba(255, ${190 + Math.floor(Math.random() * 40)}, 108, ${0.32 + Math.random() * 0.24})` : 'rgba(25, 29, 34, 0.9)';
+          ctx.fillRect(pad + col * cellW + 5, pad + row * cellH + 4, cellW - 10, cellH - 8);
+        }
+      }
+    });
+
+    return { asphalt, concrete, metal, hazard, flesh, zombieCloth, windows };
   }
 
   function createLabelSprite(text, color) {
@@ -444,6 +491,20 @@
       pickupRoot: new THREE.Group(),
       cameraPos: new THREE.Vector3(0, 7, 12),
       cameraLook: new THREE.Vector3(0, 2, 0),
+      aimTarget: new THREE.Vector3(0, 1.55, -18),
+      raycaster: new THREE.Raycaster(),
+      aimPlane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -1.55),
+      tempVecA: new THREE.Vector3(),
+      tempVecB: new THREE.Vector3(),
+      tempVecC: new THREE.Vector3(),
+      dynamic: {
+        smoke: [],
+        traffic: [],
+        sweepLights: [],
+        beaconLights: [],
+        skyline: [],
+        helicopter: null,
+      },
     };
 
     scene.add(state.world.entityRoot);
@@ -491,6 +552,20 @@
     ring.position.y = 0.012;
     scene.add(ring);
 
+    const aimMarker = new THREE.Mesh(
+      new THREE.RingGeometry(0.22, 0.36, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0xffe3aa,
+        transparent: true,
+        opacity: 0.65,
+        side: THREE.DoubleSide,
+      })
+    );
+    aimMarker.rotation.x = -Math.PI / 2;
+    aimMarker.position.set(0, 0.05, 0);
+    scene.add(aimMarker);
+    state.world.aimMarker = aimMarker;
+
     buildArenaShell(scene);
     buildArenaProps(scene);
     resizeRenderer();
@@ -499,7 +574,7 @@
   function buildArenaShell(scene) {
     const wallMaterial = new THREE.MeshStandardMaterial({
       map: state.textures.concrete,
-      roughness: 0.92,
+      roughness: 0.9,
       metalness: 0.05,
     });
     const trimMaterial = new THREE.MeshStandardMaterial({
@@ -508,20 +583,41 @@
       metalness: 0.42,
       color: 0xa5afb7,
     });
+    const buildingMat = new THREE.MeshStandardMaterial({
+      color: 0x131821,
+      roughness: 0.94,
+      metalness: 0.06,
+    });
+    const windowMat = new THREE.MeshStandardMaterial({
+      map: state.textures.windows,
+      color: 0x778290,
+      emissive: 0xc68d44,
+      emissiveIntensity: 0.5,
+      roughness: 0.72,
+      metalness: 0.12,
+    });
+    const billboardMat = new THREE.MeshStandardMaterial({
+      color: 0x2a3440,
+      emissive: 0x5ba8ff,
+      emissiveIntensity: 0.65,
+      roughness: 0.4,
+      metalness: 0.2,
+    });
+    const dynamic = state.world.dynamic;
     const halfW = Core.ARENA.width * 0.5;
     const halfD = Core.ARENA.depth * 0.5;
 
     [
-      { x: 0, z: -halfD - 1.2, w: Core.ARENA.width + 8, d: 2.4 },
-      { x: 0, z: halfD + 1.2, w: Core.ARENA.width + 8, d: 2.4 },
-      { x: -halfW - 1.2, z: 0, w: 2.4, d: Core.ARENA.depth + 8 },
-      { x: halfW + 1.2, z: 0, w: 2.4, d: Core.ARENA.depth + 8 },
+      { x: 0, z: -halfD - 1.2, w: Core.ARENA.width + 10, d: 2.4 },
+      { x: 0, z: halfD + 1.2, w: Core.ARENA.width + 10, d: 2.4 },
+      { x: -halfW - 1.2, z: 0, w: 2.4, d: Core.ARENA.depth + 10 },
+      { x: halfW + 1.2, z: 0, w: 2.4, d: Core.ARENA.depth + 10 },
     ].forEach((wall) => {
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(wall.w, 6.4, wall.d),
+        new THREE.BoxGeometry(wall.w, 7.4, wall.d),
         wallMaterial
       );
-      mesh.position.set(wall.x, 3.2, wall.z);
+      mesh.position.set(wall.x, 3.7, wall.z);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       scene.add(mesh);
@@ -537,29 +633,62 @@
         new THREE.BoxGeometry(rail.w, 2.8, rail.d),
         trimMaterial
       );
-      mesh.position.set(rail.x, 2.8, rail.z);
+      mesh.position.set(rail.x, 3.2, rail.z);
       mesh.castShadow = true;
       scene.add(mesh);
     });
 
     const skyline = new THREE.Group();
-    const buildingMat = new THREE.MeshStandardMaterial({
-      color: 0x10151c,
-      roughness: 0.95,
-      metalness: 0.04,
-    });
-    for (let index = 0; index < 16; index += 1) {
-      const width = 7 + Math.random() * 10;
-      const depth = 7 + Math.random() * 10;
-      const height = 18 + Math.random() * 44;
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(width, height, depth),
-        buildingMat
+    for (let index = 0; index < 22; index += 1) {
+      const width = 9 + Math.random() * 14;
+      const depth = 8 + Math.random() * 12;
+      const height = 26 + Math.random() * 58;
+      const tower = new THREE.Group();
+      const base = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), buildingMat);
+      base.position.y = height * 0.5;
+      base.castShadow = true;
+      base.receiveShadow = true;
+      tower.add(base);
+
+      const windowPanel = new THREE.Mesh(
+        new THREE.PlaneGeometry(width * 0.82, height * 0.8),
+        windowMat.clone()
       );
-      const angle = (index / 16) * Math.PI * 2;
-      const radius = 70 + Math.random() * 24;
-      mesh.position.set(Math.cos(angle) * radius, height * 0.5, Math.sin(angle) * radius);
-      skyline.add(mesh);
+      windowPanel.position.set(0, height * 0.56, depth * 0.5 + 0.06);
+      tower.add(windowPanel);
+
+      if (Math.random() > 0.55) {
+        const billboard = new THREE.Mesh(
+          new THREE.BoxGeometry(width * 0.7, 4.2 + Math.random() * 2.6, 0.36),
+          billboardMat.clone()
+        );
+        billboard.position.set((Math.random() - 0.5) * 1.6, height * 0.68, depth * 0.5 + 0.45);
+        tower.add(billboard);
+        dynamic.skyline.push({
+          mesh: billboard,
+          baseY: billboard.position.y,
+          bob: Math.random() * Math.PI * 2,
+          speed: 0.5 + Math.random() * 0.5,
+          flicker: 0.7 + Math.random() * 0.6,
+        });
+      }
+
+      const angle = (index / 22) * Math.PI * 2;
+      const radius = 88 + Math.random() * 34;
+      tower.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+      tower.rotation.y = angle + Math.PI;
+      skyline.add(tower);
+
+      if (Math.random() > 0.5) {
+        const beacon = new THREE.PointLight(0xff5252, 1.6, 12, 2);
+        beacon.position.set(tower.position.x, height + 5, tower.position.z);
+        scene.add(beacon);
+        dynamic.beaconLights.push({
+          light: beacon,
+          phase: Math.random() * Math.PI * 2,
+          speed: 1.8 + Math.random() * 1.4,
+        });
+      }
     }
     scene.add(skyline);
 
@@ -576,11 +705,11 @@
       metalness: 0.15,
     });
     [
-      [-28, -24],
-      [28, -24],
-      [-28, 24],
-      [28, 24],
-    ].forEach(([x, z]) => {
+      [-34, -30],
+      [34, -30],
+      [-34, 30],
+      [34, 30],
+    ].forEach(([x, z], index) => {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 11, 10), poleMat);
       pole.position.set(x, 5.5, z);
       pole.castShadow = true;
@@ -590,10 +719,93 @@
       scene.add(lamp);
       const light = new THREE.SpotLight(0xffe1aa, 170, 48, Math.PI / 5.2, 0.4, 1.4);
       light.position.set(x, 10.3, z);
-      light.target.position.set(0, 0, 0);
+      light.target.position.set(Math.sign(-x) * 4, 0, Math.sign(-z) * 4);
       light.castShadow = false;
       scene.add(light, light.target);
+      dynamic.sweepLights.push({
+        light,
+        target: light.target,
+        centerX: x,
+        centerZ: z,
+        phase: index * 1.4 + Math.random() * 0.4,
+      });
     });
+
+    for (let index = 0; index < 9; index += 1) {
+      const group = new THREE.Group();
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2, 0.24, 0.42),
+        new THREE.MeshStandardMaterial({
+          color: 0x20262e,
+          emissive: 0x0f141b,
+          roughness: 0.54,
+          metalness: 0.42,
+        })
+      );
+      const headA = new THREE.Mesh(
+        new THREE.BoxGeometry(0.12, 0.12, 0.06),
+        new THREE.MeshBasicMaterial({ color: 0xffd47a })
+      );
+      const headB = headA.clone();
+      headA.position.set(0.52, 0, -0.1);
+      headB.position.set(0.52, 0, 0.1);
+      const tailA = new THREE.Mesh(
+        new THREE.BoxGeometry(0.12, 0.12, 0.06),
+        new THREE.MeshBasicMaterial({ color: 0xff3d3d })
+      );
+      const tailB = tailA.clone();
+      tailA.position.set(-0.52, 0, -0.1);
+      tailB.position.set(-0.52, 0, 0.1);
+      group.add(body, headA, headB, tailA, tailB);
+      scene.add(group);
+      dynamic.traffic.push({
+        group,
+        laneRadius: 72 + (index % 3) * 8,
+        speed: 0.16 + Math.random() * 0.08,
+        phase: (index / 9) * Math.PI * 2,
+        height: 0.55 + Math.random() * 0.18,
+      });
+    }
+
+    const heli = new THREE.Group();
+    const heliBody = new THREE.Mesh(
+      new THREE.BoxGeometry(2.3, 0.9, 1.1),
+      new THREE.MeshStandardMaterial({
+        color: 0x171b20,
+        roughness: 0.52,
+        metalness: 0.38,
+      })
+    );
+    const heliTail = new THREE.Mesh(
+      new THREE.BoxGeometry(2.4, 0.2, 0.2),
+      new THREE.MeshStandardMaterial({
+        color: 0x1f252c,
+        roughness: 0.48,
+        metalness: 0.46,
+      })
+    );
+    heliTail.position.set(-2.2, 0.15, 0);
+    const rotor = new THREE.Mesh(
+      new THREE.BoxGeometry(4.6, 0.06, 0.18),
+      new THREE.MeshStandardMaterial({
+        color: 0x343a42,
+        roughness: 0.42,
+        metalness: 0.62,
+      })
+    );
+    rotor.position.y = 0.68;
+    const spot = new THREE.SpotLight(0xdde8ff, 120, 78, Math.PI / 7, 0.56, 1.2);
+    spot.position.set(0.6, -0.1, 0);
+    spot.target.position.set(0, 0, 0);
+    heli.add(heliBody, heliTail, rotor, spot);
+    scene.add(heli, spot.target);
+    dynamic.helicopter = {
+      group: heli,
+      rotor,
+      light: spot,
+      target: spot.target,
+      phase: Math.random() * Math.PI * 2,
+    };
   }
 
   function buildBarricade(x, z, rotation) {
@@ -631,13 +843,53 @@
 
   function buildArenaProps(scene) {
     [
-      [-14, -8, 0.3],
-      [16, -10, -0.28],
-      [-19, 11, -0.18],
-      [20, 13, 0.42],
-      [0, 4, 0],
+      [-18, -12, 0.3],
+      [22, -12, -0.28],
+      [-28, 18, -0.18],
+      [30, 16, 0.42],
+      [0, 6, 0],
+      [-8, 26, 0.18],
+      [14, 28, -0.24],
+      [-30, -24, 0.54],
+      [30, -24, -0.54],
     ].forEach(([x, z, rotation]) => {
       scene.add(buildBarricade(x, z, rotation));
+    });
+
+    const crateMat = new THREE.MeshStandardMaterial({
+      color: 0x54514b,
+      roughness: 0.86,
+      metalness: 0.08,
+    });
+    const stripMat = new THREE.MeshStandardMaterial({
+      map: state.textures.hazard,
+      roughness: 0.72,
+      metalness: 0.2,
+      emissive: 0x403118,
+      emissiveIntensity: 0.22,
+    });
+    [
+      [-24, 0],
+      [24, 2],
+      [0, -22],
+      [0, 24],
+      [-14, 20],
+      [18, -18],
+    ].forEach(([x, z], index) => {
+      const stack = new THREE.Group();
+      const crateA = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.8, 2.2), crateMat);
+      crateA.position.set(0, 0.9, 0);
+      const crateB = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.8, 2.2), crateMat);
+      crateB.position.set(index % 2 === 0 ? 1.3 : -1.3, 0.9, 0.6);
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.16, 4.6), stripMat);
+      strip.position.set(0, 0.09, 0);
+      [crateA, crateB, strip].forEach((mesh) => {
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        stack.add(mesh);
+      });
+      stack.position.set(x, 0, z);
+      scene.add(stack);
     });
 
     const bloodMat = new THREE.MeshBasicMaterial({
@@ -646,14 +898,38 @@
       opacity: 0.3,
       depthWrite: false,
     });
-    for (let index = 0; index < 10; index += 1) {
+    for (let index = 0; index < 18; index += 1) {
       const decal = new THREE.Mesh(
         new THREE.CircleGeometry(0.8 + Math.random() * 1.6, 24),
         bloodMat
       );
       decal.rotation.x = -Math.PI / 2;
-      decal.position.set((Math.random() - 0.5) * 36, 0.02, (Math.random() - 0.5) * 34);
+      decal.position.set((Math.random() - 0.5) * 60, 0.02, (Math.random() - 0.5) * 58);
       scene.add(decal);
+    }
+
+    for (let index = 0; index < 7; index += 1) {
+      const smoke = new THREE.Mesh(
+        new THREE.PlaneGeometry(7 + Math.random() * 6, 7 + Math.random() * 6),
+        new THREE.MeshBasicMaterial({
+          color: 0x4a5158,
+          transparent: true,
+          opacity: 0.14 + Math.random() * 0.06,
+          depthWrite: false,
+        })
+      );
+      smoke.position.set((Math.random() - 0.5) * 54, 3 + Math.random() * 4, (Math.random() - 0.5) * 52);
+      smoke.rotation.y = Math.random() * Math.PI * 2;
+      smoke.rotation.x = -Math.PI * 0.08;
+      scene.add(smoke);
+      state.world.dynamic.smoke.push({
+        mesh: smoke,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.08 + Math.random() * 0.08,
+        driftX: -0.16 + Math.random() * 0.32,
+        driftZ: -0.16 + Math.random() * 0.32,
+        baseY: smoke.position.y,
+      });
     }
   }
 
@@ -736,15 +1012,17 @@
     const type = Core.ZOMBIE_TYPES[zombie.type] || Core.ZOMBIE_TYPES.walker;
     const scale = zombie.type === 'boss' ? 1.55 : zombie.type === 'brute' ? 1.22 : zombie.type === 'runner' ? 0.88 : 1;
     const fleshMat = new THREE.MeshStandardMaterial({
+      map: state.textures.flesh,
       color: new THREE.Color(type.tint || '#9ec593'),
-      roughness: 0.92,
-      metalness: 0.03,
+      roughness: 0.88,
+      metalness: 0.04,
       emissive: new THREE.Color(0x000000),
     });
     const clothMat = new THREE.MeshStandardMaterial({
+      map: state.textures.zombieCloth,
       color: zombie.type === 'boss' ? 0x291617 : zombie.type === 'brute' ? 0x4b463c : 0x2e322b,
-      roughness: 0.95,
-      metalness: 0.02,
+      roughness: 0.92,
+      metalness: 0.04,
       emissive: new THREE.Color(0x000000),
     });
     const eyeMat = new THREE.MeshStandardMaterial({
@@ -753,22 +1031,61 @@
       emissiveIntensity: zombie.type === 'boss' ? 3 : 1.8,
       roughness: 0.2,
     });
-    const legs = new THREE.Mesh(new THREE.BoxGeometry(0.86, 1.14, 0.58), clothMat);
+    const boneMat = new THREE.MeshStandardMaterial({
+      color: 0xd5c49a,
+      roughness: 0.82,
+      metalness: 0.03,
+      emissive: new THREE.Color(0x000000),
+    });
+    const legs = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.16, 0.62), clothMat);
     legs.position.set(0, 0.58, 0);
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(1.04, 1.35, 0.72), fleshMat);
-    torso.position.set(0, 1.62, 0);
-    torso.rotation.z = 0.09;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 18, 18), fleshMat);
-    head.position.set(0, 2.58, -0.04);
-    const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.1), eyeMat);
-    eyes.position.set(0, 2.62, -0.28);
-    const armA = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.18, 0.28), fleshMat);
-    armA.position.set(-0.72, 1.58, -0.16);
-    armA.rotation.z = 0.38;
-    const armB = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.18, 0.28), fleshMat);
-    armB.position.set(0.72, 1.58, -0.2);
-    armB.rotation.z = -0.5;
-    [legs, torso, head, eyes, armA, armB].forEach((mesh) => {
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(1.04, 1.3, 0.76), fleshMat);
+    torso.position.set(0, 1.6, 0.02);
+    torso.rotation.z = 0.08;
+    const shoulders = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.46, 0.72), clothMat);
+    shoulders.position.set(0, 2.06, -0.02);
+    shoulders.rotation.z = 0.14;
+    const spine = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.9, 0.22), boneMat);
+    spine.position.set(-0.14, 1.82, 0.36);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.36, 20, 20), fleshMat);
+    head.position.set(0.04, 2.56, -0.08);
+    const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.26), boneMat);
+    jaw.position.set(0.02, 2.3, -0.19);
+    jaw.rotation.x = 0.12;
+    const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.1), eyeMat);
+    eyes.position.set(0.02, 2.62, -0.31);
+    const armA = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.26, 0.28), fleshMat);
+    armA.position.set(-0.78, 1.58, -0.18);
+    armA.rotation.z = 0.44;
+    const armB = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.26, 0.28), fleshMat);
+    armB.position.set(0.8, 1.58, -0.18);
+    armB.rotation.z = -0.56;
+    const clawA = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.24, 0.4), boneMat);
+    clawA.position.set(-0.82, 0.98, -0.16);
+    const clawB = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.24, 0.4), boneMat);
+    clawB.position.set(0.84, 0.98, -0.16);
+    const ragA = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.82, 0.04), clothMat);
+    ragA.position.set(-0.26, 1.12, 0.34);
+    ragA.rotation.z = 0.18;
+    const ragB = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.92, 0.04), clothMat);
+    ragB.position.set(0.24, 1.04, 0.34);
+    ragB.rotation.z = -0.12;
+
+    const parts = [legs, torso, shoulders, spine, head, jaw, eyes, armA, armB, clawA, clawB, ragA, ragB];
+    if (zombie.type === 'boss') {
+      const hump = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.86, 0.72), fleshMat);
+      hump.position.set(0, 2.18, 0.2);
+      hump.rotation.x = 0.4;
+      const hornA = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.62, 10), boneMat);
+      hornA.position.set(-0.28, 2.94, -0.02);
+      hornA.rotation.z = 0.55;
+      const hornB = hornA.clone();
+      hornB.position.x = 0.34;
+      hornB.rotation.z = -0.48;
+      parts.push(hump, hornA, hornB);
+    }
+
+    parts.forEach((mesh) => {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
@@ -779,6 +1096,10 @@
       clothMat,
       eyeMat,
       arms: [armA, armB],
+      claws: [clawA, clawB],
+      torso,
+      head,
+      jaw,
       targetX: zombie.x,
       targetZ: zombie.z,
       targetYaw: zombie.yaw,
@@ -972,6 +1293,54 @@
     }
   }
 
+  function resolveAimTarget(game, player) {
+    const world = state.world;
+    if (!world || !player || !state.camera) {
+      return null;
+    }
+
+    const raycaster = world.raycaster;
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), state.camera);
+    const ray = raycaster.ray;
+    let bestZombie = null;
+    let bestDistance = Infinity;
+    const hitPoint = world.tempVecA;
+    const point = world.tempVecB;
+    const delta = world.tempVecC;
+
+    for (const zombie of game?.zombies || []) {
+      point.set(zombie.x, 1.5 + zombie.radius * 0.42, zombie.z);
+      ray.closestPointToPoint(point, hitPoint);
+      delta.copy(hitPoint).sub(ray.origin);
+      const along = delta.dot(ray.direction);
+      if (along < 2) {
+        continue;
+      }
+      const distance = hitPoint.distanceTo(point);
+      if (distance <= zombie.radius * 1.42 + 0.36 && along < bestDistance) {
+        bestDistance = along;
+        bestZombie = zombie;
+      }
+    }
+
+    if (bestZombie) {
+      return { x: bestZombie.x, z: bestZombie.z };
+    }
+
+    const planeHit = ray.intersectPlane(world.aimPlane, hitPoint);
+    if (planeHit) {
+      return {
+        x: clamp(hitPoint.x, -Core.ARENA.width * 0.56, Core.ARENA.width * 0.56),
+        z: clamp(hitPoint.z, -Core.ARENA.depth * 0.56, Core.ARENA.depth * 0.56),
+      };
+    }
+
+    return {
+      x: player.x + Math.sin(state.input.yaw) * 48,
+      z: player.z - Math.cos(state.input.yaw) * 48,
+    };
+  }
+
   function updateCamera(game, dt) {
     const camera = state.camera;
     const world = state.world;
@@ -982,21 +1351,26 @@
     const targetPos = new THREE.Vector3();
     const lookAt = new THREE.Vector3();
 
-    if (local) {
-      const forward = new THREE.Vector3(Math.sin(local.yaw), 0, -Math.cos(local.yaw));
-      const right = new THREE.Vector3(-forward.z, 0, forward.x);
-      const distance = game?.gameOver ? 11.5 : state.pointerLocked ? 7.2 : 8.6;
-      targetPos.copy(new THREE.Vector3(local.x, 0, local.z))
-        .addScaledVector(forward, -distance)
-        .addScaledVector(right, 1.6)
-        .add(new THREE.Vector3(0, game?.gameOver ? 7.4 : 5.0, 0));
-      lookAt.copy(new THREE.Vector3(local.x, PLAYER_HEIGHT + 0.28, local.z))
-        .addScaledVector(forward, 6.6);
-    } else {
-      const orbit = performance.now() * 0.00012;
-      targetPos.set(Math.cos(orbit) * 30, 12, Math.sin(orbit) * 26);
-      lookAt.set(0, 2, 0);
-    }
+      if (local) {
+        const forward = new THREE.Vector3(Math.sin(local.yaw), 0, -Math.cos(local.yaw));
+        const right = new THREE.Vector3(-forward.z, 0, forward.x);
+        const distance = game?.gameOver ? 12.8 : state.pointerLocked ? 8.6 : 9.8;
+        const aimTarget = new THREE.Vector3(
+          Number.isFinite(state.input.aimX) ? state.input.aimX : local.x + forward.x * 40,
+          1.55,
+          Number.isFinite(state.input.aimZ) ? state.input.aimZ : local.z + forward.z * 40
+        );
+        targetPos.copy(new THREE.Vector3(local.x, 0, local.z))
+          .addScaledVector(forward, -distance)
+          .addScaledVector(right, 2.3)
+          .add(new THREE.Vector3(0, game?.gameOver ? 7.8 : 5.6, 0));
+        lookAt.copy(aimTarget);
+        world.aimTarget.copy(aimTarget);
+      } else {
+        const orbit = performance.now() * 0.00012;
+        targetPos.set(Math.cos(orbit) * 30, 12, Math.sin(orbit) * 26);
+        lookAt.set(0, 2, 0);
+      }
 
     const amount = 1 - Math.pow(0.0008, dt * 60);
     world.cameraPos.lerp(targetPos, amount);
@@ -1005,39 +1379,107 @@
     camera.lookAt(world.cameraLook);
   }
 
+  function updateDynamicWorld(dt) {
+    const world = state.world;
+    if (!world) {
+      return;
+    }
+    const time = performance.now() * 0.001;
+    for (const sweep of world.dynamic.sweepLights) {
+      const radius = 11 + Math.sin(time * 0.3 + sweep.phase) * 4;
+      sweep.target.position.set(
+        sweep.centerX + Math.cos(time * 0.6 + sweep.phase) * radius,
+        0,
+        sweep.centerZ + Math.sin(time * 0.5 + sweep.phase) * radius
+      );
+    }
+    for (const beacon of world.dynamic.beaconLights) {
+      beacon.light.intensity = 0.45 + Math.max(0, Math.sin(time * beacon.speed + beacon.phase)) * 2.1;
+    }
+    for (const entry of world.dynamic.skyline) {
+      entry.mesh.position.y = entry.baseY + Math.sin(time * entry.speed + entry.bob) * 0.65;
+      entry.mesh.material.emissiveIntensity = 0.35 + Math.max(0, Math.sin(time * entry.flicker + entry.bob)) * 0.9;
+    }
+    for (const traffic of world.dynamic.traffic) {
+      const angle = time * traffic.speed + traffic.phase;
+      traffic.group.position.set(Math.cos(angle) * traffic.laneRadius, traffic.height, Math.sin(angle) * traffic.laneRadius);
+      traffic.group.rotation.y = -angle + Math.PI / 2;
+    }
+    if (world.dynamic.helicopter) {
+      const heli = world.dynamic.helicopter;
+      const angle = time * 0.16 + heli.phase;
+      heli.group.position.set(Math.cos(angle) * 58, 20 + Math.sin(time * 0.7) * 1.1, Math.sin(angle) * 52);
+      heli.group.rotation.y = -angle + Math.PI * 0.66;
+      heli.rotor.rotation.y += dt * 24;
+      heli.target.position.set(0, 0, 0);
+    }
+    for (const smoke of world.dynamic.smoke) {
+      smoke.mesh.position.x += smoke.driftX * dt;
+      smoke.mesh.position.z += smoke.driftZ * dt;
+      smoke.mesh.position.y = smoke.baseY + Math.sin(time * smoke.speed + smoke.phase) * 0.7;
+      smoke.mesh.material.opacity = 0.1 + (Math.sin(time * smoke.speed + smoke.phase) + 1) * 0.035;
+      smoke.mesh.lookAt(state.camera.position);
+      if (smoke.mesh.position.x > Core.ARENA.width * 0.5 + 20) {
+        smoke.mesh.position.x = -Core.ARENA.width * 0.5 - 20;
+      } else if (smoke.mesh.position.x < -Core.ARENA.width * 0.5 - 20) {
+        smoke.mesh.position.x = Core.ARENA.width * 0.5 + 20;
+      }
+      if (smoke.mesh.position.z > Core.ARENA.depth * 0.5 + 20) {
+        smoke.mesh.position.z = -Core.ARENA.depth * 0.5 - 20;
+      } else if (smoke.mesh.position.z < -Core.ARENA.depth * 0.5 - 20) {
+        smoke.mesh.position.z = Core.ARENA.depth * 0.5 + 20;
+      }
+    }
+    if (world.aimMarker) {
+      world.aimMarker.position.set(world.aimTarget.x, 0.05, world.aimTarget.z);
+      world.aimMarker.material.opacity = state.pointerLocked ? 0.78 : 0.4;
+      world.aimMarker.scale.setScalar(1 + Math.sin(time * 4) * 0.08);
+      world.aimMarker.visible = Boolean(currentGame() && !currentGame()?.gameOver);
+    }
+  }
+
   function animateScene(dt) {
     if (!state.world) {
       return;
     }
     const blend = 1 - Math.pow(0.002, dt * 60);
 
-    for (const mesh of state.world.players.values()) {
-      mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
-      mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
-      mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetYaw, blend);
-      mesh.position.y = mesh.userData.targetAlive ? 0 : -0.55;
-    }
+      for (const mesh of state.world.players.values()) {
+        mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
+        mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
+        mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetYaw, blend);
+        mesh.position.y = mesh.userData.targetAlive ? 0 : -0.55;
+        mesh.scale.y = lerp(mesh.scale.y, mesh.userData.targetAlive ? 1 : 0.85, blend);
+      }
 
-    for (const mesh of state.world.zombies.values()) {
-      mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend * 0.9);
-      mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend * 0.9);
-      mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetYaw, blend * 0.9);
-      mesh.userData.stridePhase += dt * 6.4;
-      mesh.userData.arms[0].rotation.x = Math.sin(mesh.userData.stridePhase) * 0.55;
-      mesh.userData.arms[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * 0.55;
-      const flash = clamp(mesh.userData.hitFlash * 7.5, 0, 1.3);
-      mesh.userData.fleshMat.emissive.setRGB(flash * 0.6, flash * 0.08, flash * 0.08);
-      mesh.userData.clothMat.emissive.setRGB(flash * 0.2, flash * 0.03, flash * 0.03);
-    }
+      for (const mesh of state.world.zombies.values()) {
+        mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend * 0.9);
+        mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend * 0.9);
+        mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetYaw, blend * 0.9);
+        mesh.userData.stridePhase += dt * 6.4;
+        mesh.userData.arms[0].rotation.x = Math.sin(mesh.userData.stridePhase) * 0.55;
+        mesh.userData.arms[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * 0.55;
+        mesh.userData.claws[0].rotation.x = Math.sin(mesh.userData.stridePhase) * 0.42;
+        mesh.userData.claws[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * 0.42;
+        mesh.userData.torso.rotation.x = 0.08 + Math.sin(mesh.userData.stridePhase * 0.5) * 0.04;
+        mesh.userData.head.rotation.z = Math.sin(mesh.userData.stridePhase * 0.4) * 0.08;
+        mesh.userData.jaw.rotation.x = 0.12 + Math.max(0, Math.sin(mesh.userData.stridePhase * 1.1)) * 0.18;
+        const flash = clamp(mesh.userData.hitFlash * 7.5, 0, 1.3);
+        mesh.userData.fleshMat.emissive.setRGB(flash * 0.6, flash * 0.08, flash * 0.08);
+        mesh.userData.clothMat.emissive.setRGB(flash * 0.2, flash * 0.03, flash * 0.03);
+        mesh.userData.eyeMat.emissiveIntensity = 1.2 + Math.sin(mesh.userData.stridePhase * 0.8) * 0.45 + flash * 0.9;
+      }
 
-    for (const mesh of state.world.pickups.values()) {
-      mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
-      mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
-      mesh.position.y = 0.58 + Math.sin(performance.now() * 0.003 + mesh.userData.targetX) * 0.08;
-      mesh.rotation.y += dt * 1.1;
-      mesh.userData.ring.rotation.z += dt * 0.6;
+      for (const mesh of state.world.pickups.values()) {
+        mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
+        mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
+        mesh.position.y = 0.58 + Math.sin(performance.now() * 0.003 + mesh.userData.targetX) * 0.08;
+        mesh.rotation.y += dt * 1.1;
+        mesh.userData.ring.rotation.z += dt * 0.6;
+      }
+
+      updateDynamicWorld(dt);
     }
-  }
 
   function resizeRenderer() {
     if (!state.renderer || !state.camera) {
@@ -1384,7 +1826,7 @@
     state.hasYawSeed = true;
   }
 
-  function composeInput() {
+  function composeInput(game) {
     let moveX = (state.keys.right ? 1 : 0) - (state.keys.left ? 1 : 0);
     let moveY = (state.keys.forward ? 1 : 0) - (state.keys.back ? 1 : 0);
     const magnitude = Math.hypot(moveX, moveY) || 1;
@@ -1396,6 +1838,19 @@
     state.input.moveY = moveY;
     state.input.fire = state.keys.fire;
     state.input.sprint = state.keys.sprint;
+    const player = localPlayer(game);
+    if (player) {
+      const target = resolveAimTarget(game, player);
+      if (target) {
+        state.input.aimX = target.x;
+        state.input.aimZ = target.z;
+        const dx = target.x - player.x;
+        const dz = target.z - player.z;
+        if (Math.hypot(dx, dz) > 0.05) {
+          state.input.yaw = normalizeAngle(Math.atan2(dx, -dz));
+        }
+      }
+    }
     return state.input;
   }
 
@@ -1409,7 +1864,7 @@
     state.lastInputSentAt = now;
     state.socket.send(JSON.stringify({
       action: 'input',
-      input: composeInput(),
+      input: state.input,
     }));
   }
 
@@ -1417,7 +1872,6 @@
     if (state.mode !== 'solo' || !state.localGame) {
       return;
     }
-    composeInput();
     Core.setPlayerInput(state.localGame, state.yourPlayerId, state.input);
     Core.step(state.localGame, dt);
   }
@@ -1427,9 +1881,11 @@
     const dt = Math.min(0.05, Math.max(0.001, (now - state.lastFrameAt) / 1000));
     state.lastFrameAt = now;
 
+    const preGame = currentGame();
+    seedYawIfNeeded(preGame);
+    composeInput(preGame);
     updateSolo(dt);
     const game = currentGame();
-    seedYawIfNeeded(game);
     processEvents(game);
     syncSceneEntities(game);
     animateScene(dt);

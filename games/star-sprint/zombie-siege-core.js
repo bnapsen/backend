@@ -7,27 +7,27 @@
 })(typeof self !== 'undefined' ? self : globalThis, function () {
   'use strict';
 
-  const ARENA = { width: 84, depth: 84 };
+  const ARENA = { width: 108, depth: 108 };
   const MAX_PLAYERS = 4;
   const MAX_EVENTS = 28;
   const PLAYER_COLORS = ['#73d9ff', '#ffd57a', '#ff9fc5', '#91f5a8'];
-  const PLAYER_SPEED = 7.1;
-  const PLAYER_SPRINT_SPEED = 10.2;
+  const PLAYER_SPEED = 7.6;
+  const PLAYER_SPRINT_SPEED = 11.1;
   const PLAYER_RADIUS = 0.72;
   const PLAYER_MAX_HEALTH = 100;
   const RESPAWN_TIME = 5.5;
-  const WAVE_START_DELAY = 2.5;
+  const WAVE_START_DELAY = 2.3;
   const BOSS_WAVE_INTERVAL = 4;
   const WEAPONS = Object.freeze({
     rifle: {
       key: 'rifle',
       label: 'Rifle',
       damage: 24,
-      range: 34,
-      cooldown: 0.18,
-      spread: 0.026,
+      range: 46,
+      cooldown: 0.17,
+      spread: 0,
       pellets: 1,
-      width: 0.72,
+      width: 0.68,
       knockback: 0.8,
       color: '#8be7ff',
     },
@@ -35,11 +35,11 @@
       key: 'smg',
       label: 'SMG',
       damage: 13,
-      range: 28,
+      range: 34,
       cooldown: 0.078,
-      spread: 0.05,
+      spread: 0,
       pellets: 1,
-      width: 0.62,
+      width: 0.58,
       knockback: 0.45,
       color: '#ffd676',
     },
@@ -47,9 +47,9 @@
       key: 'shotgun',
       label: 'Shotgun',
       damage: 10,
-      range: 18,
+      range: 22,
       cooldown: 0.58,
-      spread: 0.16,
+      spread: 0.14,
       pellets: 7,
       width: 0.92,
       knockback: 1.3,
@@ -145,6 +145,8 @@
       moveX: 0,
       moveY: 0,
       yaw: 0,
+      aimX: null,
+      aimZ: null,
       fire: false,
       sprint: false,
       weaponKey: 'rifle',
@@ -407,6 +409,12 @@
     player.input.moveX = clamp(Number(next.moveX) || 0, -1, 1);
     player.input.moveY = clamp(Number(next.moveY) || 0, -1, 1);
     player.input.yaw = normalizeAngle(Number(next.yaw) || 0);
+    player.input.aimX = Number.isFinite(Number(next.aimX))
+      ? clamp(Number(next.aimX), -ARENA.width * 0.65, ARENA.width * 0.65)
+      : null;
+    player.input.aimZ = Number.isFinite(Number(next.aimZ))
+      ? clamp(Number(next.aimZ), -ARENA.depth * 0.65, ARENA.depth * 0.65)
+      : null;
     player.input.fire = Boolean(next.fire);
     player.input.sprint = Boolean(next.sprint);
     if (WEAPONS[next.weaponKey]) {
@@ -427,18 +435,18 @@
     const edge = Math.floor(Math.random() * 4);
     let x = 0;
     let z = 0;
-    const margin = 6;
+    const margin = 10;
     if (edge === 0) {
       x = rand(-ARENA.width * 0.5 + margin, ARENA.width * 0.5 - margin);
-      z = -ARENA.depth * 0.5 - 3;
+      z = -ARENA.depth * 0.5 - 4.5;
     } else if (edge === 1) {
-      x = ARENA.width * 0.5 + 3;
+      x = ARENA.width * 0.5 + 4.5;
       z = rand(-ARENA.depth * 0.5 + margin, ARENA.depth * 0.5 - margin);
     } else if (edge === 2) {
       x = rand(-ARENA.width * 0.5 + margin, ARENA.width * 0.5 - margin);
-      z = ARENA.depth * 0.5 + 3;
+      z = ARENA.depth * 0.5 + 4.5;
     } else {
-      x = -ARENA.width * 0.5 - 3;
+      x = -ARENA.width * 0.5 - 4.5;
       z = rand(-ARENA.depth * 0.5 + margin, ARENA.depth * 0.5 - margin);
     }
     state.zombies.push({
@@ -467,7 +475,7 @@
     state.intermission = 0;
     const playerCount = Math.max(1, state.players.length);
     const bossWave = state.wave % BOSS_WAVE_INTERVAL === 0;
-    state.spawnBudget = 6 + state.wave * 2 + playerCount * 2;
+    state.spawnBudget = 8 + state.wave * 3 + playerCount * 3;
     if (bossWave) {
       state.spawnBudget += 3;
       spawnZombie(state, 'boss');
@@ -557,20 +565,41 @@
     });
   }
 
+  function aimDataForPlayer(player, weapon) {
+    const aimX = Number(player.input.aimX);
+    const aimZ = Number(player.input.aimZ);
+    if (Number.isFinite(aimX) && Number.isFinite(aimZ)) {
+      const dx = aimX - player.x;
+      const dz = aimZ - player.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance > 0.05) {
+        return {
+          baseAngle: Math.atan2(dx, -dz),
+          targetDistance: Math.min(weapon.range, distance),
+        };
+      }
+    }
+    return {
+      baseAngle: player.yaw,
+      targetDistance: weapon.range,
+    };
+  }
+
   function fireWeapon(state, player) {
     const weapon = currentWeapon(player);
+    const aimData = aimDataForPlayer(player, weapon);
     for (let pellet = 0; pellet < weapon.pellets; pellet += 1) {
-      const angle = player.yaw + rand(-weapon.spread, weapon.spread);
+      const angle = aimData.baseAngle + rand(-weapon.spread, weapon.spread);
       const dirX = Math.sin(angle);
       const dirZ = -Math.cos(angle);
       let bestZombie = null;
-      let bestAhead = weapon.range;
+      let bestAhead = aimData.targetDistance;
 
       for (const zombie of state.zombies) {
         const dx = zombie.x - player.x;
         const dz = zombie.z - player.z;
         const ahead = dx * dirX + dz * dirZ;
-        if (ahead < 0.3 || ahead > weapon.range) {
+        if (ahead < 0.3 || ahead > aimData.targetDistance) {
           continue;
         }
         const lateral = Math.abs(dx * dirZ - dz * dirX);
@@ -597,8 +626,8 @@
           state,
           player,
           weapon,
-          player.x + dirX * weapon.range,
-          player.z + dirZ * weapon.range,
+          player.x + dirX * aimData.targetDistance,
+          player.z + dirZ * aimData.targetDistance,
           false
         );
       }
@@ -631,6 +660,13 @@
     player.hurtTimer = Math.max(0, player.hurtTimer - dt);
     player.fireCooldown = Math.max(0, player.fireCooldown - dt);
     player.yaw = normalizeAngle(player.input.yaw);
+    if (Number.isFinite(player.input.aimX) && Number.isFinite(player.input.aimZ)) {
+      const dx = player.input.aimX - player.x;
+      const dz = player.input.aimZ - player.z;
+      if (Math.hypot(dx, dz) > 0.05) {
+        player.yaw = Math.atan2(dx, -dz);
+      }
+    }
     player.weaponKey = WEAPONS[player.input.weaponKey] ? player.input.weaponKey : player.weaponKey;
 
     if (!player.alive) {
@@ -780,13 +816,13 @@
       state.spawnTimer -= dt;
       if (state.spawnTimer <= 0) {
         const pool = state.wave >= 5
-          ? ['walker', 'walker', 'runner', 'runner', 'brute']
+          ? ['walker', 'walker', 'runner', 'runner', 'runner', 'brute', 'brute']
           : state.wave >= 3
-            ? ['walker', 'walker', 'runner', 'brute']
-            : ['walker', 'walker', 'runner'];
+            ? ['walker', 'walker', 'runner', 'runner', 'brute']
+            : ['walker', 'walker', 'walker', 'runner'];
         spawnZombie(state, pool[Math.floor(Math.random() * pool.length)]);
         state.spawnBudget -= 1;
-        state.spawnTimer = Math.max(0.3, 0.95 - state.wave * 0.06 - state.players.length * 0.05);
+        state.spawnTimer = Math.max(0.24, 0.88 - state.wave * 0.05 - state.players.length * 0.05);
       }
       return;
     }
