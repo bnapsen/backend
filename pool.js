@@ -86,6 +86,7 @@
     summarySignature: '',
     setupCollapsed: false,
     sidebarCollapsed: false,
+    frameHandle: 0,
     view: {
       width: 0,
       height: 0,
@@ -137,7 +138,7 @@
     image.decoding = 'async';
     image.addEventListener('load', () => {
       asset.ready = true;
-      requestAnimationFrame(drawFrame);
+      queueDrawFrame();
     });
     image.addEventListener('error', () => {
       asset.ready = false;
@@ -949,11 +950,16 @@
     const stageRect = ui.tableStage.getBoundingClientRect();
     const canvasRect = canvas.getBoundingClientRect();
     const rect = canvasRect.width > 0 && canvasRect.height > 0 ? canvasRect : stageRect;
+    if (!rect.width || !rect.height) {
+      return;
+    }
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(rect.width * dpr);
-    canvas.height = Math.round(rect.height * dpr);
-    canvas.style.width = '';
-    canvas.style.height = '';
+    const nextWidth = Math.max(1, Math.round(rect.width * dpr));
+    const nextHeight = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+      canvas.width = nextWidth;
+      canvas.height = nextHeight;
+    }
 
     const table = activeTable();
     const sceneWidth = table.width + CUE_UI.scenePadding * 2;
@@ -1741,7 +1747,15 @@
     maybeTakeSoloBotTurn(now);
   }
 
+  function queueDrawFrame() {
+    if (state.frameHandle) {
+      return;
+    }
+    state.frameHandle = requestAnimationFrame(drawFrame);
+  }
+
   function drawFrame(now = performance.now()) {
+    state.frameHandle = 0;
     stepSoloMode(now);
     stepCueUi(now);
     resizeCanvas();
@@ -1750,7 +1764,7 @@
     drawBalls();
     drawCueAndGuide();
     drawOverlay();
-    requestAnimationFrame(drawFrame);
+    queueDrawFrame();
   }
 
   function handleSnapshot(payload) {
@@ -2099,7 +2113,7 @@
   window.addEventListener('resize', resizeCanvas);
 
   hydrate();
-  drawFrame();
+  queueDrawFrame();
 
   if (state.roomCode) {
     connect('join');
