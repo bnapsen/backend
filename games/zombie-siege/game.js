@@ -215,7 +215,7 @@
         : 'Live room connected.';
     }
     if (state.mode === 'solo') {
-      return 'Solo run is live. Click into the arena to lock the mouse and test the new hitscan gunplay.';
+      return 'Solo run is live. Move the mouse over the arena to aim, then light up the breach.';
     }
     return 'Host a live room, join by room code, or jump into a solo run instantly.';
   }
@@ -469,16 +469,16 @@
     });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.12;
+    renderer.toneMappingExposure = 1.2;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x06080b);
-    scene.fog = new THREE.FogExp2(0x06080b, 0.022);
+    scene.fog = new THREE.FogExp2(0x06080b, 0.018);
 
-    const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 240);
+    const camera = new THREE.PerspectiveCamera(58, 16 / 9, 0.1, 240);
     camera.position.set(0, 7, 11);
 
     state.renderer = renderer;
@@ -531,6 +531,10 @@
     moon.shadow.camera.top = 70;
     moon.shadow.camera.bottom = -70;
     scene.add(moon);
+
+    const rim = new THREE.DirectionalLight(0xffb784, 0.46);
+    rim.position.set(-26, 14, -18);
+    scene.add(rim);
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(Core.ARENA.width + 22, Core.ARENA.depth + 22),
@@ -943,20 +947,20 @@
     const group = new THREE.Group();
     const accent = new THREE.Color(player.color || '#73d9ff');
     const fabricMat = new THREE.MeshStandardMaterial({
-      color: 0x20252b,
-      roughness: 0.92,
-      metalness: 0.02,
+      color: 0x1b2026,
+      roughness: 0.88,
+      metalness: 0.04,
     });
     const armorMat = new THREE.MeshStandardMaterial({
-      color: 0x3d454d,
-      roughness: 0.58,
-      metalness: 0.18,
+      color: 0x46505a,
+      roughness: 0.45,
+      metalness: 0.24,
     });
     const accentMat = new THREE.MeshStandardMaterial({
       color: accent,
-      emissive: accent.clone().multiplyScalar(0.1),
-      roughness: 0.44,
-      metalness: 0.15,
+      emissive: accent.clone().multiplyScalar(0.18),
+      roughness: 0.34,
+      metalness: 0.22,
     });
     const skinMat = new THREE.MeshStandardMaterial({
       color: 0xd8b39d,
@@ -965,22 +969,91 @@
     });
     const gunMat = new THREE.MeshStandardMaterial({
       color: 0x171a1f,
-      roughness: 0.42,
-      metalness: 0.68,
+      roughness: 0.32,
+      metalness: 0.78,
       emissive: new THREE.Color(0x000000),
     });
+    const visorMat = new THREE.MeshStandardMaterial({
+      color: 0x6fd4ff,
+      emissive: 0x214f70,
+      emissiveIntensity: 0.5,
+      roughness: 0.16,
+      metalness: 0.88,
+      transparent: true,
+      opacity: 0.92,
+    });
+    const muzzleMat = new THREE.MeshBasicMaterial({
+      color: 0xffdf9a,
+      transparent: true,
+      opacity: 0,
+    });
 
-    const legs = new THREE.Mesh(new THREE.BoxGeometry(0.88, 1.2, 0.6), fabricMat);
-    legs.position.set(0, 0.64, 0);
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(1.14, 1.28, 0.7), armorMat);
-    torso.position.set(0, 1.7, 0);
-    const vest = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.84, 0.74), accentMat);
-    vest.position.set(0, 1.64, 0.06);
+    const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.42, 0.58), fabricMat);
+    pelvis.position.set(0, 1.04, 0.02);
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(1.08, 1.18, 0.68), armorMat);
+    torso.position.set(0, 1.78, 0.02);
+    const chest = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.82, 0.3), accentMat);
+    chest.position.set(0, 1.76, 0.39);
+    const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.92, 0.26), armorMat);
+    backpack.position.set(0, 1.82, -0.42);
+    const shoulderA = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.32, 0.46), armorMat);
+    shoulderA.position.set(-0.72, 2.1, 0.02);
+    const shoulderB = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.32, 0.46), armorMat);
+    shoulderB.position.set(0.72, 2.1, 0.02);
+    const thighA = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.72, 0.36), fabricMat);
+    thighA.position.set(-0.24, 0.64, 0.02);
+    const thighB = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.72, 0.36), fabricMat);
+    thighB.position.set(0.24, 0.64, 0.02);
+    const shinA = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.72, 0.28), armorMat);
+    shinA.position.set(-0.24, 0.02, 0.04);
+    const shinB = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.72, 0.28), armorMat);
+    shinB.position.set(0.24, 0.02, 0.04);
+    const bootA = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.56), gunMat);
+    bootA.position.set(-0.24, -0.38, 0.12);
+    const bootB = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.56), gunMat);
+    bootB.position.set(0.24, -0.38, 0.12);
+    const armA = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.72, 0.26), armorMat);
+    armA.position.set(-0.82, 1.66, -0.04);
+    armA.rotation.z = 0.2;
+    const armB = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.72, 0.26), armorMat);
+    armB.position.set(0.82, 1.68, -0.16);
+    armB.rotation.z = -0.36;
+    const forearmA = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.7, 0.22), fabricMat);
+    forearmA.position.set(-0.88, 1.08, -0.12);
+    forearmA.rotation.z = 0.12;
+    const forearmB = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.76, 0.22), fabricMat);
+    forearmB.position.set(0.94, 1.12, -0.44);
+    forearmB.rotation.z = -0.3;
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 20, 20), skinMat);
     head.position.set(0, 2.62, 0);
-    const gun = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 1.05), gunMat);
-    gun.position.set(0.38, 1.68, -0.52);
-    gun.rotation.x = Math.PI * 0.04;
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.39, 22, 18), armorMat);
+    helmet.position.set(0, 2.73, 0.02);
+    helmet.scale.set(1.02, 0.72, 1.08);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.24), visorMat);
+    visor.position.set(0, 2.62, 0.26);
+
+    const rifle = new THREE.Group();
+    const rifleBody = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, 1.08), gunMat);
+    rifleBody.position.set(0, 0, -0.04);
+    const rifleBarrel = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.62), gunMat);
+    rifleBarrel.position.set(0, 0.02, -0.8);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.42), armorMat);
+    stock.position.set(0, -0.02, 0.54);
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.28, 0.2), armorMat);
+    mag.position.set(0, -0.16, -0.08);
+    const optic = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, 0.22), accentMat);
+    optic.position.set(0, 0.16, -0.12);
+    const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), muzzleMat);
+    muzzle.position.set(0, 0.02, -1.12);
+    [rifleBody, rifleBarrel, stock, mag, optic, muzzle].forEach((mesh) => {
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      rifle.add(mesh);
+    });
+    rifle.position.set(0.5, 1.58, -0.38);
+    rifle.rotation.x = 0.06;
+    rifle.rotation.z = -0.08;
+
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(0.86, 0.04, 10, 24),
       new THREE.MeshBasicMaterial({
@@ -991,17 +1064,48 @@
     );
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.06;
-    [legs, torso, vest, head, gun].forEach((mesh) => {
+    [
+      pelvis,
+      torso,
+      chest,
+      backpack,
+      shoulderA,
+      shoulderB,
+      thighA,
+      thighB,
+      shinA,
+      shinB,
+      bootA,
+      bootB,
+      armA,
+      armB,
+      forearmA,
+      forearmB,
+      head,
+      helmet,
+      visor,
+    ].forEach((mesh) => {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
     });
+    group.add(rifle);
     group.add(ring);
     group.add(createLabelSprite(player.name, player.color || '#73d9ff'));
     group.userData = {
       gunMat,
       accentMat,
       ringMat: ring.material,
+      visorMat,
+      muzzleMat,
+      upperArms: [armA, armB],
+      forearms: [forearmA, forearmB],
+      thighs: [thighA, thighB],
+      shins: [shinA, shinB],
+      backpack,
+      rifle,
+      walkPhase: Math.random() * Math.PI * 2,
+      flash: 0,
       labelHeight: 3.5,
       targetX: player.x,
       targetZ: player.z,
@@ -1043,52 +1147,105 @@
       metalness: 0.03,
       emissive: new THREE.Color(0x000000),
     });
-    const legs = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.16, 0.62), clothMat);
-    legs.position.set(0, 0.58, 0);
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(1.04, 1.3, 0.76), fleshMat);
-    torso.position.set(0, 1.6, 0.02);
-    torso.rotation.z = 0.08;
-    const shoulders = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.46, 0.72), clothMat);
-    shoulders.position.set(0, 2.06, -0.02);
-    shoulders.rotation.z = 0.14;
-    const spine = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.9, 0.22), boneMat);
-    spine.position.set(-0.14, 1.82, 0.36);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.36, 20, 20), fleshMat);
-    head.position.set(0.04, 2.56, -0.08);
-    const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.26), boneMat);
-    jaw.position.set(0.02, 2.3, -0.19);
-    jaw.rotation.x = 0.12;
-    const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.1), eyeMat);
-    eyes.position.set(0.02, 2.62, -0.31);
-    const armA = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.26, 0.28), fleshMat);
-    armA.position.set(-0.78, 1.58, -0.18);
-    armA.rotation.z = 0.44;
-    const armB = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.26, 0.28), fleshMat);
-    armB.position.set(0.8, 1.58, -0.18);
-    armB.rotation.z = -0.56;
-    const clawA = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.24, 0.4), boneMat);
-    clawA.position.set(-0.82, 0.98, -0.16);
-    const clawB = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.24, 0.4), boneMat);
-    clawB.position.set(0.84, 0.98, -0.16);
-    const ragA = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.82, 0.04), clothMat);
-    ragA.position.set(-0.26, 1.12, 0.34);
+    const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.42, 0.58), clothMat);
+    pelvis.position.set(0, 1.02, 0.04);
+    const thighA = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.76, 0.34), clothMat);
+    thighA.position.set(-0.24, 0.62, 0.04);
+    const thighB = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.76, 0.34), clothMat);
+    thighB.position.set(0.24, 0.62, 0.04);
+    const shinA = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.74, 0.26), boneMat);
+    shinA.position.set(-0.24, -0.02, 0.08);
+    const shinB = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.74, 0.26), boneMat);
+    shinB.position.set(0.24, -0.02, 0.08);
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(1.02, 1.22, 0.72), fleshMat);
+    torso.position.set(0, 1.72, 0.08);
+    torso.rotation.z = 0.05;
+    torso.rotation.x = 0.12;
+    const shoulders = new THREE.Mesh(new THREE.BoxGeometry(1.34, 0.42, 0.7), clothMat);
+    shoulders.position.set(0, 2.16, -0.04);
+    shoulders.rotation.z = 0.1;
+    const ribCage = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.48, 0.18), boneMat);
+    ribCage.position.set(-0.04, 1.74, 0.46);
+    const spine = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.94, 0.18), boneMat);
+    spine.position.set(-0.14, 1.84, 0.34);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 20, 20), fleshMat);
+    head.position.set(0.04, 2.62, -0.12);
+    const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 0.3), boneMat);
+    jaw.position.set(0.04, 2.34, -0.24);
+    jaw.rotation.x = 0.16;
+    const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.1), eyeMat);
+    eyes.position.set(0.04, 2.64, -0.34);
+    const armA = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.88, 0.26), fleshMat);
+    armA.position.set(-0.82, 1.74, -0.18);
+    armA.rotation.z = 0.54;
+    const armB = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.88, 0.26), fleshMat);
+    armB.position.set(0.84, 1.68, -0.2);
+    armB.rotation.z = -0.62;
+    const forearmA = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.84, 0.22), boneMat);
+    forearmA.position.set(-0.94, 1.06, -0.22);
+    forearmA.rotation.z = 0.24;
+    const forearmB = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.84, 0.22), boneMat);
+    forearmB.position.set(0.98, 1.0, -0.24);
+    forearmB.rotation.z = -0.28;
+    const clawA = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.28, 0.44), boneMat);
+    clawA.position.set(-0.98, 0.46, -0.22);
+    const clawB = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.28, 0.44), boneMat);
+    clawB.position.set(1.02, 0.42, -0.24);
+    const ragA = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.9, 0.04), clothMat);
+    ragA.position.set(-0.28, 1.06, 0.34);
     ragA.rotation.z = 0.18;
-    const ragB = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.92, 0.04), clothMat);
-    ragB.position.set(0.24, 1.04, 0.34);
+    const ragB = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.98, 0.04), clothMat);
+    ragB.position.set(0.24, 1.0, 0.36);
     ragB.rotation.z = -0.12;
+    const shoulderSpikeA = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.38, 8), boneMat);
+    shoulderSpikeA.position.set(-0.44, 2.38, 0.08);
+    shoulderSpikeA.rotation.z = 0.4;
+    const shoulderSpikeB = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.38, 8), boneMat);
+    shoulderSpikeB.position.set(0.5, 2.34, 0.08);
+    shoulderSpikeB.rotation.z = -0.38;
 
-    const parts = [legs, torso, shoulders, spine, head, jaw, eyes, armA, armB, clawA, clawB, ragA, ragB];
+    const parts = [
+      pelvis,
+      thighA,
+      thighB,
+      shinA,
+      shinB,
+      torso,
+      shoulders,
+      ribCage,
+      spine,
+      head,
+      jaw,
+      eyes,
+      armA,
+      armB,
+      forearmA,
+      forearmB,
+      clawA,
+      clawB,
+      ragA,
+      ragB,
+      shoulderSpikeA,
+      shoulderSpikeB,
+    ];
     if (zombie.type === 'boss') {
-      const hump = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.86, 0.72), fleshMat);
-      hump.position.set(0, 2.18, 0.2);
+      const hump = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.94, 0.76), fleshMat);
+      hump.position.set(0, 2.12, 0.22);
       hump.rotation.x = 0.4;
-      const hornA = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.62, 10), boneMat);
+      const hornA = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.68, 10), boneMat);
       hornA.position.set(-0.28, 2.94, -0.02);
       hornA.rotation.z = 0.55;
       const hornB = hornA.clone();
       hornB.position.x = 0.34;
       hornB.rotation.z = -0.48;
-      parts.push(hump, hornA, hornB);
+      const spineRow = [];
+      for (let index = 0; index < 4; index += 1) {
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.52 - index * 0.04, 8), boneMat);
+        spike.position.set(0, 2.56 - index * 0.22, 0.58 - index * 0.12);
+        spike.rotation.x = Math.PI * 0.58;
+        spineRow.push(spike);
+      }
+      parts.push(hump, hornA, hornB, ...spineRow);
     }
 
     parts.forEach((mesh) => {
@@ -1102,8 +1259,12 @@
       clothMat,
       eyeMat,
       arms: [armA, armB],
+      forearms: [forearmA, forearmB],
+      legs: [thighA, thighB],
+      shins: [shinA, shinB],
       claws: [clawA, clawB],
       torso,
+      shoulders,
       head,
       jaw,
       targetX: zombie.x,
@@ -1244,6 +1405,7 @@
           mesh.userData.targetAlive = player.alive;
           mesh.userData.health = player.health;
           mesh.userData.maxHealth = player.maxHealth;
+          mesh.userData.flash = player.flash || 0;
           mesh.visible = true;
           const accentIntensity = player.alive ? 0.12 : 0.03;
           mesh.userData.accentMat.emissiveIntensity = accentIntensity;
@@ -1305,39 +1467,27 @@
       return null;
     }
 
+    if (!state.mouse.inside) {
+      return {
+        x: player.x + Math.sin(state.input.yaw) * 36,
+        z: player.z - Math.cos(state.input.yaw) * 36,
+      };
+    }
+
     const raycaster = world.raycaster;
     raycaster.setFromCamera(new THREE.Vector2(state.mouse.ndcX, state.mouse.ndcY), state.camera);
     const ray = raycaster.ray;
-    let bestZombie = null;
-    let bestDistance = Infinity;
     const hitPoint = world.tempVecA;
-    const point = world.tempVecB;
-    const delta = world.tempVecC;
-
-    for (const zombie of game?.zombies || []) {
-      point.set(zombie.x, 1.5 + zombie.radius * 0.42, zombie.z);
-      ray.closestPointToPoint(point, hitPoint);
-      delta.copy(hitPoint).sub(ray.origin);
-      const along = delta.dot(ray.direction);
-      if (along < 2) {
-        continue;
-      }
-      const distance = hitPoint.distanceTo(point);
-      if (distance <= zombie.radius * 1.42 + 0.36 && along < bestDistance) {
-        bestDistance = along;
-        bestZombie = zombie;
-      }
-    }
-
-    if (bestZombie) {
-      return { x: bestZombie.x, z: bestZombie.z };
-    }
 
     const planeHit = ray.intersectPlane(world.aimPlane, hitPoint);
     if (planeHit) {
+      const dx = hitPoint.x - player.x;
+      const dz = hitPoint.z - player.z;
+      const distance = Math.hypot(dx, dz) || 1;
+      const clampedDistance = clamp(distance, 4, 58);
       return {
-        x: clamp(hitPoint.x, -Core.ARENA.width * 0.56, Core.ARENA.width * 0.56),
-        z: clamp(hitPoint.z, -Core.ARENA.depth * 0.56, Core.ARENA.depth * 0.56),
+        x: clamp(player.x + (dx / distance) * clampedDistance, -Core.ARENA.width * 0.56, Core.ARENA.width * 0.56),
+        z: clamp(player.z + (dz / distance) * clampedDistance, -Core.ARENA.depth * 0.56, Core.ARENA.depth * 0.56),
       };
     }
 
@@ -1360,27 +1510,28 @@
     if (local) {
       const forward = new THREE.Vector3(Math.sin(local.yaw), 0, -Math.cos(local.yaw));
       const right = new THREE.Vector3(-forward.z, 0, forward.x);
-      const distance = game?.gameOver ? 9.8 : 7.1;
-      const aimTarget = new THREE.Vector3(
+      const desiredAim = new THREE.Vector3(
         Number.isFinite(state.input.aimX) ? state.input.aimX : local.x + forward.x * 40,
         1.55,
         Number.isFinite(state.input.aimZ) ? state.input.aimZ : local.z + forward.z * 40
       );
+      const aimBlend = 1 - Math.pow(0.22, dt * 7);
+      world.aimTarget.lerp(desiredAim, aimBlend);
+      const distance = game?.gameOver ? 8.9 : 7.15;
       const shoulder = new THREE.Vector3(local.x, PLAYER_HEIGHT + 0.45, local.z)
-        .addScaledVector(right, 1.15);
+        .addScaledVector(right, 1.04);
       targetPos.copy(shoulder)
         .addScaledVector(forward, -distance)
-        .addScaledVector(right, 1.25)
-        .add(new THREE.Vector3(0, game?.gameOver ? 4.1 : 3.05, 0));
-      lookAt.copy(shoulder).lerp(aimTarget, 0.34);
-      world.aimTarget.copy(aimTarget);
+        .addScaledVector(right, 0.64)
+        .add(new THREE.Vector3(0, game?.gameOver ? 4 : 2.95, 0));
+      lookAt.copy(shoulder).lerp(world.aimTarget, 0.36);
     } else {
       const orbit = performance.now() * 0.00012;
       targetPos.set(Math.cos(orbit) * 30, 12, Math.sin(orbit) * 26);
-        lookAt.set(0, 2, 0);
-      }
+      lookAt.set(0, 2, 0);
+    }
 
-    const amount = 1 - Math.pow(0.0008, dt * 60);
+    const amount = 1 - Math.pow(0.12, dt * 7);
     world.cameraPos.lerp(targetPos, amount);
     world.cameraLook.lerp(lookAt, amount);
     camera.position.copy(world.cameraPos);
@@ -1452,42 +1603,69 @@
     }
     const blend = 1 - Math.pow(0.002, dt * 60);
 
-      for (const mesh of state.world.players.values()) {
-        mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
-        mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
-        mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetYaw, blend);
-        mesh.position.y = mesh.userData.targetAlive ? 0 : -0.55;
-        mesh.scale.y = lerp(mesh.scale.y, mesh.userData.targetAlive ? 1 : 0.85, blend);
-      }
-
-      for (const mesh of state.world.zombies.values()) {
-        mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend * 0.9);
-        mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend * 0.9);
-        mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetYaw, blend * 0.9);
-        mesh.userData.stridePhase += dt * 6.4;
-        mesh.userData.arms[0].rotation.x = Math.sin(mesh.userData.stridePhase) * 0.55;
-        mesh.userData.arms[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * 0.55;
-        mesh.userData.claws[0].rotation.x = Math.sin(mesh.userData.stridePhase) * 0.42;
-        mesh.userData.claws[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * 0.42;
-        mesh.userData.torso.rotation.x = 0.08 + Math.sin(mesh.userData.stridePhase * 0.5) * 0.04;
-        mesh.userData.head.rotation.z = Math.sin(mesh.userData.stridePhase * 0.4) * 0.08;
-        mesh.userData.jaw.rotation.x = 0.12 + Math.max(0, Math.sin(mesh.userData.stridePhase * 1.1)) * 0.18;
-        const flash = clamp(mesh.userData.hitFlash * 7.5, 0, 1.3);
-        mesh.userData.fleshMat.emissive.setRGB(flash * 0.6, flash * 0.08, flash * 0.08);
-        mesh.userData.clothMat.emissive.setRGB(flash * 0.2, flash * 0.03, flash * 0.03);
-        mesh.userData.eyeMat.emissiveIntensity = 1.2 + Math.sin(mesh.userData.stridePhase * 0.8) * 0.45 + flash * 0.9;
-      }
-
-      for (const mesh of state.world.pickups.values()) {
-        mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
-        mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
-        mesh.position.y = 0.58 + Math.sin(performance.now() * 0.003 + mesh.userData.targetX) * 0.08;
-        mesh.rotation.y += dt * 1.1;
-        mesh.userData.ring.rotation.z += dt * 0.6;
-      }
-
-      updateDynamicWorld(dt);
+    for (const mesh of state.world.players.values()) {
+      const moveDelta = Math.hypot(mesh.userData.targetX - mesh.position.x, mesh.userData.targetZ - mesh.position.z);
+      const moving = mesh.userData.targetAlive && moveDelta > 0.025;
+      mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
+      mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
+      mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetYaw, blend);
+      mesh.userData.walkPhase += dt * (moving ? 10.8 : 3.2);
+      const bob = moving ? Math.sin(mesh.userData.walkPhase) * 0.07 : 0;
+      const recoil = clamp(mesh.userData.flash || 0, 0, 1);
+      mesh.position.y = mesh.userData.targetAlive ? bob : -0.55;
+      mesh.scale.y = lerp(mesh.scale.y, mesh.userData.targetAlive ? 1 : 0.85, blend);
+      mesh.userData.thighs[0].rotation.x = Math.sin(mesh.userData.walkPhase) * 0.34;
+      mesh.userData.thighs[1].rotation.x = Math.sin(mesh.userData.walkPhase + Math.PI) * 0.34;
+      mesh.userData.shins[0].rotation.x = Math.max(0, -Math.sin(mesh.userData.walkPhase)) * 0.24;
+      mesh.userData.shins[1].rotation.x = Math.max(0, -Math.sin(mesh.userData.walkPhase + Math.PI)) * 0.24;
+      mesh.userData.upperArms[0].rotation.x = -0.26 + Math.sin(mesh.userData.walkPhase + Math.PI) * 0.18;
+      mesh.userData.upperArms[1].rotation.x = -0.5 + recoil * 0.3;
+      mesh.userData.forearms[0].rotation.x = -0.42 + Math.max(0, Math.sin(mesh.userData.walkPhase + Math.PI)) * 0.1;
+      mesh.userData.forearms[1].rotation.x = -0.52 - recoil * 0.18;
+      mesh.userData.rifle.rotation.x = 0.06 + recoil * 0.12;
+      mesh.userData.rifle.position.y = 1.58 + bob * 0.22;
+      mesh.userData.backpack.rotation.x = Math.sin(mesh.userData.walkPhase * 0.5) * 0.03;
+      mesh.userData.visorMat.emissiveIntensity = 0.42 + recoil * 1.1;
+      mesh.userData.muzzleMat.opacity = recoil * 0.95;
+      mesh.userData.muzzleMat.color.set(recoil > 0.1 ? 0xffe3a8 : 0xffdf9a);
     }
+
+    for (const mesh of state.world.zombies.values()) {
+      mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend * 0.9);
+      mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend * 0.9);
+      mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetYaw, blend * 0.9);
+      mesh.userData.stridePhase += dt * 6.4;
+      mesh.userData.legs[0].rotation.x = Math.sin(mesh.userData.stridePhase) * 0.34;
+      mesh.userData.legs[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * 0.34;
+      mesh.userData.shins[0].rotation.x = Math.max(0, -Math.sin(mesh.userData.stridePhase)) * 0.28;
+      mesh.userData.shins[1].rotation.x = Math.max(0, -Math.sin(mesh.userData.stridePhase + Math.PI)) * 0.28;
+      mesh.userData.arms[0].rotation.x = Math.sin(mesh.userData.stridePhase) * 0.55;
+      mesh.userData.arms[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * 0.55;
+      mesh.userData.forearms[0].rotation.x = -0.2 + Math.sin(mesh.userData.stridePhase) * 0.44;
+      mesh.userData.forearms[1].rotation.x = -0.2 + Math.sin(mesh.userData.stridePhase + Math.PI) * 0.44;
+      mesh.userData.claws[0].rotation.x = Math.sin(mesh.userData.stridePhase) * 0.42;
+      mesh.userData.claws[1].rotation.x = Math.sin(mesh.userData.stridePhase + Math.PI) * 0.42;
+      mesh.userData.torso.rotation.x = 0.12 + Math.sin(mesh.userData.stridePhase * 0.5) * 0.05;
+      mesh.userData.shoulders.rotation.z = 0.1 + Math.sin(mesh.userData.stridePhase * 0.36) * 0.04;
+      mesh.userData.head.rotation.z = Math.sin(mesh.userData.stridePhase * 0.4) * 0.08;
+      mesh.userData.head.rotation.x = 0.06 + Math.sin(mesh.userData.stridePhase * 0.32) * 0.04;
+      mesh.userData.jaw.rotation.x = 0.16 + Math.max(0, Math.sin(mesh.userData.stridePhase * 1.1)) * 0.18;
+      const flash = clamp(mesh.userData.hitFlash * 7.5, 0, 1.3);
+      mesh.userData.fleshMat.emissive.setRGB(flash * 0.6, flash * 0.08, flash * 0.08);
+      mesh.userData.clothMat.emissive.setRGB(flash * 0.2, flash * 0.03, flash * 0.03);
+      mesh.userData.eyeMat.emissiveIntensity = 1.35 + Math.sin(mesh.userData.stridePhase * 0.8) * 0.52 + flash * 1.05;
+    }
+
+    for (const mesh of state.world.pickups.values()) {
+      mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
+      mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
+      mesh.position.y = 0.58 + Math.sin(performance.now() * 0.003 + mesh.userData.targetX) * 0.08;
+      mesh.rotation.y += dt * 1.1;
+      mesh.userData.ring.rotation.z += dt * 0.6;
+    }
+
+    updateDynamicWorld(dt);
+  }
 
   function resizeRenderer() {
     if (!state.renderer || !state.camera) {
@@ -1753,7 +1931,7 @@
 
     if (!game) {
       ui.overlayTitle.textContent = 'Zombie Siege 3D Live';
-      ui.overlayCopy.textContent = 'Host a room, join a friend, or start solo. The game now uses regular third-person mouse aiming instead of pointer lock.';
+      ui.overlayCopy.textContent = 'Host a room, join a friend, or start solo. Move the mouse over the arena to aim and click to fire.';
       ui.overlayMeta.textContent = 'Controls: WASD move, move the mouse to aim, Left Click fires, Shift sprints, 1 2 3 swaps weapons.';
       ui.startBtn.textContent = 'Start solo instantly';
       return;

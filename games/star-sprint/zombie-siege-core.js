@@ -11,8 +11,9 @@
   const MAX_PLAYERS = 4;
   const MAX_EVENTS = 28;
   const PLAYER_COLORS = ['#73d9ff', '#ffd57a', '#ff9fc5', '#91f5a8'];
-  const PLAYER_SPEED = 7.6;
-  const PLAYER_SPRINT_SPEED = 11.1;
+  const PLAYER_SPEED = 6.9;
+  const PLAYER_SPRINT_SPEED = 9.8;
+  const PLAYER_TURN_SPEED = 11.6;
   const PLAYER_RADIUS = 0.72;
   const PLAYER_MAX_HEALTH = 100;
   const RESPAWN_TIME = 5.5;
@@ -126,6 +127,14 @@
       angle += Math.PI * 2;
     }
     return angle;
+  }
+
+  function rotateToward(current, target, maxStep) {
+    const delta = normalizeAngle(target - current);
+    if (Math.abs(delta) <= maxStep) {
+      return normalizeAngle(target);
+    }
+    return normalizeAngle(current + Math.sign(delta) * maxStep);
   }
 
   function pushEvent(state, type, payload) {
@@ -367,7 +376,7 @@
     if (state.wave === 0) {
       state.intermission = 1.4;
       setStatus(state, `${player.name} is gearing up. Wave one is about to start.`);
-      setObjective(state, 'Click into the arena, lock your aim, and clear the breach.');
+      setObjective(state, 'Move the mouse over the arena, line up your shots, and clear the breach.');
     } else {
       setStatus(state, `${player.name} joined the fight. Cover the new teammate.`);
     }
@@ -659,13 +668,15 @@
     player.flash = Math.max(0, player.flash - dt * 3.4);
     player.hurtTimer = Math.max(0, player.hurtTimer - dt);
     player.fireCooldown = Math.max(0, player.fireCooldown - dt);
-    player.yaw = normalizeAngle(player.input.yaw);
+    player.yaw = normalizeAngle(player.yaw);
     if (Number.isFinite(player.input.aimX) && Number.isFinite(player.input.aimZ)) {
       const dx = player.input.aimX - player.x;
       const dz = player.input.aimZ - player.z;
       if (Math.hypot(dx, dz) > 0.05) {
-        player.yaw = Math.atan2(dx, -dz);
+        player.yaw = rotateToward(player.yaw, Math.atan2(dx, -dz), PLAYER_TURN_SPEED * dt);
       }
+    } else {
+      player.yaw = rotateToward(player.yaw, normalizeAngle(player.input.yaw), PLAYER_TURN_SPEED * dt);
     }
     player.weaponKey = WEAPONS[player.input.weaponKey] ? player.input.weaponKey : player.weaponKey;
 

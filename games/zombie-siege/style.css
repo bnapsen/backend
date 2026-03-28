@@ -388,13 +388,15 @@ button.secondary {
   position: relative;
   margin-top: 10px;
   aspect-ratio: 16 / 9;
-  min-height: clamp(520px, 72vh, 940px);
+  min-height: clamp(560px, 75vh, 980px);
   border-radius: 28px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background:
-      radial-gradient(circle at top, rgba(255, 201, 133, 0.12), transparent 28%),
+      radial-gradient(circle at top, rgba(255, 201, 133, 0.16), transparent 28%),
+      radial-gradient(circle at center, rgba(91, 133, 214, 0.08), transparent 58%),
       linear-gradient(180deg, rgba(7, 10, 14, 0.95), rgba(3, 5, 8, 0.98));
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
 }
 
 .arena-stage.live {
@@ -411,12 +413,12 @@ button.secondary {
   position: absolute;
   left: var(--crosshair-x, 50%);
   top: var(--crosshair-y, 50%);
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   transform: translate(-50%, -50%);
   border-radius: 999px;
-  border: 2px solid rgba(255, 217, 141, 0.94);
-  box-shadow: 0 0 18px rgba(255, 217, 141, 0.42);
+  border: 2px solid rgba(255, 225, 176, 0.98);
+  box-shadow: 0 0 22px rgba(255, 217, 141, 0.48);
   pointer-events: none;
   transition: opacity 120ms ease, transform 60ms linear;
 }
