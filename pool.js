@@ -121,6 +121,7 @@
     minCueVisualScale: 0.52,
   });
   const SOLO_BOT_NAME = 'Orbit Bot';
+  const MAX_RAW_POWER = 1 + Math.pow(CUE_UI.maxPower - 1, 1 / 0.82);
 
   function capitalize(value) {
     return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
@@ -302,13 +303,20 @@
     const dragY = state.aimAnchor.y - point.y;
     const pullback = dragX * direction.x + dragY * direction.y;
     const lateral = Math.abs(dragX * -direction.y + dragY * direction.x);
-    const rawPower = Math.max(0, pullback - 4) / CUE_UI.powerRange;
+    const viewportBounds = pointerViewportBounds();
+    const availablePullback = distanceToRectEdge(state.aimAnchor, { x: -direction.x, y: -direction.y }, viewportBounds);
+    const adaptiveRange = availablePullback > 0
+      ? Math.min(CUE_UI.powerRange, Math.max(10, (availablePullback - 4) / MAX_RAW_POWER))
+      : CUE_UI.powerRange;
+    const rawPower = Math.max(0, pullback - 4) / adaptiveRange;
     const easedPower = rawPower <= 1
       ? Math.pow(rawPower, 0.9)
       : 1 + Math.pow(rawPower - 1, 0.82);
     return {
       pullback,
       lateral,
+      adaptiveRange,
+      availablePullback,
       power: clamp(easedPower, 0, CUE_UI.maxPower),
     };
   }
@@ -751,6 +759,16 @@
       best = Math.min(best, (bounds.minY - origin.y) / direction.y);
     }
     return Number.isFinite(best) && best > 0 ? best : 0;
+  }
+
+  function pointerViewportBounds() {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      minX: (0 - rect.left - state.view.offsetX) / state.view.scale,
+      maxX: (window.innerWidth - rect.left - state.view.offsetX) / state.view.scale,
+      minY: (0 - rect.top - state.view.offsetY) / state.view.scale,
+      maxY: (window.innerHeight - rect.top - state.view.offsetY) / state.view.scale,
+    };
   }
 
   function rayCircleIntersection(origin, direction, center, radius) {
