@@ -7,17 +7,29 @@
 })(typeof self !== 'undefined' ? self : globalThis, function () {
   'use strict';
 
-  const ARENA = { width: 136, depth: 136 };
+  const ARENA = { width: 176, depth: 176 };
   const MAX_PLAYERS = 4;
   const MAX_EVENTS = 28;
   const PLAYER_COLORS = ['#73d9ff', '#ffd57a', '#ff9fc5', '#91f5a8'];
-  const PLAYER_SPEED = 6.9;
-  const PLAYER_SPRINT_SPEED = 9.8;
+  const PLAYER_SPEED = 7.35;
+  const PLAYER_SPRINT_SPEED = 10.8;
   const PLAYER_TURN_SPEED = 15.2;
+  const PLAYER_ACCEL = 16.8;
+  const PLAYER_AIR_ACCEL = 8.4;
+  const PLAYER_DRAG = 8.8;
+  const PLAYER_AIR_DRAG = 2.8;
   const PLAYER_RADIUS = 0.72;
   const PLAYER_MAX_HEALTH = 100;
   const PLAYER_JUMP_VELOCITY = 9.4;
   const PLAYER_GRAVITY = 28;
+  const GRENADE_COOLDOWN = 3.9;
+  const GRENADE_SPEED = 20.5;
+  const GRENADE_UPWARD = 8.4;
+  const GRENADE_GRAVITY = 24;
+  const GRENADE_RADIUS = 8.8;
+  const GRENADE_DAMAGE = 88;
+  const GRENADE_KNOCKBACK = 4.4;
+  const GRENADE_FUSE = 1.18;
   const RESPAWN_TIME = 5.5;
   const WAVE_START_DELAY = 2.3;
   const BOSS_WAVE_INTERVAL = 4;
@@ -139,6 +151,73 @@
     return normalizeAngle(current + Math.sign(delta) * maxStep);
   }
 
+  function rectContains(x, z, rect) {
+    return x >= rect.minX && x <= rect.maxX && z >= rect.minZ && z <= rect.maxZ;
+  }
+
+  function rampHeight(value, start, end, from, to) {
+    if (start === end) {
+      return to;
+    }
+    const t = clamp((value - start) / (end - start), 0, 1);
+    return from + (to - from) * t;
+  }
+
+  function groundHeightAt(x, z) {
+    let height = 0;
+
+    if (rectContains(x, z, {
+      minX: -42,
+      maxX: 42,
+      minZ: -62,
+      maxZ: -24,
+    })) {
+      height = Math.max(height, 4.4);
+    }
+    if (rectContains(x, z, {
+      minX: -56,
+      maxX: -42,
+      minZ: -44,
+      maxZ: -24,
+    })) {
+      height = Math.max(height, rampHeight(x, -56, -42, 0, 4.4));
+    }
+    if (rectContains(x, z, {
+      minX: 42,
+      maxX: 56,
+      minZ: -44,
+      maxZ: -24,
+    })) {
+      height = Math.max(height, rampHeight(x, 56, 42, 0, 4.4));
+    }
+    if (rectContains(x, z, {
+      minX: -18,
+      maxX: 18,
+      minZ: -52,
+      maxZ: -32,
+    })) {
+      height = Math.max(height, 8.2);
+    }
+    if (rectContains(x, z, {
+      minX: -30,
+      maxX: -18,
+      minZ: -48,
+      maxZ: -32,
+    })) {
+      height = Math.max(height, rampHeight(x, -30, -18, 4.4, 8.2));
+    }
+    if (rectContains(x, z, {
+      minX: 18,
+      maxX: 30,
+      minZ: -48,
+      maxZ: -32,
+    })) {
+      height = Math.max(height, rampHeight(x, 30, 18, 4.4, 8.2));
+    }
+
+    return Number(height.toFixed(3));
+  }
+
   function pushEvent(state, type, payload) {
     state.events.push({
       id: ++state.lastEventId,
@@ -161,6 +240,7 @@
       aimX: null,
       aimZ: null,
       fire: false,
+      grenade: false,
       jump: false,
       sprint: false,
       weaponKey: 'rifle',
@@ -177,6 +257,8 @@
       z: seat < 2 ? 14 : 19,
       y: 0,
       vy: 0,
+      vx: 0,
+      vz: 0,
       yaw: -Math.PI / 2,
       radius: PLAYER_RADIUS,
       health: PLAYER_MAX_HEALTH,
@@ -192,7 +274,9 @@
       weaponKey: 'rifle',
       flash: 0,
       hurtTimer: 0,
+      grenadeCooldown: 0,
       grounded: true,
+      grenadeLatch: false,
       jumpLatch: false,
       input: defaultInput(),
     };
@@ -208,6 +292,8 @@
       z: player.z,
       y: player.y,
       vy: player.vy,
+      vx: player.vx,
+      vz: player.vz,
       yaw: player.yaw,
       radius: player.radius,
       health: player.health,
@@ -223,6 +309,7 @@
       weaponKey: player.weaponKey,
       flash: player.flash,
       hurtTimer: player.hurtTimer,
+      grenadeCooldown: player.grenadeCooldown,
       grounded: player.grounded,
       input: { ...player.input },
     };
@@ -235,6 +322,7 @@
       label: zombie.label,
       x: zombie.x,
       z: zombie.z,
+      y: zombie.y,
       yaw: zombie.yaw,
       hp: zombie.hp,
       maxHp: zombie.maxHp,
@@ -258,11 +346,22 @@
       color: shot.color,
       fromX: shot.fromX,
       fromZ: shot.fromZ,
+      fromY: shot.fromY,
       toX: shot.toX,
       toZ: shot.toZ,
+      toY: shot.toY,
+      width: shot.width,
       hit: shot.hit,
       ttl: shot.ttl,
     };
+  }
+
+  function cloneGrenade(grenade) {
+    return { ...grenade };
+  }
+
+  function cloneExplosion(explosion) {
+    return { ...explosion };
   }
 
   function clonePickup(pickup) {
@@ -294,6 +393,8 @@
       players: [],
       zombies: [],
       shots: [],
+      grenades: [],
+      explosions: [],
       pickups: [],
       events: [],
     };
@@ -321,6 +422,8 @@
       players: state.players.map(clonePlayer),
       zombies: state.zombies.map(cloneZombie),
       shots: state.shots.map(cloneShot),
+      grenades: state.grenades.map(cloneGrenade),
+      explosions: state.explosions.map(cloneExplosion),
       pickups: state.pickups.map(clonePickup),
       events: state.events.map(cloneEvent),
     };
@@ -439,6 +542,7 @@
       ? clamp(Number(next.aimZ), -ARENA.depth * 0.65, ARENA.depth * 0.65)
       : null;
     player.input.fire = Boolean(next.fire);
+    player.input.grenade = Boolean(next.grenade);
     player.input.jump = Boolean(next.jump);
     player.input.sprint = Boolean(next.sprint);
     if (WEAPONS[next.weaponKey]) {
@@ -479,6 +583,7 @@
       label: template.label,
       x,
       z,
+      y: groundHeightAt(x, z),
       yaw: 0,
       hp: template.hp + Math.max(0, state.wave - 1) * (template.key === 'boss' ? 24 : template.key === 'brute' ? 7 : 4),
       maxHp: template.hp + Math.max(0, state.wave - 1) * (template.key === 'boss' ? 24 : template.key === 'brute' ? 7 : 4),
@@ -548,6 +653,7 @@
       type: 'medkit',
       x: zombie.x,
       z: zombie.z,
+      y: groundHeightAt(zombie.x, zombie.z),
       radius: 0.85,
       heal: zombie.type === 'boss' ? 50 : zombie.type === 'brute' ? 34 : 22,
       ttl: zombie.type === 'boss' ? 16 : 12,
@@ -574,7 +680,20 @@
     });
   }
 
-  function recordShot(state, player, weapon, toX, toZ, hit) {
+  function zombieAimHeight(zombie) {
+    if (zombie.type === 'boss') {
+      return (zombie.y || 0) + 2.9;
+    }
+    if (zombie.type === 'brute') {
+      return (zombie.y || 0) + 2.2;
+    }
+    if (zombie.type === 'runner') {
+      return (zombie.y || 0) + 1.18;
+    }
+    return (zombie.y || 0) + 1.45;
+  }
+
+  function recordShot(state, player, weapon, toX, toZ, toY, hit) {
     state.shots.push({
       id: nextEntityId(state),
       ownerId: player.id,
@@ -582,8 +701,11 @@
       color: weapon.color,
       fromX: player.x,
       fromZ: player.z,
+      fromY: (player.y || 0) + 1.46,
       toX,
       toZ,
+      toY,
+      width: weapon.key === 'shotgun' ? 0.12 : weapon.key === 'smg' ? 0.06 : 0.08,
       hit: Boolean(hit),
       ttl: weapon.key === 'shotgun' ? 0.07 : 0.09,
     });
@@ -639,12 +761,13 @@
       if (bestZombie) {
         const hitX = player.x + dirX * bestAhead;
         const hitZ = player.z + dirZ * bestAhead;
+        const hitY = zombieAimHeight(bestZombie);
         const damageFalloff = 1 - clamp(bestAhead / weapon.range, 0, 1) * 0.16;
         bestZombie.hp -= weapon.damage * player.damageScale * damageFalloff;
         bestZombie.hitFlash = 0.1;
         bestZombie.x += dirX * weapon.knockback;
         bestZombie.z += dirZ * weapon.knockback;
-        recordShot(state, player, weapon, hitX, hitZ, true);
+        recordShot(state, player, weapon, hitX, hitZ, hitY, true);
       } else {
         recordShot(
           state,
@@ -652,6 +775,7 @@
           weapon,
           player.x + dirX * aimData.targetDistance,
           player.z + dirZ * aimData.targetDistance,
+          (player.y || 0) + 1.42,
           false
         );
       }
@@ -679,19 +803,97 @@
     };
   }
 
+  function recordExplosion(state, x, y, z, radius) {
+    state.explosions.push({
+      id: nextEntityId(state),
+      x,
+      y,
+      z,
+      radius,
+      ttl: 0.56,
+      maxTtl: 0.56,
+    });
+  }
+
+  function explodeGrenade(state, grenade, owner) {
+    const originX = grenade.x;
+    const originZ = grenade.z;
+    const originY = grenade.y;
+    recordExplosion(state, originX, originY, originZ, GRENADE_RADIUS);
+    let kills = 0;
+
+    for (let index = state.zombies.length - 1; index >= 0; index -= 1) {
+      const zombie = state.zombies[index];
+      const dx = zombie.x - originX;
+      const dz = zombie.z - originZ;
+      const distance = Math.hypot(dx, dz);
+      if (distance > GRENADE_RADIUS + zombie.radius) {
+        continue;
+      }
+      const falloff = 1 - clamp(distance / GRENADE_RADIUS, 0, 1);
+      const damage = GRENADE_DAMAGE * (0.32 + falloff * 0.68);
+      zombie.hp -= damage * (owner?.damageScale || 1);
+      zombie.hitFlash = 0.18;
+      const knock = GRENADE_KNOCKBACK * (0.35 + falloff * 0.65);
+      const norm = distance > 0.001 ? 1 / distance : 1;
+      zombie.x += dx * norm * knock;
+      zombie.z += dz * norm * knock;
+      zombie.y = groundHeightAt(zombie.x, zombie.z);
+      if (zombie.hp <= 0) {
+        awardKill(state, owner || state.players[0], zombie);
+        state.zombies.splice(index, 1);
+        kills += 1;
+      }
+    }
+
+    if (owner) {
+      owner.grenadeCooldown = GRENADE_COOLDOWN;
+    }
+    if (kills > 0) {
+      setStatus(state, `${owner?.name || 'A survivor'} blew apart ${kills} infected with a frag.`);
+    } else {
+      setStatus(state, `${owner?.name || 'A survivor'} flushed the horde with a frag grenade.`);
+    }
+  }
+
+  function throwGrenade(state, player) {
+    const aimData = aimDataForPlayer(player, { range: 28 });
+    const dirX = Math.sin(aimData.baseAngle);
+    const dirZ = -Math.cos(aimData.baseAngle);
+    state.grenades.push({
+      id: nextEntityId(state),
+      ownerId: player.id,
+      x: player.x + dirX * 0.95,
+      y: (player.y || 0) + 1.5,
+      z: player.z + dirZ * 0.95,
+      vx: dirX * GRENADE_SPEED + (player.vx || 0) * 0.18,
+      vy: GRENADE_UPWARD,
+      vz: dirZ * GRENADE_SPEED + (player.vz || 0) * 0.18,
+      ttl: GRENADE_FUSE,
+      radius: 0.28,
+      spin: rand(-8.4, 8.4),
+      bounce: 0.34,
+    });
+  }
+
   function stepPlayer(state, player, dt) {
     player.flash = Math.max(0, player.flash - dt * 3.4);
     player.hurtTimer = Math.max(0, player.hurtTimer - dt);
     player.fireCooldown = Math.max(0, player.fireCooldown - dt);
+    player.grenadeCooldown = Math.max(0, player.grenadeCooldown - dt);
     player.yaw = normalizeAngle(player.yaw);
     const moveBasisYaw = normalizeAngle(player.input.yaw);
     player.yaw = rotateToward(player.yaw, moveBasisYaw, PLAYER_TURN_SPEED * dt);
     player.weaponKey = WEAPONS[player.input.weaponKey] ? player.input.weaponKey : player.weaponKey;
 
     if (!player.alive) {
-      player.y = 0;
+      const groundY = groundHeightAt(player.x, player.z);
+      player.y = groundY;
       player.vy = 0;
+      player.vx = 0;
+      player.vz = 0;
       player.grounded = true;
+      player.grenadeLatch = false;
       player.jumpLatch = false;
       if (livingPlayers(state).length > 0) {
         player.respawnTimer = Math.max(0, player.respawnTimer - dt);
@@ -701,8 +903,10 @@
           player.health = Math.max(42, Math.round(player.maxHealth * 0.55));
           player.x = point.x;
           player.z = point.z;
-          player.y = 0;
+          player.y = groundHeightAt(point.x, point.z);
           player.vy = 0;
+          player.vx = 0;
+          player.vz = 0;
           player.grounded = true;
           player.hurtTimer = 0;
           setStatus(state, `${player.name} fought their way back into the yard.`);
@@ -723,16 +927,20 @@
       player.jumpLatch = false;
     }
 
+    let desiredVX = 0;
+    let desiredVZ = 0;
+    let hasMoveInput = false;
     let moveDirX = player.input.moveDirX;
     let moveDirZ = player.input.moveDirZ;
     if (Math.abs(moveDirX) > 0.001 || Math.abs(moveDirZ) > 0.001) {
       const magnitude = Math.hypot(moveDirX, moveDirZ) || 1;
       moveDirX /= magnitude;
       moveDirZ /= magnitude;
-      const airControl = player.grounded ? 1 : 0.9;
+      const airControl = player.grounded ? 1 : 0.88;
       const speed = (player.input.sprint ? player.sprintSpeed : player.moveSpeed) * airControl;
-      player.x += moveDirX * speed * dt;
-      player.z += moveDirZ * speed * dt;
+      desiredVX = moveDirX * speed;
+      desiredVZ = moveDirZ * speed;
+      hasMoveInput = true;
     } else {
       let moveX = player.input.moveX;
       let moveY = player.input.moveY;
@@ -740,26 +948,54 @@
         const magnitude = Math.hypot(moveX, moveY) || 1;
         moveX /= magnitude;
         moveY /= magnitude;
-        const airControl = player.grounded ? 1 : 0.9;
+        const airControl = player.grounded ? 1 : 0.88;
         const speed = (player.input.sprint ? player.sprintSpeed : player.moveSpeed) * airControl;
         const forwardX = Math.sin(moveBasisYaw);
         const forwardZ = -Math.cos(moveBasisYaw);
         const rightX = -forwardZ;
         const rightZ = forwardX;
-        player.x += (forwardX * moveY + rightX * moveX) * speed * dt;
-        player.z += (forwardZ * moveY + rightZ * moveX) * speed * dt;
+        desiredVX = (forwardX * moveY + rightX * moveX) * speed;
+        desiredVZ = (forwardZ * moveY + rightZ * moveX) * speed;
+        hasMoveInput = true;
       }
     }
+
+    const response = player.grounded ? PLAYER_ACCEL : PLAYER_AIR_ACCEL;
+    const blend = Math.min(1, response * dt);
+    player.vx += (desiredVX - player.vx) * blend;
+    player.vz += (desiredVZ - player.vz) * blend;
+    if (!hasMoveInput) {
+      const drag = Math.max(0, 1 - (player.grounded ? PLAYER_DRAG : PLAYER_AIR_DRAG) * dt);
+      player.vx *= drag;
+      player.vz *= drag;
+      if (Math.abs(player.vx) < 0.02) {
+        player.vx = 0;
+      }
+      if (Math.abs(player.vz) < 0.02) {
+        player.vz = 0;
+      }
+    }
+
+    player.x += player.vx * dt;
+    player.z += player.vz * dt;
     player.x = clamp(player.x, -ARENA.width * 0.47, ARENA.width * 0.47);
     player.z = clamp(player.z, -ARENA.depth * 0.47, ARENA.depth * 0.47);
+    const groundY = groundHeightAt(player.x, player.z);
     player.vy -= PLAYER_GRAVITY * dt;
     player.y += player.vy * dt;
-    if (player.y <= 0) {
-      player.y = 0;
+    if (player.y <= groundY) {
+      player.y = groundY;
       player.vy = 0;
       player.grounded = true;
     } else {
       player.grounded = false;
+    }
+
+    if (player.input.grenade && !player.grenadeLatch && player.grenadeCooldown <= 0) {
+      throwGrenade(state, player);
+      player.grenadeLatch = true;
+    } else if (!player.input.grenade) {
+      player.grenadeLatch = false;
     }
 
     if (player.input.fire && player.fireCooldown <= 0) {
@@ -774,6 +1010,9 @@
     if (!player || !player.alive) {
       return;
     }
+    if (Math.abs((player.y || 0) - (zombie.y || 0)) > 1.9) {
+      return;
+    }
     const range = zombie.radius + player.radius + 0.3;
     const distance = Math.sqrt(distanceSquared(zombie.x, zombie.z, player.x, player.z));
     if (distance > range) {
@@ -786,9 +1025,11 @@
     player.health -= zombie.damage;
     player.hurtTimer = 0.2;
     const angle = Math.atan2(player.x - zombie.x, player.z - zombie.z);
-    player.x += Math.sin(angle) * 0.6;
-    player.z += Math.cos(angle) * 0.6;
-    player.y = 0;
+    player.vx += Math.sin(angle) * 2.2;
+    player.vz += Math.cos(angle) * 2.2;
+    player.x += Math.sin(angle) * 0.4;
+    player.z += Math.cos(angle) * 0.4;
+    player.y = groundHeightAt(player.x, player.z);
     player.vy = 0;
     player.grounded = true;
     if (player.health <= 0) {
@@ -819,6 +1060,7 @@
         zombie.x += (dx / distance) * zombie.speed * dt;
         zombie.z += (dz / distance) * zombie.speed * dt;
       }
+      zombie.y = groundHeightAt(zombie.x, zombie.z);
       applyZombieAttacks(state, zombie, target);
     }
   }
@@ -854,6 +1096,41 @@
       state.shots[index].ttl -= dt;
       if (state.shots[index].ttl <= 0) {
         state.shots.splice(index, 1);
+      }
+    }
+    for (let index = state.explosions.length - 1; index >= 0; index -= 1) {
+      state.explosions[index].ttl -= dt;
+      if (state.explosions[index].ttl <= 0) {
+        state.explosions.splice(index, 1);
+      }
+    }
+  }
+
+  function stepGrenades(state, dt) {
+    for (let index = state.grenades.length - 1; index >= 0; index -= 1) {
+      const grenade = state.grenades[index];
+      grenade.ttl -= dt;
+      grenade.vy -= GRENADE_GRAVITY * dt;
+      grenade.x += grenade.vx * dt;
+      grenade.y += grenade.vy * dt;
+      grenade.z += grenade.vz * dt;
+      grenade.x = clamp(grenade.x, -ARENA.width * 0.49, ARENA.width * 0.49);
+      grenade.z = clamp(grenade.z, -ARENA.depth * 0.49, ARENA.depth * 0.49);
+      const floorY = groundHeightAt(grenade.x, grenade.z) + grenade.radius;
+      if (grenade.y <= floorY) {
+        grenade.y = floorY;
+        if (Math.abs(grenade.vy) > 1.1) {
+          grenade.vy = Math.abs(grenade.vy) * grenade.bounce;
+        } else {
+          grenade.vy = 0;
+        }
+        grenade.vx *= 0.8;
+        grenade.vz *= 0.8;
+      }
+      if (grenade.ttl <= 0) {
+        const owner = findPlayer(state, grenade.ownerId);
+        explodeGrenade(state, grenade, owner);
+        state.grenades.splice(index, 1);
       }
     }
   }
@@ -931,6 +1208,7 @@
     for (const player of state.players) {
       stepPlayer(state, player, delta);
     }
+    stepGrenades(state, delta);
     stepZombies(state, delta);
     stepPickups(state, delta);
     maybeAdvanceWave(state, delta);
@@ -948,6 +1226,7 @@
     resetMatch,
     addPlayer,
     removePlayer,
+    groundHeightAt,
     setPlayerInput,
     step,
   };

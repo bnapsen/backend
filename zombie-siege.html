@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/zombie-siege/style.css?v=20260327i" />
+  <link rel="stylesheet" href="games/zombie-siege/style.css?v=20260327j" />
 </head>
 <body>
   <div class="page-shell">
@@ -28,7 +28,7 @@
         <section class="panel hero">
           <p class="eyebrow">Undead co-op reboot</p>
           <h1>Hold the yard. Drop the horde.</h1>
-          <p class="lede">Zombie Siege is now a room-based co-op survival game with shared waves, invite links, lounge sharing, a larger yard, keyboard turning, mouse-driven aim, jump movement, moving skyline details, heavier atmosphere, and exact-target hitscan weapons that feel much tighter than the old tracer system.</p>
+          <p class="lede">Zombie Siege is now a room-based co-op survival game with shared waves, invite links, lounge sharing, a much larger yard, stacked decks with stair lanes, keyboard turning, mouse-driven aim, frag grenades, jump movement, and tighter hitscan weapons with heavier-looking effects.</p>
 
           <div class="step-strip">
             <article class="step-card">
@@ -49,7 +49,7 @@
               <span class="step-number">3</span>
               <div>
                 <strong>Aim and survive</strong>
-                <p>Turn with Q/E or Left/Right, aim with the mouse, jump with Space, and use hitscan fire to cut down the wave before it reaches you.</p>
+                <p>Turn with Q/E or Left/Right, aim with the mouse, throw a frag with Shift, and use the upper decks and stairs to cut down the wave before it reaches you.</p>
               </div>
             </article>
           </div>
@@ -119,15 +119,15 @@
           <div class="feature-list">
             <article class="feature-item">
               <strong>Hitscan weapons</strong>
-              <p>The rifle, SMG, and shotgun now hit instantly along the shot line, so aiming feels much tighter than the old floating bullet spheres.</p>
+              <p>The rifle, SMG, and shotgun now hit instantly along the shot line, with bigger muzzle flashes and stronger tracers that read much better in motion.</p>
             </article>
             <article class="feature-item">
-              <strong>Shared wave sim</strong>
-              <p>Online rooms run from the same backend loop as the other live games, so everybody sees the same wave timing, zombie deaths, and room state.</p>
+              <strong>Tiered combat space</strong>
+              <p>The yard now has a lower deck, an upper deck, and stair runs so the fight feels bigger than a flat parking lot.</p>
             </article>
             <article class="feature-item">
-              <strong>Stronger atmosphere</strong>
-              <p>The arena now leans into gritty asphalt, floodlights, barricades, and bigger silhouettes instead of flat neon emptiness.</p>
+              <strong>Grenade pressure</strong>
+              <p>Shift now launches a frag grenade, giving squads a way to flush dense packs and reset space when the horde compresses.</p>
             </article>
           </div>
         </section>
@@ -175,8 +175,8 @@
             <div class="arena-overlay" id="overlay">
               <div class="overlay-card">
                 <h2 class="overlay-title" id="overlayTitle">Zombie Siege 3D Live</h2>
-                <p class="overlay-copy" id="overlayCopy">Use the side panel to host, join, or start solo. Once you are in a run, turn with Q/E or Left/Right, aim with the mouse, jump with Space, and click to fire.</p>
-                <p class="overlay-meta" id="overlayMeta">Controls: WASD move, Q/E or Left/Right turns, move the mouse to aim, Left Click fires, Space jumps, Shift sprints, 1 2 3 swaps weapons.</p>
+                <p class="overlay-copy" id="overlayCopy">Use the side panel to host, join, or start solo. Once you are in a run, turn with Q/E or Left/Right, aim with the mouse, move across the decks, jump with Space, and click to fire.</p>
+                <p class="overlay-meta" id="overlayMeta">Controls: WASD move, Q/E or Left/Right turns, move the mouse to aim, Left Click fires, Shift throws a grenade, Ctrl sprints, Space jumps, 1 2 3 swaps weapons.</p>
                 <button id="startBtn" class="primary" type="button">Start solo instantly</button>
               </div>
             </div>
@@ -185,7 +185,7 @@
           <div class="arena-footer">
             <div>
               <p class="label">Controls</p>
-              <p class="footer-copy" id="controlHint">WASD moves. Q/E or Left/Right turns. Move the mouse to aim. Left Click fires. Space jumps. Shift sprints. Press 1, 2, or 3 for rifle, SMG, and shotgun.</p>
+              <p class="footer-copy" id="controlHint">WASD moves. Q/E or Left/Right turns. Move the mouse to aim. Left Click fires. Shift throws a grenade. Ctrl sprints. Space jumps. Press 1, 2, or 3 for rifle, SMG, and shotgun.</p>
             </div>
             <div class="arena-actions">
               <button id="restartBtn" class="primary" type="button">Restart run</button>
@@ -247,7 +247,7 @@
 
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="games/star-sprint/zombie-siege-core.js?v=20260327i"></script>
-  <script src="games/zombie-siege/game.js?v=20260327i"></script>
+  <script src="games/star-sprint/zombie-siege-core.js?v=20260327j"></script>
+  <script src="games/zombie-siege/game.js?v=20260327j"></script>
 </body>
 </html>

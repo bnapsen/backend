@@ -45,7 +45,7 @@ body::before {
 }
 
 .page-shell {
-  width: min(2060px, calc(100vw - 10px));
+  width: min(2160px, calc(100vw - 6px));
   margin: 0 auto;
   padding: 12px 0 20px;
 }
@@ -168,7 +168,7 @@ h2,
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(210px, 248px) minmax(0, 1fr) minmax(176px, 214px);
+  grid-template-columns: minmax(196px, 228px) minmax(0, 1fr) minmax(164px, 198px);
   gap: 8px;
   margin-top: 12px;
   align-items: start;
@@ -388,7 +388,7 @@ button.secondary {
   position: relative;
   margin-top: 8px;
   aspect-ratio: 16 / 9;
-  min-height: clamp(680px, 82vh, 1240px);
+  min-height: clamp(720px, 85vh, 1360px);
   border-radius: 28px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
