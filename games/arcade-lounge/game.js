@@ -25,6 +25,10 @@
       title: 'Starline Defense Co-Op',
       path: 'space-shooter.html',
     },
+    'zombie-siege': {
+      title: 'Zombie Siege 3D Live',
+      path: 'zombie-siege.html',
+    },
     'car-soccer': {
       title: 'Car Soccer Mini - Turbo Arena Live',
       path: 'games/car-soccer-mini/',

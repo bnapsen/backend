@@ -1,749 +1,253 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zombie Siege 3D | Nova Arcade</title>
-    <style>
-        :root {
-            --bg: #05080f;
-            --panel: rgba(8, 14, 24, 0.78);
-            --text: #f2f6ff;
-            --muted: #9ba8c6;
-            --accent: #45e8ff;
-            --danger: #ff5a78;
-            --good: #57ff9a;
-        }
-
-        * { box-sizing: border-box; }
-
-        body {
-            margin: 0;
-            font-family: Inter, Arial, sans-serif;
-            color: var(--text);
-            background: var(--bg);
-            overflow: hidden;
-        }
-
-        #gameCanvas {
-            position: fixed;
-            inset: 0;
-            width: 100vw;
-            height: 100vh;
-            display: block;
-        }
-
-        .hud {
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            padding: 1rem;
-            z-index: 5;
-        }
-
-        .stats {
-            align-self: flex-start;
-            background: var(--panel);
-            border: 1px solid rgba(255, 255, 255, 0.16);
-            border-radius: 14px;
-            padding: 0.8rem 1rem;
-            min-width: 220px;
-            backdrop-filter: blur(6px);
-        }
-
-        .stats p {
-            margin: 0.3rem 0;
-            font-size: 0.95rem;
-            color: var(--muted);
-        }
-
-        .stats strong {
-            color: var(--text);
-            font-weight: 700;
-        }
-
-        .crosshair {
-            position: fixed;
-            inset: 50% auto auto 50%;
-            width: 18px;
-            height: 18px;
-            margin-left: -9px;
-            margin-top: -9px;
-            border-radius: 50%;
-            border: 2px solid rgba(69, 232, 255, 0.9);
-            box-shadow: 0 0 18px rgba(69, 232, 255, 0.6);
-            z-index: 6;
-            pointer-events: none;
-        }
-
-        .overlay {
-            position: fixed;
-            inset: 0;
-            display: grid;
-            place-items: center;
-            background: radial-gradient(circle at center, rgba(10, 16, 30, 0.5), rgba(0, 0, 0, 0.86));
-            z-index: 10;
-            text-align: center;
-            padding: 1rem;
-        }
-
-        .overlay-card {
-            max-width: 620px;
-            background: rgba(7, 12, 22, 0.84);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 18px;
-            padding: 1.4rem;
-            box-shadow: 0 26px 70px rgba(0, 0, 0, 0.45);
-        }
-
-        h1 { margin: 0 0 0.7rem; letter-spacing: 0.04em; }
-        .overlay p { color: var(--muted); line-height: 1.45; }
-
-        button {
-            margin-top: 0.9rem;
-            border: 0;
-            border-radius: 10px;
-            padding: 0.8rem 1.2rem;
-            font-size: 0.96rem;
-            font-weight: 700;
-            color: #04131c;
-            background: linear-gradient(120deg, var(--accent), #8f7dff);
-            cursor: pointer;
-            pointer-events: auto;
-        }
-
-        .tag-good { color: var(--good); }
-        .tag-danger { color: var(--danger); }
-        a { color: var(--accent); }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zombie Siege 3D Live</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="games/zombie-siege/style.css?v=20260327b" />
 </head>
 <body>
-    <canvas id="gameCanvas"></canvas>
-    <div class="crosshair"></div>
-
-    <div class="hud">
-        <div class="stats">
-            <p><strong>Wave:</strong> <span id="wave">1</span></p>
-            <p><strong>Zombies Left:</strong> <span id="remaining">0</span></p>
-            <p><strong>Kills:</strong> <span id="kills">0</span></p>
-            <p><strong>Health:</strong> <span id="health" class="tag-good">100</span></p>
-            <p><strong>Weapon:</strong> <span id="gun">Rifle</span></p>
-        </div>
-        <div></div>
-    </div>
-
-    <div class="overlay" id="overlay">
-        <div class="overlay-card">
-            <h1>Zombie Siege 3D</h1>
-            <p>Survive endless waves in this neon city arena. Use <strong>WASD</strong> to move, move the mouse to aim, and hold <strong>Left Click</strong> to fire.</p>
-            <p>Pick a weapon with <strong>1/2/3</strong> (Rifle, SMG, Shotgun). <strong>W</strong> moves forward and <strong>S</strong> moves backward.</p>
-            <button id="startBtn">Start Battle</button>
-            <p style="margin-top: 1rem;"><a href="index.html">← Back to Nova Arcade</a></p>
-        </div>
-    </div>
-
-    <script type="module">
-        import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-
-        const canvas = document.getElementById('gameCanvas');
-        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.08;
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x04070f);
-        scene.fog = new THREE.Fog(0x0a1021, 24, 82);
-
-        const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 300);
-
-        const hemi = new THREE.HemisphereLight(0x73c4ff, 0x16121f, 0.62);
-        scene.add(hemi);
-
-        const moon = new THREE.DirectionalLight(0xc7e5ff, 0.85);
-        moon.position.set(12, 20, 7);
-        moon.castShadow = true;
-        moon.shadow.mapSize.set(2048, 2048);
-        scene.add(moon);
-
-        const rim = new THREE.DirectionalLight(0x9f7dff, 0.35);
-        rim.position.set(-16, 9, -12);
-        scene.add(rim);
-
-        const moonOrb = new THREE.Mesh(
-            new THREE.SphereGeometry(3.2, 20, 20),
-            new THREE.MeshBasicMaterial({ color: 0xc4dcff })
-        );
-        moonOrb.position.set(-48, 50, -72);
-        scene.add(moonOrb);
-
-        const starsGeo = new THREE.BufferGeometry();
-        const starsCount = 900;
-        const starPositions = new Float32Array(starsCount * 3);
-        for (let i = 0; i < starsCount; i += 1) {
-            starPositions[i * 3] = (Math.random() - 0.5) * 280;
-            starPositions[i * 3 + 1] = 35 + Math.random() * 120;
-            starPositions[i * 3 + 2] = (Math.random() - 0.5) * 280;
-        }
-        starsGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-        const stars = new THREE.Points(
-            starsGeo,
-            new THREE.PointsMaterial({ color: 0xc6daff, size: 0.55, sizeAttenuation: true, transparent: true, opacity: 0.9 })
-        );
-        scene.add(stars);
-
-        const arena = new THREE.Mesh(
-            new THREE.PlaneGeometry(180, 180),
-            new THREE.MeshStandardMaterial({ color: 0x141b2d, roughness: 0.92, metalness: 0.08 })
-        );
-        arena.rotation.x = -Math.PI / 2;
-        arena.receiveShadow = true;
-        scene.add(arena);
-
-        const neonGrid = new THREE.GridHelper(180, 72, 0x3be4ff, 0x512f84);
-        neonGrid.position.y = 0.04;
-        neonGrid.material.opacity = 0.32;
-        neonGrid.material.transparent = true;
-        scene.add(neonGrid);
-
-        const skylineGeo = new THREE.BoxGeometry(1, 1, 1);
-        for (let i = 0; i < 80; i += 1) {
-            const b = new THREE.Mesh(
-                skylineGeo,
-                new THREE.MeshStandardMaterial({
-                    color: i % 2 === 0 ? 0x1d2442 : 0x291f49,
-                    emissive: i % 3 === 0 ? 0x1f3b80 : 0x391f68,
-                    emissiveIntensity: 0.22
-                })
-            );
-            const side = i < 40 ? -1 : 1;
-            b.scale.set(4 + Math.random() * 10, 8 + Math.random() * 36, 4 + Math.random() * 10);
-            b.position.set(side * (42 + Math.random() * 24), b.scale.y * 0.5, -70 + Math.random() * 140);
-            b.castShadow = true;
-            b.receiveShadow = true;
-            scene.add(b);
-        }
-
-        const weaponChoices = {
-            rifle: { name: 'Rifle', damage: 22, fireRate: 0.16, knockback: 2.2, spread: 0.01, pellets: 1, color: 0x6df3ff },
-            smg: { name: 'SMG', damage: 12, fireRate: 0.072, knockback: 1.1, spread: 0.028, pellets: 1, color: 0xffe176 },
-            shotgun: { name: 'Shotgun', damage: 9, fireRate: 0.55, knockback: 3.2, spread: 0.1, pellets: 7, color: 0xff9ec8 },
-        };
-
-        const player = {
-            pos: new THREE.Vector3(0, 1.7, 0),
-            velY: 0,
-            speed: 14,
-            health: 100,
-            yaw: 0,
-            pitch: 0,
-            firing: false,
-            fireCooldown: 0,
-            damageFlash: 0,
-            kills: 0,
-            weaponKey: 'rifle',
-            damageScale: 1,
-        };
-
-        const keys = new Set();
-        const zombies = [];
-        const bullets = [];
-        const hitEffects = [];
-
-        const muzzleFlash = new THREE.PointLight(0x8fefff, 0, 10, 2.2);
-        scene.add(muzzleFlash);
-        let muzzleTime = 0;
-
-        function createHumanoidZombie() {
-            const group = new THREE.Group();
-
-            const torso = new THREE.Mesh(
-                new THREE.BoxGeometry(0.9, 1.1, 0.5),
-                new THREE.MeshStandardMaterial({ color: 0x6ee081, roughness: 0.7, emissive: 0x1a3a20, emissiveIntensity: 0.45 })
-            );
-            torso.position.y = 1.45;
-
-            const head = new THREE.Mesh(
-                new THREE.SphereGeometry(0.32, 12, 12),
-                new THREE.MeshStandardMaterial({ color: 0x91ff9d, roughness: 0.6, emissive: 0x132b18, emissiveIntensity: 0.5 })
-            );
-            head.position.y = 2.2;
-
-            const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1, 0.25), torso.material);
-            leftArm.position.set(-0.62, 1.45, 0);
-            const rightArm = leftArm.clone();
-            rightArm.position.x = 0.62;
-
-            const legMat = new THREE.MeshStandardMaterial({ color: 0x2d3b3c, roughness: 0.78 });
-            const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1, 0.32), legMat);
-            leftLeg.position.set(-0.23, 0.53, 0.03);
-            const rightLeg = leftLeg.clone();
-            rightLeg.position.x = 0.23;
-
-            [torso, head, leftArm, rightArm, leftLeg, rightLeg].forEach((part) => {
-                part.castShadow = true;
-                part.receiveShadow = true;
-                group.add(part);
-            });
-
-            return group;
-        }
-
-        const playerBody = new THREE.Group();
-        const playerTorso = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.75, 4, 10), new THREE.MeshStandardMaterial({ color: 0x4da3ff, roughness: 0.45 }));
-        playerTorso.position.y = 1.2;
-        const playerHead = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), new THREE.MeshStandardMaterial({ color: 0xdbe7ff, roughness: 0.55 }));
-        playerHead.position.y = 1.95;
-        const playerGun = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.12, 0.14), new THREE.MeshStandardMaterial({ color: 0x232733, roughness: 0.3, metalness: 0.55 }));
-        playerGun.position.set(0.22, 1.46, -0.28);
-        playerBody.add(playerTorso, playerHead, playerGun);
-        scene.add(playerBody);
-
-        let wave = 1;
-        let waveRemaining = 0;
-        let alive = true;
-
-        const overlay = document.getElementById('overlay');
-        const startBtn = document.getElementById('startBtn');
-        const waveEl = document.getElementById('wave');
-        const remainEl = document.getElementById('remaining');
-        const killsEl = document.getElementById('kills');
-        const healthEl = document.getElementById('health');
-        const gunEl = document.getElementById('gun');
-
-        const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-
-        const sfx = {
-            ctx: null,
-            master: null,
-            unlocked: false,
-            init() {
-                if (this.ctx) return;
-                const AC = window.AudioContext || window.webkitAudioContext;
-                if (!AC) return;
-                this.ctx = new AC();
-                this.master = this.ctx.createGain();
-                this.master.gain.value = 0.12;
-                this.master.connect(this.ctx.destination);
-            },
-            unlock() {
-                this.init();
-                if (!this.ctx) return;
-                if (this.ctx.state === 'suspended') this.ctx.resume();
-                this.unlocked = true;
-            },
-            tone(freq, duration = 0.12, type = 'square', volume = 0.2, slide = 1) {
-                if (!this.unlocked || !this.ctx) return;
-                const t0 = this.ctx.currentTime;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = type;
-                osc.frequency.setValueAtTime(freq, t0);
-                osc.frequency.exponentialRampToValueAtTime(Math.max(30, freq * slide), t0 + duration);
-                gain.gain.setValueAtTime(0.0001, t0);
-                gain.gain.exponentialRampToValueAtTime(volume, t0 + 0.01);
-                gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-                osc.connect(gain);
-                gain.connect(this.master);
-                osc.start(t0);
-                osc.stop(t0 + duration + 0.02);
-            },
-            noise(duration = 0.08, volume = 0.12, highpass = 900) {
-                if (!this.unlocked || !this.ctx) return;
-                const len = Math.max(1, Math.floor(this.ctx.sampleRate * duration));
-                const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < len; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
-                const src = this.ctx.createBufferSource();
-                const hp = this.ctx.createBiquadFilter();
-                hp.type = 'highpass';
-                hp.frequency.value = highpass;
-                const gain = this.ctx.createGain();
-                const t0 = this.ctx.currentTime;
-                gain.gain.setValueAtTime(volume, t0);
-                gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-                src.buffer = buffer;
-                src.connect(hp);
-                hp.connect(gain);
-                gain.connect(this.master);
-                src.start(t0);
-            },
-            shoot(weapon) {
-                const presets = {
-                    rifle: [540, 0.08, 'square', 0.1, 0.48],
-                    smg: [760, 0.05, 'sawtooth', 0.08, 0.55],
-                    shotgun: [220, 0.11, 'triangle', 0.16, 0.44],
-                };
-                const [freq, duration, type, volume, slide] = presets[weapon] || presets.rifle;
-                this.tone(freq + Math.random() * 30, duration, type, volume, slide);
-                if (weapon === 'shotgun') this.noise(0.09, 0.08, 640);
-            },
-            hit() {
-                this.tone(170 + Math.random() * 40, 0.06, 'triangle', 0.08, 0.72);
-            },
-            kill() {
-                this.tone(290, 0.1, 'sine', 0.12, 1.45);
-            },
-            damage() {
-                this.tone(120, 0.1, 'sawtooth', 0.11, 0.6);
-                this.noise(0.04, 0.05, 1200);
-            },
-            wave() {
-                this.tone(360, 0.1, 'triangle', 0.11, 1.22);
-                this.tone(520, 0.13, 'triangle', 0.09, 1.18);
-            },
-            gameOver() {
-                this.tone(210, 0.22, 'sawtooth', 0.12, 0.64);
-                this.tone(130, 0.26, 'triangle', 0.1, 0.52);
-            }
-        };
-
-        function spawnWave() {
-            waveRemaining = 5 + wave * 3;
-            for (let i = 0; i < waveRemaining; i += 1) {
-                const mesh = createHumanoidZombie();
-                const angle = Math.random() * Math.PI * 2;
-                const dist = 22 + Math.random() * 32;
-                mesh.position.set(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
-                scene.add(mesh);
-                zombies.push({
-                    mesh,
-                    hp: 34 + wave * 6,
-                    speed: 2 + wave * 0.18 + Math.random() * 0.65,
-                    attackCd: Math.random() * 0.8,
-                    hitFlash: 0,
-                    strideOffset: Math.random() * Math.PI * 2,
-                });
-            }
-            updateHud();
-        }
-
-        function getCurrentWeapon() {
-            return weaponChoices[player.weaponKey];
-        }
-
-        function upgradeGun() {
-            player.damageScale += 0.11;
-            gunEl.textContent = `${getCurrentWeapon().name} x${player.damageScale.toFixed(2)}`;
-        }
-
-        function setWeapon(key) {
-            if (!weaponChoices[key]) return;
-            player.weaponKey = key;
-            updateHud();
-        }
-
-        function shoot() {
-            if (!alive || player.fireCooldown > 0) return;
-            const weapon = getCurrentWeapon();
-            player.fireCooldown = weapon.fireRate;
-            sfx.shoot(player.weaponKey);
-
-            const origin = player.pos.clone().add(new THREE.Vector3(0, 1.45, 0));
-            const baseDir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ')).normalize();
-
-            let aimTarget = null;
-            let nearest = Infinity;
-            for (const zombie of zombies) {
-                const targetPos = zombie.mesh.position.clone().add(new THREE.Vector3(0, 1.35, 0));
-                const toZombie = targetPos.clone().sub(origin);
-                const ahead = toZombie.dot(baseDir);
-                if (ahead < 0.8) continue;
-                const perpendicular = toZombie.clone().sub(baseDir.clone().multiplyScalar(ahead)).length();
-                if (perpendicular < 1.25 && ahead < nearest) {
-                    nearest = ahead;
-                    aimTarget = targetPos;
-                }
-            }
-
-            muzzleFlash.position.copy(origin).addScaledVector(baseDir, 0.38);
-            muzzleFlash.intensity = 2 + Math.random() * 0.8;
-            muzzleTime = 0.045;
-
-            for (let p = 0; p < weapon.pellets; p += 1) {
-                const spreadX = (Math.random() - 0.5) * weapon.spread;
-                const spreadY = (Math.random() - 0.5) * weapon.spread;
-                const dir = aimTarget
-                    ? aimTarget.clone().sub(origin).normalize().applyEuler(new THREE.Euler(spreadX * 0.6, spreadY * 0.6, 0, 'YXZ')).normalize()
-                    : baseDir.clone().applyEuler(new THREE.Euler(spreadX, spreadY, 0, 'YXZ')).normalize();
-
-                const tracer = new THREE.Mesh(
-                    new THREE.SphereGeometry(0.075, 6, 6),
-                    new THREE.MeshStandardMaterial({ color: weapon.color, emissive: weapon.color, emissiveIntensity: 1.1, metalness: 0.08, roughness: 0.3 })
-                );
-                tracer.position.copy(origin);
-                scene.add(tracer);
-
-                bullets.push({
-                    mesh: tracer,
-                    pos: origin.clone(),
-                    dir,
-                    life: 0.35,
-                    speed: 75,
-                    damage: weapon.damage * player.damageScale,
-                    knockback: weapon.knockback,
-                });
-            }
-        }
-
-        function updateHud() {
-            waveEl.textContent = wave;
-            remainEl.textContent = zombies.length;
-            killsEl.textContent = player.kills;
-            healthEl.textContent = Math.max(0, Math.round(player.health));
-            healthEl.className = player.health < 35 ? 'tag-danger' : 'tag-good';
-            gunEl.textContent = `${getCurrentWeapon().name} x${player.damageScale.toFixed(2)}`;
-        }
-
-        function resetGame() {
-            for (const z of zombies) scene.remove(z.mesh);
-            zombies.length = 0;
-            for (const b of bullets) scene.remove(b.mesh);
-            bullets.length = 0;
-            for (const fx of hitEffects) scene.remove(fx.mesh);
-            hitEffects.length = 0;
-            muzzleFlash.intensity = 0;
-            muzzleTime = 0;
-
-            player.pos.set(0, 1.7, 0);
-            player.health = 100;
-            player.kills = 0;
-            player.weaponKey = 'rifle';
-            player.damageScale = 1;
-            player.fireCooldown = 0;
-            wave = 1;
-            alive = true;
-            spawnWave();
-            updateHud();
-        }
-
-        function spawnHitEffect(position, tint = 0x7dff9c) {
-            const mesh = new THREE.Mesh(
-                new THREE.SphereGeometry(0.22, 10, 10),
-                new THREE.MeshStandardMaterial({ color: tint, emissive: tint, emissiveIntensity: 1.4, transparent: true, opacity: 0.95, roughness: 0.28 })
-            );
-            mesh.position.copy(position);
-            mesh.scale.setScalar(0.35);
-            scene.add(mesh);
-            hitEffects.push({ mesh, life: 0.2, maxLife: 0.2 });
-        }
-
-        startBtn.addEventListener('click', () => {
-            sfx.unlock();
-            overlay.style.display = 'none';
-            canvas.requestPointerLock();
-            resetGame();
-        });
-
-        document.addEventListener('pointerlockchange', () => {
-            if (document.pointerLockElement !== canvas && alive) {
-                overlay.style.display = 'grid';
-                startBtn.textContent = 'Resume Battle';
-            }
-        });
-
-        window.addEventListener('mousemove', (e) => {
-            if (document.pointerLockElement !== canvas) return;
-            player.yaw -= e.movementX * 0.0027;
-            player.pitch -= e.movementY * 0.0027;
-            player.pitch = clamp(player.pitch, -1.32, 1.32);
-        });
-
-        window.addEventListener('keydown', (e) => keys.add(e.code));
-        window.addEventListener('keyup', (e) => keys.delete(e.code));
-        window.addEventListener('keydown', (e) => {
-            if (e.code === 'Digit1') setWeapon('rifle');
-            if (e.code === 'Digit2') setWeapon('smg');
-            if (e.code === 'Digit3') setWeapon('shotgun');
-        });
-        window.addEventListener('mousedown', (e) => {
-            if (e.button === 0) {
-                sfx.unlock();
-                player.firing = true;
-            }
-        });
-        window.addEventListener('mouseup', (e) => {
-            if (e.button === 0) player.firing = false;
-        });
-
-        function endGame() {
-            sfx.gameOver();
-            alive = false;
-            overlay.style.display = 'grid';
-            startBtn.textContent = 'Play Again';
-            document.querySelector('.overlay-card').innerHTML = `
-                <h1>You Were Overrun</h1>
-                <p>You reached <strong>Wave ${wave}</strong> with <strong>${player.kills} kills</strong>.</p>
-                <p>Tip: keep moving, aim for center mass, and use your upgraded fire rate to thin big groups.</p>
-                <button id="startBtn">Play Again</button>
-                <p style="margin-top: 1rem;"><a href="index.html">← Back to Nova Arcade</a></p>
-            `;
-            document.getElementById('startBtn').addEventListener('click', () => {
-                document.querySelector('.overlay-card').innerHTML = `
-                    <h1>Zombie Siege 3D</h1>
-                    <p>Survive endless waves in this neon city arena. Use <strong>WASD</strong> to move, move the mouse to aim, and hold <strong>Left Click</strong> to fire.</p>
-                    <p>Pick a weapon with <strong>1/2/3</strong> (Rifle, SMG, Shotgun). <strong>W</strong> moves forward and <strong>S</strong> moves backward.</p>
-                    <button id="startBtn">Start Battle</button>
-                    <p style="margin-top: 1rem;"><a href="index.html">← Back to Nova Arcade</a></p>
-                `;
-                document.getElementById('startBtn').addEventListener('click', () => {
-                    sfx.unlock();
-                    overlay.style.display = 'none';
-                    canvas.requestPointerLock();
-                    resetGame();
-                }, { once: true });
-                overlay.style.display = 'none';
-                canvas.requestPointerLock();
-                resetGame();
-            }, { once: true });
-        }
-
-        const clock = new THREE.Clock();
-        function loop() {
-            const dt = Math.min(0.04, clock.getDelta());
-
-            if (alive && overlay.style.display === 'none') {
-                const forward = new THREE.Vector3(Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-                const right = new THREE.Vector3(-forward.z, 0, forward.x);
-                const move = new THREE.Vector3();
-
-                if (keys.has('KeyW')) move.add(forward);
-                if (keys.has('KeyS')) move.sub(forward);
-                if (keys.has('KeyA')) move.sub(right);
-                if (keys.has('KeyD')) move.add(right);
-
-                if (move.lengthSq() > 0) {
-                    move.normalize().multiplyScalar(player.speed * dt);
-                    player.pos.add(move);
-                }
-
-                player.pos.x = clamp(player.pos.x, -40, 40);
-                player.pos.z = clamp(player.pos.z, -40, 40);
-
-                if (player.fireCooldown > 0) player.fireCooldown -= dt;
-                if (player.firing) shoot();
-
-                for (let i = bullets.length - 1; i >= 0; i -= 1) {
-                    const b = bullets[i];
-                    b.life -= dt;
-                    b.pos.addScaledVector(b.dir, b.speed * dt);
-                    b.mesh.position.copy(b.pos);
-
-                    if (b.life <= 0) {
-                        scene.remove(b.mesh);
-                        bullets.splice(i, 1);
-                        continue;
-                    }
-
-                    for (let z = zombies.length - 1; z >= 0; z -= 1) {
-                        const zombie = zombies[z];
-                        const targetPoint = zombie.mesh.position.clone().add(new THREE.Vector3(0, 1.35, 0));
-                        const dist = targetPoint.distanceTo(b.pos);
-                        if (dist < 1.05) {
-                            zombie.hp -= b.damage;
-                            zombie.hitFlash = 0.12;
-                            zombie.mesh.position.addScaledVector(b.dir, b.knockback);
-                            spawnHitEffect(b.pos, zombie.hp <= 0 ? 0xff8ca5 : 0x86ff9d);
-                            scene.remove(b.mesh);
-                            bullets.splice(i, 1);
-                            if (zombie.hp <= 0) {
-                                scene.remove(zombie.mesh);
-                                zombies.splice(z, 1);
-                                player.kills += 1;
-                                sfx.kill();
-                            } else {
-                                sfx.hit();
-                            }
-                            break;
-                        }
-                    }
-                }
-
-                for (const zombie of zombies) {
-                    const toPlayer = player.pos.clone().sub(zombie.mesh.position);
-                    const dist = toPlayer.length();
-                    const walkCycle = Math.sin(performance.now() * 0.0065 + zombie.strideOffset);
-                    if (dist > 0.1) {
-                        zombie.mesh.position.addScaledVector(toPlayer.normalize(), zombie.speed * dt);
-                    }
-                    zombie.mesh.lookAt(player.pos.x, zombie.mesh.position.y, player.pos.z);
-                    zombie.mesh.position.y = Math.max(0, walkCycle * 0.08);
-
-                    if (zombie.hitFlash > 0) {
-                        zombie.hitFlash -= dt;
-                        zombie.mesh.scale.setScalar(1.1);
-                    } else {
-                        zombie.mesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.22);
-                    }
-
-                    zombie.attackCd -= dt;
-                    if (dist < 1.5 && zombie.attackCd <= 0) {
-                        player.health -= 7 + wave * 0.25;
-                        zombie.attackCd = 0.72;
-                        sfx.damage();
-                    }
-                }
-
-                for (let h = hitEffects.length - 1; h >= 0; h -= 1) {
-                    const fx = hitEffects[h];
-                    fx.life -= dt;
-                    const progress = 1 - fx.life / fx.maxLife;
-                    fx.mesh.scale.setScalar(0.35 + progress * 1.25);
-                    fx.mesh.material.opacity = Math.max(0, 0.95 - progress);
-                    fx.mesh.position.y += dt * 0.7;
-                    if (fx.life <= 0) {
-                        scene.remove(fx.mesh);
-                        hitEffects.splice(h, 1);
-                    }
-                }
-
-                if (muzzleTime > 0) {
-                    muzzleTime -= dt;
-                    muzzleFlash.intensity = Math.max(0, muzzleFlash.intensity * 0.6);
-                } else {
-                    muzzleFlash.intensity = 0;
-                }
-
-                if (zombies.length === 0) {
-                    wave += 1;
-                    upgradeGun();
-                    spawnWave();
-                    sfx.wave();
-                }
-
-                if (player.health <= 0) endGame();
-
-                updateHud();
-            }
-
-            playerBody.position.set(player.pos.x, 0, player.pos.z);
-            playerBody.rotation.y = player.yaw;
-
-            const camOffset = new THREE.Vector3(0, 2.4, 4.7).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw + Math.PI);
-            camera.position.copy(player.pos).add(camOffset);
-            const lookTarget = player.pos.clone().add(new THREE.Vector3(0, 1.4, 0)).add(
-                new THREE.Vector3(0, 0, -7).applyEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ'))
-            );
-            camera.lookAt(lookTarget);
-
-            renderer.render(scene, camera);
-            requestAnimationFrame(loop);
-        }
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        updateHud();
-        loop();
-    </script>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="back-link" href="index.html">Back to Nova Arcade</a>
+      <div class="brand-block">
+        <p class="eyebrow">Realtime co-op survival</p>
+        <strong>Zombie Siege 3D Live</strong>
+      </div>
+      <div class="topbar-status">
+        <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
+        <div class="status-pill ghost" id="modePill">No room active</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="setup-column">
+        <section class="panel hero">
+          <p class="eyebrow">Undead co-op reboot</p>
+          <h1>Hold the yard. Drop the horde.</h1>
+          <p class="lede">Zombie Siege is now a room-based co-op survival game with shared waves, invite links, lounge sharing, heavier atmosphere, and instant hitscan weapons that feel much snappier than the old tracer system.</p>
+
+          <div class="step-strip">
+            <article class="step-card">
+              <span class="step-number">1</span>
+              <div>
+                <strong>Choose a callsign</strong>
+                <p>Use something short so your squad can spot you fast in the roster.</p>
+              </div>
+            </article>
+            <article class="step-card">
+              <span class="step-number">2</span>
+              <div>
+                <strong>Host, join, or practice solo</strong>
+                <p>Rooms generate invites instantly, and solo uses the same core rules as live rooms.</p>
+              </div>
+            </article>
+            <article class="step-card">
+              <span class="step-number">3</span>
+              <div>
+                <strong>Lock aim and survive</strong>
+                <p>Click into the arena to lock the mouse, then use hitscan fire to cut down the wave before it reaches you.</p>
+              </div>
+            </article>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>Survivor name</span>
+              <input id="nameInput" maxlength="18" placeholder="Nova" autocomplete="nickname" />
+            </label>
+            <label>
+              <span>Room code</span>
+              <input id="roomInput" maxlength="12" placeholder="Auto-created when hosting" />
+            </label>
+          </div>
+
+          <div class="hero-actions">
+            <button id="hostBtn" class="primary" type="button">Host live room</button>
+            <button id="joinBtn" type="button">Join room</button>
+            <button id="soloBtn" type="button">Start solo run</button>
+          </div>
+
+          <section class="invite-panel">
+            <div class="invite-header">
+              <div>
+                <p class="label">Invite link</p>
+                <p class="helper-copy">Host once and send this link or room code to your squad.</p>
+              </div>
+              <button id="copyCodeBtn" class="secondary" type="button">Copy room code</button>
+            </div>
+            <div class="invite-row">
+              <input id="inviteInput" readonly value="" />
+              <button id="copyBtn" class="primary" type="button">Copy invite</button>
+            </div>
+          </section>
+
+          <section class="invite-panel">
+            <div class="invite-header">
+              <div>
+                <p class="label">Arcade Lounge</p>
+                <p class="helper-copy">Open the lounge in a new tab or drop this zombie room there instantly.</p>
+              </div>
+            </div>
+            <div class="lounge-actions">
+              <button id="openLoungeBtn" class="secondary" type="button">Open Lounge tab</button>
+              <button id="shareLoungeBtn" class="primary" type="button">Share to Lounge</button>
+            </div>
+          </section>
+
+          <details class="advanced-panel">
+            <summary>Advanced connection settings</summary>
+            <label class="advanced-field">
+              <span>Server WS URL</span>
+              <input id="serverUrlInput" placeholder="wss://backend-ujaa.onrender.com" />
+            </label>
+          </details>
+
+          <p class="status-text" id="statusText">Host a room to generate an invite, join by code, or start a solo siege instantly.</p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="label">Why it feels better</p>
+              <h2>Rebuilt gunplay</h2>
+            </div>
+          </div>
+          <div class="feature-list">
+            <article class="feature-item">
+              <strong>Hitscan weapons</strong>
+              <p>The rifle, SMG, and shotgun now hit instantly along the shot line, so aiming feels much tighter than the old floating bullet spheres.</p>
+            </article>
+            <article class="feature-item">
+              <strong>Shared wave sim</strong>
+              <p>Online rooms run from the same backend loop as the other live games, so everybody sees the same wave timing, zombie deaths, and room state.</p>
+            </article>
+            <article class="feature-item">
+              <strong>Stronger atmosphere</strong>
+              <p>The arena now leans into gritty asphalt, floodlights, barricades, and bigger silhouettes instead of flat neon emptiness.</p>
+            </article>
+          </div>
+        </section>
+      </section>
+
+      <section class="arena-column">
+        <section class="panel arena-panel">
+          <div class="arena-header">
+            <article class="hud-card">
+              <p class="label">Room</p>
+              <p class="hud-value" id="roomCodeLabel">-</p>
+            </article>
+            <article class="hud-card">
+              <p class="label">Wave</p>
+              <p class="hud-value" id="waveLabel">Stand by</p>
+            </article>
+            <article class="hud-card">
+              <p class="label">Undead left</p>
+              <p class="hud-value" id="remainingLabel">0</p>
+            </article>
+            <article class="hud-card">
+              <p class="label">Squad score</p>
+              <p class="hud-value" id="scoreLabel">0</p>
+            </article>
+          </div>
+
+          <div class="combat-strip">
+            <div class="feed-card">
+              <p class="label">Mission feed</p>
+              <p class="feed-text" id="missionText">Host a room, join a friend, or lock the mouse and start a solo siege.</p>
+            </div>
+            <div class="feed-mini">
+              <p class="label">Condition</p>
+              <p class="mini-copy" id="conditionLabel">Stand by</p>
+            </div>
+            <div class="feed-mini">
+              <p class="label">Objective</p>
+              <p class="mini-copy" id="objectiveText">Hold the lot and survive the next breach.</p>
+            </div>
+          </div>
+
+          <div class="arena-stage" id="arenaStage">
+            <canvas id="gameCanvas" width="1600" height="900" aria-label="Zombie Siege 3D arena"></canvas>
+            <div class="crosshair" aria-hidden="true"></div>
+            <div class="arena-overlay" id="overlay">
+              <div class="overlay-card">
+                <h2 class="overlay-title" id="overlayTitle">Zombie Siege 3D Live</h2>
+                <p class="overlay-copy" id="overlayCopy">Use the side panel to host, join, or start solo. Once you are in a run, click the button below or click the arena to lock your aim.</p>
+                <p class="overlay-meta" id="overlayMeta">Controls: WASD move, mouse turns, Left Click fires, Shift sprints, 1 2 3 swaps weapons.</p>
+                <button id="startBtn" class="primary" type="button">Start solo instantly</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="arena-footer">
+            <div>
+              <p class="label">Controls</p>
+              <p class="footer-copy" id="controlHint">WASD moves. Mouse turns. Left Click fires. Shift sprints. Press 1, 2, or 3 for rifle, SMG, and shotgun. Click the arena to lock your aim.</p>
+            </div>
+            <div class="arena-actions">
+              <button id="restartBtn" class="primary" type="button">Restart run</button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <aside class="sidebar">
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="label">Survivors</p>
+              <h2>Squad roster</h2>
+            </div>
+            <p class="mini-status" id="presenceText">No survivors connected yet.</p>
+          </div>
+          <div class="player-cards" id="playerCards"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="label">Field notes</p>
+              <h2>Live feed</h2>
+            </div>
+            <p class="mini-status">Wave starts, player downs, pickups, and boss alerts land here.</p>
+          </div>
+          <div class="feed-list" id="feedList"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="label">Survival advice</p>
+              <h2>Stay alive longer</h2>
+            </div>
+          </div>
+          <div class="facts">
+            <article class="fact">
+              <strong>Use the rifle to open</strong>
+              <p>The rifle is the most stable hitscan weapon. Use it to thin the first line and swap only when the horde compresses.</p>
+            </article>
+            <article class="fact">
+              <strong>Shotgun the choke</strong>
+              <p>Let the shotgun erase anything already in your face. It lands hard but falls off fast.</p>
+            </article>
+            <article class="fact">
+              <strong>Protect downed teammates</strong>
+              <p>As long as someone is alive, the room can recover. Sprint to create space and keep the respawn timer alive.</p>
+            </article>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast" aria-live="polite"></div>
+  </div>
+
+  <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="games/star-sprint/zombie-siege-core.js?v=20260327b"></script>
+  <script src="games/zombie-siege/game.js?v=20260327b"></script>
 </body>
 </html>

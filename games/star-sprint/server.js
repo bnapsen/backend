@@ -12,6 +12,7 @@ const Poker = require('./poker-core.js');
 const MiniPool = require('./mini-pool-core.js');
 const ArcadeChat = require('./arcade-chat-core.js');
 const CarSoccer = require('./car-soccer-core.js');
+const ZombieSiege = require('./zombie-siege-core.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
@@ -95,6 +96,13 @@ const GAME_DEFS = {
     maxPlayers: 2,
     createGameState: () => Shooter.createGameState(),
     cloneState: (game) => Shooter.cloneState(game),
+  },
+  'zombie-siege': {
+    id: 'zombie-siege',
+    title: 'Zombie Siege 3D Live',
+    maxPlayers: ZombieSiege.MAX_PLAYERS,
+    createGameState: () => ZombieSiege.createGameState(),
+    cloneState: (game) => ZombieSiege.cloneState(game),
   },
   blackjack: {
     id: 'blackjack',
@@ -212,6 +220,9 @@ function normalizeGameType(raw) {
   }
   if (raw === 'space-shooter') {
     return 'space-shooter';
+  }
+  if (raw === 'zombie-siege' || raw === 'zombie' || raw === 'zombies') {
+    return 'zombie-siege';
   }
   if (raw === 'mini-pool' || raw === 'pool') {
     return 'mini-pool';
@@ -459,6 +470,12 @@ function snapshot(room, viewerId) {
       roster: listPlayers(room),
     };
   }
+  if (room.gameType === 'zombie-siege') {
+    return {
+      ...base,
+      roster: listPlayers(room),
+    };
+  }
   if (room.gameType === 'car-soccer') {
     return {
       ...base,
@@ -509,6 +526,19 @@ function addPlayerToGame(room, player) {
     const result = Shooter.addPlayer(room.game, {
       id: player.id,
       name: player.name,
+    });
+    if (result) {
+      player.color = result.color;
+      player.seat = result.seat;
+    }
+    return result;
+  }
+
+  if (room.gameType === 'zombie-siege') {
+    const result = ZombieSiege.addPlayer(room.game, {
+      id: player.id,
+      name: player.name,
+      color: player.color,
     });
     if (result) {
       player.color = result.color;
@@ -597,7 +627,7 @@ function handleJoin(socket, payload) {
   if (!addPlayerToGame(room, player)) {
     sendError(socket, room.gameType === 'poker' || room.gameType === 'blackjack'
       ? 'That table is full.'
-      : room.gameType === 'space-shooter'
+      : room.gameType === 'space-shooter' || room.gameType === 'zombie-siege'
         ? 'That squad room is full.'
         : 'No seat is available in that room.');
     return;
@@ -643,6 +673,10 @@ function handleJoin(socket, payload) {
       ? room.players.size === 1
         ? `${player.name} took the first blackjack seat. Set wagers and deal when ready.`
         : `${player.name} joined the blackjack table.`
+    : room.gameType === 'zombie-siege'
+      ? room.players.size === 1
+        ? `${player.name} is in the yard. Share the room and brace for wave one.`
+        : `${player.name} joined the zombie siege room.`
     : room.players.size === 1
       ? `${player.name} is ready. Share the invite to start playing.`
       : `${player.name} joined. Match ready.`;
@@ -679,6 +713,10 @@ function handleMove(socket, payload) {
   const { room, player } = context;
   if (room.gameType === 'space-shooter') {
     sendError(socket, 'Movement in Starline Defense uses realtime input, not turn-based moves.');
+    return;
+  }
+  if (room.gameType === 'zombie-siege') {
+    sendError(socket, 'Zombie Siege uses realtime input, not turn-based moves.');
     return;
   }
   if (room.gameType === 'car-soccer') {
@@ -984,6 +1022,10 @@ function handleInput(socket, payload) {
     Shooter.setPlayerInput(room.game, player.id, payload && payload.input);
     return;
   }
+  if (room.gameType === 'zombie-siege') {
+    ZombieSiege.setPlayerInput(room.game, player.id, payload && payload.input);
+    return;
+  }
   if (room.gameType === 'car-soccer') {
     CarSoccer.setPlayerInput(room.game, player.id, payload && payload.input);
     return;
@@ -1060,6 +1102,9 @@ function handleRestart(socket) {
   if (room.gameType === 'space-shooter') {
     Shooter.resetMatch(room.game);
     room.lastTickAt = Date.now();
+  } else if (room.gameType === 'zombie-siege') {
+    ZombieSiege.resetMatch(room.game);
+    room.lastTickAt = Date.now();
   } else if (room.gameType === 'car-soccer') {
     CarSoccer.resetMatch(room.game);
     room.lastTickAt = Date.now();
@@ -1081,6 +1126,8 @@ function handleRestart(socket) {
     room,
     room.gameType === 'space-shooter'
       ? `${player.name} launched a fresh squad run.`
+      : room.gameType === 'zombie-siege'
+        ? `${player.name} restarted the zombie siege run.`
       : room.gameType === 'car-soccer'
         ? `${player.name} reset the arena kickoff.`
       : room.gameType === 'poker'
@@ -1119,6 +1166,9 @@ function handleDisconnect(socket) {
   if (room.gameType === 'space-shooter') {
     Shooter.removePlayer(room.game, playerId);
     room.lastTickAt = Date.now();
+  } else if (room.gameType === 'zombie-siege') {
+    ZombieSiege.removePlayer(room.game, playerId);
+    room.lastTickAt = Date.now();
   } else if (room.gameType === 'car-soccer') {
     CarSoccer.removePlayer(room.game, playerId);
     room.lastTickAt = Date.now();
@@ -1137,6 +1187,8 @@ function handleDisconnect(socket) {
   const message = player
     ? room.gameType === 'space-shooter'
       ? `${player.name} disconnected. The room stays open for a new wingmate.`
+      : room.gameType === 'zombie-siege'
+        ? `${player.name} disconnected. The yard stays open for another survivor.`
       : room.gameType === 'car-soccer'
         ? `${player.name} disconnected. The Turbo Arena room stays open for a new driver.`
       : room.gameType === 'poker'
@@ -1163,6 +1215,13 @@ function tickRealtimeRooms() {
       const elapsed = Math.max(16, Math.min(120, now - room.lastTickAt));
       room.lastTickAt = now;
       Shooter.step(room.game, elapsed / 1000);
+      broadcastState(room);
+      continue;
+    }
+    if (room.gameType === 'zombie-siege' && room.players.size > 0) {
+      const elapsed = Math.max(16, Math.min(120, now - room.lastTickAt));
+      room.lastTickAt = now;
+      ZombieSiege.step(room.game, elapsed / 1000);
       broadcastState(room);
       continue;
     }
