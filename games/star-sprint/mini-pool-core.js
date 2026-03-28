@@ -5,33 +5,33 @@ const TABLE = Object.freeze({
   height: 560,
   rail: 46,
   pocketR: 28,
-  friction: 0.981,
+  friction: 0.9824,
   cushionBounce: 0.88,
   ballBounce: 0.96,
   tangentBounce: 0.992,
-  railGrip: 0.985,
+  railGrip: 0.988,
 });
 
 const COLORS = ['white', 'black'];
 const MAX_EVENTS = 8;
 const MAX_RACKS = 3;
 const RACK_BONUS = 14;
-const SHOT_MAX_DISTANCE = 220;
-const SHOT_MAX_POWER = 1.45;
+const SHOT_MAX_DISTANCE = 260;
+const SHOT_MAX_POWER = 2.05;
 const SHOT_MIN_POWER = 0.04;
-const SHOT_MIN_SPEED = 0.95;
-const SHOT_SPEED = 14.5;
-const SHOT_BOOST_SPEED = 18.4;
+const SHOT_MIN_SPEED = 1.05;
+const SHOT_SPEED = 17.4;
+const SHOT_BOOST_SPEED = 27.8;
 const SCRATCH_PENALTY = 6;
 const BLOCKER_PENALTY = 8;
 const STOP_EPSILON = 0.014;
-const SOFT_SETTLE_SPEED = 0.075;
+const SOFT_SETTLE_SPEED = 0.068;
 const TARGET_VALUE = 10;
 const CROWN_VALUE = 18;
 const DEFAULT_VARIANT_ID = 'showdown';
 const TARGET_SUBSTEP_SECONDS = 1 / 120;
-const LOW_SPEED_BRAKE_THRESHOLD = 0.82;
-const LOW_SPEED_BRAKE = 0.972;
+const LOW_SPEED_BRAKE_THRESHOLD = 0.72;
+const LOW_SPEED_BRAKE = 0.977;
 const POCKET_PULL = 0.26;
 
 const VARIANTS = Object.freeze({

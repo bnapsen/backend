@@ -72,7 +72,7 @@
     pointer: { x: 0, y: 0 },
     power: 0,
     aimAngle: 0,
-    aimAnchorDistance: 0,
+    aimAnchor: { x: 0, y: 0 },
     localGame: null,
     localPlayers: [],
     soloBotDueAt: 0,
@@ -92,11 +92,11 @@
 
   const CUE_UI = Object.freeze({
     anchorCap: 108,
-    powerRange: 124,
-    maxPower: 1.45,
+    powerRange: 92,
+    maxPower: 2.05,
     minPower: 0.04,
-    cuePullback: 118,
-    boostPullback: 92,
+    cuePullback: 144,
+    boostPullback: 134,
     cueLength: 264,
     guideLength: 640,
     guideBounceLength: 124,
@@ -228,6 +228,8 @@
     state.aiming = false;
     state.pointerId = null;
     state.power = 0;
+    state.aimAnchor.x = 0;
+    state.aimAnchor.y = 0;
   }
 
   function disconnectSocket() {
@@ -777,8 +779,8 @@
     if (state.aiming && canShoot()) {
       const percent = Math.max(5, Math.round(state.power * 100));
       ui.powerText.textContent = percent > 100
-        ? `Release to fire at ${percent}% boost power. Drag long for a full break shot.`
-        : `Release to fire at ${percent}% power. Drag farther through the shot line to load more cue speed.`;
+        ? `Release to fire at ${percent}% boost power. Pull the cue farther back for a heavy break.`
+        : `Release to fire at ${percent}% power. Pull back away from the cue ball to load more speed.`;
       return;
     }
     if (!state.snapshot) {
@@ -794,7 +796,7 @@
       return;
     }
     if (canShoot()) {
-      ui.powerText.textContent = 'Click or touch to aim, drag to load the cue, and pull long for boost power when you need extra break speed.';
+    ui.powerText.textContent = 'Click or touch to aim, then pull the cue backward to load power. Pull farther back for a heavier break shot.';
       return;
     }
     ui.powerText.textContent = isSoloMode()
@@ -934,8 +936,8 @@
       ui.modePill.textContent = 'Waiting for opponent';
     } else if (canShoot()) {
       ui.turnNote.textContent = isSoloMode()
-        ? 'You have the cue. Aim on the table, drag outward to load the stick, and release to shoot. Pull longer for a boosted break.'
-        : 'You have the cue. Aim on the table, drag outward to load the stick, and release to shoot.';
+        ? 'You have the cue. Aim on the table, pull the stick back to load power, and release to shoot. Pull longer for a boosted break.'
+        : 'You have the cue. Aim on the table, pull the stick back to load power, and release to shoot.';
       ui.modePill.textContent = isSoloMode() ? 'Solo turn' : 'Your turn';
     } else {
       ui.turnNote.textContent = isSoloMode()
@@ -1429,7 +1431,8 @@
     state.aiming = true;
     state.pointerId = event.pointerId;
     state.pointer = point;
-    state.aimAnchorDistance = Math.min(distance, CUE_UI.anchorCap);
+    state.aimAnchor.x = point.x;
+    state.aimAnchor.y = point.y;
     if (distance > 0.0001) {
       state.aimAngle = Math.atan2(dy, dx);
     }
@@ -1456,13 +1459,23 @@
       const dx = point.x - cue.x;
       const dy = point.y - cue.y;
       const distance = Math.hypot(dx, dy);
-      if (distance > 0.0001) {
-        state.aimAngle = Math.atan2(dy, dx);
+      const direction = cueDirection();
+      const dragX = state.aimAnchor.x - point.x;
+      const dragY = state.aimAnchor.y - point.y;
+      let pullback = dragX * direction.x + dragY * direction.y;
+      const lateral = Math.abs(dragX * -direction.y + dragY * direction.x);
+      if (pullback < 12 || lateral > Math.max(16, pullback * 1.1)) {
+        if (distance > 0.0001) {
+          state.aimAngle = Math.atan2(dy, dx);
+        }
+        state.aimAnchor.x = point.x;
+        state.aimAnchor.y = point.y;
+        pullback = 0;
       }
-      const rawPower = Math.max(0, distance - state.aimAnchorDistance - 6) / CUE_UI.powerRange;
+      const rawPower = Math.max(0, pullback - 4) / CUE_UI.powerRange;
       const easedPower = rawPower <= 1
         ? Math.pow(rawPower, 0.9)
-        : 1 + Math.pow(rawPower - 1, 0.88);
+        : 1 + Math.pow(rawPower - 1, 0.82);
       state.power = clamp(easedPower, 0, CUE_UI.maxPower);
     }
     updatePowerUi();
@@ -1497,7 +1510,7 @@
         power,
       }, 'Shot fired. Orbit Bot is watching the table.');
     } else {
-      const legacyVectorScale = power * 250;
+      const legacyVectorScale = power * 320;
       if (sendJson({
         action: 'shoot',
         vectorX: direction.x * legacyVectorScale,
