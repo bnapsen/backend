@@ -425,25 +425,35 @@ button:disabled {
 
 .roll-track {
   position: absolute;
-  left: 13%;
-  right: 13%;
+  left: 50%;
   top: 50%;
-  height: 164px;
-  transform: translateY(-50%);
-  border-radius: 32px;
-  opacity: 0.42;
+  width: 238px;
+  height: 118px;
+  transform: translate(-50%, -50%) scale(0.9);
+  border-radius: 999px;
+  opacity: 0;
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 243, 196, 0.18), transparent 52%),
-    linear-gradient(90deg, rgba(113, 217, 255, 0.06), rgba(255, 213, 140, 0.12), rgba(113, 217, 255, 0.06));
+    radial-gradient(circle at 50% 50%, rgba(255, 243, 196, 0.16), rgba(113, 217, 255, 0.09) 42%, rgba(113, 217, 255, 0.02) 62%, transparent 78%);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 0 24px rgba(113, 217, 255, 0.08);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 34px rgba(113, 217, 255, 0.08);
+  filter: blur(1.2px);
   transition: opacity 0.25s ease, transform 0.35s ease;
 }
 
+.board-stage.ready-to-roll .roll-track {
+  opacity: 0.22;
+  transform: translate(-50%, -50%) scale(0.98);
+}
+
+.board-stage.throwing .roll-track {
+  opacity: 0.36;
+  transform: translate(-50%, -50%) scale(1.02);
+}
+
 .board-stage.is-rolling .roll-track {
-  opacity: 0.92;
-  transform: translateY(-50%) scale(1.015);
+  opacity: 0.76;
+  transform: translate(-50%, -50%) scale(1.06);
 }
 
 .board-footer {
@@ -503,21 +513,21 @@ button:disabled {
   position: absolute;
   left: 0;
   top: 0;
-  width: 58px;
-  height: 58px;
+  width: 64px;
+  height: 64px;
   transform: translate3d(var(--end-x, 0px), var(--end-y, 0px), 0) rotate(var(--end-rot, 0deg));
-  filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.34)) drop-shadow(0 0 18px rgba(255, 214, 141, 0.14));
+  filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.28)) drop-shadow(0 0 14px rgba(255, 214, 141, 0.08));
   will-change: transform, filter;
-  transition: transform 0.08s linear;
+  transition: transform 0.08s linear, filter 0.18s ease;
 }
 
 .die-shell.launch {
-  animation: dice-flight 980ms cubic-bezier(.18, .88, .22, 1) both;
+  animation: dice-flight var(--flight-duration, 920ms) cubic-bezier(.18, .88, .22, 1) both;
   transition: none;
 }
 
 .board-stage.is-rolling .die-shell {
-  filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.38)) drop-shadow(0 0 22px rgba(255, 214, 141, 0.18));
+  filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.34)) drop-shadow(0 0 18px rgba(255, 214, 141, 0.14));
 }
 
 .die-shell .die {
@@ -526,30 +536,60 @@ button:disabled {
 }
 
 .die {
+  position: relative;
   width: 100%;
   height: 100%;
-  border-radius: 15px;
-  border: 1px solid rgba(255, 255, 255, 0.38);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(176, 208, 236, 0.58));
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  background:
+    radial-gradient(circle at 28% 24%, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.86) 20%, rgba(222, 233, 244, 0.82) 48%, rgba(160, 182, 210, 0.88) 100%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(180, 205, 228, 0.7));
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  padding: 8px;
-  box-shadow: 0 14px 22px rgba(0, 0, 0, 0.34), inset 0 0 8px rgba(255, 255, 255, 0.42);
+  padding: 9px;
+  box-shadow:
+    0 10px 18px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    inset 0 -10px 16px rgba(77, 98, 128, 0.18);
+}
+
+.die::before,
+.die::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.die::before {
+  background:
+    radial-gradient(circle at 22% 18%, rgba(255, 255, 255, 0.55), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 40%);
+}
+
+.die::after {
+  inset: 4px;
+  border-radius: 14px;
+  border: 1px solid rgba(20, 39, 64, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 .die.rolling {
-  animation: die-shake 0.3s linear infinite, die-spin 0.56s linear infinite;
+  animation: die-shake 0.24s linear infinite, die-spin 0.42s linear infinite;
 }
 
 .pip {
-  width: 10px;
-  height: 10px;
-  background: #22384b;
+  width: 11px;
+  height: 11px;
+  background: radial-gradient(circle at 30% 30%, #36566e, #152939 72%);
   border-radius: 50%;
   opacity: 0;
   place-self: center;
-  box-shadow: 0 0 8px rgba(114, 194, 255, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px rgba(0, 0, 0, 0.22);
 }
 
 .inline-chip {
@@ -594,43 +634,37 @@ button:disabled {
 }
 
 @keyframes die-shake {
-  0% { transform: rotate(0deg) translateY(0); }
-  25% { transform: rotate(-11deg) translateY(-3px) scale(1.03); }
-  50% { transform: rotate(9deg) translateY(4px) scale(1.02); }
-  75% { transform: rotate(-8deg) translateY(-2px) scale(1.03); }
-  100% { transform: rotate(0deg) translateY(0); }
+  0% { transform: rotate(0deg) translateY(0) scale(1); }
+  25% { transform: rotate(-10deg) translateY(-3px) scale(1.04); }
+  50% { transform: rotate(8deg) translateY(4px) scale(1.02); }
+  75% { transform: rotate(-7deg) translateY(-2px) scale(1.05); }
+  100% { transform: rotate(0deg) translateY(0) scale(1); }
 }
 
 @keyframes die-spin {
-  0% { filter: brightness(1.05); }
-  50% { filter: brightness(1.25); }
-  100% { filter: brightness(1.05); }
-}
-
-@keyframes dice-burst {
-  0% { transform: translateX(0) scale(0.92); }
-  60% { transform: translateX(var(--dice-travel, 0px)) scale(1.08); }
-  100% { transform: translateX(0) scale(1); }
+  0% { filter: brightness(1.02) saturate(1); }
+  50% { filter: brightness(1.18) saturate(1.08); }
+  100% { filter: brightness(1.02) saturate(1); }
 }
 
 @keyframes dice-flight {
   0% {
-    transform: translate3d(var(--start-x), var(--start-y), 0) rotate(var(--start-rot));
+    transform: translate3d(var(--start-x), var(--start-y), 0) rotate(var(--start-rot)) scale(0.96);
   }
-  18% {
-    transform: translate3d(var(--mid-x), calc(var(--mid-y) - 34px), 0) rotate(calc(var(--start-rot) + 380deg));
+  16% {
+    transform: translate3d(calc(var(--mid-x) - 8px), calc(var(--mid-y) - 38px), 0) rotate(calc(var(--start-rot) + 280deg)) scale(1.06);
   }
-  42% {
-    transform: translate3d(var(--late-x), var(--late-y), 0) rotate(calc(var(--start-rot) + 760deg));
+  38% {
+    transform: translate3d(var(--late-x), calc(var(--late-y) - 8px), 0) rotate(calc(var(--start-rot) + 620deg)) scale(1.02);
   }
-  68% {
-    transform: translate3d(calc(var(--end-x) - 10px), calc(var(--end-y) - 10px), 0) rotate(calc(var(--start-rot) + 980deg));
+  62% {
+    transform: translate3d(calc(var(--end-x) - 12px), calc(var(--end-y) - 14px), 0) rotate(calc(var(--start-rot) + 890deg)) scale(1.05);
   }
-  82% {
-    transform: translate3d(calc(var(--end-x) + 6px), calc(var(--end-y) + 4px), 0) rotate(calc(var(--end-rot) + 24deg));
+  80% {
+    transform: translate3d(calc(var(--end-x) + 6px), calc(var(--end-y) + 6px), 0) rotate(calc(var(--end-rot) + 20deg)) scale(0.98);
   }
   100% {
-    transform: translate3d(var(--end-x), var(--end-y), 0) rotate(var(--end-rot));
+    transform: translate3d(var(--end-x), var(--end-y), 0) rotate(var(--end-rot)) scale(1);
   }
 }
 
