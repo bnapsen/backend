@@ -73,6 +73,7 @@
     power: 0,
     aimAngle: 0,
     aimAnchor: { x: 0, y: 0 },
+    aimLocked: false,
     localGame: null,
     localPlayers: [],
     soloBotDueAt: 0,
@@ -101,6 +102,10 @@
     guideLength: 640,
     guideBounceLength: 124,
     gripRadius: 32,
+    lockPullback: 12,
+    unlockPullback: 5,
+    lockLateral: 38,
+    unlockLateral: 72,
   });
   const SOLO_BOT_NAME = 'Orbit Bot';
 
@@ -230,6 +235,7 @@
     state.power = 0;
     state.aimAnchor.x = 0;
     state.aimAnchor.y = 0;
+    state.aimLocked = false;
   }
 
   function disconnectSocket() {
@@ -779,8 +785,8 @@
     if (state.aiming && canShoot()) {
       const percent = Math.max(5, Math.round(state.power * 100));
       ui.powerText.textContent = percent > 100
-        ? `Release to fire at ${percent}% boost power. Pull the cue farther back for a heavy break.`
-        : `Release to fire at ${percent}% power. Pull back away from the cue ball to load more speed.`;
+        ? `Release to fire at ${percent}% boost power. Pull straight back for a heavy break.`
+        : `Release to fire at ${percent}% power. Pull straight back from the cue ball to load more speed.`;
       return;
     }
     if (!state.snapshot) {
@@ -796,7 +802,7 @@
       return;
     }
     if (canShoot()) {
-    ui.powerText.textContent = 'Click or touch to aim, then pull the cue backward to load power. Pull farther back for a heavier break shot.';
+    ui.powerText.textContent = 'Click or touch to aim, then pull the cue straight backward to load power. Pull farther back for a heavier break shot.';
       return;
     }
     ui.powerText.textContent = isSoloMode()
@@ -936,8 +942,8 @@
       ui.modePill.textContent = 'Waiting for opponent';
     } else if (canShoot()) {
       ui.turnNote.textContent = isSoloMode()
-        ? 'You have the cue. Aim on the table, pull the stick back to load power, and release to shoot. Pull longer for a boosted break.'
-        : 'You have the cue. Aim on the table, pull the stick back to load power, and release to shoot.';
+        ? 'You have the cue. Aim on the table, pull the stick straight back to load power, and release to shoot. Pull longer for a boosted break.'
+        : 'You have the cue. Aim on the table, pull the stick straight back to load power, and release to shoot.';
       ui.modePill.textContent = isSoloMode() ? 'Solo turn' : 'Your turn';
     } else {
       ui.turnNote.textContent = isSoloMode()
@@ -1433,6 +1439,7 @@
     state.pointer = point;
     state.aimAnchor.x = point.x;
     state.aimAnchor.y = point.y;
+    state.aimLocked = false;
     if (distance > 0.0001) {
       state.aimAngle = Math.atan2(dy, dx);
     }
@@ -1459,18 +1466,35 @@
       const dx = point.x - cue.x;
       const dy = point.y - cue.y;
       const distance = Math.hypot(dx, dy);
+      if (!state.aimLocked && distance > 0.0001) {
+        state.aimAngle = Math.atan2(dy, dx);
+      }
       const direction = cueDirection();
       const dragX = state.aimAnchor.x - point.x;
       const dragY = state.aimAnchor.y - point.y;
-      let pullback = dragX * direction.x + dragY * direction.y;
+      const pullback = dragX * direction.x + dragY * direction.y;
       const lateral = Math.abs(dragX * -direction.y + dragY * direction.x);
-      if (pullback < 12 || lateral > Math.max(16, pullback * 1.1)) {
+      if (!state.aimLocked) {
+        if (pullback > CUE_UI.lockPullback && lateral < CUE_UI.lockLateral) {
+          state.aimLocked = true;
+        } else {
+          state.aimAnchor.x = point.x;
+          state.aimAnchor.y = point.y;
+          state.power = 0;
+          updatePowerUi();
+          return;
+        }
+      }
+      if (state.aimLocked && (pullback < CUE_UI.unlockPullback || lateral > CUE_UI.unlockLateral)) {
+        state.aimLocked = false;
         if (distance > 0.0001) {
           state.aimAngle = Math.atan2(dy, dx);
         }
         state.aimAnchor.x = point.x;
         state.aimAnchor.y = point.y;
-        pullback = 0;
+        state.power = 0;
+        updatePowerUi();
+        return;
       }
       const rawPower = Math.max(0, pullback - 4) / CUE_UI.powerRange;
       const easedPower = rawPower <= 1
@@ -1491,6 +1515,7 @@
     state.aiming = false;
     state.pointerId = null;
     state.power = 0;
+    state.aimLocked = false;
 
     if (!cue || !point || !canShoot()) {
       updatePowerUi();
