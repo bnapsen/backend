@@ -630,7 +630,7 @@
         if (lateral > zombie.radius + weapon.width) {
           continue;
         }
-        if (ahead < bestAhead) {
+        if (ahead <= bestAhead) {
           bestAhead = ahead;
           bestZombie = zombie;
         }
