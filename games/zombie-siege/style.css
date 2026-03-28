@@ -45,9 +45,9 @@ body::before {
 }
 
 .page-shell {
-  width: min(1860px, calc(100vw - 24px));
+  width: min(1940px, calc(100vw - 16px));
   margin: 0 auto;
-  padding: 18px 0 28px;
+  padding: 14px 0 24px;
 }
 
 .topbar,
@@ -168,9 +168,9 @@ h2,
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(230px, 270px);
-  gap: 12px;
-  margin-top: 16px;
+  grid-template-columns: minmax(228px, 272px) minmax(0, 1fr) minmax(192px, 236px);
+  gap: 10px;
+  margin-top: 14px;
   align-items: start;
 }
 
@@ -178,7 +178,7 @@ h2,
 .arena-column,
 .sidebar {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .panel {
@@ -188,7 +188,7 @@ h2,
     radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 28%),
     linear-gradient(180deg, var(--panel), var(--panel-strong));
   box-shadow: var(--shadow);
-  padding: 16px;
+  padding: 14px;
   backdrop-filter: blur(16px);
 }
 
@@ -344,36 +344,36 @@ button.secondary {
 }
 
 .arena-panel {
-  padding: 14px;
+  padding: 12px;
 }
 
 .arena-header {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .hud-card {
-  padding: 12px 14px;
+  padding: 10px 12px;
 }
 
 .hud-value {
   margin: 4px 0 0;
-  font-size: clamp(1rem, 2vw, 1.3rem);
+  font-size: clamp(0.96rem, 1.5vw, 1.14rem);
   font-weight: 700;
 }
 
 .combat-strip {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 12px;
+  grid-template-columns: minmax(0, 1.55fr) repeat(2, minmax(0, 0.9fr));
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .feed-card,
 .feed-mini {
   border-radius: 20px;
-  padding: 14px;
+  padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.03);
 }
@@ -388,7 +388,7 @@ button.secondary {
   position: relative;
   margin-top: 10px;
   aspect-ratio: 16 / 9;
-  min-height: clamp(560px, 75vh, 980px);
+  min-height: clamp(620px, 79vh, 1120px);
   border-radius: 28px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -569,7 +569,7 @@ button.secondary {
 
 @media (max-width: 1280px) {
   .layout {
-    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
   }
 
   .sidebar {

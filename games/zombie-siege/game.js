@@ -15,6 +15,7 @@
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const INPUT_SEND_MS = 50;
   const PLAYER_HEIGHT = 1.72;
+  const CAMERA_DEFAULT_YAW = 0;
   const query = new URLSearchParams(window.location.search);
 
   const ui = {
@@ -439,18 +440,18 @@
 
   function createLabelSprite(text, color) {
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 96;
+    canvas.width = 196;
+    canvas.height = 72;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = 'rgba(5, 8, 12, 0.72)';
     ctx.beginPath();
-    ctx.roundRect(12, 18, 232, 50, 18);
+    ctx.roundRect(10, 14, 176, 40, 14);
     ctx.fill();
     ctx.strokeStyle = `${color}aa`;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.stroke();
-    ctx.font = '700 30px Rajdhani, sans-serif';
+    ctx.font = '700 22px Rajdhani, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#f5f7fb';
@@ -462,8 +463,8 @@
       transparent: true,
       depthWrite: false,
     }));
-    sprite.scale.set(4.4, 1.65, 1);
-    sprite.position.set(0, 3.5, 0);
+    sprite.scale.set(3.35, 1.2, 1);
+    sprite.position.set(0, 3.02, 0);
     return sprite;
   }
 
@@ -506,6 +507,7 @@
       pickupRoot: new THREE.Group(),
       cameraPos: new THREE.Vector3(0, 7, 12),
       cameraLook: new THREE.Vector3(0, 2, 0),
+      cameraYaw: CAMERA_DEFAULT_YAW,
       aimTarget: new THREE.Vector3(0, 1.55, -18),
       raycaster: new THREE.Raycaster(),
       aimPlane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -1.55),
@@ -1517,7 +1519,8 @@
     const lookAt = new THREE.Vector3();
 
     if (local) {
-      const forward = new THREE.Vector3(Math.sin(local.yaw), 0, -Math.cos(local.yaw));
+      const cameraYaw = Number.isFinite(world.cameraYaw) ? world.cameraYaw : CAMERA_DEFAULT_YAW;
+      const forward = new THREE.Vector3(Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
       const right = new THREE.Vector3(-forward.z, 0, forward.x);
       const desiredAim = new THREE.Vector3(
         Number.isFinite(state.input.aimX) ? state.input.aimX : local.x + forward.x * 40,
@@ -1526,14 +1529,22 @@
       );
       const aimBlend = 1 - Math.pow(0.22, dt * 7);
       world.aimTarget.lerp(desiredAim, aimBlend);
-      const distance = game?.gameOver ? 8.9 : 7.15;
+      const distance = game?.gameOver ? 10.5 : 8.8;
       const shoulder = new THREE.Vector3(local.x, PLAYER_HEIGHT + 0.45, local.z)
-        .addScaledVector(right, 1.04);
+        .addScaledVector(right, 0.92);
       targetPos.copy(shoulder)
         .addScaledVector(forward, -distance)
-        .addScaledVector(right, 0.64)
-        .add(new THREE.Vector3(0, game?.gameOver ? 4 : 2.95, 0));
-      lookAt.copy(shoulder).lerp(world.aimTarget, 0.36);
+        .addScaledVector(right, 0.88)
+        .add(new THREE.Vector3(0, game?.gameOver ? 4.8 : 3.55, 0));
+      const aimDir = new THREE.Vector3(world.aimTarget.x - local.x, 0, world.aimTarget.z - local.z);
+      if (aimDir.lengthSq() > 0.001) {
+        aimDir.normalize();
+      } else {
+        aimDir.copy(forward);
+      }
+      lookAt.set(local.x, PLAYER_HEIGHT + 0.8, local.z)
+        .addScaledVector(forward, 5.4)
+        .addScaledVector(aimDir, 1.6);
     } else {
       const orbit = performance.now() * 0.00012;
       targetPos.set(Math.cos(orbit) * 30, 12, Math.sin(orbit) * 26);
@@ -1716,6 +1727,9 @@
     state.movement.worldZ = 0;
     state.input.moveDirX = 0;
     state.input.moveDirZ = 0;
+    if (state.world) {
+      state.world.cameraYaw = CAMERA_DEFAULT_YAW;
+    }
     clearSceneEntities();
     updateInviteUi();
   }
@@ -2062,19 +2076,13 @@
       if (movementChanged) {
         let worldMoveX = moveX;
         let worldMoveZ = -moveY;
-        if (state.camera && state.world) {
-          const camForward = state.world.tempVecA;
-          const camRight = state.world.tempVecB;
-          state.camera.getWorldDirection(camForward);
-          camForward.y = 0;
-          if (camForward.lengthSq() < 0.0001) {
-            camForward.set(Math.sin(desiredYaw), 0, -Math.cos(desiredYaw));
-          }
-          camForward.normalize();
-          camRight.set(-camForward.z, 0, camForward.x);
-          worldMoveX = camRight.x * moveX + camForward.x * moveY;
-          worldMoveZ = camRight.z * moveX + camForward.z * moveY;
-        }
+        const movementYaw = Number.isFinite(state.world?.cameraYaw) ? state.world.cameraYaw : CAMERA_DEFAULT_YAW;
+        const forwardX = Math.sin(movementYaw);
+        const forwardZ = -Math.cos(movementYaw);
+        const rightX = -forwardZ;
+        const rightZ = forwardX;
+        worldMoveX = rightX * moveX + forwardX * moveY;
+        worldMoveZ = rightZ * moveX + forwardZ * moveY;
         const worldMagnitude = Math.hypot(worldMoveX, worldMoveZ) || 1;
         state.movement.worldX = worldMoveX / worldMagnitude;
         state.movement.worldZ = worldMoveZ / worldMagnitude;
