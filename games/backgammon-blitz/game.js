@@ -110,6 +110,40 @@
     6: [0, 2, 3, 5, 6, 8],
   };
 
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function lerp(start, end, amount) {
+    return start + (end - start) * amount;
+  }
+
+  function roundRectPath(x, y, width, height, radius) {
+    const r = Math.min(radius, width / 2, height / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + width, y, x + width, y + height, r);
+    ctx.arcTo(x + width, y + height, x, y + height, r);
+    ctx.arcTo(x, y + height, x, y, r);
+    ctx.arcTo(x, y, x + width, y, r);
+    ctx.closePath();
+  }
+
+  function pointInTriangle(px, py, triangle) {
+    if (!triangle || triangle.length !== 3) {
+      return false;
+    }
+    const [a, b, c] = triangle;
+    const area = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+    if (!area) {
+      return false;
+    }
+    const s = ((b.y - c.y) * (px - c.x) + (c.x - b.x) * (py - c.y)) / area;
+    const t = ((c.y - a.y) * (px - c.x) + (a.x - c.x) * (py - c.y)) / area;
+    const u = 1 - s - t;
+    return s >= 0 && t >= 0 && u >= 0;
+  }
+
   function sanitizeRoomCode(value) {
     return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
   }
@@ -1211,7 +1245,7 @@
     }
     state.selected = source;
     state.legalForSelected = legal;
-    setStatusMessage(`Selected ${source === 'bar' ? 'the bar' : `point ${source + 1}`}. Drop onto a glowing landing ring.`);
+    setStatusMessage(`Selected ${source === 'bar' ? 'the bar' : `point ${source + 1}`}. Drop onto a glowing lane or click the checker again to fast-move it.`);
     render();
     return true;
   }
@@ -1229,6 +1263,40 @@
       x: player === Core.WHITE ? W - 55 : 55,
       y: H / 2,
       r: 22,
+    };
+  }
+
+  function offTargetRect(player) {
+    return {
+      x: player === Core.WHITE ? W - 88 : 22,
+      y: H / 2 - 106,
+      w: 66,
+      h: 212,
+    };
+  }
+
+  function laneRectForPoint(point) {
+    const rect = state.pointRects[point];
+    if (!rect) {
+      return null;
+    }
+    return {
+      x: rect.x + 4,
+      y: rect.top ? rect.y + 8 : rect.y + rect.h + 8,
+      w: rect.w - 8,
+      h: rect.h - 16,
+      top: rect.top,
+    };
+  }
+
+  function laneLabelAnchor(point) {
+    const lane = laneRectForPoint(point);
+    if (!lane) {
+      return null;
+    }
+    return {
+      x: lane.x + lane.w / 2,
+      y: lane.top ? lane.y + lane.h * 0.76 : lane.y + lane.h * 0.24,
     };
   }
 
@@ -1299,100 +1367,287 @@
     };
   }
 
+  function chooseQuickMoveForSource(source) {
+    if (!state.snapshot) {
+      return null;
+    }
+    const legal = Core.getLegalMovesForSource(state.snapshot, source);
+    if (!legal.length) {
+      return null;
+    }
+    if (legal.length === 1) {
+      return legal[0];
+    }
+
+    let best = null;
+    let bestScore = -Infinity;
+
+    for (const move of legal) {
+      const sandbox = Core.cloneState(state.snapshot);
+      sandbox.current = state.snapshot.current;
+      sandbox.dice = state.snapshot.dice.slice();
+      const result = Core.applyMove(sandbox, move);
+      if (!result.ok) {
+        continue;
+      }
+      let score = Core.evaluateBoard(sandbox, state.snapshot.current);
+      if (result.hit) {
+        score += 28;
+      }
+      if (move.to === 'off') {
+        score += 22;
+      }
+      if (sandbox.current === state.snapshot.current && sandbox.dice.length) {
+        const follow = Core.chooseBestMove(sandbox, sandbox.current, sandbox.dice);
+        if (follow) {
+          score += follow.score * 0.28;
+        }
+      }
+      if (score > bestScore ||
+          (score === bestScore && Core.moveProgressForPlayer(move, state.snapshot.current) > Core.moveProgressForPlayer(best, state.snapshot.current))) {
+        best = move;
+        bestScore = score;
+      }
+    }
+
+    return best || Core.furthestMove(legal, state.snapshot.current);
+  }
+
+  function fastMoveSelectedSource(source) {
+    const move = chooseQuickMoveForSource(source);
+    if (!move) {
+      showToast('No legal move is available from that checker.');
+      return false;
+    }
+    state.selected = source;
+    state.legalForSelected = [move];
+    setStatusMessage(`Fast-moving ${source === 'bar' ? 'the bar checker' : `point ${source + 1}`} to the clearest destination.`);
+    sendMove(move);
+    return true;
+  }
+
   function drawChecker(x, y, r, owner) {
     ctx.beginPath();
-    ctx.ellipse(x + 3, y + r * 0.7, r * 0.86, r * 0.42, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,.28)';
+    ctx.ellipse(x + 3, y + r * 0.82, r * 0.92, r * 0.46, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,.34)';
     ctx.fill();
+
+    const bodyGradient = ctx.createRadialGradient(x - r * 0.34, y - r * 0.42, r * 0.12, x, y, r * 1.04);
+    const rimGradient = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
+    if (owner === Core.WHITE) {
+      bodyGradient.addColorStop(0, '#fffef7');
+      bodyGradient.addColorStop(0.55, '#e8f2ff');
+      bodyGradient.addColorStop(1, '#b8cee6');
+      rimGradient.addColorStop(0, '#fff6db');
+      rimGradient.addColorStop(1, '#7ab5de');
+    } else {
+      bodyGradient.addColorStop(0, '#70758f');
+      bodyGradient.addColorStop(0.52, '#1e2437');
+      bodyGradient.addColorStop(1, '#060811');
+      rimGradient.addColorStop(0, '#8ec4f5');
+      rimGradient.addColorStop(1, '#ff8fb8');
+    }
 
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    const gradient = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, 2, x, y, r);
-    if (owner === Core.WHITE) {
-      gradient.addColorStop(0, '#ffffff');
-      gradient.addColorStop(1, '#c8e5ff');
-    } else {
-      gradient.addColorStop(0, '#525872');
-      gradient.addColorStop(1, '#090b16');
-    }
-    ctx.fillStyle = gradient;
+    ctx.fillStyle = bodyGradient;
     ctx.fill();
-    ctx.strokeStyle = owner === Core.WHITE ? 'rgba(88,235,255,.9)' : 'rgba(255,116,186,.9)';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3.2;
+    ctx.strokeStyle = rimGradient;
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(x - r * 0.2, y - r * 0.2, r * 0.24, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,.22)';
+    ctx.arc(x, y, r * 0.74, 0, Math.PI * 2);
+    ctx.strokeStyle = owner === Core.WHITE ? 'rgba(103, 192, 236, 0.36)' : 'rgba(255, 170, 207, 0.3)';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    const medallion = ctx.createRadialGradient(x - r * 0.12, y - r * 0.18, 1, x, y, r * 0.34);
+    if (owner === Core.WHITE) {
+      medallion.addColorStop(0, '#fff6cb');
+      medallion.addColorStop(1, '#c28d48');
+    } else {
+      medallion.addColorStop(0, '#ffd6e5');
+      medallion.addColorStop(1, '#6c7ea5');
+    }
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.2, 0, Math.PI * 2);
+    ctx.fillStyle = medallion;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(x - r * 0.24, y - r * 0.26, r * 0.2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,.26)';
     ctx.fill();
   }
 
   function drawBoardBase() {
     ctx.clearRect(0, 0, W, H);
-    const margin = 34;
+    const margin = 30;
     const boardX = margin;
     const boardY = margin;
     const boardW = W - margin * 2;
     const boardH = H - margin * 2;
     const middle = boardX + boardW / 2;
 
-    const glow = ctx.createLinearGradient(boardX, boardY, boardX + boardW, boardY + boardH);
-    glow.addColorStop(0, 'rgba(255, 196, 130, 0.17)');
-    glow.addColorStop(1, 'rgba(118, 185, 226, 0.18)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(boardX, boardY, boardW, boardH);
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.26)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.42)';
+    ctx.shadowBlur = 36;
+    ctx.shadowOffsetY = 20;
+    roundRectPath(boardX - 4, boardY - 4, boardW + 8, boardH + 8, 34);
+    ctx.fill();
+    ctx.restore();
 
-    const wood = ctx.createLinearGradient(boardX, boardY, boardX, boardY + boardH);
-    wood.addColorStop(0, '#a26f47');
-    wood.addColorStop(0.5, '#755036');
-    wood.addColorStop(1, '#3b2a1d');
-    ctx.fillStyle = wood;
-    ctx.globalAlpha = 0.7;
-    ctx.fillRect(boardX + 8, boardY + 8, boardW - 16, boardH - 16);
-    ctx.globalAlpha = 1;
+    const frameGradient = ctx.createLinearGradient(boardX, boardY, boardX + boardW, boardY + boardH);
+    frameGradient.addColorStop(0, '#9e6e45');
+    frameGradient.addColorStop(0.18, '#70442a');
+    frameGradient.addColorStop(0.52, '#372111');
+    frameGradient.addColorStop(0.82, '#7d5232');
+    frameGradient.addColorStop(1, '#c18b5d');
+    roundRectPath(boardX, boardY, boardW, boardH, 32);
+    ctx.fillStyle = frameGradient;
+    ctx.fill();
 
-    for (let index = 0; index < 26; index += 1) {
-      const y = boardY + 10 + index * ((boardH - 20) / 26);
-      ctx.strokeStyle = `rgba(255,255,255,${index % 2 ? 0.03 : 0.015})`;
-      ctx.lineWidth = index % 2 ? 2 : 1;
+    ctx.save();
+    roundRectPath(boardX + 6, boardY + 6, boardW - 12, boardH - 12, 28);
+    ctx.clip();
+    for (let index = 0; index < 42; index += 1) {
+      const y = boardY - 12 + index * ((boardH + 24) / 42);
       ctx.beginPath();
-      ctx.moveTo(boardX + 10, y);
-      ctx.lineTo(boardX + boardW - 10, y + (index % 3) * 2);
+      ctx.moveTo(boardX - 10, y);
+      ctx.bezierCurveTo(boardX + boardW * 0.3, y + 10, boardX + boardW * 0.72, y - 8, boardX + boardW + 10, y + 6);
+      ctx.strokeStyle = `rgba(255, 237, 214, ${index % 2 ? 0.03 : 0.018})`;
+      ctx.lineWidth = index % 2 ? 1.6 : 0.9;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    const brassGradient = ctx.createLinearGradient(boardX, boardY, boardX, boardY + boardH);
+    brassGradient.addColorStop(0, '#f2d7aa');
+    brassGradient.addColorStop(0.45, '#b17f45');
+    brassGradient.addColorStop(1, '#5b381d');
+    roundRectPath(boardX + 11, boardY + 11, boardW - 22, boardH - 22, 26);
+    ctx.fillStyle = brassGradient;
+    ctx.fill();
+
+    const feltInset = 22;
+    const feltX = boardX + feltInset;
+    const feltY = boardY + feltInset;
+    const feltW = boardW - feltInset * 2;
+    const feltH = boardH - feltInset * 2;
+    const feltGradient = ctx.createLinearGradient(feltX, feltY, feltX + feltW, feltY + feltH);
+    feltGradient.addColorStop(0, '#173c4d');
+    feltGradient.addColorStop(0.48, '#102737');
+    feltGradient.addColorStop(1, '#1d3d46');
+    roundRectPath(feltX, feltY, feltW, feltH, 20);
+    ctx.fillStyle = feltGradient;
+    ctx.fill();
+
+    ctx.save();
+    roundRectPath(feltX, feltY, feltW, feltH, 20);
+    ctx.clip();
+    for (let index = 0; index < 34; index += 1) {
+      const y = feltY + index * (feltH / 33);
+      ctx.strokeStyle = `rgba(255,255,255,${index % 2 ? 0.022 : 0.012})`;
+      ctx.lineWidth = index % 3 === 0 ? 1.3 : 0.8;
+      ctx.beginPath();
+      ctx.moveTo(feltX - 12, y);
+      ctx.lineTo(feltX + feltW + 12, y + (index % 4) * 1.8);
+      ctx.stroke();
+    }
+    const feltGlow = ctx.createRadialGradient(W / 2, H / 2, 60, W / 2, H / 2, boardW * 0.44);
+    feltGlow.addColorStop(0, 'rgba(255, 244, 210, 0.08)');
+    feltGlow.addColorStop(1, 'rgba(255, 244, 210, 0)');
+    ctx.fillStyle = feltGlow;
+    ctx.fillRect(feltX, feltY, feltW, feltH);
+    ctx.restore();
+
+    const trayInset = 8;
+    for (const player of [Core.BLACK, Core.WHITE]) {
+      const tray = offTargetRect(player);
+      const outer = {
+        x: tray.x - trayInset,
+        y: tray.y - trayInset,
+        w: tray.w + trayInset * 2,
+        h: tray.h + trayInset * 2,
+      };
+      const trayGradient = ctx.createLinearGradient(outer.x, outer.y, outer.x + outer.w, outer.y + outer.h);
+      trayGradient.addColorStop(0, 'rgba(38, 22, 14, 0.84)');
+      trayGradient.addColorStop(1, 'rgba(18, 12, 8, 0.92)');
+      roundRectPath(outer.x, outer.y, outer.w, outer.h, 18);
+      ctx.fillStyle = trayGradient;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(245, 216, 169, 0.28)';
+      ctx.lineWidth = 2;
       ctx.stroke();
     }
 
-    ctx.fillStyle = 'rgba(0,0,0,.25)';
-    ctx.fillRect(middle - 25, boardY, 50, boardH);
-    ctx.strokeStyle = 'rgba(179, 213, 236, .78)';
+    const barWidth = 52;
+    const barGradient = ctx.createLinearGradient(middle - barWidth / 2, boardY, middle + barWidth / 2, boardY + boardH);
+    barGradient.addColorStop(0, '#28170d');
+    barGradient.addColorStop(0.35, '#6a452a');
+    barGradient.addColorStop(0.6, '#1d130b');
+    barGradient.addColorStop(1, '#8b5d38');
+    roundRectPath(middle - barWidth / 2, boardY + 8, barWidth, boardH - 16, 18);
+    ctx.fillStyle = barGradient;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 228, 191, 0.28)';
     ctx.lineWidth = 2;
-    ctx.strokeRect(middle - 25, boardY, 50, boardH);
+    ctx.stroke();
 
-    const triangleW = (boardW - 50) / 12;
+    const triangleW = (boardW - barWidth) / 12;
     state.pointRects.length = 24;
 
     const pointAt = (half, indexInHalf, top) => {
-      const xBase = half === 0 ? boardX + indexInHalf * triangleW : middle + 25 + indexInHalf * triangleW;
+      const xBase = half === 0 ? boardX + indexInHalf * triangleW : middle + barWidth / 2 + indexInHalf * triangleW;
       const pointIndex = top
         ? (half === 0 ? 12 + indexInHalf : 18 + indexInHalf)
         : (half === 0 ? 11 - indexInHalf : 5 - indexInHalf);
-      state.pointRects[pointIndex] = { x: xBase, y: boardY, w: triangleW, h: boardH / 2, top };
-      ctx.fillStyle = indexInHalf % 2 === 0 ? '#d9ac7a' : '#6ea8d1';
+      const triangle = top
+        ? [
+            { x: xBase + 2, y: boardY + 4 },
+            { x: xBase + triangleW - 2, y: boardY + 4 },
+            { x: xBase + triangleW / 2, y: boardY + boardH / 2 - 10 },
+          ]
+        : [
+            { x: xBase + 2, y: boardY + boardH - 4 },
+            { x: xBase + triangleW - 2, y: boardY + boardH - 4 },
+            { x: xBase + triangleW / 2, y: boardY + boardH / 2 + 10 },
+          ];
+      state.pointRects[pointIndex] = {
+        x: xBase,
+        y: boardY,
+        w: triangleW,
+        h: boardH / 2,
+        top,
+        triangle,
+      };
+      const toneA = indexInHalf % 2 === 0 ? '#f4c18a' : '#8dbbe2';
+      const toneB = indexInHalf % 2 === 0 ? '#8c5632' : '#355d8b';
+      const triGradient = ctx.createLinearGradient(
+        xBase + triangleW / 2,
+        top ? boardY : boardY + boardH,
+        xBase + triangleW / 2,
+        top ? boardY + boardH / 2 : boardY + boardH / 2
+      );
+      triGradient.addColorStop(0, toneA);
+      triGradient.addColorStop(1, toneB);
+      ctx.fillStyle = triGradient;
       ctx.beginPath();
-      if (top) {
-        ctx.moveTo(xBase + 1, boardY + 1);
-        ctx.lineTo(xBase + triangleW - 1, boardY + 1);
-        ctx.lineTo(xBase + triangleW / 2, boardY + boardH / 2 - 8);
-      } else {
-        ctx.moveTo(xBase + 1, boardY + boardH - 1);
-        ctx.lineTo(xBase + triangleW - 1, boardY + boardH - 1);
-        ctx.lineTo(xBase + triangleW / 2, boardY + boardH / 2 + 8);
-      }
+      ctx.moveTo(triangle[0].x, triangle[0].y);
+      ctx.lineTo(triangle[1].x, triangle[1].y);
+      ctx.lineTo(triangle[2].x, triangle[2].y);
       ctx.closePath();
-      ctx.globalAlpha = 0.78;
       ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = 'rgba(0,0,0,.28)';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(14, 11, 9, 0.38)';
+      ctx.lineWidth = 1.7;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(triangle[0].x + 5, triangle[0].y + (top ? 3 : -3));
+      ctx.lineTo(triangle[2].x, triangle[2].y + (top ? -10 : 10));
+      ctx.strokeStyle = 'rgba(255, 247, 232, 0.15)';
+      ctx.lineWidth = 1.1;
       ctx.stroke();
     };
 
@@ -1401,11 +1656,22 @@
     for (let index = 0; index < 6; index += 1) pointAt(0, index, false);
     for (let index = 0; index < 6; index += 1) pointAt(1, index, false);
 
-    ctx.fillStyle = 'rgba(255,255,255,.75)';
-    ctx.font = '14px Inter, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,.82)';
+    ctx.font = '600 12px Inter, sans-serif';
     for (let index = 0; index < 24; index += 1) {
       const rect = state.pointRects[index];
-      ctx.fillText(String(index + 1), rect.x + rect.w / 2 - 6, rect.top ? boardY + boardH / 2 + 22 : boardY + boardH / 2 - 14);
+      const chipX = rect.x + rect.w / 2 - 12;
+      const chipY = rect.top ? boardY + boardH / 2 + 8 : boardY + boardH / 2 - 28;
+      roundRectPath(chipX, chipY, 24, 18, 8);
+      ctx.fillStyle = 'rgba(17, 22, 30, 0.52)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 223, 180, 0.22)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.82)';
+      const label = String(index + 1);
+      const width = ctx.measureText(label).width;
+      ctx.fillText(label, rect.x + rect.w / 2 - width / 2, chipY + 12.5);
     }
   }
 
@@ -1509,45 +1775,107 @@
     return true;
   }
 
+  function drawLaneHighlight(rect, options = {}) {
+    if (!rect) {
+      return;
+    }
+    const fill = options.fill || 'rgba(255, 214, 120, 0.16)';
+    const stroke = options.stroke || 'rgba(255, 214, 120, 0.84)';
+    const glow = options.glow || 'rgba(255, 214, 120, 0.22)';
+    const radius = options.radius || 18;
+    ctx.save();
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = 18;
+    roundRectPath(rect.x, rect.y, rect.w, rect.h, radius);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = options.lineWidth || 2.6;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function legalDestinations() {
+    const grouped = new Map();
+    for (const move of state.legalForSelected) {
+      const key = move.to === 'off' ? 'off' : String(move.to);
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          to: move.to,
+          moves: [],
+        });
+      }
+      grouped.get(key).moves.push(move);
+    }
+    return [...grouped.values()];
+  }
+
   function drawSelectionHints() {
     if (!state.snapshot) {
       return;
     }
     if (state.selected === 'bar') {
-      ctx.strokeStyle = '#ffe78d';
-      ctx.lineWidth = 4;
-      ctx.strokeRect(W / 2 - 28, H / 2 - 86, 56, 172);
+      drawLaneHighlight({ x: W / 2 - 30, y: H / 2 - 96, w: 60, h: 192 }, {
+        fill: 'rgba(255, 231, 141, 0.12)',
+        stroke: '#ffe78d',
+        glow: 'rgba(255, 231, 141, 0.24)',
+        radius: 18,
+        lineWidth: 3,
+      });
     } else if (Number.isInteger(state.selected)) {
-      const count = Math.abs(state.snapshot.points[state.selected]);
-      const point = checkerPos(state.selected, count - 1);
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, point.r + 6, 0, Math.PI * 2);
-      ctx.strokeStyle = '#ffe78d';
-      ctx.lineWidth = 4;
-      ctx.stroke();
+      drawLaneHighlight(laneRectForPoint(state.selected), {
+        fill: 'rgba(255, 231, 141, 0.12)',
+        stroke: '#ffe78d',
+        glow: 'rgba(255, 231, 141, 0.22)',
+        radius: 20,
+        lineWidth: 2.8,
+      });
     }
 
-    state.legalForSelected.forEach((move, index) => {
-      let x;
-      let y;
-      if (move.to === 'off') {
-        x = state.snapshot.current === Core.WHITE ? W - 55 : 55;
-        y = H / 2;
+    legalDestinations().forEach((entry) => {
+      let badgeX;
+      let badgeY;
+      if (entry.to === 'off') {
+        const tray = offTargetRect(state.snapshot.current);
+        drawLaneHighlight(tray, {
+          fill: 'rgba(131, 214, 255, 0.12)',
+          stroke: 'rgba(131, 214, 255, 0.92)',
+          glow: 'rgba(131, 214, 255, 0.24)',
+          radius: 18,
+          lineWidth: 2.4,
+        });
+        badgeX = tray.x + tray.w / 2;
+        badgeY = tray.y + tray.h / 2;
       } else {
-        const point = checkerPos(move.to, Math.abs(state.snapshot.points[move.to]) + 1);
-        x = point.x;
-        y = point.y;
+        drawLaneHighlight(laneRectForPoint(entry.to), {
+          fill: 'rgba(255, 210, 105, 0.14)',
+          stroke: 'rgba(255, 210, 105, 0.92)',
+          glow: 'rgba(255, 210, 105, 0.24)',
+          radius: 20,
+          lineWidth: 2.5,
+        });
+        const anchor = laneLabelAnchor(entry.to);
+        badgeX = anchor.x;
+        badgeY = anchor.y;
       }
-      ctx.beginPath();
-      ctx.arc(x, y, 18 + index * 2, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,210,105,.95)';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(255,210,105,.18)';
+
+      const label = entry.moves
+        .map((move) => String(move.die))
+        .sort((left, right) => Number(left) - Number(right))
+        .join(' · ');
+      ctx.font = '700 13px Inter';
+      const badgeWidth = Math.max(34, ctx.measureText(label).width + 18);
+      const badgeHeight = 22;
+      roundRectPath(badgeX - badgeWidth / 2, badgeY - badgeHeight / 2, badgeWidth, badgeHeight, 11);
+      ctx.fillStyle = 'rgba(10, 20, 31, 0.82)';
       ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 14px Inter';
-      ctx.fillText(String(move.die), x - 4, y + 5);
+      ctx.strokeStyle = 'rgba(255, 244, 216, 0.34)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = '#fff7dc';
+      const textWidth = ctx.measureText(label).width;
+      ctx.fillText(label, badgeX - textWidth / 2, badgeY + 4.5);
     });
   }
 
@@ -1612,17 +1940,28 @@
   }
 
   function pickMove(mx, my) {
-    for (const move of state.legalForSelected) {
-      if (move.to === 'off') {
-        const x = state.snapshot.current === Core.WHITE ? W - 55 : 55;
-        const y = H / 2;
-        if (Math.hypot(mx - x, my - y) < 32 + hitRadiusBoost) {
-          return move;
+    const destinationOrder = legalDestinations();
+    for (const entry of destinationOrder) {
+      if (entry.to === 'off') {
+        const tray = offTargetRect(state.snapshot.current);
+        if (mx >= tray.x - hitRadiusBoost &&
+            mx <= tray.x + tray.w + hitRadiusBoost &&
+            my >= tray.y - hitRadiusBoost &&
+            my <= tray.y + tray.h + hitRadiusBoost) {
+          return entry.moves[0];
         }
       } else {
-        const point = checkerPos(move.to, Math.abs(state.snapshot.points[move.to]) + 1);
-        if (Math.hypot(mx - point.x, my - point.y) < point.r + 20 + hitRadiusBoost) {
-          return move;
+        const rect = state.pointRects[entry.to];
+        const lane = laneRectForPoint(entry.to);
+        if (!rect || !lane) {
+          continue;
+        }
+        const inLane = mx >= lane.x - hitRadiusBoost &&
+          mx <= lane.x + lane.w + hitRadiusBoost &&
+          my >= lane.y - hitRadiusBoost &&
+          my <= lane.y + lane.h + hitRadiusBoost;
+        if (inLane || pointInTriangle(mx, my, rect.triangle)) {
+          return entry.moves[0];
         }
       }
     }
@@ -1665,7 +2004,7 @@
       sendMove(move);
       return;
     }
-    setStatusMessage('Drop on a glowing destination to move the checker.');
+    setStatusMessage('Drop on a glowing lane to move the checker.');
     scheduleDraw();
   }
 
@@ -1741,27 +2080,11 @@
         render();
         return;
       }
+      if (state.selected !== null && source === state.selected) {
+        fastMoveSelectedSource(source);
+        return;
+      }
       applySelectedSource(source);
-    });
-
-    canvas.addEventListener('dblclick', (event) => {
-      if (!canAct() || !state.snapshot || !state.snapshot.dice.length) {
-        return;
-      }
-      const { mx, my } = getBoardPos(event);
-      const source = pickSource(mx, my);
-      if (source === null) {
-        return;
-      }
-      const legal = Core.getLegalMovesForSource(state.snapshot, source);
-      const move = Core.furthestMove(legal, state.snapshot.current);
-      if (!move) {
-        return;
-      }
-      state.selected = source;
-      state.legalForSelected = [move];
-      setStatusMessage('Auto-moving that checker to the furthest legal destination.');
-      sendMove(move);
     });
 
     canvas.addEventListener('pointerdown', (event) => {
