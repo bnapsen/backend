@@ -16,7 +16,7 @@
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const ENGINE_WORKER_VERSION = '20260325f';
-  const PIECE_ASSET_VERSION = '20260329e';
+  const PIECE_ASSET_VERSION = '20260329f';
   const ENGINE_INIT_TIMEOUT_MS = 12000;
   const ENGINE_MOVE_TIMEOUT_MS = 9000;
   const query = new URLSearchParams(window.location.search);
@@ -220,7 +220,22 @@
     },
     dgra: {
       id: 'dgra',
-      kind: 'single',
+      kind: 'sprite',
+      src: `assets/pieces/dgra/set.svg?v=${PIECE_ASSET_VERSION}`,
+      cols: 6,
+      rows: 2,
+      typeColumns: {
+        king: 0,
+        queen: 1,
+        rook: 2,
+        bishop: 3,
+        knight: 4,
+        pawn: 5,
+      },
+      colorRows: {
+        white: 0,
+        black: 1,
+      },
     },
   };
   const SOUND_PROFILES = {
@@ -252,6 +267,21 @@
     }
     const style = pieceStyleProfile();
     const family = PIECE_ART_FAMILIES[style.artFamily] || PIECE_ART_FAMILIES.merida;
+    if (family.kind === 'sprite') {
+      const column = family.typeColumns[piece.type] ?? 0;
+      const row = family.colorRows[piece.color] ?? 0;
+      return {
+        familyId: family.id,
+        kind: family.kind,
+        src: family.src,
+        column,
+        row,
+        sizeX: `${family.cols * 100}%`,
+        sizeY: `${family.rows * 100}%`,
+        positionX: family.cols > 1 ? `${(column / (family.cols - 1)) * 100}%` : '0%',
+        positionY: family.rows > 1 ? `${(row / (family.rows - 1)) * 100}%` : '0%',
+      };
+    }
     return {
       familyId: family.id,
       kind: family.kind,
@@ -262,18 +292,30 @@
   function pieceFaceMarkup(piece) {
     const art = pieceAssetConfig(piece);
     const glyph = Core.getPieceGlyph(piece);
+    const artKey = art
+      ? art.kind === 'sprite'
+        ? `${art.familyId}:${art.src}:${art.column}:${art.row}`
+        : `${art.familyId}:${art.src}`
+      : `fallback:${piece.color}:${piece.type}`;
     if (!art) {
-      return `<span class="piece-face piece-face-svg"><span class="piece-fallback" aria-hidden="true">${glyph}</span></span>`;
+      return `<span class="piece-face piece-face-svg" data-piece-type="${piece.type}" data-piece-color="${piece.color}" data-art-key="${artKey}"><span class="piece-fallback" aria-hidden="true">${glyph}</span></span>`;
     }
-    return `<span class="piece-face piece-face-svg" data-piece-type="${piece.type}" data-piece-color="${piece.color}" data-art-family="${art.familyId}" data-piece-src="${art.src}" data-art-key="${art.familyId}:${art.src}"><img class="piece-art piece-art-single" src="${art.src}" alt="" draggable="false" decoding="async" /><span class="piece-fallback" aria-hidden="true">${glyph}</span></span>`;
+    if (art.kind === 'sprite') {
+      return `<span class="piece-face piece-face-svg piece-face-sprite" data-piece-type="${piece.type}" data-piece-color="${piece.color}" data-art-family="${art.familyId}" data-piece-src="${art.src}" data-art-key="${artKey}"><span class="piece-art piece-art-sprite" style="background-image:url('${art.src}');--sprite-size-x:${art.sizeX};--sprite-size-y:${art.sizeY};--sprite-pos-x:${art.positionX};--sprite-pos-y:${art.positionY};" aria-hidden="true"></span><span class="piece-fallback" aria-hidden="true">${glyph}</span></span>`;
+    }
+    return `<span class="piece-face piece-face-svg" data-piece-type="${piece.type}" data-piece-color="${piece.color}" data-art-family="${art.familyId}" data-piece-src="${art.src}" data-art-key="${artKey}"><img class="piece-art piece-art-single" src="${art.src}" alt="" draggable="false" decoding="async" /><span class="piece-fallback" aria-hidden="true">${glyph}</span></span>`;
   }
 
   function syncPieceFace(face, piece) {
-    const art = pieceAssetConfig(piece);
-    if (!face || !art) {
+    if (!face) {
       return;
     }
-    const artKey = `${art.familyId}:${art.src}`;
+    const art = pieceAssetConfig(piece);
+    const artKey = art
+      ? art.kind === 'sprite'
+        ? `${art.familyId}:${art.src}:${art.column}:${art.row}`
+        : `${art.familyId}:${art.src}`
+      : `fallback:${piece.color}:${piece.type}`;
     if (face.dataset.artKey === artKey) {
       return;
     }
@@ -413,6 +455,7 @@
     statusMessage: '',
     selected: null,
     legalMoves: [],
+    premove: null,
     promotionRequest: null,
     toastTimer: null,
     botTimer: null,
@@ -1063,7 +1106,10 @@
   }
 
   function renderStatus() {
-    ui.statusText.textContent = state.statusMessage || 'Host a room, join by code, or start a solo Stockfish game.';
+    const base = state.statusMessage || 'Host a room, join by code, or start a solo Stockfish game.';
+    ui.statusText.textContent = state.premove
+      ? `${base} Premove queued: ${formatMoveSummary(state.premove)}.`
+      : base;
   }
 
   function inviteUrl() {
@@ -1573,12 +1619,133 @@
     return state.yourColor;
   }
 
+  function getLegalMovesForColor(snapshot, x, y, color) {
+    if (!snapshot || !color) {
+      return [];
+    }
+    const piece = Core.getPiece(snapshot.board, x, y);
+    if (!piece || piece.color !== color) {
+      return [];
+    }
+    if (snapshot.turn === color) {
+      return Core.getLegalMoves(snapshot, x, y);
+    }
+    return Core.getLegalMoves({ ...snapshot, turn: color }, x, y);
+  }
+
   function canInteract() {
     if (!state.snapshot || state.snapshot.winner || state.snapshot.drawReason) {
       return false;
     }
     const color = getControlledColor();
     return Boolean(color && state.snapshot.turn === color);
+  }
+
+  function canQueuePremove() {
+    if (!state.snapshot || state.snapshot.winner || state.snapshot.drawReason) {
+      return false;
+    }
+    const color = getControlledColor();
+    return Boolean(color && (state.mode === 'online' || state.mode === 'solo') && state.snapshot.turn !== color);
+  }
+
+  function sameMove(a, b) {
+    return Boolean(
+      a &&
+      b &&
+      a.from && b.from &&
+      a.to && b.to &&
+      a.from.x === b.from.x &&
+      a.from.y === b.from.y &&
+      a.to.x === b.to.x &&
+      a.to.y === b.to.y &&
+      (a.promotion || '') === (b.promotion || '')
+    );
+  }
+
+  function formatMoveSummary(move) {
+    if (!move || !move.from || !move.to) {
+      return '';
+    }
+    const base = `${Core.coordToNotation(move.from.x, move.from.y)}-${Core.coordToNotation(move.to.x, move.to.y)}`;
+    return move.promotion ? `${base}=${move.promotion.charAt(0).toUpperCase()}` : base;
+  }
+
+  function clearPremove(options = {}) {
+    if (!state.premove) {
+      return;
+    }
+    state.premove = null;
+    if (!options.silent) {
+      renderStatus();
+      renderBoard();
+    }
+  }
+
+  function resolveQueuedMove(snapshot = state.snapshot) {
+    if (!state.premove || !snapshot) {
+      return null;
+    }
+    const color = getControlledColor();
+    if (!color || state.premove.color !== color) {
+      return null;
+    }
+    const legalMoves = getLegalMovesForColor(snapshot, state.premove.from.x, state.premove.from.y, color);
+    const matchedMove = legalMoves.find((move) => move.x === state.premove.to.x && move.y === state.premove.to.y);
+    if (!matchedMove) {
+      return null;
+    }
+    return {
+      from: { ...state.premove.from },
+      to: { ...state.premove.to },
+      promotion: state.premove.promotion || (matchedMove.promotionRequired ? 'queen' : undefined),
+    };
+  }
+
+  function queuePremove(move) {
+    const premove = {
+      from: { ...move.from },
+      to: { ...move.to },
+      color: getControlledColor(),
+      promotion: move.promotion,
+    };
+    if (sameMove(state.premove, premove)) {
+      clearPremove({ silent: true });
+      state.selected = null;
+      state.legalMoves = [];
+      render();
+      showToast('Premove cleared.');
+      return true;
+    }
+    state.premove = premove;
+    state.selected = null;
+    state.legalMoves = [];
+    render();
+    showToast(`Premove queued: ${formatMoveSummary(premove)}.`);
+    return true;
+  }
+
+  function maybeExecuteQueuedMove() {
+    if (!state.premove || !state.snapshot || state.snapshot.winner || state.snapshot.drawReason) {
+      return false;
+    }
+    const color = getControlledColor();
+    if (!color || state.snapshot.turn !== color) {
+      return false;
+    }
+    const move = resolveQueuedMove(state.snapshot);
+    if (!move) {
+      const queuedText = formatMoveSummary(state.premove);
+      clearPremove({ silent: true });
+      renderStatus();
+      renderBoard();
+      showToast(`Premove cleared: ${queuedText} is no longer legal.`);
+      return false;
+    }
+    clearPremove({ silent: true });
+    submitMove(move);
+    showToast(`Premove played: ${formatMoveSummary(move)}.`);
+    return true;
   }
 
   function setKeyboardFocus(x, y) {
@@ -1636,6 +1803,12 @@
         if (state.selected && state.selected.x === actual.x && state.selected.y === actual.y) {
           square.classList.add('selected');
         }
+        if (state.premove && state.premove.from.x === actual.x && state.premove.from.y === actual.y) {
+          square.classList.add('premove-source');
+        }
+        if (state.premove && state.premove.to.x === actual.x && state.premove.to.y === actual.y) {
+          square.classList.add('premove-target');
+        }
         if (state.keyboardFocus && state.keyboardFocus.x === actual.x && state.keyboardFocus.y === actual.y) {
           square.classList.add('focused');
         }
@@ -1655,6 +1828,13 @@
         if (move) {
           const marker = document.createElement('span');
           marker.className = move.capture ? 'move-ring' : 'move-dot';
+          square.appendChild(marker);
+        } else if (state.premove && state.premove.to.x === actual.x && state.premove.to.y === actual.y) {
+          const marker = document.createElement('span');
+          const targetPiece = boardPieceAt(actual.x, actual.y);
+          marker.className = targetPiece && targetPiece.color !== getControlledColor()
+            ? 'move-ring queued'
+            : 'move-dot queued';
           square.appendChild(marker);
         }
 
@@ -2419,6 +2599,9 @@
       }
       setSnapshotClockRunning(sandbox, sandbox.turn);
       setSnapshot(decorateSoloSnapshot(sandbox));
+      if (maybeExecuteQueuedMove()) {
+        return;
+      }
       setStatusMessage(state.snapshot.status);
       if (state.engineReady) {
         setEngineStatus(engineReadyMessage());
@@ -2480,6 +2663,9 @@
 
     setSnapshotClockRunning(sandbox, sandbox.turn);
     setSnapshot(decorateSoloSnapshot(sandbox));
+    if (maybeExecuteQueuedMove()) {
+      return;
+    }
     setStatusMessage(state.snapshot.status);
     if (state.engineReady) {
       setEngineStatus(engineReadyMessage());
@@ -2523,6 +2709,7 @@
   function submitMove(move) {
     closePromotion();
     cancelEngineThinking();
+    clearPremove({ silent: true });
 
     if (state.mode === 'online') {
       if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
@@ -2566,11 +2753,12 @@
 
   function selectSquare(x, y) {
     const piece = boardPieceAt(x, y);
-    if (!canInteract() || !piece || piece.color !== getControlledColor()) {
+    const controlledColor = getControlledColor();
+    if (!piece || piece.color !== controlledColor || (!canInteract() && !canQueuePremove())) {
       return false;
     }
     state.selected = { x, y };
-    state.legalMoves = Core.getLegalMoves(state.snapshot, x, y);
+    state.legalMoves = getLegalMovesForColor(state.snapshot, x, y, controlledColor);
     setKeyboardFocus(x, y);
     renderBoard();
     return true;
@@ -2585,7 +2773,12 @@
       from: { ...state.selected },
       to: { x, y },
     };
-    if (destination.promotionRequired) {
+    if (canQueuePremove()) {
+      if (destination.promotionRequired) {
+        move.promotion = 'queen';
+      }
+      queuePremove(move);
+    } else if (destination.promotionRequired) {
       openPromotion(move);
     } else {
       submitMove(move);
@@ -2602,12 +2795,13 @@
     const piece = boardPieceAt(x, y);
     const controlledColor = getControlledColor();
     const interactive = canInteract();
+    const canQueue = canQueuePremove();
 
     if (state.selected && attemptMoveTo(x, y)) {
       return;
     }
 
-    if (interactive && piece && piece.color === controlledColor) {
+    if ((interactive || canQueue) && piece && piece.color === controlledColor) {
       if (state.selected && state.selected.x === x && state.selected.y === y) {
         clearSelection();
         return;
@@ -2620,7 +2814,7 @@
   }
 
   function handlePiecePointerDown(event, x, y, piece) {
-    if (!canInteract()) {
+    if (!canInteract() && !canQueuePremove()) {
       return;
     }
     if (event.button !== undefined && event.button !== 0) {
@@ -2740,7 +2934,15 @@
           setFocusMode(false);
           return;
         }
-        clearSelection();
+        if (state.selected) {
+          clearSelection();
+          return;
+        }
+        if (state.premove) {
+          clearPremove({ silent: true });
+          render();
+          showToast('Premove cleared.');
+        }
         return;
       default:
         return;
@@ -2762,12 +2964,16 @@
     }
     state.roomCode = snapshot.roomCode;
     ui.roomInput.value = snapshot.roomCode;
+    if (snapshot && !snapshot.lastMove && Array.isArray(snapshot.history) && snapshot.history.length === 0) {
+      clearPremove({ silent: true });
+    }
     if (state.selected) {
       const selectedPiece = boardPieceAt(state.selected.x, state.selected.y);
       if (!selectedPiece || selectedPiece.color !== getControlledColor() || !canInteract()) {
         clearSelection();
       }
     }
+    maybeExecuteQueuedMove();
     setStatusMessage(message || snapshot.status || 'Match updated.');
     render();
   }
@@ -2806,6 +3012,7 @@
     state.roomCode = roomCode;
     state.selected = null;
     state.legalMoves = [];
+    clearPremove({ silent: true });
     state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
     setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
     persistSettings();
@@ -2889,6 +3096,7 @@
     setSnapshot(decorateSoloSnapshot(freshGame), { startCue: true });
     state.selected = null;
     state.legalMoves = [];
+    clearPremove({ silent: true });
     setKeyboardFocus(defaultFocusForControlledSide().x, defaultFocusForControlledSide().y);
     const clockProfile = timeControlProfile(state.timeControlPreset);
     setStatusMessage(`Stockfish 18 ${engineLevelProfile().label} match started. You control White.${clockProfile.baseMs > 0 ? ` Clock: ${clockProfile.label}.` : ''} Mouse, touch, and keyboard controls are all enabled.`);
