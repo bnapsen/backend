@@ -383,6 +383,11 @@
     const tone = suitTone(card.suit);
     return `
       <div class="card ${tone}${extraClass}${animateClass}"${styleAttr}>
+        <div class="card-ornament" aria-hidden="true">
+          <span class="card-ornament-rank">${rank}</span>
+          <span class="card-ornament-suit">${suit}</span>
+        </div>
+        <div class="card-watermark" aria-hidden="true">${suit}</div>
         <div class="card-corner top">
           <span class="card-rank">${rank}</span>
           <span class="card-suit">${suit}</span>
