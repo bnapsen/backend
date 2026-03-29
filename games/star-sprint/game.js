@@ -16,7 +16,7 @@
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const ENGINE_WORKER_VERSION = '20260325f';
-  const PIECE_ASSET_VERSION = '20260329d';
+  const PIECE_ASSET_VERSION = '20260329e';
   const ENGINE_INIT_TIMEOUT_MS = 12000;
   const ENGINE_MOVE_TIMEOUT_MS = 9000;
   const query = new URLSearchParams(window.location.search);
@@ -170,38 +170,57 @@
     auto: {
       label: 'Match board',
       summary: 'Automatically uses the piece set paired with the active board theme.',
+      artFamily: 'merida',
     },
     walnut: {
       label: 'Carved Walnut',
       summary: 'Ivory and ebony medallion pieces with a carved old-club character.',
+      artFamily: 'merida',
     },
     marble: {
       label: 'Marble Tournament',
       summary: 'Polished stone pieces with silver trim and a cleaner tournament look.',
+      artFamily: 'dgra',
     },
     midnight: {
       label: 'Neon Glass',
       summary: 'Arena-style pieces with sharper glow, darker obsidian bodies, and brighter rims.',
+      artFamily: 'dgra',
     },
     emerald: {
       label: 'Brass Study',
       summary: 'Brass-and-ivory pieces with a quieter library-table personality.',
+      artFamily: 'merida',
     },
     regal: {
       label: 'Royal Crown',
       summary: 'High-polish ivory and lacquered garnet pieces with a richer ceremonial feel.',
+      artFamily: 'dgra',
     },
     onyx: {
       label: 'Onyx Tournament',
       summary: 'Matte monochrome pieces with crisp silver rims and stronger silhouette contrast.',
+      artFamily: 'merida',
     },
     porcelain: {
       label: 'Porcelain Elite',
       summary: 'High-gloss porcelain and obsidian pieces with cleaner contours and stronger contrast.',
+      artFamily: 'dgra',
     },
     steel: {
       label: 'Forged Steel',
       summary: 'Brushed steel and carbon pieces with colder tournament contrast and sharper edges.',
+      artFamily: 'dgra',
+    },
+  };
+  const PIECE_ART_FAMILIES = {
+    merida: {
+      id: 'merida',
+      kind: 'single',
+    },
+    dgra: {
+      id: 'dgra',
+      kind: 'single',
     },
   };
   const SOUND_PROFILES = {
@@ -227,29 +246,38 @@
     },
   };
 
-  function pieceAssetSrc(piece) {
+  function pieceAssetConfig(piece) {
     if (!piece) {
-      return '';
+      return null;
     }
-    return `assets/pieces/merida/${piece.color}-${piece.type}.svg?v=${PIECE_ASSET_VERSION}`;
+    const style = pieceStyleProfile();
+    const family = PIECE_ART_FAMILIES[style.artFamily] || PIECE_ART_FAMILIES.merida;
+    return {
+      familyId: family.id,
+      kind: family.kind,
+      src: `assets/pieces/${family.id}/${piece.color}-${piece.type}.svg?v=${PIECE_ASSET_VERSION}`,
+    };
   }
 
   function pieceFaceMarkup(piece) {
-    const src = pieceAssetSrc(piece);
+    const art = pieceAssetConfig(piece);
     const glyph = Core.getPieceGlyph(piece);
-    return `<span class="piece-face piece-face-svg" data-piece-type="${piece.type}" data-piece-color="${piece.color}" data-piece-src="${src}"><img class="piece-art" src="${src}" alt="" draggable="false" decoding="async" /><span class="piece-fallback" aria-hidden="true">${glyph}</span></span>`;
+    if (!art) {
+      return `<span class="piece-face piece-face-svg"><span class="piece-fallback" aria-hidden="true">${glyph}</span></span>`;
+    }
+    return `<span class="piece-face piece-face-svg" data-piece-type="${piece.type}" data-piece-color="${piece.color}" data-art-family="${art.familyId}" data-piece-src="${art.src}" data-art-key="${art.familyId}:${art.src}"><img class="piece-art piece-art-single" src="${art.src}" alt="" draggable="false" decoding="async" /><span class="piece-fallback" aria-hidden="true">${glyph}</span></span>`;
   }
 
   function syncPieceFace(face, piece) {
-    const src = pieceAssetSrc(piece);
-    if (!face || face.dataset.pieceSrc === src) {
+    const art = pieceAssetConfig(piece);
+    if (!face || !art) {
       return;
     }
-    face.className = 'piece-face piece-face-svg';
-    face.dataset.pieceType = piece.type;
-    face.dataset.pieceColor = piece.color;
-    face.dataset.pieceSrc = src;
-    face.innerHTML = `<img class="piece-art" src="${src}" alt="" draggable="false" decoding="async" /><span class="piece-fallback" aria-hidden="true">${Core.getPieceGlyph(piece)}</span>`;
+    const artKey = `${art.familyId}:${art.src}`;
+    if (face.dataset.artKey === artKey) {
+      return;
+    }
+    face.outerHTML = pieceFaceMarkup(piece);
   }
   const SOUND_CUE_LIBRARY = {
     walnut: {
