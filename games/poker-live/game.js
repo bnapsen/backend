@@ -7,6 +7,7 @@
     serverUrl: 'orbitHoldemLive.serverUrl',
     setupHidden: 'orbitHoldemLive.setupHidden',
     infoHidden: 'orbitHoldemLive.infoHidden',
+    soundEnabled: 'orbitHoldemLive.soundEnabled',
   };
   const query = new URLSearchParams(window.location.search);
   const DEFAULT_MAX_SEATS = 10;
@@ -26,6 +27,12 @@
       infoHidden: false,
     },
     pendingSoloLaunch: false,
+    audio: {
+      enabled: true,
+      ctx: null,
+      master: null,
+      noiseBuffer: null,
+    },
     renderMemo: {
       communitySignature: '',
       seatSignatures: new Map(),
@@ -39,6 +46,7 @@
     inviteInput: document.getElementById('inviteInput'),
     statusText: document.getElementById('statusText'),
     networkStatus: document.getElementById('networkStatus'),
+    soundToggleBtn: document.getElementById('soundToggleBtn'),
     modePill: document.getElementById('modePill'),
     roomCodeLabel: document.getElementById('roomCodeLabel'),
     stageLabel: document.getElementById('stageLabel'),
@@ -175,11 +183,28 @@
     ui.statusText.textContent = state.statusMessage || base || 'Host a table to generate an invite link, or join with a room code to sit down right away.';
   }
 
+  function renderSoundToggle() {
+    if (!ui.soundToggleBtn) {
+      return;
+    }
+    const supported = Boolean(window.AudioContext || window.webkitAudioContext);
+    if (!supported) {
+      ui.soundToggleBtn.textContent = 'Sound unavailable';
+      ui.soundToggleBtn.disabled = true;
+      ui.soundToggleBtn.setAttribute('aria-pressed', 'false');
+      return;
+    }
+    ui.soundToggleBtn.disabled = false;
+    ui.soundToggleBtn.textContent = state.audio.enabled ? 'Sound on' : 'Sound off';
+    ui.soundToggleBtn.setAttribute('aria-pressed', state.audio.enabled ? 'true' : 'false');
+  }
+
   function persistSettings() {
     localStorage.setItem(STORAGE_KEYS.name, ui.nameInput.value.trim());
     localStorage.setItem(STORAGE_KEYS.serverUrl, state.serverUrl);
     localStorage.setItem(STORAGE_KEYS.setupHidden, state.panels.setupHidden ? '1' : '0');
     localStorage.setItem(STORAGE_KEYS.infoHidden, state.panels.infoHidden ? '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.soundEnabled, state.audio.enabled ? '1' : '0');
   }
 
   function capitalize(value) {
@@ -742,6 +767,7 @@
   function render() {
     renderChrome();
     renderPills();
+    renderSoundToggle();
     renderStatus();
     updateInviteUi();
     renderSummary();
@@ -749,6 +775,197 @@
     renderSeats();
     renderLog();
     renderControls();
+  }
+
+  function createNoiseBuffer(ctx) {
+    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.28), ctx.sampleRate);
+    const channel = buffer.getChannelData(0);
+    for (let index = 0; index < channel.length; index += 1) {
+      channel[index] = (Math.random() * 2 - 1) * Math.pow(1 - index / channel.length, 1.5);
+    }
+    return buffer;
+  }
+
+  function ensureAudioContext() {
+    if (!state.audio.enabled) {
+      return null;
+    }
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) {
+      return null;
+    }
+    if (!state.audio.ctx) {
+      const ctx = new AudioCtor();
+      const master = ctx.createGain();
+      master.gain.value = 0.17;
+      master.connect(ctx.destination);
+      state.audio.ctx = ctx;
+      state.audio.master = master;
+      state.audio.noiseBuffer = createNoiseBuffer(ctx);
+    }
+    if (state.audio.ctx.state === 'suspended') {
+      state.audio.ctx.resume().catch(() => {});
+    }
+    return state.audio.ctx;
+  }
+
+  function primeAudio() {
+    ensureAudioContext();
+  }
+
+  function withAudio(callback) {
+    const ctx = ensureAudioContext();
+    if (!ctx || !state.audio.master) {
+      return;
+    }
+    const run = () => {
+      try {
+        callback(ctx, ctx.currentTime + 0.01);
+      } catch (error) {
+        // Ignore isolated audio failures.
+      }
+    };
+    if (ctx.state === 'running') {
+      run();
+      return;
+    }
+    ctx.resume().then(run).catch(() => {});
+  }
+
+  function playTone(ctx, when, options = {}) {
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const duration = Math.max(0.04, options.duration || 0.12);
+    const startAt = when + (options.delay || 0);
+    const attack = Math.min(duration * 0.25, options.attack || 0.01);
+    const peak = options.gain || 0.05;
+    oscillator.type = options.type || 'triangle';
+    oscillator.frequency.setValueAtTime(options.startFreq || 220, startAt);
+    oscillator.frequency.exponentialRampToValueAtTime(Math.max(48, options.endFreq || options.startFreq || 220), startAt + duration);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.linearRampToValueAtTime(peak, startAt + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+    oscillator.connect(gain);
+    gain.connect(state.audio.master);
+    oscillator.start(startAt);
+    oscillator.stop(startAt + duration + 0.04);
+  }
+
+  function playNoise(ctx, when, options = {}) {
+    if (!state.audio.noiseBuffer) {
+      return;
+    }
+    const source = ctx.createBufferSource();
+    source.buffer = state.audio.noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = options.filterType || 'bandpass';
+    filter.frequency.value = options.frequency || 1200;
+    filter.Q.value = options.q || 1.1;
+    const gain = ctx.createGain();
+    const duration = Math.max(0.04, options.duration || 0.09);
+    const startAt = when + (options.delay || 0);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.linearRampToValueAtTime(options.gain || 0.032, startAt + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(state.audio.master);
+    source.start(startAt);
+    source.stop(startAt + duration + 0.03);
+  }
+
+  function playSoundCue(kind) {
+    withAudio((ctx, when) => {
+      if (kind === 'toggle') {
+        playTone(ctx, when, { type: 'sine', startFreq: 620, endFreq: 880, duration: 0.08, gain: 0.04 });
+        playTone(ctx, when, { type: 'triangle', startFreq: 900, endFreq: 1180, duration: 0.06, delay: 0.018, gain: 0.028 });
+        return;
+      }
+      if (kind === 'deal') {
+        playNoise(ctx, when, { duration: 0.08, gain: 0.03, frequency: 1600, q: 0.9 });
+        playTone(ctx, when, { type: 'triangle', startFreq: 320, endFreq: 240, duration: 0.12, gain: 0.04 });
+        playTone(ctx, when, { type: 'sine', startFreq: 410, endFreq: 310, duration: 0.09, delay: 0.04, gain: 0.03 });
+        return;
+      }
+      if (kind === 'check') {
+        playTone(ctx, when, { type: 'sine', startFreq: 540, endFreq: 420, duration: 0.08, gain: 0.03 });
+        return;
+      }
+      if (kind === 'bet') {
+        playNoise(ctx, when, { duration: 0.06, gain: 0.022, frequency: 950, q: 0.8 });
+        playTone(ctx, when, { type: 'triangle', startFreq: 260, endFreq: 180, duration: 0.13, gain: 0.05 });
+        playTone(ctx, when, { type: 'triangle', startFreq: 340, endFreq: 240, duration: 0.1, delay: 0.03, gain: 0.036 });
+        return;
+      }
+      if (kind === 'fold') {
+        playTone(ctx, when, { type: 'sawtooth', startFreq: 200, endFreq: 112, duration: 0.16, gain: 0.038 });
+        return;
+      }
+      if (kind === 'seat') {
+        playTone(ctx, when, { type: 'triangle', startFreq: 450, endFreq: 520, duration: 0.08, gain: 0.03 });
+        playTone(ctx, when, { type: 'triangle', startFreq: 580, endFreq: 680, duration: 0.06, delay: 0.025, gain: 0.024 });
+        return;
+      }
+      if (kind === 'win') {
+        playTone(ctx, when, { type: 'triangle', startFreq: 520, endFreq: 520, duration: 0.18, gain: 0.045 });
+        playTone(ctx, when, { type: 'triangle', startFreq: 660, endFreq: 660, duration: 0.2, delay: 0.09, gain: 0.05 });
+        playTone(ctx, when, { type: 'triangle', startFreq: 880, endFreq: 880, duration: 0.24, delay: 0.18, gain: 0.055 });
+      }
+    });
+  }
+
+  function soundCueForMessage(message) {
+    const text = String(message || '').toLowerCase();
+    if (!text) {
+      return '';
+    }
+    if (text.includes('dealt a new hand') || text.includes('started hand')) {
+      return 'deal';
+    }
+    if (text.includes('wins ') || text.includes('scoops the pot') || text.includes('shows ')) {
+      return 'win';
+    }
+    if (text.includes('raised') || text.includes('bet ') || text.includes('all-in')) {
+      return 'bet';
+    }
+    if (text.includes('called') || text.includes('checked')) {
+      return 'check';
+    }
+    if (text.includes('folded')) {
+      return 'fold';
+    }
+    if (text.includes('joined the table') || text.includes('filled the empty seats') || text.includes('took the first seat')) {
+      return 'seat';
+    }
+    return '';
+  }
+
+  function maybePlaySnapshotSound(previousSnapshot, nextSnapshot, message) {
+    if (!state.audio.enabled) {
+      return;
+    }
+    if (!previousSnapshot) {
+      if (nextSnapshot && nextSnapshot.stage === 'preflop') {
+        playSoundCue('deal');
+      }
+      return;
+    }
+    if ((nextSnapshot.handNumber || 0) > (previousSnapshot.handNumber || 0)) {
+      playSoundCue('deal');
+      return;
+    }
+    if ((nextSnapshot.community || []).length > (previousSnapshot.community || []).length) {
+      playSoundCue('deal');
+      return;
+    }
+    if (nextSnapshot.stage === 'showdown' && previousSnapshot.stage !== 'showdown') {
+      playSoundCue('win');
+      return;
+    }
+    const cue = soundCueForMessage(message);
+    if (cue) {
+      playSoundCue(cue);
+    }
   }
 
   function copyText(value, successMessage) {
@@ -830,6 +1047,7 @@
       }
 
       if (payload.type === 'state') {
+        maybePlaySnapshotSound(state.snapshot, payload.snapshot, payload.message);
         state.snapshot = payload.snapshot;
         state.roomCode = payload.snapshot.roomCode;
         ui.roomInput.value = payload.snapshot.roomCode;
@@ -977,6 +1195,8 @@
   }
 
   function bindEvents() {
+    window.addEventListener('pointerdown', primeAudio, { passive: true });
+
     ui.nameInput.addEventListener('input', () => {
       persistSettings();
       render();
@@ -1005,13 +1225,27 @@
       }
     });
 
-    ui.soloBtn.addEventListener('click', launchSoloWithBots);
+    ui.soundToggleBtn.addEventListener('click', () => {
+      state.audio.enabled = !state.audio.enabled;
+      persistSettings();
+      renderSoundToggle();
+      if (state.audio.enabled) {
+        primeAudio();
+        playSoundCue('toggle');
+      }
+    });
+    ui.soloBtn.addEventListener('click', () => {
+      primeAudio();
+      launchSoloWithBots();
+    });
     ui.hostBtn.addEventListener('click', () => {
       state.pendingSoloLaunch = false;
+      primeAudio();
       connectOnline('host');
     });
     ui.joinBtn.addEventListener('click', () => {
       state.pendingSoloLaunch = false;
+      primeAudio();
       connectOnline('join');
     });
     ui.toggleSetupBtn.addEventListener('click', () => {
@@ -1024,16 +1258,40 @@
     ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
     ui.copyBtn.addEventListener('click', () => copyText(inviteUrl(), 'Invite link copied.'));
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
-    ui.fillBotsBtn.addEventListener('click', () => sendFillBots(false, SOLO_BOT_TARGET));
+    ui.fillBotsBtn.addEventListener('click', () => {
+      primeAudio();
+      sendFillBots(false, SOLO_BOT_TARGET);
+    });
     ui.clearBotsBtn.addEventListener('click', sendClearBots);
-    ui.startHandBtn.addEventListener('click', sendStartHand);
+    ui.startHandBtn.addEventListener('click', () => {
+      primeAudio();
+      sendStartHand();
+    });
     ui.resetTableBtn.addEventListener('click', sendResetTable);
-    ui.checkCallBtn.addEventListener('click', sendCheckOrCall);
-    ui.foldBtn.addEventListener('click', sendFold);
-    ui.minRaiseBtn.addEventListener('click', () => sendRaiseTo(defaultRaiseTarget()));
-    ui.potRaiseBtn.addEventListener('click', () => sendRaiseTo(potRaiseTarget()));
-    ui.allInBtn.addEventListener('click', () => sendRaiseTo(currentControls().maxRaiseTo || 0));
-    ui.customRaiseBtn.addEventListener('click', sendCustomRaise);
+    ui.checkCallBtn.addEventListener('click', () => {
+      primeAudio();
+      sendCheckOrCall();
+    });
+    ui.foldBtn.addEventListener('click', () => {
+      primeAudio();
+      sendFold();
+    });
+    ui.minRaiseBtn.addEventListener('click', () => {
+      primeAudio();
+      sendRaiseTo(defaultRaiseTarget());
+    });
+    ui.potRaiseBtn.addEventListener('click', () => {
+      primeAudio();
+      sendRaiseTo(potRaiseTarget());
+    });
+    ui.allInBtn.addEventListener('click', () => {
+      primeAudio();
+      sendRaiseTo(currentControls().maxRaiseTo || 0);
+    });
+    ui.customRaiseBtn.addEventListener('click', () => {
+      primeAudio();
+      sendCustomRaise();
+    });
     ui.seatLayer.addEventListener('click', (event) => {
       const trigger = event.target.closest('[data-seat-action]');
       if (!trigger) {
@@ -1068,6 +1326,8 @@
     state.panels.setupHidden = localStorage.getItem(STORAGE_KEYS.setupHidden) === '1';
     const savedInfoHidden = localStorage.getItem(STORAGE_KEYS.infoHidden);
     state.panels.infoHidden = savedInfoHidden === null ? true : savedInfoHidden === '1';
+    const savedSoundEnabled = localStorage.getItem(STORAGE_KEYS.soundEnabled);
+    state.audio.enabled = savedSoundEnabled === null ? true : savedSoundEnabled === '1';
   }
 
   function bootFromQuery() {

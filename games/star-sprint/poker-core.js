@@ -892,7 +892,142 @@ function botStrength(state, player) {
   return postflopStrength(state, player);
 }
 
-function chooseBotRaiseTarget(state, controls, player, strength) {
+function cardKey(card) {
+  return `${card.value}${card.suit}`;
+}
+
+function visibleDeckForBot(state, player) {
+  const blocked = new Set([...player.cards, ...state.community].map(cardKey));
+  const deck = [];
+  for (const suit of SUITS) {
+    for (const value of VALUES) {
+      const card = { value, suit };
+      if (!blocked.has(cardKey(card))) {
+        deck.push(card);
+      }
+    }
+  }
+  return deck;
+}
+
+function takeRandomCard(deck) {
+  const index = Math.floor(Math.random() * deck.length);
+  const [card] = deck.splice(index, 1);
+  return card;
+}
+
+function botSimulationCount(state, activeOpponents) {
+  const base = state.stage === 'preflop'
+    ? 96
+    : state.stage === 'flop'
+      ? 128
+      : state.stage === 'turn'
+        ? 156
+        : 188;
+  const headsUpBonus = Math.max(0, 3 - activeOpponents) * 18;
+  return Math.min(240, base + headsUpBonus);
+}
+
+function visibleDrawProfile(state, player) {
+  const allCards = [...player.cards, ...state.community];
+  const suitCounts = {};
+  allCards.forEach((card) => {
+    suitCounts[card.suit] = (suitCounts[card.suit] || 0) + 1;
+  });
+  return {
+    flushDraw: Object.values(suitCounts).some((count) => count >= 4),
+    straightDraw: straightDrawStrength(allCards),
+  };
+}
+
+function currentMadeRank(state, player) {
+  if (state.community.length < 3) {
+    return [0];
+  }
+  return bestOfSeven([...player.cards, ...state.community]) || [0];
+}
+
+function estimateBotEquity(state, player) {
+  const opponents = state.players.filter((other) => other.id !== player.id && other.cards.length === 2 && !other.leaving);
+  const activeOpponents = opponents.filter((other) => !other.folded);
+  const drawProfile = visibleDrawProfile(state, player);
+  const madeRank = currentMadeRank(state, player);
+
+  if (!activeOpponents.length) {
+    return {
+      equity: 1,
+      opponents: 0,
+      flushDraw: drawProfile.flushDraw,
+      straightDraw: drawProfile.straightDraw,
+      madeRank,
+      samples: 0,
+    };
+  }
+
+  const sampleCount = botSimulationCount(state, activeOpponents.length);
+  const baseDeck = visibleDeckForBot(state, player);
+  const knownBoard = state.community.map(cloneCard);
+  let equityTotal = 0;
+
+  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+    const pool = baseDeck.slice();
+    const unknownHands = [];
+    opponents.forEach((other) => {
+      const sampledHand = [takeRandomCard(pool), takeRandomCard(pool)];
+      unknownHands.push({
+        folded: other.folded,
+        cards: sampledHand,
+      });
+    });
+
+    const board = knownBoard.slice();
+    while (board.length < 5) {
+      board.push(takeRandomCard(pool));
+    }
+
+    const contenders = [{
+      hero: true,
+      rank: bestOfSeven([...player.cards, ...board]),
+    }];
+    unknownHands.forEach((entry) => {
+      if (entry.folded) {
+        return;
+      }
+      contenders.push({
+        hero: false,
+        rank: bestOfSeven([...entry.cards, ...board]),
+      });
+    });
+
+    let topRank = contenders[0].rank;
+    let winners = [contenders[0]];
+    for (let index = 1; index < contenders.length; index += 1) {
+      const contender = contenders[index];
+      const comparison = compareRank(contender.rank, topRank);
+      if (comparison > 0) {
+        topRank = contender.rank;
+        winners = [contender];
+      } else if (comparison === 0) {
+        winners.push(contender);
+      }
+    }
+
+    if (winners.some((entry) => entry.hero)) {
+      equityTotal += 1 / winners.length;
+    }
+  }
+
+  return {
+    equity: equityTotal / sampleCount,
+    opponents: activeOpponents.length,
+    flushDraw: drawProfile.flushDraw,
+    straightDraw: drawProfile.straightDraw,
+    madeRank,
+    samples: sampleCount,
+  };
+}
+
+function chooseBotRaiseTarget(state, controls, player, profile) {
   const currentBet = state.currentBet || 0;
   const minRaiseTo = controls.minRaiseTo || currentBet;
   const maxRaiseTo = controls.maxRaiseTo || minRaiseTo;
@@ -915,13 +1050,15 @@ function chooseBotRaiseTarget(state, controls, player, strength) {
       ];
 
   let pick = ladder[0];
-  if (strength > 62) {
+  if (profile.score > 82 || profile.equity > 0.82) {
+    pick = Math.max(ladder[2] || ladder[1] || ladder[0], Math.round(maxRaiseTo * (profile.equity > 0.9 ? 1 : 0.88)));
+  } else if (profile.score > 66 || profile.equity > 0.68) {
     pick = ladder[2] || ladder[1] || ladder[0];
-  } else if (strength > 44) {
+  } else if (profile.score > 54 || profile.equity > 0.57) {
     pick = ladder[1] || ladder[0];
   }
 
-  if (maxRaiseTo <= minRaiseTo * 1.12 || strength > 74) {
+  if (maxRaiseTo <= minRaiseTo * 1.12 || profile.score > 88 || profile.madeRankLevel >= 6) {
     pick = Math.max(pick, maxRaiseTo);
   }
 
@@ -939,17 +1076,31 @@ function chooseBotAction(state, playerId) {
     return null;
   }
 
-  const strength = botStrength(state, player);
+  const heuristic = botStrength(state, player);
+  const simulation = estimateBotEquity(state, player);
   const toCall = controls.toCall || 0;
   const stack = player.stack;
   const pot = Math.max(state.pot, state.bigBlind * 2);
-  const callPressure = toCall > 0 ? toCall / Math.max(1, pot + toCall) : 0;
-  const courage = strength - callPressure * 42 + botNoise(state, player, 'courage') * 7 - 3.5;
+  const potOdds = toCall > 0 ? toCall / Math.max(1, pot + toCall) : 0;
+  const drawBoost = (simulation.flushDraw ? 0.045 : 0) + (simulation.straightDraw >= 4 ? 0.04 : simulation.straightDraw === 3 ? 0.018 : 0);
+  const madeRankLevel = simulation.madeRank[0] || 0;
+  const profile = {
+    ...simulation,
+    heuristic,
+    potOdds,
+    drawBoost,
+    madeRankLevel,
+    score: (simulation.equity * 100) + Math.min(18, heuristic * 0.17) + (drawBoost * 100 * 0.7) + madeRankLevel * 3.6,
+  };
+  const callEdge = profile.equity + profile.drawBoost - profile.potOdds;
+  const raiseNoise = botNoise(state, player, 'raise-plan');
 
   if (toCall === 0) {
-    const raiseTarget = chooseBotRaiseTarget(state, controls, player, strength);
-    const raiseNoise = botNoise(state, player, 'open');
-    if (raiseTarget > state.currentBet && (strength > 42 || (strength > 32 && raiseNoise > 0.58))) {
+    const raiseTarget = chooseBotRaiseTarget(state, controls, player, profile);
+    const strongOpen = profile.equity > 0.69 || madeRankLevel >= 2 || heuristic > 46;
+    const pressureOpen = profile.equity > 0.56 && raiseNoise > 0.52;
+    const lightOpen = profile.opponents <= 2 && profile.equity > 0.49 && raiseNoise > 0.78;
+    if (raiseTarget > state.currentBet && (strongOpen || pressureOpen || lightOpen)) {
       return {
         type: state.currentBet > 0 ? 'raise' : 'bet',
         amount: raiseTarget,
@@ -959,19 +1110,32 @@ function chooseBotAction(state, playerId) {
   }
 
   if (stack <= toCall) {
-    return courage > 18 ? { type: 'call' } : { type: 'fold' };
+    return profile.equity + profile.drawBoost >= profile.potOdds + 0.045
+      ? { type: 'call' }
+      : { type: 'fold' };
   }
 
-  const raiseTarget = chooseBotRaiseTarget(state, controls, player, strength);
-  const canRaise = raiseTarget > state.currentBet && raiseTarget > player.bet;
-  if (canRaise && courage > 36) {
+  const raiseTarget = chooseBotRaiseTarget(state, controls, player, profile);
+  const canValueRaise = raiseTarget > state.currentBet && raiseTarget > player.bet;
+  const riverGuard = state.stage === 'river' && madeRankLevel < 2;
+  if (canValueRaise && !riverGuard && (
+    profile.equity > 0.84 ||
+    callEdge > 0.16 ||
+    (profile.equity > 0.68 && raiseNoise > 0.34) ||
+    madeRankLevel >= 5
+  )) {
     return {
       type: state.currentBet > 0 ? 'raise' : 'bet',
       amount: raiseTarget,
     };
   }
 
-  if (courage > 13 || toCall <= state.bigBlind || (toCall <= pot * 0.14 && strength > 20)) {
+  if (
+    callEdge > -0.02 ||
+    (profile.potOdds < 0.18 && profile.drawBoost > 0.03) ||
+    toCall <= state.bigBlind ||
+    (profile.equity > 0.34 && raiseNoise > 0.92)
+  ) {
     return { type: 'call' };
   }
 
