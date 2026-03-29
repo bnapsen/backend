@@ -10,6 +10,7 @@
   };
   const query = new URLSearchParams(window.location.search);
   const DEFAULT_MAX_SEATS = 10;
+  const SOLO_BOT_TARGET = 6;
 
   const state = {
     mode: 'idle',
@@ -24,6 +25,7 @@
       setupHidden: false,
       infoHidden: false,
     },
+    pendingSoloLaunch: false,
     renderMemo: {
       communitySignature: '',
       seatSignatures: new Map(),
@@ -50,6 +52,7 @@
     seatLayer: document.getElementById('seatLayer'),
     actionPrompt: document.getElementById('actionPrompt'),
     logList: document.getElementById('logList'),
+    soloBtn: document.getElementById('soloBtn'),
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
     openLoungeBtn: document.getElementById('openLoungeBtn'),
@@ -58,6 +61,8 @@
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     toggleSetupBtn: document.getElementById('toggleSetupBtn'),
     toggleInfoBtn: document.getElementById('toggleInfoBtn'),
+    fillBotsBtn: document.getElementById('fillBotsBtn'),
+    clearBotsBtn: document.getElementById('clearBotsBtn'),
     startHandBtn: document.getElementById('startHandBtn'),
     resetTableBtn: document.getElementById('resetTableBtn'),
     checkCallBtn: document.getElementById('checkCallBtn'),
@@ -293,6 +298,8 @@
     return state.snapshot?.controls || {
       canStartHand: false,
       canResetTable: false,
+      canFillBots: false,
+      canClearBots: false,
       canAct: false,
       toCall: 0,
       minRaiseTo: 0,
@@ -448,6 +455,9 @@
     const badges = [];
     if (player.id === state.playerId) {
       badges.push('<span class="badge">You</span>');
+    }
+    if (player.isBot) {
+      badges.push('<span class="badge bot">Bot</span>');
     }
     if (state.snapshot?.dealerSeat === seat) {
       badges.push('<span class="badge dealer">Dealer</span>');
@@ -663,6 +673,10 @@
       ui.actionPrompt.textContent = 'Click an open seat to host or join. When the hand is live, only the active seat can send betting actions.';
       return;
     }
+    if (controls.canFillBots) {
+      ui.actionPrompt.textContent = 'Want a fast practice table? Fill the open seats with bots, then deal immediately or leave seats open for real players.';
+      return;
+    }
     if (controls.canAct) {
       const actionWord = controls.toCall > 0
         ? `You have ${formatChips(controls.toCall)} to call.`
@@ -698,7 +712,10 @@
 
     ui.hostBtn.disabled = pendingConnection;
     ui.joinBtn.disabled = pendingConnection || !canJoin;
+    ui.soloBtn.disabled = pendingConnection;
     ui.shareLoungeBtn.disabled = !(connected && state.mode === 'online' && state.roomCode);
+    ui.fillBotsBtn.disabled = !(connected && controls.canFillBots);
+    ui.clearBotsBtn.disabled = !(connected && controls.canClearBots);
     ui.startHandBtn.disabled = !(connected && controls.canStartHand);
     ui.resetTableBtn.disabled = !(connected && controls.canResetTable);
     ui.checkCallBtn.disabled = !(connected && controls.canAct);
@@ -768,7 +785,9 @@
     }
     persistSettings();
     setStatusMessage(mode === 'host'
-      ? 'Opening your table and creating an invite link...'
+      ? state.pendingSoloLaunch
+        ? 'Opening a solo table and seating bots...'
+        : 'Opening your table and creating an invite link...'
       : 'Joining the table and syncing the cards...');
     render();
 
@@ -799,6 +818,12 @@
         state.playerId = payload.playerId;
         state.roomCode = payload.roomCode;
         ui.roomInput.value = payload.roomCode;
+        if (state.pendingSoloLaunch) {
+          setStatusMessage('Filling the table with bots and dealing the first hand...');
+          sendFillBots(true, SOLO_BOT_TARGET);
+          render();
+          return;
+        }
         setStatusMessage('You are seated. Share the invite link and wait for players, or start a hand if the table is ready.');
         render();
         return;
@@ -808,6 +833,7 @@
         state.snapshot = payload.snapshot;
         state.roomCode = payload.snapshot.roomCode;
         ui.roomInput.value = payload.snapshot.roomCode;
+        state.pendingSoloLaunch = false;
         if (!ui.raiseAmountInput.value && payload.snapshot.controls?.minRaiseTo) {
           ui.raiseAmountInput.value = String(payload.snapshot.controls.minRaiseTo);
         }
@@ -817,6 +843,7 @@
       }
 
       if (payload.type === 'error') {
+        state.pendingSoloLaunch = false;
         showToast(payload.message || 'The table reported an error.');
         setStatusMessage(payload.message || 'Unable to complete that poker action.');
         render();
@@ -824,12 +851,14 @@
     };
 
     socket.onerror = () => {
+      state.pendingSoloLaunch = false;
       setStatusMessage('The connection hit an error. Check the server URL and try again.');
       render();
     };
 
     socket.onclose = () => {
       state.socket = null;
+      state.pendingSoloLaunch = false;
       if (state.mode === 'online') {
         setStatusMessage('The online table disconnected. Host again or rejoin the same room code to continue.');
         render();
@@ -840,6 +869,29 @@
   function sendStartHand() {
     if (sendMessage({ action: 'start-hand' })) {
       setStatusMessage('Dealing the next hand...');
+    }
+  }
+
+  function sendFillBots(autoStart, targetSeats) {
+    const payload = {
+      action: 'fill-bots',
+      targetSeats: targetSeats || SOLO_BOT_TARGET,
+    };
+    if (autoStart) {
+      payload.autoStart = true;
+    }
+    if (sendMessage(payload)) {
+      setStatusMessage(autoStart
+        ? 'Seating bots and dealing the first hand...'
+        : 'Filling the open seats with bots...');
+      return true;
+    }
+    return false;
+  }
+
+  function sendClearBots() {
+    if (sendMessage({ action: 'clear-bots' })) {
+      setStatusMessage('Clearing the bot seats between hands...');
     }
   }
 
@@ -899,11 +951,28 @@
 
     const roomCode = sanitizeRoomCode(state.roomCode || ui.roomInput.value);
     if (roomCode) {
+      state.pendingSoloLaunch = false;
       ui.roomInput.value = roomCode;
       connectOnline('join');
       return;
     }
 
+    state.pendingSoloLaunch = false;
+    connectOnline('host');
+  }
+
+  function launchSoloWithBots() {
+    if (state.socket && state.socket.readyState === WebSocket.CONNECTING) {
+      showToast('Connection already in progress.');
+      return;
+    }
+    if (state.mode === 'online' && canSend() && getViewerSeat() !== null) {
+      sendFillBots(true, SOLO_BOT_TARGET);
+      return;
+    }
+
+    state.pendingSoloLaunch = true;
+    ui.roomInput.value = '';
     connectOnline('host');
   }
 
@@ -936,8 +1005,15 @@
       }
     });
 
-    ui.hostBtn.addEventListener('click', () => connectOnline('host'));
-    ui.joinBtn.addEventListener('click', () => connectOnline('join'));
+    ui.soloBtn.addEventListener('click', launchSoloWithBots);
+    ui.hostBtn.addEventListener('click', () => {
+      state.pendingSoloLaunch = false;
+      connectOnline('host');
+    });
+    ui.joinBtn.addEventListener('click', () => {
+      state.pendingSoloLaunch = false;
+      connectOnline('join');
+    });
     ui.toggleSetupBtn.addEventListener('click', () => {
       setPanelHidden('setupHidden', !state.panels.setupHidden);
     });
@@ -948,6 +1024,8 @@
     ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
     ui.copyBtn.addEventListener('click', () => copyText(inviteUrl(), 'Invite link copied.'));
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
+    ui.fillBotsBtn.addEventListener('click', () => sendFillBots(false, SOLO_BOT_TARGET));
+    ui.clearBotsBtn.addEventListener('click', sendClearBots);
     ui.startHandBtn.addEventListener('click', sendStartHand);
     ui.resetTableBtn.addEventListener('click', sendResetTable);
     ui.checkCallBtn.addEventListener('click', sendCheckOrCall);
@@ -976,6 +1054,8 @@
         sendFold();
       } else if (key === 'n') {
         sendStartHand();
+      } else if (key === 'b') {
+        sendFillBots(false, SOLO_BOT_TARGET);
       }
     });
   }

@@ -7,6 +7,21 @@ const SMALL_BLIND = 10;
 const BIG_BLIND = 20;
 const MAX_SEATS = 10;
 const MAX_LOG = 12;
+const BOT_FILL_TARGET = 6;
+const BOT_NAME_POOL = [
+  'Orbit Fox',
+  'River Jack',
+  'Mint Mirage',
+  'Gold Lantern',
+  'Velvet Comet',
+  'Nova Tell',
+  'Pocket Halo',
+  'Lucky Prism',
+  'Dealer Zero',
+  'Silver Rail',
+  'Ember Stack',
+  'Bluff Current',
+];
 
 function cloneCard(card) {
   return card ? { value: card.value, suit: card.suit } : null;
@@ -40,11 +55,13 @@ function pushLog(state, text, tone) {
   }
 }
 
-function createPlayer(id, name, seat) {
+function createPlayer(id, name, seat, options) {
+  const settings = options || {};
   return {
     id,
     name,
     seat,
+    isBot: Boolean(settings.isBot),
     stack: STARTING_STACK,
     cards: [],
     folded: false,
@@ -98,6 +115,27 @@ function playerAtSeat(state, seat) {
 
 function findPlayer(state, id) {
   return state.players.find((player) => player.id === id) || null;
+}
+
+function findPlayerBySeat(state, seat) {
+  return state.players.find((player) => player.seat === seat) || null;
+}
+
+function botPlayers(state) {
+  return state.players.filter((player) => player.isBot);
+}
+
+function availableBotNames(state) {
+  const used = new Set(state.players.map((player) => player.name));
+  return BOT_NAME_POOL.filter((name) => !used.has(name));
+}
+
+function nextBotName(state) {
+  const available = availableBotNames(state);
+  if (available.length) {
+    return available[0];
+  }
+  return `Orbit Bot ${botPlayers(state).length + 1}`;
 }
 
 function nextSeatPlayer(state, fromSeat, predicate) {
@@ -488,18 +526,84 @@ function addPlayer(state, info) {
 
   for (let seat = 0; seat < MAX_SEATS; seat += 1) {
     if (!playerAtSeat(state, seat)) {
-      const player = createPlayer(info.id, info.name, seat);
+      const player = createPlayer(info.id, info.name, seat, { isBot: Boolean(info.isBot) });
       state.players.push(player);
       state.players.sort((left, right) => left.seat - right.seat);
       state.status = state.players.length >= 2
         ? `${info.name} joined the table. Start a hand when you are ready.`
         : `${info.name} took a seat. Invite more players to begin.`;
-      pushLog(state, `${info.name} joined seat ${seat + 1}.`, 'info');
+      pushLog(state, `${info.name} joined seat ${seat + 1}.${info.isBot ? ' Bot seat armed.' : ''}`, 'info');
       return player;
     }
   }
 
   return null;
+}
+
+function addBot(state, id, name) {
+  return addPlayer(state, {
+    id,
+    name,
+    isBot: true,
+  });
+}
+
+function fillWithBots(state, options) {
+  if (!(state.stage === 'waiting' || state.stage === 'showdown')) {
+    return { ok: false, error: 'Wait until the current hand ends before adding bots.' };
+  }
+
+  const settings = options || {};
+  const targetSeats = Math.max(2, Math.min(MAX_SEATS, Number(settings.targetSeats) || BOT_FILL_TARGET));
+  const added = [];
+
+  while (seatedPlayers(state, { includeLeavers: true }).length < targetSeats) {
+    const name = nextBotName(state);
+    const id = `bot-${Math.random().toString(36).slice(2, 10)}`;
+    const bot = addBot(state, id, name);
+    if (!bot) {
+      break;
+    }
+    added.push(bot);
+  }
+
+  if (!added.length) {
+    return {
+      ok: false,
+      error: targetSeats >= MAX_SEATS
+        ? 'The table is already full.'
+        : 'That many seats are already filled.',
+    };
+  }
+
+  state.status = `${added.length} bot${added.length === 1 ? '' : 's'} sat down. Start a hand when you are ready.`;
+  pushLog(state, `${added.length} bot${added.length === 1 ? '' : 's'} filled the empty seats.`, 'good');
+  return {
+    ok: true,
+    added: added.length,
+    message: `${added.length} bot${added.length === 1 ? '' : 's'} joined the table.`,
+  };
+}
+
+function removeBots(state) {
+  if (!(state.stage === 'waiting' || state.stage === 'showdown')) {
+    return { ok: false, error: 'Wait until the current hand ends before clearing bots.' };
+  }
+  const bots = botPlayers(state);
+  if (!bots.length) {
+    return { ok: false, error: 'There are no bots seated at this table.' };
+  }
+  state.players = state.players.filter((player) => !player.isBot);
+  const count = bots.length;
+  state.status = state.players.length >= 2
+    ? 'Bots left the table. You can invite more players or add them back.'
+    : 'Bots left the table. Add bots again or invite another player.';
+  pushLog(state, `${count} bot${count === 1 ? '' : 's'} left the table.`, 'warn');
+  return {
+    ok: true,
+    removed: count,
+    message: `${count} bot${count === 1 ? '' : 's'} left the table.`,
+  };
 }
 
 function removePlayer(state, playerId) {
@@ -599,13 +703,16 @@ function resetTable(state) {
     id: player.id,
     name: player.name,
     seat: player.seat,
+    isBot: Boolean(player.isBot),
   }));
   const fresh = createGameState();
   Object.assign(state, fresh);
   state.title = title;
   state.roomCode = roomCode;
   state.players = players.map((player) => {
-    const next = createPlayer(player.id, player.name, player.seat);
+    const next = createPlayer(player.id, player.name, player.seat, {
+      isBot: Boolean(player.isBot),
+    });
     return next;
   });
   pushLog(state, 'The table was reset to fresh stacks.', 'warn');
@@ -616,9 +723,13 @@ function resetTable(state) {
 }
 
 function computeControls(state, viewer) {
+  const bots = botPlayers(state);
+  const betweenHands = state.stage === 'waiting' || state.stage === 'showdown';
   const base = {
     canStartHand: viewer && (state.stage === 'waiting' || state.stage === 'showdown') && dealEligiblePlayers(state).length >= 2,
     canResetTable: Boolean(viewer),
+    canFillBots: Boolean(viewer) && betweenHands && seatedPlayers(state, { includeLeavers: true }).length < MAX_SEATS,
+    canClearBots: Boolean(viewer) && betweenHands && bots.length > 0,
     canAct: false,
     toCall: 0,
     minRaiseTo: 0,
@@ -662,6 +773,211 @@ function computeControls(state, viewer) {
   return base;
 }
 
+function hashText(value) {
+  let hash = 2166136261;
+  const text = String(value || '');
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function botNoise(state, player, salt) {
+  return (hashText(`${player.id}|${state.handNumber}|${state.stage}|${salt}|${state.community.map((card) => `${card.value}${card.suit}`).join('')}`) % 1000) / 1000;
+}
+
+function normalizeScore(value, min, max) {
+  if (max <= min) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, (value - min) / (max - min)));
+}
+
+function preflopStrength(player) {
+  const cards = player.cards.slice().sort((left, right) => right.value - left.value);
+  if (cards.length < 2) {
+    return 0;
+  }
+  const [high, low] = cards;
+  const pair = high.value === low.value;
+  const suited = high.suit === low.suit;
+  const gap = Math.abs(high.value - low.value);
+  let score = 0;
+
+  if (pair) {
+    score += 32 + high.value * 2.4;
+  } else {
+    score += high.value * 2.2 + low.value * 1.2;
+    if (suited) {
+      score += 4.5;
+    }
+    if (gap === 1) {
+      score += 4;
+    } else if (gap === 2) {
+      score += 2.2;
+    } else if (gap >= 4) {
+      score -= 2.8;
+    }
+    if (high.value >= 14) {
+      score += 3.8;
+    }
+    if (high.value >= 13 && low.value >= 10) {
+      score += 5.2;
+    }
+    if (high.value >= 12 && low.value >= 12) {
+      score += 3.5;
+    }
+  }
+
+  if (high.value === 14 && low.value >= 10) {
+    score += 4.5;
+  }
+
+  return score;
+}
+
+function straightDrawStrength(cards) {
+  const unique = [...new Set(cards.map((card) => card.value))].sort((left, right) => left - right);
+  if (unique.includes(14)) {
+    unique.unshift(1);
+  }
+  let best = 0;
+  for (let start = 1; start <= 10; start += 1) {
+    const span = [start, start + 1, start + 2, start + 3, start + 4];
+    const matches = span.filter((value) => unique.includes(value)).length;
+    if (matches >= 4 && matches > best) {
+      best = matches;
+    }
+  }
+  return best >= 4 ? best : 0;
+}
+
+function postflopStrength(state, player) {
+  const allCards = [...player.cards, ...state.community];
+  const rank = bestOfSeven(allCards) || [0];
+  const suitCounts = {};
+  allCards.forEach((card) => {
+    suitCounts[card.suit] = (suitCounts[card.suit] || 0) + 1;
+  });
+  const flushDraw = Object.values(suitCounts).some((count) => count >= 4);
+  const straightDraw = straightDrawStrength(allCards);
+  const pairStrength = rank[0] === 1 ? rank[1] : 0;
+  let score = rank[0] * 22;
+
+  if (rank[0] === 0) {
+    score += normalizeScore(rank[1] || 0, 8, 14) * 8;
+  } else if (rank[0] === 1) {
+    score += normalizeScore(pairStrength, 2, 14) * 11;
+  } else if (rank[0] === 2) {
+    score += 8;
+  } else if (rank[0] >= 3) {
+    score += 12;
+  }
+
+  if (flushDraw) {
+    score += 6.5;
+  }
+  if (straightDraw >= 4) {
+    score += straightDraw === 5 ? 8 : 5.5;
+  }
+
+  return score;
+}
+
+function botStrength(state, player) {
+  if (state.stage === 'preflop') {
+    return preflopStrength(player);
+  }
+  return postflopStrength(state, player);
+}
+
+function chooseBotRaiseTarget(state, controls, player, strength) {
+  const currentBet = state.currentBet || 0;
+  const minRaiseTo = controls.minRaiseTo || currentBet;
+  const maxRaiseTo = controls.maxRaiseTo || minRaiseTo;
+  if (maxRaiseTo <= currentBet || minRaiseTo <= currentBet) {
+    return 0;
+  }
+
+  const aggression = 0.78 + botNoise(state, player, 'raise') * 0.68;
+  const potPush = Math.max(state.bigBlind * 3, Math.round(state.pot * (0.45 + aggression * 0.55)));
+  const ladder = currentBet === 0
+    ? [
+        minRaiseTo,
+        Math.min(maxRaiseTo, Math.max(minRaiseTo, potPush)),
+        Math.min(maxRaiseTo, Math.max(minRaiseTo, Math.round(state.bigBlind * (4 + aggression * 2.4)))),
+      ]
+    : [
+        minRaiseTo,
+        Math.min(maxRaiseTo, Math.max(minRaiseTo, state.currentBet + Math.round(state.minRaise * (1.05 + aggression * 0.65)))),
+        Math.min(maxRaiseTo, Math.max(minRaiseTo, state.currentBet + potPush)),
+      ];
+
+  let pick = ladder[0];
+  if (strength > 62) {
+    pick = ladder[2] || ladder[1] || ladder[0];
+  } else if (strength > 44) {
+    pick = ladder[1] || ladder[0];
+  }
+
+  if (maxRaiseTo <= minRaiseTo * 1.12 || strength > 74) {
+    pick = Math.max(pick, maxRaiseTo);
+  }
+
+  return Math.max(minRaiseTo, Math.min(maxRaiseTo, Math.round(pick)));
+}
+
+function chooseBotAction(state, playerId) {
+  const player = findPlayer(state, playerId);
+  if (!player || !player.isBot) {
+    return null;
+  }
+
+  const controls = computeControls(state, player);
+  if (!controls.canAct) {
+    return null;
+  }
+
+  const strength = botStrength(state, player);
+  const toCall = controls.toCall || 0;
+  const stack = player.stack;
+  const pot = Math.max(state.pot, state.bigBlind * 2);
+  const callPressure = toCall > 0 ? toCall / Math.max(1, pot + toCall) : 0;
+  const courage = strength - callPressure * 42 + botNoise(state, player, 'courage') * 7 - 3.5;
+
+  if (toCall === 0) {
+    const raiseTarget = chooseBotRaiseTarget(state, controls, player, strength);
+    const raiseNoise = botNoise(state, player, 'open');
+    if (raiseTarget > state.currentBet && (strength > 42 || (strength > 32 && raiseNoise > 0.58))) {
+      return {
+        type: state.currentBet > 0 ? 'raise' : 'bet',
+        amount: raiseTarget,
+      };
+    }
+    return { type: 'check' };
+  }
+
+  if (stack <= toCall) {
+    return courage > 18 ? { type: 'call' } : { type: 'fold' };
+  }
+
+  const raiseTarget = chooseBotRaiseTarget(state, controls, player, strength);
+  const canRaise = raiseTarget > state.currentBet && raiseTarget > player.bet;
+  if (canRaise && courage > 36) {
+    return {
+      type: state.currentBet > 0 ? 'raise' : 'bet',
+      amount: raiseTarget,
+    };
+  }
+
+  if (courage > 13 || toCall <= state.bigBlind || (toCall <= pot * 0.14 && strength > 20)) {
+    return { type: 'call' };
+  }
+
+  return { type: 'fold' };
+}
+
 function cardListForViewer(player, viewerId, showAll) {
   if (!player.cards.length) {
     return [];
@@ -701,10 +1017,11 @@ function cloneState(state, viewerId) {
         ? bestOfSeven([...player.cards, ...state.community])
         : null;
       return {
-        id: player.id,
-        name: player.name,
-        seat: player.seat,
-        stack: player.stack,
+      id: player.id,
+      name: player.name,
+      seat: player.seat,
+      isBot: Boolean(player.isBot),
+      stack: player.stack,
         bet: player.bet,
         totalContribution: player.totalContribution,
         folded: player.folded,
@@ -830,9 +1147,16 @@ module.exports = {
   SMALL_BLIND,
   BIG_BLIND,
   MAX_SEATS,
+  BOT_FILL_TARGET,
   createGameState,
   cloneState,
   addPlayer,
+  addBot,
+  fillWithBots,
+  removeBots,
+  chooseBotAction,
+  findPlayer,
+  findPlayerBySeat,
   removePlayer,
   startHand,
   resetTable,

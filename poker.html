@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/poker-live/style.css?v=20260326c" />
+  <link rel="stylesheet" href="games/poker-live/style.css?v=20260328a" />
 </head>
 <body>
   <div class="page-shell">
@@ -68,7 +68,8 @@
           </div>
 
           <div class="hero-actions">
-            <button id="hostBtn" class="primary">Host table</button>
+            <button id="soloBtn" class="primary solo-action" type="button">Play solo with bots</button>
+            <button id="hostBtn" type="button">Host table</button>
             <button id="joinBtn">Join table</button>
           </div>
 
@@ -118,15 +119,15 @@
           <div class="guide-list">
             <div class="guide-item">
               <strong>Start fast</strong>
-              <p>Get two players seated, then hit <em>Start hand</em>. Up to ten players can fill the rail between hands.</p>
+              <p>Use <em>Play solo with bots</em> for an instant practice table, or host a room and seat real players before you deal.</p>
             </div>
             <div class="guide-item">
               <strong>Bet clearly</strong>
               <p>Use the quick buttons for fast decisions, or enter a custom total bet size when you want a specific raise.</p>
             </div>
             <div class="guide-item">
-              <strong>Built for real rooms</strong>
-              <p>The backend sends each player a private snapshot, so your hole cards stay hidden while the table still stays in sync.</p>
+              <strong>Real table, flexible seats</strong>
+              <p>The backend sends each seat a private snapshot, and empty seats can be filled with bots between hands for solo play.</p>
             </div>
           </div>
         </section>
@@ -178,6 +179,8 @@
               <p class="tray-line" id="actionPrompt">Click an open seat to host or join. Once a hand is live, your actions light up only when it is your turn.</p>
             </div>
             <div class="table-buttons">
+              <button id="fillBotsBtn" class="secondary" type="button">Fill seats with bots</button>
+              <button id="clearBotsBtn" class="secondary" type="button">Clear bots</button>
               <button id="startHandBtn" class="primary">Start hand</button>
               <button id="resetTableBtn">Reset table</button>
               <button id="checkCallBtn">Check</button>
@@ -233,6 +236,6 @@
   </div>
 
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
-  <script src="games/poker-live/game.js?v=20260326d"></script>
+  <script src="games/poker-live/game.js?v=20260328a"></script>
 </body>
 </html>

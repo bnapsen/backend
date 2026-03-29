@@ -386,6 +386,11 @@ h2 {
   margin-top: 18px;
 }
 
+.hero-actions .solo-action {
+  flex: 1 1 100%;
+  justify-content: center;
+}
+
 .primary,
 .secondary,
 .hero-actions button,
@@ -887,6 +892,11 @@ h2 {
 .badge.dealer {
   color: var(--gold);
   background: rgba(239, 197, 109, 0.14);
+}
+
+.badge.bot {
+  color: var(--mint);
+  background: rgba(118, 238, 217, 0.16);
 }
 
 .badge.blind {

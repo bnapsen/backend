@@ -397,6 +397,8 @@ function createRoom(code, gameType, options = {}) {
     maxPlayers: gameDef.maxPlayers || DEFAULT_MAX_PLAYERS,
     players: new Map(),
     game: gameDef.createGameState(options),
+    nextBotActionAt: 0,
+    botActorId: '',
     backgammonUndo: gameDef.id === 'backgammon'
       ? {
           player: 0,
@@ -905,6 +907,63 @@ function handleStartHand(socket) {
   broadcastState(room, result.message || `${player.name} started a new hand.`);
 }
 
+function handleFillBots(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'poker') {
+    sendError(socket, 'Bot seats are only available on poker tables.');
+    return;
+  }
+
+  const result = Poker.fillWithBots(room.game, {
+    targetSeats: payload && payload.targetSeats,
+  });
+  if (!result.ok) {
+    sendError(socket, result.error || 'Bots could not join the table.');
+    return;
+  }
+
+  room.nextBotActionAt = 0;
+  room.botActorId = '';
+
+  let message = result.message || `${player.name} filled the empty seats with bots.`;
+  if (payload && payload.autoStart) {
+    const startResult = Poker.startHand(room.game, player.id);
+    if (startResult.ok) {
+      message = startResult.message || message;
+    }
+  }
+
+  broadcastState(room, message);
+}
+
+function handleClearBots(socket) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room } = context;
+  if (room.gameType !== 'poker') {
+    sendError(socket, 'Bot seats are only available on poker tables.');
+    return;
+  }
+
+  const result = Poker.removeBots(room.game);
+  if (!result.ok) {
+    sendError(socket, result.error || 'Bots could not leave the table.');
+    return;
+  }
+
+  room.nextBotActionAt = 0;
+  room.botActorId = '';
+  broadcastState(room, result.message);
+}
+
 function handleChatMessage(socket, payload) {
   const context = requirePlayer(socket);
   if (!context) {
@@ -1200,6 +1259,8 @@ function handleRestart(socket) {
     room.lastTickAt = Date.now();
   } else if (room.gameType === 'poker') {
     Poker.resetTable(room.game);
+    room.nextBotActionAt = 0;
+    room.botActorId = '';
   } else if (room.gameType === 'blackjack') {
     Blackjack.resetTable(room.game);
   } else {
@@ -1267,6 +1328,8 @@ function handleDisconnect(socket) {
     room.lastTickAt = Date.now();
   } else if (room.gameType === 'poker') {
     Poker.removePlayer(room.game, playerId);
+    room.nextBotActionAt = 0;
+    room.botActorId = '';
   } else if (room.gameType === 'blackjack') {
     Blackjack.removePlayer(room.game, playerId);
   } else if (room.gameType === 'arcade-chat') {
@@ -1332,6 +1395,38 @@ function tickRealtimeRooms() {
       room.lastTickAt = now;
       if (MiniPool.step(room.game, elapsed / 1000)) {
         broadcastState(room);
+      }
+      continue;
+    }
+    if (room.gameType === 'poker' && room.players.size > 0) {
+      const actor = Number.isInteger(room.game.actionSeat)
+        ? Poker.findPlayerBySeat(room.game, room.game.actionSeat)
+        : null;
+      if (!actor || !actor.isBot || !(room.game.stage === 'preflop' || room.game.stage === 'flop' || room.game.stage === 'turn' || room.game.stage === 'river')) {
+        room.nextBotActionAt = 0;
+        room.botActorId = '';
+        continue;
+      }
+
+      if (room.botActorId !== actor.id || !room.nextBotActionAt) {
+        room.botActorId = actor.id;
+        room.nextBotActionAt = now + 520 + Math.floor(Math.random() * 420);
+        continue;
+      }
+
+      if (now < room.nextBotActionAt) {
+        continue;
+      }
+
+      room.nextBotActionAt = 0;
+      room.botActorId = '';
+      const action = Poker.chooseBotAction(room.game, actor.id);
+      if (!action) {
+        continue;
+      }
+      const result = Poker.applyAction(room.game, actor.id, action);
+      if (result.ok) {
+        broadcastState(room, result.message || `${actor.name} acted.`);
       }
       continue;
     }
@@ -1427,6 +1522,12 @@ wss.on('connection', (socket) => {
         break;
       case 'start-hand':
         handleStartHand(socket);
+        break;
+      case 'fill-bots':
+        handleFillBots(socket, payload);
+        break;
+      case 'clear-bots':
+        handleClearBots(socket);
         break;
       case 'input':
         handleInput(socket, payload);
