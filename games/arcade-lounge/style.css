@@ -732,6 +732,37 @@ button:disabled {
   flex: 1 1 170px;
 }
 
+.sample-voice-btn[data-state="recording"],
+.sample-voice-btn[data-state="playing"] {
+  color: #06130e;
+  background: linear-gradient(135deg, rgba(143, 184, 255, 0.98), rgba(126, 243, 220, 0.94));
+  box-shadow: 0 16px 34px rgba(143, 184, 255, 0.16);
+}
+
+.sample-voice-btn[data-state="preparing"] {
+  background: linear-gradient(135deg, rgba(143, 184, 255, 0.18), rgba(126, 243, 220, 0.18));
+}
+
+.voice-preview-status {
+  min-height: 1.35em;
+}
+
+.voice-preview-status[data-tone="processing"] {
+  color: var(--accent);
+}
+
+.voice-preview-status[data-tone="recording"] {
+  color: var(--accent-2);
+}
+
+.voice-preview-status[data-tone="ready"] {
+  color: var(--good);
+}
+
+.voice-preview-status[data-tone="error"] {
+  color: #ff9b9b;
+}
+
 .voice-btn[data-state="live"] {
   color: #04140f;
   background: linear-gradient(135deg, var(--accent), #dffcf3);

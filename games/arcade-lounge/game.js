@@ -116,6 +116,12 @@
       rawStream: null,
       meterFrame: 0,
       styleSyncTimer: 0,
+      sampleState: 'idle',
+      sampleRecorder: null,
+      sampleAudio: null,
+      sampleAudioUrl: '',
+      sampleTimeout: 0,
+      sampleToken: 0,
     },
   };
 
@@ -145,6 +151,7 @@
     voiceStatus: document.getElementById('voiceStatus'),
     voiceAudioHost: document.getElementById('voiceAudioHost'),
     voiceLabStatus: document.getElementById('voiceLabStatus'),
+    voicePreviewStatus: document.getElementById('voicePreviewStatus'),
     voicePresetButtons: Array.from(document.querySelectorAll('[data-voice-preset]')),
     voiceInputMeterFill: document.getElementById('voiceInputMeterFill'),
     voiceOutputMeterFill: document.getElementById('voiceOutputMeterFill'),
@@ -162,6 +169,7 @@
     voiceGlitchValue: document.getElementById('voiceGlitchValue'),
     voiceEchoValue: document.getElementById('voiceEchoValue'),
     voiceMonitorValue: document.getElementById('voiceMonitorValue'),
+    sampleVoiceBtn: document.getElementById('sampleVoiceBtn'),
     randomVoiceBtn: document.getElementById('randomVoiceBtn'),
     resetVoiceBtn: document.getElementById('resetVoiceBtn'),
     sendBtn: document.getElementById('sendBtn'),
@@ -292,10 +300,22 @@
     return curve;
   }
 
-  function voiceChatSupported() {
+  function voiceEffectsSupported() {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
     return Boolean(
       navigator.mediaDevices
       && typeof navigator.mediaDevices.getUserMedia === 'function'
+      && typeof AudioCtor === 'function'
+    );
+  }
+
+  function voicePreviewSupported() {
+    return voiceEffectsSupported() && typeof window.MediaRecorder === 'function';
+  }
+
+  function voiceChatSupported() {
+    return Boolean(
+      voiceEffectsSupported()
       && typeof window.RTCPeerConnection === 'function'
     );
   }
@@ -306,6 +326,60 @@
     }
     ui.voiceStatus.textContent = message;
     ui.voiceStatus.dataset.tone = tone || 'idle';
+  }
+
+  function setVoicePreviewStatus(message, tone) {
+    if (!ui.voicePreviewStatus) {
+      return;
+    }
+    ui.voicePreviewStatus.textContent = message;
+    ui.voicePreviewStatus.dataset.tone = tone || 'idle';
+  }
+
+  function clearVoiceSampleTimeout() {
+    if (state.voiceLab.sampleTimeout) {
+      clearTimeout(state.voiceLab.sampleTimeout);
+      state.voiceLab.sampleTimeout = 0;
+    }
+  }
+
+  function revokeVoiceSampleUrl() {
+    if (!state.voiceLab.sampleAudioUrl) {
+      return;
+    }
+    URL.revokeObjectURL(state.voiceLab.sampleAudioUrl);
+    state.voiceLab.sampleAudioUrl = '';
+  }
+
+  function stopVoiceSamplePlayback(options = {}) {
+    const audio = state.voiceLab.sampleAudio;
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audio.src = '';
+      state.voiceLab.sampleAudio = null;
+    }
+    revokeVoiceSampleUrl();
+    if (!options.keepState && state.voiceLab.sampleState === 'playing') {
+      state.voiceLab.sampleState = 'idle';
+    }
+  }
+
+  function stopVoiceSampleRecording(options = {}) {
+    clearVoiceSampleTimeout();
+    const recorder = state.voiceLab.sampleRecorder;
+    state.voiceLab.sampleRecorder = null;
+    if (recorder && recorder.state !== 'inactive') {
+      try {
+        recorder.stop();
+      } catch (error) {
+        // Ignore duplicate stop calls from browser recorder shutdown.
+      }
+    }
+    if (!options.keepState && state.voiceLab.sampleState === 'recording') {
+      state.voiceLab.sampleState = 'idle';
+    }
   }
 
   function setMeterLevel(element, level) {
@@ -502,6 +576,64 @@
     engine.monitorGain.gain.setTargetAtTime(monitorAmount * 0.42, time, 0.04);
   }
 
+  async function ensureVoicePreviewEngine() {
+    if (!voiceEffectsSupported()) {
+      throw new Error('Voice effects need microphone access and Web Audio support.');
+    }
+
+    if (state.voiceLab.engine || state.voiceLab.rawStream || state.voiceStream) {
+      if (state.voiceLab.engine && state.voiceLab.engine.ctx && state.voiceLab.engine.ctx.state === 'suspended') {
+        await state.voiceLab.engine.ctx.resume();
+      }
+      applyVoiceProfileToEngine();
+      if (state.voiceLab.engine) {
+        state.voiceStream = state.voiceLab.engine.destination.stream;
+      } else if (state.voiceLab.rawStream) {
+        state.voiceStream = state.voiceLab.rawStream;
+      }
+      startVoiceMeterLoop();
+      return state.voiceStream;
+    }
+
+    const rawStream = await navigator.mediaDevices.getUserMedia(VOICE_CHAT_CONFIG.mediaConstraints);
+    const engine = createVoiceEngine(rawStream);
+    if (engine && engine.ctx.state === 'suspended') {
+      await engine.ctx.resume();
+    }
+    state.voiceLab.rawStream = rawStream;
+    state.voiceLab.engine = engine;
+    state.voiceStream = engine ? engine.destination.stream : rawStream;
+    applyVoiceProfileToEngine();
+    startVoiceMeterLoop();
+    return state.voiceStream;
+  }
+
+  function voiceSampleMimeType() {
+    if (typeof window.MediaRecorder !== 'function' || typeof MediaRecorder.isTypeSupported !== 'function') {
+      return '';
+    }
+    const options = [
+      'audio/webm;codecs=opus',
+      'audio/ogg;codecs=opus',
+      'audio/webm',
+    ];
+    return options.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+  }
+
+  function releaseVoicePreviewIfIdle() {
+    if (state.voiceJoined || state.voiceJoining) {
+      return;
+    }
+    if (state.voiceLab.sampleState !== 'idle') {
+      return;
+    }
+    if (state.voiceLab.engine || state.voiceLab.rawStream || state.voiceStream) {
+      stopLocalVoiceStream();
+      renderVoiceLab();
+      updateControlState();
+    }
+  }
+
   function scheduleVoiceStyleSync() {
     if (state.voiceLab.styleSyncTimer) {
       clearTimeout(state.voiceLab.styleSyncTimer);
@@ -520,6 +652,52 @@
         preset: currentVoicePresetLabel(),
       });
     }, 180);
+  }
+
+  function renderVoicePreviewUi() {
+    const sampleState = state.voiceLab.sampleState || 'idle';
+    if (ui.sampleVoiceBtn) {
+      if (sampleState === 'preparing') {
+        ui.sampleVoiceBtn.textContent = 'Preparing sample...';
+      } else if (sampleState === 'recording') {
+        ui.sampleVoiceBtn.textContent = 'Finish sample';
+      } else if (sampleState === 'playing') {
+        ui.sampleVoiceBtn.textContent = 'Stop sample';
+      } else {
+        ui.sampleVoiceBtn.textContent = 'Sample voice';
+      }
+      ui.sampleVoiceBtn.dataset.state = sampleState;
+    }
+
+    if (!ui.voicePreviewStatus) {
+      return;
+    }
+
+    if (!voiceEffectsSupported()) {
+      setVoicePreviewStatus('Local voice preview needs microphone access and Web Audio support.', 'error');
+      return;
+    }
+    if (!voicePreviewSupported()) {
+      setVoicePreviewStatus('This browser cannot record a quick local voice sample.', 'error');
+      return;
+    }
+    if (sampleState === 'preparing') {
+      setVoicePreviewStatus('Opening your mic and wiring the current effect chain...', 'processing');
+      return;
+    }
+    if (sampleState === 'recording') {
+      setVoicePreviewStatus('Recording a short processed sample. Click again to hear it sooner.', 'recording');
+      return;
+    }
+    if (sampleState === 'playing') {
+      setVoicePreviewStatus('Playing your processed voice sample locally.', 'ready');
+      return;
+    }
+    if (state.voiceJoined) {
+      setVoicePreviewStatus('Preview stays local. Others hear the same effect while you are in voice.', 'idle');
+      return;
+    }
+    setVoicePreviewStatus('Sample your processed mic locally before you join voice.', 'idle');
   }
 
   function renderVoiceLab() {
@@ -548,14 +726,16 @@
     });
 
     if (ui.voiceLabStatus) {
-      if (!voiceChatSupported()) {
-        ui.voiceLabStatus.textContent = 'WebRTC mic effects are not available in this browser.';
+      if (!voiceEffectsSupported()) {
+        ui.voiceLabStatus.textContent = 'Voice effects are not available in this browser.';
+      } else if (!voiceChatSupported()) {
+        ui.voiceLabStatus.textContent = `${presetLabel} is ready for local preview. Live room voice needs WebRTC support.`;
       } else if (state.voiceJoining) {
         ui.voiceLabStatus.textContent = `Opening your mic with ${presetLabel}...`;
       } else if (state.voiceJoined) {
         ui.voiceLabStatus.textContent = `${presetLabel} is live. Headphones are best if you raise Monitor.`;
       } else {
-        ui.voiceLabStatus.textContent = `${presetLabel} is armed. Join voice to stream it live.`;
+        ui.voiceLabStatus.textContent = `${presetLabel} is armed. Sample it or join voice to stream it live.`;
       }
     }
 
@@ -564,6 +744,7 @@
     } else if (ui.voiceOutputMeterText) {
       ui.voiceOutputMeterText.textContent = presetLabel;
     }
+    renderVoicePreviewUi();
   }
 
   function setVoiceProfile(nextProfile, options = {}) {
@@ -618,6 +799,162 @@
       monitor: state.voiceLab.profile ? state.voiceLab.profile.monitor : 0,
     });
     setStatus('Rolled a fresh custom voice. Join voice to hear the new mix live.');
+  }
+
+  async function startVoiceSample() {
+    if (!voicePreviewSupported()) {
+      setStatus('This browser cannot record a local voice sample.');
+      renderVoiceLab();
+      updateControlState();
+      return;
+    }
+    if (state.voiceLab.sampleState === 'preparing' || state.voiceLab.sampleState === 'recording') {
+      return;
+    }
+
+    stopVoiceSamplePlayback({ keepState: true });
+    clearVoiceSampleTimeout();
+    state.voiceLab.sampleToken += 1;
+    const sampleToken = state.voiceLab.sampleToken;
+    state.voiceLab.sampleState = 'preparing';
+    renderVoiceLab();
+    updateControlState();
+
+    try {
+      const sampleStream = await ensureVoicePreviewEngine();
+      if (sampleToken !== state.voiceLab.sampleToken) {
+        releaseVoicePreviewIfIdle();
+        return;
+      }
+      const mimeType = voiceSampleMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(sampleStream, { mimeType })
+        : new MediaRecorder(sampleStream);
+      const chunks = [];
+      state.voiceLab.sampleRecorder = recorder;
+      state.voiceLab.sampleState = 'recording';
+      renderVoiceLab();
+      updateControlState();
+
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size) {
+          chunks.push(event.data);
+        }
+      });
+
+      recorder.addEventListener('stop', async () => {
+        if (state.voiceLab.sampleRecorder === recorder) {
+          state.voiceLab.sampleRecorder = null;
+        }
+        clearVoiceSampleTimeout();
+        if (sampleToken !== state.voiceLab.sampleToken) {
+          return;
+        }
+        if (!chunks.length) {
+          state.voiceLab.sampleState = 'idle';
+          renderVoiceLab();
+          updateControlState();
+          releaseVoicePreviewIfIdle();
+          return;
+        }
+        try {
+          stopVoiceSamplePlayback({ keepState: true });
+          const blob = new Blob(chunks, {
+            type: recorder.mimeType || mimeType || 'audio/webm',
+          });
+          state.voiceLab.sampleAudioUrl = URL.createObjectURL(blob);
+          const audio = new Audio(state.voiceLab.sampleAudioUrl);
+          audio.preload = 'auto';
+          state.voiceLab.sampleAudio = audio;
+          state.voiceLab.sampleState = 'playing';
+          renderVoiceLab();
+          updateControlState();
+
+          audio.onended = () => {
+            stopVoiceSamplePlayback();
+            renderVoiceLab();
+            updateControlState();
+            releaseVoicePreviewIfIdle();
+          };
+          audio.onerror = () => {
+            stopVoiceSamplePlayback();
+            setStatus('Could not play back the voice sample.');
+            renderVoiceLab();
+            updateControlState();
+            releaseVoicePreviewIfIdle();
+          };
+          await audio.play();
+        } catch (error) {
+          stopVoiceSamplePlayback();
+          state.voiceLab.sampleState = 'idle';
+          setStatus('Could not play back the voice sample.');
+          renderVoiceLab();
+          updateControlState();
+          releaseVoicePreviewIfIdle();
+        }
+      });
+
+      recorder.start();
+      state.voiceLab.sampleTimeout = window.setTimeout(() => {
+        if (recorder.state !== 'inactive') {
+          recorder.stop();
+        }
+      }, 2400);
+      setStatus('Recording a short processed voice sample.');
+    } catch (error) {
+      if (sampleToken !== state.voiceLab.sampleToken) {
+        return;
+      }
+      stopVoiceSampleRecording({ keepState: true });
+      state.voiceLab.sampleState = 'idle';
+      const message = error && error.name === 'NotAllowedError'
+        ? 'Microphone access was blocked for voice preview.'
+        : error && error.message
+          ? error.message
+          : 'Could not start the voice sample.';
+      setStatus(message);
+      renderVoiceLab();
+      updateControlState();
+      releaseVoicePreviewIfIdle();
+    }
+  }
+
+  function finishVoiceSample() {
+    if (state.voiceLab.sampleRecorder && state.voiceLab.sampleRecorder.state !== 'inactive') {
+      clearVoiceSampleTimeout();
+      try {
+        state.voiceLab.sampleRecorder.stop();
+      } catch (error) {
+        // Ignore duplicate stop calls from the preview UI.
+      }
+      setStatus('Preparing your processed voice playback.');
+    }
+  }
+
+  function stopVoiceSample() {
+    state.voiceLab.sampleToken += 1;
+    clearVoiceSampleTimeout();
+    stopVoiceSampleRecording({ keepState: false });
+    stopVoiceSamplePlayback();
+    renderVoiceLab();
+    updateControlState();
+    releaseVoicePreviewIfIdle();
+  }
+
+  function toggleVoiceSample() {
+    if (state.voiceLab.sampleState === 'recording') {
+      finishVoiceSample();
+      return;
+    }
+    if (state.voiceLab.sampleState === 'playing') {
+      stopVoiceSample();
+      setStatus('Voice sample stopped.');
+      return;
+    }
+    if (state.voiceLab.sampleState === 'preparing') {
+      return;
+    }
+    startVoiceSample();
   }
 
   function currentPlayers() {
@@ -701,6 +1038,10 @@
 
   function stopLocalVoiceStream() {
     stopVoiceMeterLoop();
+    stopVoiceSampleRecording({ keepState: true });
+    stopVoiceSamplePlayback({ keepState: true });
+    state.voiceLab.sampleState = 'idle';
+    state.voiceLab.sampleToken += 1;
     if (state.voiceLab.styleSyncTimer) {
       clearTimeout(state.voiceLab.styleSyncTimer);
       state.voiceLab.styleSyncTimer = 0;
@@ -1012,20 +1353,11 @@
     setStatus('Requesting microphone access for direct lounge voice chat.');
 
     try {
-      const rawStream = await navigator.mediaDevices.getUserMedia(VOICE_CHAT_CONFIG.mediaConstraints);
-      const engine = createVoiceEngine(rawStream);
-      if (engine && engine.ctx.state === 'suspended') {
-        await engine.ctx.resume();
-      }
-      state.voiceLab.rawStream = rawStream;
-      state.voiceLab.engine = engine;
-      state.voiceStream = engine ? engine.destination.stream : rawStream;
+      await ensureVoicePreviewEngine();
       state.voiceJoined = true;
       state.voiceMuted = false;
       state.voiceJoining = false;
-      applyVoiceProfileToEngine();
       setLocalVoiceTracksEnabled(true);
-      startVoiceMeterLoop();
 
       if (!sendJson({
         action: 'voice-join',
@@ -1432,11 +1764,15 @@
 
   function updateControlState() {
     const connected = Boolean(state.socket && state.socket.readyState === WebSocket.OPEN && state.snapshot);
-    const voiceEffectsAvailable = voiceChatSupported();
+    const voiceEffectsAvailable = voiceEffectsSupported();
+    const voicePreviewAvailable = voicePreviewSupported();
     ui.messageInput.disabled = !connected;
     ui.sendBtn.disabled = !connected;
-    ui.voiceBtn.disabled = !connected || !voiceEffectsAvailable || state.voiceJoining;
+    ui.voiceBtn.disabled = !connected || !voiceChatSupported() || state.voiceJoining;
     ui.muteVoiceBtn.disabled = !connected || !state.voiceJoined;
+    if (ui.sampleVoiceBtn) {
+      ui.sampleVoiceBtn.disabled = !voicePreviewAvailable || state.voiceJoining || state.voiceLab.sampleState === 'preparing';
+    }
     ui.gameSelect.disabled = !connected;
     ui.gameRoomInput.disabled = !connected;
     ui.inviteNoteInput.disabled = !connected;
@@ -1455,7 +1791,7 @@
       }
     });
     if (!voiceEffectsAvailable) {
-      setVoiceStatus('Voice chat needs microphone access and WebRTC support.', 'error');
+      setVoiceStatus('Voice effects need microphone access and Web Audio support.', 'error');
     } else if (!connected) {
       setVoiceStatus('Join a lounge, then open direct voice chat with your mic.', 'idle');
     } else if (state.voiceJoining) {
@@ -1716,6 +2052,9 @@
   ui.shareInviteBtn.addEventListener('click', () => handleInviteShare());
   ui.voiceBtn.addEventListener('click', toggleVoiceChat);
   ui.muteVoiceBtn.addEventListener('click', toggleVoiceMute);
+  if (ui.sampleVoiceBtn) {
+    ui.sampleVoiceBtn.addEventListener('click', toggleVoiceSample);
+  }
   ui.voicePresetButtons.forEach((button) => {
     button.addEventListener('click', () => {
       setVoicePreset(button.dataset.voicePreset);

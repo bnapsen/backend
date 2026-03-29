@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/arcade-lounge/style.css?v=20260328i" />
+  <link rel="stylesheet" href="games/arcade-lounge/style.css?v=20260328j" />
 </head>
 <body>
   <div class="page-shell">
@@ -198,9 +198,11 @@
           </div>
 
           <div class="voice-lab-actions">
+            <button id="sampleVoiceBtn" class="secondary sample-voice-btn" type="button">Sample voice</button>
             <button id="randomVoiceBtn" class="secondary" type="button">Randomize voice</button>
             <button id="resetVoiceBtn" class="secondary" type="button">Reset clean</button>
           </div>
+          <p class="mini-status voice-preview-status" id="voicePreviewStatus">Sample your processed mic locally before you join voice.</p>
         </section>
       </aside>
 
@@ -327,6 +329,6 @@
 
   <div id="voiceAudioHost" class="voice-audio-host" aria-hidden="true"></div>
 
-  <script src="games/arcade-lounge/game.js?v=20260328i"></script>
+  <script src="games/arcade-lounge/game.js?v=20260328j"></script>
 </body>
 </html>
