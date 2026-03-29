@@ -152,6 +152,18 @@
       soundProfile: 'midnight',
       summary: 'Sharp black-and-stone tournament tones with high contrast and a colder modern feel.',
     },
+    sandstone: {
+      label: 'Sandstone Court',
+      pieceStyle: 'porcelain',
+      soundProfile: 'walnut',
+      summary: 'Warm sandstone tones with desert-club contrast and a softer premium tournament finish.',
+    },
+    storm: {
+      label: 'Stormglass Arena',
+      pieceStyle: 'steel',
+      soundProfile: 'marble',
+      summary: 'Cool steel-blue squares with a sharper modern arena palette and crisp contrast.',
+    },
   };
   const PIECE_STYLES = {
     auto: {
@@ -181,6 +193,14 @@
     onyx: {
       label: 'Onyx Tournament',
       summary: 'Matte monochrome pieces with crisp silver rims and stronger silhouette contrast.',
+    },
+    porcelain: {
+      label: 'Porcelain Elite',
+      summary: 'High-gloss porcelain and obsidian pieces with cleaner contours and stronger contrast.',
+    },
+    steel: {
+      label: 'Forged Steel',
+      summary: 'Brushed steel and carbon pieces with colder tournament contrast and sharper edges.',
     },
   };
   const SOUND_PROFILES = {
