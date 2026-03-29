@@ -16,6 +16,7 @@
   };
   const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
   const ENGINE_WORKER_VERSION = '20260325f';
+  const PIECE_ASSET_VERSION = '20260329d';
   const ENGINE_INIT_TIMEOUT_MS = 12000;
   const ENGINE_MOVE_TIMEOUT_MS = 9000;
   const query = new URLSearchParams(window.location.search);
@@ -225,6 +226,31 @@
       summary: 'Soft brass notes and calmer low-end cues for longer games.',
     },
   };
+
+  function pieceAssetSrc(piece) {
+    if (!piece) {
+      return '';
+    }
+    return `assets/pieces/merida/${piece.color}-${piece.type}.svg?v=${PIECE_ASSET_VERSION}`;
+  }
+
+  function pieceFaceMarkup(piece) {
+    const src = pieceAssetSrc(piece);
+    const glyph = Core.getPieceGlyph(piece);
+    return `<span class="piece-face piece-face-svg" data-piece-type="${piece.type}" data-piece-color="${piece.color}" data-piece-src="${src}"><img class="piece-art" src="${src}" alt="" draggable="false" decoding="async" /><span class="piece-fallback" aria-hidden="true">${glyph}</span></span>`;
+  }
+
+  function syncPieceFace(face, piece) {
+    const src = pieceAssetSrc(piece);
+    if (!face || face.dataset.pieceSrc === src) {
+      return;
+    }
+    face.className = 'piece-face piece-face-svg';
+    face.dataset.pieceType = piece.type;
+    face.dataset.pieceColor = piece.color;
+    face.dataset.pieceSrc = src;
+    face.innerHTML = `<img class="piece-art" src="${src}" alt="" draggable="false" decoding="async" /><span class="piece-fallback" aria-hidden="true">${Core.getPieceGlyph(piece)}</span>`;
+  }
   const SOUND_CUE_LIBRARY = {
     walnut: {
       start: [
@@ -1644,7 +1670,7 @@
     destroyDragGhost();
     const ghost = document.createElement('div');
     ghost.className = `drag-ghost ${piece.color}`;
-    ghost.innerHTML = `<span class="piece-face">${Core.getPieceGlyph(piece)}</span>`;
+    ghost.innerHTML = pieceFaceMarkup(piece);
     ui.pageShell.appendChild(ghost);
     state.dragGhost = ghost;
     positionDragGhost(clientX, clientY);
@@ -1719,7 +1745,7 @@
           element.type = 'button';
           element.className = 'board-piece piece-ghost';
           element.dataset.id = piece.id;
-          element.innerHTML = '<span class="piece-face"></span>';
+          element.innerHTML = pieceFaceMarkup(piece);
           pieceLayer.appendChild(element);
           state.pieceElements.set(piece.id, element);
           requestAnimationFrame(() => {
@@ -1738,9 +1764,10 @@
         element.dataset.pieceType = piece.type;
         element.dataset.boardX = String(x);
         element.dataset.boardY = String(y);
+        element.setAttribute('aria-label', `${piece.color === 'white' ? 'White' : 'Black'} ${piece.type}`);
         element.style.setProperty('--x', `calc(var(--square-size) * ${displayX})`);
         element.style.setProperty('--y', `calc(var(--square-size) * ${displayY})`);
-        element.querySelector('.piece-face').textContent = Core.getPieceGlyph(piece);
+        syncPieceFace(element.querySelector('.piece-face'), piece);
         if (movedBetweenSquares && !isDragSource) {
           restartPieceClassAnimation(element, 'move-animating', 360);
         }

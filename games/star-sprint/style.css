@@ -2078,6 +2078,145 @@ button:disabled {
   }
 }
 
+.page-shell {
+  --piece-svg-white-filter: sepia(0.08) saturate(0.92) brightness(1.05) contrast(1.02) drop-shadow(0 10px 10px rgba(57, 36, 14, 0.18));
+  --piece-svg-black-filter: sepia(0.08) saturate(0.68) brightness(0.76) contrast(1.12) drop-shadow(0 10px 10px rgba(0, 0, 0, 0.22));
+  --piece-svg-white-filter-hover: sepia(0.08) saturate(0.95) brightness(1.08) contrast(1.03) drop-shadow(0 12px 12px rgba(57, 36, 14, 0.2));
+  --piece-svg-black-filter-hover: sepia(0.08) saturate(0.7) brightness(0.8) contrast(1.14) drop-shadow(0 12px 12px rgba(0, 0, 0, 0.24));
+}
+
+.piece-face.piece-face-svg {
+  width: 100%;
+  height: 100%;
+  display: flex !important;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 2px 1px 0;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  color: transparent !important;
+  text-shadow: none !important;
+  -webkit-text-stroke: 0 !important;
+  background: none !important;
+  filter: none !important;
+  transform: translateY(-2px) !important;
+  isolation: isolate;
+}
+
+.piece-face.piece-face-svg::before,
+.piece-face.piece-face-svg::after {
+  content: none !important;
+  display: none !important;
+}
+
+.piece-face.piece-face-svg .piece-fallback {
+  display: none;
+}
+
+.piece-face.piece-face-svg .piece-art {
+  width: 88%;
+  height: 88%;
+  display: block;
+  object-fit: contain;
+  object-position: center bottom;
+  pointer-events: none;
+  user-select: none;
+  transform-origin: center bottom;
+  transition:
+    transform 180ms ease,
+    filter 180ms ease,
+    opacity 140ms ease;
+  will-change: transform, filter;
+}
+
+.board-piece.white .piece-face.piece-face-svg .piece-art,
+.drag-ghost.white .piece-face.piece-face-svg .piece-art {
+  filter: var(--piece-svg-white-filter);
+}
+
+.board-piece.black .piece-face.piece-face-svg .piece-art,
+.drag-ghost.black .piece-face.piece-face-svg .piece-art {
+  filter: var(--piece-svg-black-filter);
+}
+
+.piece-face.piece-face-svg[data-piece-type="king"] .piece-art,
+.piece-face.piece-face-svg[data-piece-type="queen"] .piece-art {
+  width: 92%;
+  height: 92%;
+}
+
+.piece-face.piece-face-svg[data-piece-type="rook"] .piece-art,
+.piece-face.piece-face-svg[data-piece-type="bishop"] .piece-art {
+  width: 86%;
+  height: 86%;
+}
+
+.piece-face.piece-face-svg[data-piece-type="knight"] .piece-art {
+  width: 90%;
+  height: 90%;
+}
+
+.piece-face.piece-face-svg[data-piece-type="pawn"] .piece-art {
+  width: 73%;
+  height: 73%;
+}
+
+.board-piece:hover .piece-face.piece-face-svg .piece-art,
+.board-piece.active .piece-face.piece-face-svg .piece-art {
+  transform: translateY(-2px) scale(1.04);
+}
+
+.board-piece.white:hover .piece-face.piece-face-svg .piece-art,
+.board-piece.white.active .piece-face.piece-face-svg .piece-art {
+  filter: var(--piece-svg-white-filter-hover);
+}
+
+.board-piece.black:hover .piece-face.piece-face-svg .piece-art,
+.board-piece.black.active .piece-face.piece-face-svg .piece-art {
+  filter: var(--piece-svg-black-filter-hover);
+}
+
+.board-piece.moved .piece-face.piece-face-svg .piece-art {
+  transform: translateY(-1px) scale(1.025);
+}
+
+.page-shell[data-piece-style="marble"],
+.page-shell[data-piece-style="porcelain"] {
+  --piece-svg-white-filter: saturate(0.78) brightness(1.08) contrast(1.03) drop-shadow(0 10px 10px rgba(42, 50, 67, 0.16));
+  --piece-svg-black-filter: saturate(0.5) brightness(0.74) contrast(1.16) drop-shadow(0 10px 10px rgba(13, 17, 26, 0.22));
+  --piece-svg-white-filter-hover: saturate(0.8) brightness(1.11) contrast(1.04) drop-shadow(0 12px 12px rgba(42, 50, 67, 0.18));
+  --piece-svg-black-filter-hover: saturate(0.52) brightness(0.78) contrast(1.18) drop-shadow(0 12px 12px rgba(13, 17, 26, 0.24));
+}
+
+.page-shell[data-piece-style="midnight"] {
+  --piece-svg-white-filter: hue-rotate(188deg) saturate(1.08) brightness(1.06) contrast(1.04) drop-shadow(0 0 9px rgba(95, 164, 255, 0.2)) drop-shadow(0 10px 10px rgba(10, 18, 34, 0.2));
+  --piece-svg-black-filter: hue-rotate(188deg) saturate(1.04) brightness(0.66) contrast(1.16) drop-shadow(0 0 10px rgba(67, 124, 255, 0.14)) drop-shadow(0 10px 10px rgba(0, 0, 0, 0.24));
+  --piece-svg-white-filter-hover: hue-rotate(188deg) saturate(1.12) brightness(1.1) contrast(1.05) drop-shadow(0 0 12px rgba(110, 184, 255, 0.24)) drop-shadow(0 12px 12px rgba(10, 18, 34, 0.22));
+  --piece-svg-black-filter-hover: hue-rotate(188deg) saturate(1.08) brightness(0.7) contrast(1.18) drop-shadow(0 0 12px rgba(67, 124, 255, 0.16)) drop-shadow(0 12px 12px rgba(0, 0, 0, 0.26));
+}
+
+.page-shell[data-piece-style="emerald"] {
+  --piece-svg-white-filter: sepia(0.18) saturate(1.02) brightness(1.05) contrast(1.02) drop-shadow(0 10px 10px rgba(55, 42, 18, 0.18));
+  --piece-svg-black-filter: hue-rotate(14deg) saturate(0.92) brightness(0.74) contrast(1.12) drop-shadow(0 10px 10px rgba(8, 25, 16, 0.24));
+  --piece-svg-white-filter-hover: sepia(0.22) saturate(1.06) brightness(1.08) contrast(1.03) drop-shadow(0 12px 12px rgba(55, 42, 18, 0.2));
+  --piece-svg-black-filter-hover: hue-rotate(14deg) saturate(0.96) brightness(0.78) contrast(1.14) drop-shadow(0 12px 12px rgba(8, 25, 16, 0.26));
+}
+
+.page-shell[data-piece-style="regal"] {
+  --piece-svg-white-filter: sepia(0.22) saturate(1.06) brightness(1.07) contrast(1.03) drop-shadow(0 10px 10px rgba(70, 30, 34, 0.16));
+  --piece-svg-black-filter: hue-rotate(-12deg) saturate(0.96) brightness(0.74) contrast(1.12) drop-shadow(0 10px 10px rgba(22, 6, 13, 0.24));
+  --piece-svg-white-filter-hover: sepia(0.24) saturate(1.08) brightness(1.1) contrast(1.04) drop-shadow(0 12px 12px rgba(70, 30, 34, 0.18));
+  --piece-svg-black-filter-hover: hue-rotate(-12deg) saturate(1) brightness(0.78) contrast(1.14) drop-shadow(0 12px 12px rgba(22, 6, 13, 0.26));
+}
+
+.page-shell[data-piece-style="onyx"],
+.page-shell[data-piece-style="steel"] {
+  --piece-svg-white-filter: saturate(0.42) brightness(1.06) contrast(1.08) drop-shadow(0 10px 10px rgba(24, 32, 43, 0.16));
+  --piece-svg-black-filter: saturate(0.4) brightness(0.7) contrast(1.22) drop-shadow(0 10px 10px rgba(0, 0, 0, 0.26));
+  --piece-svg-white-filter-hover: saturate(0.44) brightness(1.09) contrast(1.1) drop-shadow(0 12px 12px rgba(24, 32, 43, 0.18));
+  --piece-svg-black-filter-hover: saturate(0.42) brightness(0.74) contrast(1.24) drop-shadow(0 12px 12px rgba(0, 0, 0, 0.28));
+}
+
 @media (max-width: 1260px) {
   .layout {
     display: block;
