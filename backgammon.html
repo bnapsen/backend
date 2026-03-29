@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/backgammon-blitz/style.css?v=20260328d" />
+  <link rel="stylesheet" href="games/backgammon-blitz/style.css?v=20260328e" />
 </head>
 <body>
   <div class="page-shell">
@@ -108,6 +108,36 @@
           </details>
 
           <p class="status-text" id="statusText">Host a room to invite a friend, join with a room code, or play a solo warm-up against the smarter bot.</p>
+        </section>
+
+        <section class="panel style-panel">
+          <div class="sidebar-header">
+            <div>
+              <p class="label">Board look</p>
+              <h2>Theme kit</h2>
+            </div>
+          </div>
+          <div class="field-grid style-grid">
+            <label>
+              <span>Board style</span>
+              <select id="boardThemeSelect">
+                <option value="harbor">Harbor Brass</option>
+                <option value="emerald">Emerald Hall</option>
+                <option value="midnight">Midnight Club</option>
+                <option value="ivory">Ivory Rose</option>
+              </select>
+            </label>
+            <label>
+              <span>Checker style</span>
+              <select id="checkerThemeSelect">
+                <option value="glass">Glass Luxe</option>
+                <option value="walnut">Walnut Crown</option>
+                <option value="neon">Neon Slate</option>
+                <option value="marble">Marble Studio</option>
+              </select>
+            </label>
+          </div>
+          <p class="mini-status">Themes are local to your browser, so you can tune the board for your own play comfort.</p>
         </section>
 
         <section class="panel sidebar-panel">
@@ -211,6 +241,7 @@
             </div>
             <div class="action-bar">
               <button id="rollBtn" class="primary">Roll Dice</button>
+              <button id="undoBtn">Undo</button>
               <button id="autoBtn">Auto Move</button>
               <button id="restartBtn">New Match</button>
             </div>
@@ -260,6 +291,6 @@
 
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
   <script src="games/star-sprint/backgammon-core.js?v=20260328a"></script>
-  <script src="games/backgammon-blitz/game.js?v=20260328d"></script>
+  <script src="games/backgammon-blitz/game.js?v=20260328e"></script>
 </body>
 </html>

@@ -34,12 +34,37 @@ body {
     linear-gradient(180deg, #07111c 0%, #081421 45%, #0b1827 100%);
 }
 
+body[data-board-theme="emerald"] {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(117, 255, 197, 0.18), transparent 28%),
+    radial-gradient(circle at 86% 14%, rgba(255, 220, 148, 0.16), transparent 24%),
+    radial-gradient(circle at 50% 100%, rgba(44, 124, 102, 0.2), transparent 30%),
+    linear-gradient(180deg, #07150f 0%, #0a1814 45%, #0d1d19 100%);
+}
+
+body[data-board-theme="midnight"] {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(125, 174, 255, 0.18), transparent 28%),
+    radial-gradient(circle at 86% 14%, rgba(255, 136, 198, 0.14), transparent 24%),
+    radial-gradient(circle at 50% 100%, rgba(80, 100, 182, 0.16), transparent 30%),
+    linear-gradient(180deg, #050814 0%, #070b18 45%, #0b1020 100%);
+}
+
+body[data-board-theme="ivory"] {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(255, 220, 162, 0.18), transparent 28%),
+    radial-gradient(circle at 86% 14%, rgba(255, 170, 170, 0.14), transparent 24%),
+    radial-gradient(circle at 50% 100%, rgba(108, 140, 180, 0.16), transparent 30%),
+    linear-gradient(180deg, #17110b 0%, #19130f 45%, #1d1712 100%);
+}
+
 a {
   color: inherit;
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -172,6 +197,12 @@ input {
   padding: 18px;
 }
 
+.style-panel {
+  background:
+    radial-gradient(circle at top, rgba(255, 228, 181, 0.08), transparent 38%),
+    linear-gradient(180deg, rgba(18, 27, 43, 0.96), rgba(8, 18, 30, 0.94));
+}
+
 .hero,
 .sidebar-panel {
   background:
@@ -257,13 +288,27 @@ input {
   gap: 8px;
 }
 
-input {
+input,
+select {
   width: 100%;
   padding: 12px 14px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(7, 15, 26, 0.76);
   color: var(--text);
+}
+
+select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(255, 255, 255, 0.72) 50%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.72) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% - 3px),
+    calc(100% - 12px) calc(50% - 3px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 34px;
 }
 
 input::placeholder {
@@ -307,6 +352,11 @@ button:disabled {
 .primary {
   background: linear-gradient(135deg, rgba(140, 228, 255, 0.28), rgba(255, 212, 135, 0.24));
   border-color: rgba(255, 212, 135, 0.36);
+}
+
+#undoBtn:not(:disabled) {
+  border-color: rgba(140, 228, 255, 0.34);
+  background: linear-gradient(135deg, rgba(140, 228, 255, 0.18), rgba(255, 255, 255, 0.07));
 }
 
 .secondary {

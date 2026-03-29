@@ -397,6 +397,12 @@ function createRoom(code, gameType, options = {}) {
     maxPlayers: gameDef.maxPlayers || DEFAULT_MAX_PLAYERS,
     players: new Map(),
     game: gameDef.createGameState(options),
+    backgammonUndo: gameDef.id === 'backgammon'
+      ? {
+          player: 0,
+          states: [],
+        }
+      : null,
     clock: gameDef.id === 'chess'
       ? createChessClock(options.timeControlPreset)
       : null,
@@ -405,6 +411,27 @@ function createRoom(code, gameType, options = {}) {
   room.game.roomCode = code;
   rooms.set(code, room);
   return room;
+}
+
+function clearBackgammonUndo(room) {
+  if (!room || room.gameType !== 'backgammon' || !room.backgammonUndo) {
+    return;
+  }
+  room.backgammonUndo.player = 0;
+  room.backgammonUndo.states = [];
+}
+
+function serializeBackgammonUndo(room) {
+  if (!room || room.gameType !== 'backgammon' || !room.backgammonUndo || !room.backgammonUndo.states.length) {
+    return {
+      color: null,
+      count: 0,
+    };
+  }
+  return {
+    color: room.backgammonUndo.player === Backgammon.WHITE ? 'white' : 'black',
+    count: room.backgammonUndo.states.length,
+  };
 }
 
 function getRoomForJoin(code, mode, gameType, options = {}) {
@@ -495,6 +522,7 @@ function snapshot(room, viewerId) {
   return {
     ...base,
     clock: room.gameType === 'chess' ? serializeChessClock(room) : undefined,
+    undo: room.gameType === 'backgammon' ? serializeBackgammonUndo(room) : undefined,
     players: listPlayers(room),
   };
 }
@@ -740,12 +768,24 @@ function handleMove(socket, payload) {
       sendError(socket, `It is ${Backgammon.playerName(room.game.current)}'s turn.`);
       return;
     }
+    const actor = room.game.current;
+    if (room.backgammonUndo && room.backgammonUndo.player !== actor) {
+      clearBackgammonUndo(room);
+    }
+    const previousState = Backgammon.cloneState(room.game);
     result = Backgammon.applyMove(room.game, {
       from: payload.from,
       to: payload.to,
       di: payload.di,
       die: payload.die,
     });
+    if (result.ok) {
+      room.backgammonUndo.player = actor;
+      room.backgammonUndo.states.push(previousState);
+      if (room.backgammonUndo.states.length > 12) {
+        room.backgammonUndo.states.shift();
+      }
+    }
   } else {
     const now = Date.now();
     if (maybeExpireChessClock(room, now)) {
@@ -1097,6 +1137,9 @@ function handleRoll(socket) {
     sendError(socket, `It is ${Backgammon.playerName(room.game.current)}'s turn.`);
     return;
   }
+  if (room.backgammonUndo && room.backgammonUndo.player !== room.game.current) {
+    clearBackgammonUndo(room);
+  }
 
   const result = Backgammon.rollDice(room.game);
   if (!result.ok) {
@@ -1105,6 +1148,34 @@ function handleRoll(socket) {
   }
 
   broadcastState(room);
+}
+
+function handleUndo(socket) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'backgammon') {
+    sendError(socket, 'Undo is only available in backgammon rooms.');
+    return;
+  }
+
+  const side = playerBackgammonSide(player);
+  if (!room.backgammonUndo || room.backgammonUndo.player !== side || !room.backgammonUndo.states.length) {
+    sendError(socket, 'There is no backgammon move to undo right now.');
+    return;
+  }
+
+  const previousState = room.backgammonUndo.states.pop();
+  room.game = Backgammon.cloneState(previousState);
+  room.game.roomCode = room.code;
+  if (!room.backgammonUndo.states.length) {
+    room.backgammonUndo.player = 0;
+  }
+
+  broadcastState(room, `${player.name} undid the last move.`);
 }
 
 function handleRestart(socket) {
@@ -1134,6 +1205,9 @@ function handleRestart(socket) {
   } else {
     room.game = room.gameDef.createGameState(room.options);
     room.game.roomCode = room.code;
+    if (room.gameType === 'backgammon') {
+      clearBackgammonUndo(room);
+    }
     room.clock = room.gameType === 'chess'
       ? createChessClock(room.clock ? room.clock.presetId : 'untimed')
       : room.clock;
@@ -1199,6 +1273,8 @@ function handleDisconnect(socket) {
     if (player) {
       ArcadeChat.addSystemMessage(room.game, `${player.name} left lounge ${room.code}.`);
     }
+  } else if (room.gameType === 'backgammon') {
+    clearBackgammonUndo(room);
   } else if (room.gameType === 'chess') {
     refreshChessClockTurn(room, Date.now());
   }
@@ -1339,6 +1415,9 @@ wss.on('connection', (socket) => {
         break;
       case 'move':
         handleMove(socket, payload);
+        break;
+      case 'undo':
+        handleUndo(socket);
         break;
       case 'act':
         handleTableAction(socket, payload);

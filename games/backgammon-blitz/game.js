@@ -9,6 +9,8 @@
     setupCollapsed: 'neonBackgammon.setupCollapsed',
     infoCollapsed: 'neonBackgammon.infoCollapsed',
     soundEnabled: 'neonBackgammon.soundEnabled',
+    boardTheme: 'neonBackgammon.boardTheme',
+    checkerTheme: 'neonBackgammon.checkerTheme',
   };
   const query = new URLSearchParams(window.location.search);
   const canvas = document.getElementById('board');
@@ -18,6 +20,126 @@
   const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
   const hitRadiusBoost = isCoarsePointer ? 14 : 0;
   const BOT_NAME = 'Deep Blitz Bot';
+  const BOARD_THEMES = Object.freeze({
+    harbor: {
+      shellGlow: 'rgba(142, 205, 255, 0.11)',
+      shellGlowWarm: 'rgba(255, 212, 135, 0.12)',
+      frame: ['#9e6e45', '#70442a', '#372111', '#7d5232', '#c18b5d'],
+      brass: ['#f2d7aa', '#b17f45', '#5b381d'],
+      felt: ['#173c4d', '#102737', '#1d3d46'],
+      warmTri: ['#f4c18a', '#8c5632'],
+      coolTri: ['#8dbbe2', '#355d8b'],
+      bar: ['#28170d', '#6a452a', '#1d130b', '#8b5d38'],
+      tray: ['rgba(38, 22, 14, 0.84)', 'rgba(18, 12, 8, 0.92)'],
+      stud: ['rgba(255, 246, 219, 0.95)', 'rgba(211, 170, 98, 0.94)', 'rgba(86, 55, 26, 0.92)'],
+      numberPlate: 'rgba(17, 22, 30, 0.52)',
+      numberStroke: 'rgba(255, 223, 180, 0.22)',
+      numberText: 'rgba(255,255,255,0.82)',
+    },
+    emerald: {
+      shellGlow: 'rgba(129, 255, 210, 0.11)',
+      shellGlowWarm: 'rgba(255, 229, 167, 0.12)',
+      frame: ['#8a6538', '#5e4123', '#2b1a10', '#7b5f2e', '#d0ac71'],
+      brass: ['#f6e4bb', '#bf9950', '#68441e'],
+      felt: ['#204a3e', '#17352e', '#285948'],
+      warmTri: ['#f7ddb1', '#96683a'],
+      coolTri: ['#9ef0cf', '#2c795d'],
+      bar: ['#2c1b10', '#7d5730', '#24160d', '#ad8450'],
+      tray: ['rgba(47, 31, 17, 0.86)', 'rgba(22, 15, 10, 0.94)'],
+      stud: ['rgba(255, 250, 233, 0.96)', 'rgba(222, 186, 116, 0.94)', 'rgba(90, 61, 29, 0.92)'],
+      numberPlate: 'rgba(14, 24, 20, 0.56)',
+      numberStroke: 'rgba(231, 213, 170, 0.24)',
+      numberText: 'rgba(255, 249, 233, 0.88)',
+    },
+    midnight: {
+      shellGlow: 'rgba(125, 174, 255, 0.12)',
+      shellGlowWarm: 'rgba(255, 154, 196, 0.1)',
+      frame: ['#5f6379', '#2e3143', '#10121b', '#35385a', '#8b90b5'],
+      brass: ['#d8def7', '#848fb9', '#2b3050'],
+      felt: ['#111628', '#0b1020', '#151d32'],
+      warmTri: ['#ffb4c7', '#6f2f49'],
+      coolTri: ['#8eb9ff', '#2e467b'],
+      bar: ['#121520', '#41486c', '#12141c', '#636b96'],
+      tray: ['rgba(16, 18, 28, 0.88)', 'rgba(7, 8, 14, 0.95)'],
+      stud: ['rgba(246, 247, 255, 0.96)', 'rgba(160, 171, 220, 0.94)', 'rgba(56, 62, 96, 0.92)'],
+      numberPlate: 'rgba(11, 13, 22, 0.66)',
+      numberStroke: 'rgba(193, 203, 255, 0.26)',
+      numberText: 'rgba(241, 245, 255, 0.9)',
+    },
+    ivory: {
+      shellGlow: 'rgba(255, 216, 170, 0.12)',
+      shellGlowWarm: 'rgba(255, 152, 152, 0.12)',
+      frame: ['#ccab7d', '#98633d', '#55331c', '#a4744b', '#f0d0a6'],
+      brass: ['#fff1d9', '#dcb97e', '#805a30'],
+      felt: ['#32506b', '#22364b', '#3d5d7d'],
+      warmTri: ['#f6d6ca', '#9b4f4e'],
+      coolTri: ['#f2e2b9', '#8d7041'],
+      bar: ['#402919', '#8d603a', '#29190f', '#c08a5a'],
+      tray: ['rgba(58, 38, 23, 0.84)', 'rgba(28, 17, 11, 0.94)'],
+      stud: ['rgba(255, 250, 235, 0.96)', 'rgba(232, 194, 126, 0.96)', 'rgba(108, 71, 36, 0.94)'],
+      numberPlate: 'rgba(40, 27, 15, 0.42)',
+      numberStroke: 'rgba(255, 237, 202, 0.28)',
+      numberText: 'rgba(255, 247, 231, 0.94)',
+    },
+  });
+  const CHECKER_THEMES = Object.freeze({
+    glass: {
+      whiteBody: ['#fffef7', '#e8f2ff', '#b8cee6'],
+      whiteRim: ['#fff6db', '#7ab5de'],
+      whiteRing: 'rgba(103, 192, 236, 0.36)',
+      whiteMedallion: ['#fff6cb', '#c28d48'],
+      whiteGlint: 'rgba(255,255,255,0.26)',
+      blackBody: ['#70758f', '#1e2437', '#060811'],
+      blackRim: ['#8ec4f5', '#ff8fb8'],
+      blackRing: 'rgba(255, 170, 207, 0.3)',
+      blackMedallion: ['#ffd6e5', '#6c7ea5'],
+      blackGlint: 'rgba(255,255,255,0.14)',
+      stackTextWhite: '#0f1120',
+      stackTextBlack: '#f0f5ff',
+    },
+    walnut: {
+      whiteBody: ['#fff7e8', '#dfceb6', '#ae8e69'],
+      whiteRim: ['#fff1ce', '#9f6f3c'],
+      whiteRing: 'rgba(191, 136, 71, 0.32)',
+      whiteMedallion: ['#fff0bc', '#c08229'],
+      whiteGlint: 'rgba(255,255,255,0.24)',
+      blackBody: ['#87613f', '#4a2f1a', '#170d07'],
+      blackRim: ['#d8b483', '#70441e'],
+      blackRing: 'rgba(255, 219, 171, 0.22)',
+      blackMedallion: ['#f8ddac', '#a66d25'],
+      blackGlint: 'rgba(255,255,255,0.11)',
+      stackTextWhite: '#2a1609',
+      stackTextBlack: '#fff0d2',
+    },
+    neon: {
+      whiteBody: ['#ffffff', '#d8f5ff', '#79aef6'],
+      whiteRim: ['#e8ffff', '#5ad9ff'],
+      whiteRing: 'rgba(90, 217, 255, 0.46)',
+      whiteMedallion: ['#fff8b8', '#ffd15a'],
+      whiteGlint: 'rgba(255,255,255,0.3)',
+      blackBody: ['#48506d', '#171c31', '#030510'],
+      blackRim: ['#67c8ff', '#ff72bb'],
+      blackRing: 'rgba(255, 114, 187, 0.38)',
+      blackMedallion: ['#ffdcff', '#8db1ff'],
+      blackGlint: 'rgba(255,255,255,0.17)',
+      stackTextWhite: '#0f1833',
+      stackTextBlack: '#eef3ff',
+    },
+    marble: {
+      whiteBody: ['#fffdf8', '#ebebe8', '#c3c3c5'],
+      whiteRim: ['#ffffff', '#b7bbc4'],
+      whiteRing: 'rgba(166, 168, 177, 0.34)',
+      whiteMedallion: ['#fef1cb', '#bd9861'],
+      whiteGlint: 'rgba(255,255,255,0.22)',
+      blackBody: ['#8f969d', '#3a3f48', '#11141b'],
+      blackRim: ['#d5d8de', '#666d79'],
+      blackRing: 'rgba(203, 208, 217, 0.26)',
+      blackMedallion: ['#f3d1c4', '#93816a'],
+      blackGlint: 'rgba(255,255,255,0.12)',
+      stackTextWhite: '#2a2c33',
+      stackTextBlack: '#f5f7fb',
+    },
+  });
 
   const ui = {
     nameInput: document.getElementById('nameInput'),
@@ -32,8 +154,11 @@
     toggleSidebarBtn: document.getElementById('toggleSidebarBtn'),
     soundToggleBtn: document.getElementById('soundToggleBtn'),
     rollBtn: document.getElementById('rollBtn'),
+    undoBtn: document.getElementById('undoBtn'),
     autoBtn: document.getElementById('autoBtn'),
     restartBtn: document.getElementById('restartBtn'),
+    boardThemeSelect: document.getElementById('boardThemeSelect'),
+    checkerThemeSelect: document.getElementById('checkerThemeSelect'),
     copyBtn: document.getElementById('copyBtn'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     inviteInput: document.getElementById('inviteInput'),
@@ -104,6 +229,14 @@
       ctx: null,
       noiseBuffer: null,
     },
+    appearance: {
+      boardTheme: 'harbor',
+      checkerTheme: 'glass',
+    },
+    undo: {
+      color: null,
+      states: [],
+    },
   };
 
   const pipLayouts = {
@@ -164,6 +297,26 @@
     return `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${trimmed}`;
   }
 
+  function normalizeBoardTheme(value) {
+    return BOARD_THEMES[value] ? value : 'harbor';
+  }
+
+  function normalizeCheckerTheme(value) {
+    return CHECKER_THEMES[value] ? value : 'glass';
+  }
+
+  function currentBoardTheme() {
+    return BOARD_THEMES[normalizeBoardTheme(state.appearance.boardTheme)];
+  }
+
+  function currentCheckerTheme() {
+    return CHECKER_THEMES[normalizeCheckerTheme(state.appearance.checkerTheme)];
+  }
+
+  function sideToLabel(player) {
+    return player === Core.WHITE ? 'white' : 'black';
+  }
+
   function getPlayerName() {
     return ui.nameInput.value.trim().slice(0, 18) || 'Player';
   }
@@ -202,6 +355,66 @@
     localStorage.setItem(STORAGE_KEYS.setupCollapsed, state.panels.setupCollapsed ? '1' : '0');
     localStorage.setItem(STORAGE_KEYS.infoCollapsed, state.panels.infoCollapsed ? '1' : '0');
     localStorage.setItem(STORAGE_KEYS.soundEnabled, state.audio.enabled ? '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.boardTheme, normalizeBoardTheme(state.appearance.boardTheme));
+    localStorage.setItem(STORAGE_KEYS.checkerTheme, normalizeCheckerTheme(state.appearance.checkerTheme));
+  }
+
+  function clearUndoHistory() {
+    state.undo.color = null;
+    state.undo.states = [];
+  }
+
+  function pushUndoStateForActor(actor) {
+    if (!state.snapshot) {
+      return;
+    }
+    if (state.undo.color !== actor) {
+      state.undo.color = actor;
+      state.undo.states = [];
+    }
+    state.undo.states.push(Core.cloneState(state.snapshot));
+    if (state.undo.states.length > 12) {
+      state.undo.states.shift();
+    }
+  }
+
+  function onlineUndoAvailable() {
+    if (state.mode !== 'online' || !state.snapshot || !state.snapshot.undo) {
+      return false;
+    }
+    const side = controlledSide();
+    return Boolean(
+      side &&
+      state.snapshot.undo.count > 0 &&
+      state.snapshot.undo.color === sideToLabel(side)
+    );
+  }
+
+  function soloUndoAvailable() {
+    return Boolean(
+      state.mode === 'solo' &&
+      state.undo.color === Core.WHITE &&
+      state.undo.states.length
+    );
+  }
+
+  function canUndoMove() {
+    return onlineUndoAvailable() || soloUndoAvailable();
+  }
+
+  function applyAppearance() {
+    state.appearance.boardTheme = normalizeBoardTheme(state.appearance.boardTheme);
+    state.appearance.checkerTheme = normalizeCheckerTheme(state.appearance.checkerTheme);
+    document.body.dataset.boardTheme = state.appearance.boardTheme;
+    document.body.dataset.checkerTheme = state.appearance.checkerTheme;
+    if (ui.boardThemeSelect) {
+      ui.boardThemeSelect.value = state.appearance.boardTheme;
+    }
+    if (ui.checkerThemeSelect) {
+      ui.checkerThemeSelect.value = state.appearance.checkerTheme;
+    }
+    persistSettings();
+    scheduleDraw();
   }
 
   function showToast(message) {
@@ -415,11 +628,16 @@
     const pendingConnection = Boolean(state.socket && state.socket.readyState === WebSocket.CONNECTING);
     const canJoin = Boolean(sanitizeRoomCode(ui.roomInput.value));
     const activeTurn = canAct();
+    const undoCount = state.mode === 'online'
+      ? Number(state.snapshot?.undo?.count || 0)
+      : state.undo.states.length;
 
     ui.hostBtn.disabled = pendingConnection;
     ui.joinBtn.disabled = pendingConnection || !canJoin;
     ui.shareLoungeBtn.disabled = !(state.mode === 'online' && state.roomCode);
     ui.rollBtn.disabled = !activeTurn || !state.snapshot || state.snapshot.winner || state.snapshot.dice.length > 0;
+    ui.undoBtn.disabled = !canUndoMove();
+    ui.undoBtn.textContent = undoCount > 1 ? `Undo (${undoCount})` : 'Undo';
     ui.autoBtn.disabled = !activeTurn || !state.snapshot || state.snapshot.winner || !state.snapshot.dice.length;
     ui.restartBtn.disabled = !state.snapshot;
     ui.stepOne.classList.toggle('active', Boolean(ui.nameInput.value.trim()));
@@ -1083,6 +1301,7 @@
     disconnectSocket();
     clearSelection();
     cleanupDrag();
+    clearUndoHistory();
 
     state.mode = 'online';
     state.snapshot = null;
@@ -1144,6 +1363,7 @@
     stopDiceAnimation();
     clearSelection();
     cleanupDrag();
+    clearUndoHistory();
     state.mode = 'solo';
     state.roomCode = 'SOLO';
     state.yourColor = Core.WHITE;
@@ -1162,6 +1382,8 @@
       if (state.mode !== 'solo' || !state.snapshot || state.snapshot.winner || state.snapshot.current !== Core.BLACK) {
         return;
       }
+
+      clearUndoHistory();
 
       if (!state.snapshot.dice.length) {
         const roll = Core.rollDice(state.snapshot);
@@ -1226,8 +1448,13 @@
       return;
     }
 
+    pushUndoStateForActor(state.snapshot.current);
     const result = Core.applyMove(state.snapshot, move);
     if (!result.ok) {
+      state.undo.states.pop();
+      if (!state.undo.states.length) {
+        state.undo.color = null;
+      }
       showToast(result.error || 'That move is not legal.');
       return;
     }
@@ -1237,6 +1464,44 @@
     clearSelection();
     render();
     queueBotTurn();
+  }
+
+  function undoMove() {
+    if (!canUndoMove()) {
+      showToast('There is nothing to undo right now.');
+      return;
+    }
+
+    cancelBotTurn();
+    clearSelection();
+    cleanupDrag();
+    stopDiceAnimation();
+
+    if (state.mode === 'online') {
+      if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
+        showToast('The connection is not open.');
+        return;
+      }
+      state.socket.send(JSON.stringify({ action: 'undo' }));
+      setStatusMessage('Requesting an undo for your last move.');
+      render();
+      return;
+    }
+
+    const previous = state.undo.states.pop();
+    if (!previous) {
+      clearUndoHistory();
+      render();
+      return;
+    }
+    state.snapshot = Core.cloneState(previous);
+    if (!state.undo.states.length) {
+      state.undo.color = null;
+    }
+    const lastRoll = state.snapshot.lastRoll || [0, 0];
+    stopDiceAnimation(lastRoll[0], lastRoll[1]);
+    setStatusMessage('Last move undone. You can re-aim the turn from here.');
+    render();
   }
 
   function rollTurn() {
@@ -1284,6 +1549,7 @@
     cancelBotTurn();
     clearSelection();
     cleanupDrag();
+    clearUndoHistory();
 
     if (state.mode === 'online') {
       if (state.socket && state.socket.readyState === WebSocket.OPEN) {
@@ -1489,6 +1755,14 @@
   }
 
   function drawChecker(x, y, r, owner) {
+    const theme = currentCheckerTheme();
+    const isWhite = owner === Core.WHITE;
+    const bodyStops = isWhite ? theme.whiteBody : theme.blackBody;
+    const rimStops = isWhite ? theme.whiteRim : theme.blackRim;
+    const ringColor = isWhite ? theme.whiteRing : theme.blackRing;
+    const medallionStops = isWhite ? theme.whiteMedallion : theme.blackMedallion;
+    const glint = isWhite ? theme.whiteGlint : theme.blackGlint;
+
     ctx.beginPath();
     ctx.ellipse(x + 3, y + r * 0.82, r * 0.92, r * 0.46, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,.34)';
@@ -1496,19 +1770,11 @@
 
     const bodyGradient = ctx.createRadialGradient(x - r * 0.34, y - r * 0.42, r * 0.12, x, y, r * 1.04);
     const rimGradient = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
-    if (owner === Core.WHITE) {
-      bodyGradient.addColorStop(0, '#fffef7');
-      bodyGradient.addColorStop(0.55, '#e8f2ff');
-      bodyGradient.addColorStop(1, '#b8cee6');
-      rimGradient.addColorStop(0, '#fff6db');
-      rimGradient.addColorStop(1, '#7ab5de');
-    } else {
-      bodyGradient.addColorStop(0, '#70758f');
-      bodyGradient.addColorStop(0.52, '#1e2437');
-      bodyGradient.addColorStop(1, '#060811');
-      rimGradient.addColorStop(0, '#8ec4f5');
-      rimGradient.addColorStop(1, '#ff8fb8');
-    }
+    bodyGradient.addColorStop(0, bodyStops[0]);
+    bodyGradient.addColorStop(0.55, bodyStops[1]);
+    bodyGradient.addColorStop(1, bodyStops[2]);
+    rimGradient.addColorStop(0, rimStops[0]);
+    rimGradient.addColorStop(1, rimStops[1]);
 
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -1520,18 +1786,13 @@
 
     ctx.beginPath();
     ctx.arc(x, y, r * 0.74, 0, Math.PI * 2);
-    ctx.strokeStyle = owner === Core.WHITE ? 'rgba(103, 192, 236, 0.36)' : 'rgba(255, 170, 207, 0.3)';
+    ctx.strokeStyle = ringColor;
     ctx.lineWidth = 1.6;
     ctx.stroke();
 
     const medallion = ctx.createRadialGradient(x - r * 0.12, y - r * 0.18, 1, x, y, r * 0.34);
-    if (owner === Core.WHITE) {
-      medallion.addColorStop(0, '#fff6cb');
-      medallion.addColorStop(1, '#c28d48');
-    } else {
-      medallion.addColorStop(0, '#ffd6e5');
-      medallion.addColorStop(1, '#6c7ea5');
-    }
+    medallion.addColorStop(0, medallionStops[0]);
+    medallion.addColorStop(1, medallionStops[1]);
     ctx.beginPath();
     ctx.arc(x, y, r * 0.2, 0, Math.PI * 2);
     ctx.fillStyle = medallion;
@@ -1539,11 +1800,18 @@
 
     ctx.beginPath();
     ctx.arc(x - r * 0.24, y - r * 0.26, r * 0.2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,.26)';
+    ctx.fillStyle = glint;
     ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(x + r * 0.16, y + r * 0.18, r * 0.46, Math.PI * 0.1, Math.PI * 0.88);
+    ctx.strokeStyle = isWhite ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
   }
 
   function drawBoardBase() {
+    const theme = currentBoardTheme();
     ctx.clearRect(0, 0, W, H);
     const margin = 30;
     const boardX = margin;
@@ -1562,11 +1830,11 @@
     ctx.restore();
 
     const frameGradient = ctx.createLinearGradient(boardX, boardY, boardX + boardW, boardY + boardH);
-    frameGradient.addColorStop(0, '#9e6e45');
-    frameGradient.addColorStop(0.18, '#70442a');
-    frameGradient.addColorStop(0.52, '#372111');
-    frameGradient.addColorStop(0.82, '#7d5232');
-    frameGradient.addColorStop(1, '#c18b5d');
+    frameGradient.addColorStop(0, theme.frame[0]);
+    frameGradient.addColorStop(0.18, theme.frame[1]);
+    frameGradient.addColorStop(0.52, theme.frame[2]);
+    frameGradient.addColorStop(0.82, theme.frame[3]);
+    frameGradient.addColorStop(1, theme.frame[4]);
     roundRectPath(boardX, boardY, boardW, boardH, 32);
     ctx.fillStyle = frameGradient;
     ctx.fill();
@@ -1586,9 +1854,9 @@
     ctx.restore();
 
     const brassGradient = ctx.createLinearGradient(boardX, boardY, boardX, boardY + boardH);
-    brassGradient.addColorStop(0, '#f2d7aa');
-    brassGradient.addColorStop(0.45, '#b17f45');
-    brassGradient.addColorStop(1, '#5b381d');
+    brassGradient.addColorStop(0, theme.brass[0]);
+    brassGradient.addColorStop(0.45, theme.brass[1]);
+    brassGradient.addColorStop(1, theme.brass[2]);
     roundRectPath(boardX + 11, boardY + 11, boardW - 22, boardH - 22, 26);
     ctx.fillStyle = brassGradient;
     ctx.fill();
@@ -1599,9 +1867,9 @@
     const feltW = boardW - feltInset * 2;
     const feltH = boardH - feltInset * 2;
     const feltGradient = ctx.createLinearGradient(feltX, feltY, feltX + feltW, feltY + feltH);
-    feltGradient.addColorStop(0, '#173c4d');
-    feltGradient.addColorStop(0.48, '#102737');
-    feltGradient.addColorStop(1, '#1d3d46');
+    feltGradient.addColorStop(0, theme.felt[0]);
+    feltGradient.addColorStop(0.48, theme.felt[1]);
+    feltGradient.addColorStop(1, theme.felt[2]);
     roundRectPath(feltX, feltY, feltW, feltH, 20);
     ctx.fillStyle = feltGradient;
     ctx.fill();
@@ -1638,9 +1906,9 @@
     ];
     studPoints.forEach(([x, y]) => {
       const stud = ctx.createRadialGradient(x - 2, y - 3, 1, x, y, 9);
-      stud.addColorStop(0, 'rgba(255, 246, 219, 0.95)');
-      stud.addColorStop(0.5, 'rgba(211, 170, 98, 0.94)');
-      stud.addColorStop(1, 'rgba(86, 55, 26, 0.92)');
+      stud.addColorStop(0, theme.stud[0]);
+      stud.addColorStop(0.5, theme.stud[1]);
+      stud.addColorStop(1, theme.stud[2]);
       ctx.beginPath();
       ctx.arc(x, y, 7, 0, Math.PI * 2);
       ctx.fillStyle = stud;
@@ -1667,8 +1935,8 @@
         h: tray.h + trayInset * 2,
       };
       const trayGradient = ctx.createLinearGradient(outer.x, outer.y, outer.x + outer.w, outer.y + outer.h);
-      trayGradient.addColorStop(0, 'rgba(38, 22, 14, 0.84)');
-      trayGradient.addColorStop(1, 'rgba(18, 12, 8, 0.92)');
+      trayGradient.addColorStop(0, theme.tray[0]);
+      trayGradient.addColorStop(1, theme.tray[1]);
       roundRectPath(outer.x, outer.y, outer.w, outer.h, 18);
       ctx.fillStyle = trayGradient;
       ctx.fill();
@@ -1679,10 +1947,10 @@
 
     const barWidth = 52;
     const barGradient = ctx.createLinearGradient(middle - barWidth / 2, boardY, middle + barWidth / 2, boardY + boardH);
-    barGradient.addColorStop(0, '#28170d');
-    barGradient.addColorStop(0.35, '#6a452a');
-    barGradient.addColorStop(0.6, '#1d130b');
-    barGradient.addColorStop(1, '#8b5d38');
+    barGradient.addColorStop(0, theme.bar[0]);
+    barGradient.addColorStop(0.35, theme.bar[1]);
+    barGradient.addColorStop(0.6, theme.bar[2]);
+    barGradient.addColorStop(1, theme.bar[3]);
     roundRectPath(middle - barWidth / 2, boardY + 8, barWidth, boardH - 16, 18);
     ctx.fillStyle = barGradient;
     ctx.fill();
@@ -1717,16 +1985,15 @@
         top,
         triangle,
       };
-      const toneA = indexInHalf % 2 === 0 ? '#f4c18a' : '#8dbbe2';
-      const toneB = indexInHalf % 2 === 0 ? '#8c5632' : '#355d8b';
+      const triangleStops = indexInHalf % 2 === 0 ? theme.warmTri : theme.coolTri;
       const triGradient = ctx.createLinearGradient(
         xBase + triangleW / 2,
         top ? boardY : boardY + boardH,
         xBase + triangleW / 2,
         top ? boardY + boardH / 2 : boardY + boardH / 2
       );
-      triGradient.addColorStop(0, toneA);
-      triGradient.addColorStop(1, toneB);
+      triGradient.addColorStop(0, triangleStops[0]);
+      triGradient.addColorStop(1, triangleStops[1]);
       ctx.fillStyle = triGradient;
       ctx.beginPath();
       ctx.moveTo(triangle[0].x, triangle[0].y);
@@ -1757,12 +2024,12 @@
       const chipX = rect.x + rect.w / 2 - 12;
       const chipY = rect.top ? boardY + boardH / 2 + 8 : boardY + boardH / 2 - 28;
       roundRectPath(chipX, chipY, 24, 18, 8);
-      ctx.fillStyle = 'rgba(17, 22, 30, 0.52)';
+      ctx.fillStyle = theme.numberPlate;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 223, 180, 0.22)';
+      ctx.strokeStyle = theme.numberStroke;
       ctx.lineWidth = 1;
       ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,.82)';
+      ctx.fillStyle = theme.numberText;
       const label = String(index + 1);
       const width = ctx.measureText(label).width;
       ctx.fillText(label, rect.x + rect.w / 2 - width / 2, chipY + 12.5);
@@ -1773,6 +2040,7 @@
     if (!state.snapshot) {
       return;
     }
+    const checkerTheme = currentCheckerTheme();
     for (let index = 0; index < 24; index += 1) {
       const count = Math.abs(state.snapshot.points[index]);
       const owner = Math.sign(state.snapshot.points[index]);
@@ -1786,7 +2054,7 @@
       const { step, radius } = stackMetrics(index, count);
       if (count > 1 && step < radius * 2 + 2) {
         const point = checkerPos(index, count - 1, count);
-        ctx.fillStyle = owner === Core.WHITE ? '#0f1120' : '#f0f5ff';
+        ctx.fillStyle = owner === Core.WHITE ? checkerTheme.stackTextWhite : checkerTheme.stackTextBlack;
         ctx.font = 'bold 16px Inter';
         ctx.fillText(`x${count}`, point.x - 11, point.y + 6);
       }
@@ -1981,9 +2249,15 @@
     drawSelectionHints();
     const moveActive = drawMoveAnimation();
     if (state.drag) {
+      state.drag.mx = lerp(state.drag.mx, state.drag.targetX, 0.42);
+      state.drag.my = lerp(state.drag.my, state.drag.targetY, 0.42);
       drawChecker(state.drag.mx, state.drag.my, state.drag.r, controlledSide() || Core.WHITE);
     }
-    if (pulseActive || trailActive || moveActive) {
+    const dragActive = Boolean(
+      state.drag &&
+      (Math.abs(state.drag.mx - state.drag.targetX) > 0.45 || Math.abs(state.drag.my - state.drag.targetY) > 0.45)
+    );
+    if (pulseActive || trailActive || moveActive || dragActive) {
       requestAnimationFrame(draw);
     }
   }
@@ -2074,7 +2348,7 @@
     if (source === null || !applySelectedSource(source)) {
       return false;
     }
-    state.drag = { source, mx, my, r: 24 };
+    state.drag = { source, mx, my, targetX: mx, targetY: my, r: 24 };
     scheduleDraw();
     return true;
   }
@@ -2083,8 +2357,8 @@
     if (!state.drag) {
       return;
     }
-    state.drag.mx = mx;
-    state.drag.my = my;
+    state.drag.targetX = mx;
+    state.drag.targetY = my;
     scheduleDraw();
   }
 
@@ -2152,12 +2426,21 @@
     ui.toggleSidebarBtn.addEventListener('click', () => setPanelCollapse('infoCollapsed', !state.panels.infoCollapsed));
     ui.soundToggleBtn.addEventListener('click', () => setSoundEnabled(!state.audio.enabled));
     ui.rollBtn.addEventListener('click', rollTurn);
+    ui.undoBtn.addEventListener('click', undoMove);
     ui.autoBtn.addEventListener('click', autoMove);
     ui.restartBtn.addEventListener('click', restartMatch);
     ui.copyBtn.addEventListener('click', () => copyText(inviteUrl(), 'Invite link copied.'));
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
     ui.openLoungeBtn.addEventListener('click', () => openArcadeLounge(false));
     ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
+    ui.boardThemeSelect?.addEventListener('change', () => {
+      state.appearance.boardTheme = normalizeBoardTheme(ui.boardThemeSelect.value);
+      applyAppearance();
+    });
+    ui.checkerThemeSelect?.addEventListener('change', () => {
+      state.appearance.checkerTheme = normalizeCheckerTheme(ui.checkerThemeSelect.value);
+      applyAppearance();
+    });
 
     canvas.addEventListener('click', (event) => {
       if (!canAct() || !state.snapshot) {
@@ -2223,6 +2506,11 @@
       scheduleDraw();
     });
     document.addEventListener('keydown', (event) => {
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        undoMove();
+        return;
+      }
       if (event.code !== 'Space') {
         return;
       }
@@ -2257,8 +2545,11 @@
     state.panels.setupCollapsed = savedSetup === '1';
     state.panels.infoCollapsed = savedInfo === null ? true : savedInfo === '1';
     state.audio.enabled = audioSupported() && localStorage.getItem(STORAGE_KEYS.soundEnabled) !== '0';
+    state.appearance.boardTheme = normalizeBoardTheme(localStorage.getItem(STORAGE_KEYS.boardTheme));
+    state.appearance.checkerTheme = normalizeCheckerTheme(localStorage.getItem(STORAGE_KEYS.checkerTheme));
     setPanelCollapse('setupCollapsed', state.panels.setupCollapsed);
     setPanelCollapse('infoCollapsed', state.panels.infoCollapsed);
+    applyAppearance();
     renderSoundToggle();
   }
 
