@@ -1664,14 +1664,6 @@
     );
   }
 
-  function formatMoveSummary(move) {
-    if (!move || !move.from || !move.to) {
-      return '';
-    }
-    const base = `${Core.coordToNotation(move.from.x, move.from.y)}-${Core.coordToNotation(move.to.x, move.to.y)}`;
-    return move.promotion ? `${base}=${move.promotion.charAt(0).toUpperCase()}` : base;
-  }
-
   function clearPremove(options = {}) {
     if (!state.premove) {
       return;
@@ -1715,14 +1707,12 @@
       state.selected = null;
       state.legalMoves = [];
       render();
-      showToast('Premove cleared.');
       return true;
     }
     state.premove = premove;
     state.selected = null;
     state.legalMoves = [];
     render();
-    showToast(`Premove queued: ${formatMoveSummary(premove)}.`);
     return true;
   }
 
@@ -1736,16 +1726,13 @@
     }
     const move = resolveQueuedMove(state.snapshot);
     if (!move) {
-      const queuedText = formatMoveSummary(state.premove);
       clearPremove({ silent: true });
       renderStatus();
       renderBoard();
-      showToast(`Premove cleared: ${queuedText} is no longer legal.`);
       return false;
     }
     clearPremove({ silent: true });
     submitMove(move);
-    showToast(`Premove played: ${formatMoveSummary(move)}.`);
     return true;
   }
 
@@ -2968,7 +2955,6 @@
         if (state.premove) {
           clearPremove({ silent: true });
           render();
-          showToast('Premove cleared.');
         }
         return;
       default:
