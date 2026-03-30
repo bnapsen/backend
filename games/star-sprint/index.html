@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Neon Crown Chess</title>
-  <link rel="stylesheet" href="style.css?v=20260329f" />
+  <link rel="stylesheet" href="style.css?v=20260329g" />
 </head>
 <body>
   <div class="page-shell" id="pageShell">
@@ -212,6 +212,13 @@
 
           <div class="board-stage">
             <div class="board-grid" id="boardGrid" aria-label="Chess board"></div>
+            <div class="result-overlay hidden" id="resultOverlay" aria-live="polite" aria-atomic="true">
+              <div class="result-overlay-card">
+                <p class="result-overlay-kicker" id="resultOverlayKicker">Board decided</p>
+                <h2 class="result-overlay-title" id="resultOverlayTitle">YOU WIN!</h2>
+                <p class="result-overlay-subtitle" id="resultOverlaySubtitle">Checkmate. Clean finish.</p>
+              </div>
+            </div>
           </div>
 
           <div class="board-footer">
@@ -277,7 +284,7 @@
   </div>
 
   <script src="../shared/lounge-bridge.js?v=20260326b"></script>
-  <script src="chess-core.js?v=20260329f"></script>
-  <script src="game.js?v=20260329f"></script>
+  <script src="chess-core.js?v=20260329g"></script>
+  <script src="game.js?v=20260329g"></script>
 </body>
 </html>

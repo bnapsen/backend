@@ -535,6 +535,10 @@
     boardPanel: document.querySelector('.board-panel'),
     boardHeader: document.querySelector('.board-header'),
     boardFooter: document.querySelector('.board-footer'),
+    resultOverlay: document.getElementById('resultOverlay'),
+    resultOverlayTitle: document.getElementById('resultOverlayTitle'),
+    resultOverlayKicker: document.getElementById('resultOverlayKicker'),
+    resultOverlaySubtitle: document.getElementById('resultOverlaySubtitle'),
     battleStrip: document.querySelector('.battle-strip'),
     clockStrip: document.getElementById('clockStrip'),
     boardGrid: document.getElementById('boardGrid'),
@@ -1106,10 +1110,7 @@
   }
 
   function renderStatus() {
-    const base = state.statusMessage || 'Host a room, join by code, or start a solo Stockfish game.';
-    ui.statusText.textContent = state.premove
-      ? `${base} Premove queued: ${formatMoveSummary(state.premove)}.`
-      : base;
+    ui.statusText.textContent = state.statusMessage || 'Host a room, join by code, or start a solo Stockfish game.';
   }
 
   function inviteUrl() {
@@ -1803,12 +1804,6 @@
         if (state.selected && state.selected.x === actual.x && state.selected.y === actual.y) {
           square.classList.add('selected');
         }
-        if (state.premove && state.premove.from.x === actual.x && state.premove.from.y === actual.y) {
-          square.classList.add('premove-source');
-        }
-        if (state.premove && state.premove.to.x === actual.x && state.premove.to.y === actual.y) {
-          square.classList.add('premove-target');
-        }
         if (state.keyboardFocus && state.keyboardFocus.x === actual.x && state.keyboardFocus.y === actual.y) {
           square.classList.add('focused');
         }
@@ -1828,13 +1823,6 @@
         if (move) {
           const marker = document.createElement('span');
           marker.className = move.capture ? 'move-ring' : 'move-dot';
-          square.appendChild(marker);
-        } else if (state.premove && state.premove.to.x === actual.x && state.premove.to.y === actual.y) {
-          const marker = document.createElement('span');
-          const targetPiece = boardPieceAt(actual.x, actual.y);
-          marker.className = targetPiece && targetPiece.color !== getControlledColor()
-            ? 'move-ring queued'
-            : 'move-dot queued';
           square.appendChild(marker);
         }
 
@@ -2037,6 +2025,44 @@
     }
   }
 
+  function renderResultOverlay() {
+    if (!ui.resultOverlay || !ui.resultOverlayTitle || !ui.resultOverlaySubtitle || !ui.resultOverlayKicker) {
+      return;
+    }
+    if (!state.snapshot || !state.snapshot.winner) {
+      ui.resultOverlay.classList.add('hidden');
+      ui.resultOverlay.dataset.tone = '';
+      return;
+    }
+
+    const controlledColor = getControlledColor();
+    const youWon = Boolean(controlledColor && state.snapshot.winner === controlledColor);
+    const youLost = Boolean(controlledColor && state.snapshot.winner !== controlledColor);
+    const title = youWon
+      ? 'YOU WIN!'
+      : youLost
+        ? 'YOU LOSE!'
+        : `${capitalize(state.snapshot.winner)} WINS`;
+    const kicker = state.snapshot.winReason === 'timeout' ? 'Clock breaker' : 'Board decided';
+    const subtitle = state.snapshot.winReason === 'timeout'
+      ? youWon
+        ? 'You won on time.'
+        : youLost
+          ? 'You lost on time.'
+          : `${capitalize(state.snapshot.winner)} won on time.`
+      : youWon
+        ? 'Checkmate. Clean finish.'
+        : youLost
+          ? 'Checkmate. Reset and run it back.'
+          : `${capitalize(state.snapshot.winner)} finished the game by checkmate.`;
+
+    ui.resultOverlay.dataset.tone = youWon ? 'win' : youLost ? 'lose' : 'neutral';
+    ui.resultOverlayKicker.textContent = kicker;
+    ui.resultOverlayTitle.textContent = title;
+    ui.resultOverlaySubtitle.textContent = subtitle;
+    ui.resultOverlay.classList.remove('hidden');
+  }
+
   function renderPills() {
     if (state.mode === 'solo') {
       ui.networkStatus.dataset.tone = 'online';
@@ -2116,6 +2142,7 @@
     renderHistory();
     renderCaptured();
     renderBoard();
+    renderResultOverlay();
     renderControls();
     setEngineStatus(state.engineStatus);
     queueResponsiveBoardSizeSync();
