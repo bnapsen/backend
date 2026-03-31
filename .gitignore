@@ -1,2 +1,4 @@
 node_modules/
 games/star-sprint/node_modules/
+assets/downloads/*/windows/
+assets/downloads/*.log
