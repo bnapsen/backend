@@ -243,11 +243,64 @@
                     </article>
                 </div>
             </section>
+
+            <section id="reviews" class="games-section reviews-section">
+                <div class="section-heading">
+                    <h2>Front Page Reviews</h2>
+                    <p>Leave a review here and it will be stored on the live backend so it stays visible on the front page for everyone.</p>
+                </div>
+
+                <div class="reviews-layout">
+                    <div class="review-panel">
+                        <form id="review-form" class="review-form">
+                            <label class="review-field">
+                                <span>Your name</span>
+                                <input id="reviewer-name" name="reviewerName" type="text" maxlength="40" placeholder="Player name" required>
+                            </label>
+
+                            <label class="review-field">
+                                <span>Favorite game or page</span>
+                                <input id="reviewer-car" name="reviewerCar" type="text" maxlength="60" placeholder="Mini Pool Showdown">
+                            </label>
+
+                            <label class="review-field">
+                                <span>Rating</span>
+                                <select id="review-rating" name="reviewRating" required>
+                                    <option value="5">5/5</option>
+                                    <option value="4">4/5</option>
+                                    <option value="3">3/5</option>
+                                    <option value="2">2/5</option>
+                                    <option value="1">1/5</option>
+                                </select>
+                            </label>
+
+                            <label class="review-field">
+                                <span>Your review</span>
+                                <textarea id="review-message" name="reviewMessage" rows="6" maxlength="500" placeholder="Tell visitors what you liked about the site." required></textarea>
+                            </label>
+
+                            <button type="submit" class="btn btn-primary review-submit">Post Review</button>
+                            <p id="review-status" class="form-status" aria-live="polite"></p>
+                        </form>
+                    </div>
+
+                    <div class="review-panel">
+                        <div class="reviews-heading">
+                            <h3>Recent Reviews</h3>
+                            <p>Newest first</p>
+                        </div>
+                        <p id="reviews-empty" class="reviews-empty">No reviews yet. Be the first to add one to the front page.</p>
+                        <div id="reviews-list" class="reviews-list" aria-live="polite"></div>
+                    </div>
+                </div>
+            </section>
         </main>
 
         <footer class="footer">
             <p>&copy; 2026 Nova Arcade. Built for players who love quick thrills.</p>
         </footer>
     </div>
+
+    <script src="reviews.js" defer></script>
 </body>
 </html>

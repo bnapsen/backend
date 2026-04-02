@@ -3,6 +3,8 @@
 
 const http = require('http');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { WebSocketServer } = require('ws');
 const Chess = require('./chess-core.js');
 const Backgammon = require('./backgammon-core.js');
@@ -23,9 +25,16 @@ const TICK_MS = 50;
 const ALLOWED_HTTP_ORIGIN_HOSTS = new Set([
   'classiccarcollectorshub.com',
   'www.classiccarcollectorshub.com',
+  'bnapsen.github.io',
+  'backend-ujaa.onrender.com',
   'localhost',
   '127.0.0.1',
 ]);
+const DATA_DIR = path.join(__dirname, 'data');
+const REVIEWS_FILE = path.join(DATA_DIR, 'reviews.json');
+const MAX_REVIEWS = 100;
+const MAX_VISIBLE_REVIEWS = 30;
+const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 const rooms = new Map();
 const CHESS_TIME_CONTROLS = Object.freeze({
   untimed: {
@@ -193,6 +202,167 @@ function sendJsonResponse(req, res, statusCode, payload) {
     'Cache-Control': 'no-store',
   });
   res.end(JSON.stringify(payload));
+}
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+function sanitizeReviewField(raw, maxLength) {
+  return String(raw || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, maxLength);
+}
+
+function readStoredReviews() {
+  if (!fs.existsSync(REVIEWS_FILE)) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(REVIEWS_FILE, 'utf8'));
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .filter((entry) => entry && typeof entry === 'object')
+      .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
+      .slice(0, MAX_REVIEWS);
+  } catch (error) {
+    console.error('Failed to read stored reviews:', error.message);
+    return [];
+  }
+}
+
+function writeStoredReviews(reviews) {
+  ensureDataDir();
+  const nextReviews = reviews.slice(0, MAX_REVIEWS);
+  const tempFile = `${REVIEWS_FILE}.tmp`;
+  fs.writeFileSync(tempFile, JSON.stringify(nextReviews, null, 2));
+  fs.renameSync(tempFile, REVIEWS_FILE);
+  return nextReviews;
+}
+
+function visibleReviews() {
+  return readStoredReviews().slice(0, MAX_VISIBLE_REVIEWS);
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let raw = '';
+
+    req.on('data', (chunk) => {
+      raw += chunk;
+      if (Buffer.byteLength(raw) > MAX_REQUEST_BODY_BYTES) {
+        reject(new Error('Request body too large.'));
+        req.destroy();
+      }
+    });
+
+    req.on('end', () => {
+      if (!raw) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(raw));
+      } catch (error) {
+        reject(new Error('Invalid JSON body.'));
+      }
+    });
+
+    req.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
+async function handleReviewsRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method === 'GET') {
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      reviews: visibleReviews(),
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const name = sanitizeReviewField(body.name, 40);
+  const car = sanitizeReviewField(body.car, 60);
+  const message = sanitizeReviewField(body.message, 500);
+  const rating = Number(body.rating);
+
+  if (!name || !message) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Name and review message are required.',
+    });
+    return;
+  }
+
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Rating must be an integer between 1 and 5.',
+    });
+    return;
+  }
+
+  const review = {
+    id: crypto.randomUUID(),
+    name,
+    car,
+    rating,
+    message,
+    createdAt: new Date().toISOString(),
+  };
+
+  try {
+    const nextReviews = writeStoredReviews([review, ...readStoredReviews()]);
+    sendJsonResponse(req, res, 201, {
+      ok: true,
+      review,
+      reviews: nextReviews.slice(0, MAX_VISIBLE_REVIEWS),
+    });
+  } catch (error) {
+    console.error('Failed to persist review:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to save the review right now.',
+    });
+  }
 }
 
 function sanitizeName(raw) {
@@ -1457,11 +1627,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/reviews') {
+    await handleReviewsRequest(req, res);
+    return;
+  }
+
   sendJsonResponse(req, res, 200, {
     ok: true,
     service: 'nova-arcade-realtime',
     games: Object.keys(GAME_DEFS),
     websocket: true,
+    reviewsApi: '/api/reviews',
   });
 });
 
