@@ -6,84 +6,144 @@
     <title>Nova Arcade | Play Instantly</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="page-shell">
-        <header class="site-header">
-            <div class="top-nav" aria-label="Main navigation">
-                <a class="brand" href="index.html">NOVA ARCADE</a>
-                <nav class="header-links" aria-label="Page links">
-                    <a href="gallery.html">Gallery</a>
-                    <a href="contactcar.html">Community</a>
-                    <a href="post.html">News</a>
-                </nav>
-            </div>
-            <nav class="game-links" aria-label="Game links">
-                <a href="arcade-lounge.html">Arcade Lounge</a>
-                <a href="dragonfall-jungle-siege.html">Dragonfall: Jungle Siege</a>
-                <a href="pool.html">Mini Pool Showdown</a>
-                <a href="space-shooter.html">Starline Defense Co-Op</a>
-                <a href="backgammon.html">SuperSplash Backgammon Blitz</a>
-                <a href="games/car-soccer-mini/">Car Soccer Mini</a>
-                <a href="games/star-sprint/">Neon Crown Chess</a>
-                <a href="client/">Multiplayer Town Builder</a>
-                <a href="blackjack.html">Royal SuperSplash Blackjack</a>
-                <a href="neon-stack.html">SuperSplash Stack Rush</a>
-                <a href="super-neon-bros.html">SuperSplash Bros</a>
-                <a href="poker.html">Orbit Holdem Live</a>
-                <a href="motorcycle-mayhem.html">SuperSplash Moto Rush</a>
-                <a href="zombie-siege.html">Zombie Siege 3D Live</a>
-                <a href="echoseed-blueprint-shadow-room.html">EchoSeed Blueprint Shadow Room</a>
-                <a href="neon-survivor.html">Neon Survivor: Eclipse Protocol</a>
-                <a href="fruit-fly-simulator.html">Fruit Fly Simulator</a>
-            </nav>
-        </header>
-
         <section class="hero">
-            <div class="hero-content">
-                <h1 class="neon-title">Ben Wagner</h1>
-                <p class="hero-text">
-                    Jump into competitive mini-games, challenge your reflexes, and explore a modern arcade built for quick sessions and big scores.
-                </p>
-                <div class="cta-row">
-                    <a href="#games" class="btn btn-primary">Play Now</a>
+            <div class="hero-grid">
+                <div class="hero-content">
+                    <p class="eyebrow">Ben Wagner's instant-play arcade</p>
+                    <h1 class="neon-title">Nova Arcade</h1>
+                    <p class="hero-text">
+                        Jump into competitive mini-games, downloadable experiments, and fast multiplayer showdowns built for quick starts and big scores.
+                    </p>
+
+                    <div class="hero-stats" aria-label="Nova Arcade highlights">
+                        <article class="stat-pill">
+                            <strong>17</strong>
+                            <span>featured titles</span>
+                        </article>
+                        <article class="stat-pill">
+                            <strong>Live</strong>
+                            <span>room links and instant invites</span>
+                        </article>
+                        <article class="stat-pill">
+                            <strong>1</strong>
+                            <span>downloadable Unreal build</span>
+                        </article>
+                    </div>
+
+                    <div class="cta-row">
+                        <a href="#games" class="btn btn-primary">Browse Games</a>
+                        <a href="arcade-lounge.html" class="btn btn-secondary">Open Arcade Lounge</a>
+                    </div>
                 </div>
+
+                <aside class="hero-panel">
+                    <p class="panel-kicker">Tonight at Nova</p>
+                    <div class="hero-spotlight">
+                        <span class="level-tag level-tag--warm">Featured Drop</span>
+                        <h2>Dragonfall: Jungle Siege</h2>
+                        <p>Fight through the jungle, city, Neon City, and mushroom forest finale in the latest downloadable Unreal build with installer helper and shortcut setup.</p>
+                        <div class="spotlight-actions">
+                            <a href="dragonfall-jungle-siege.html" class="btn btn-card">Open Download Page</a>
+                            <a href="#reviews" class="text-link">Read front page reviews</a>
+                        </div>
+                    </div>
+
+                    <div class="hero-mini-grid">
+                        <a class="hero-mini-card" href="games/star-sprint/">
+                            <span class="mini-card-label">Quick Match</span>
+                            <strong>Neon Crown Chess</strong>
+                            <small>Instant room links and a solo bot.</small>
+                        </a>
+                        <a class="hero-mini-card" href="pool.html">
+                            <span class="mini-card-label">Live Duel</span>
+                            <strong>Mini Pool Showdown</strong>
+                            <small>Three racks, fast restarts, clean invites.</small>
+                        </a>
+                        <a class="hero-mini-card" href="neon-survivor.html">
+                            <span class="mini-card-label">Solo Run</span>
+                            <strong>Neon Survivor</strong>
+                            <small>Auto-fire chaos and overpowered builds.</small>
+                        </a>
+                    </div>
+                </aside>
             </div>
         </section>
 
         <main>
-            <section class="games-section">
-                <div class="section-heading">
-                    <h2>Arcade Lineup</h2>
-                    <p>Every game is available right away—jump into any title whenever you want.</p>
+            <section class="games-section intro-section">
+                <div class="section-heading section-heading--split">
+                    <div>
+                        <p class="section-kicker">Quick Launch</p>
+                        <h2>Pick a lane and jump straight in.</h2>
+                        <p>Everything here is built for low-friction sessions, whether you want a live room, a reflex test, or something bigger to download.</p>
+                    </div>
+                    <div class="play-flow" aria-label="Play flow">
+                        <span>Pick a lane</span>
+                        <span aria-hidden="true">&rarr;</span>
+                        <span>Launch in seconds</span>
+                    </div>
                 </div>
-                <div class="play-flow" aria-label="Play flow">
-                    <span>Pick any game</span>
-                    <span aria-hidden="true">→</span>
-                    <span>Play instantly</span>
+
+                <div class="lane-grid">
+                    <article class="lane-card lane-card--live">
+                        <p class="lane-label">Live Multiplayer</p>
+                        <h3>Room codes, instant invites, clean rematches.</h3>
+                        <p>Open a browser tab, share a link, and bring friends right into the action without digging through menus.</p>
+                        <div class="lane-links">
+                            <a href="arcade-lounge.html">Arcade Lounge</a>
+                            <a href="pool.html">Mini Pool</a>
+                            <a href="backgammon.html">Backgammon Blitz</a>
+                        </div>
+                    </article>
+
+                    <article class="lane-card lane-card--arcade">
+                        <p class="lane-label">Fast Solo Runs</p>
+                        <h3>Bright, punchy games when you want instant momentum.</h3>
+                        <p>Jump into score-chasing sessions, survival builds, and rhythm-heavy runs that feel good in under a minute.</p>
+                        <div class="lane-links">
+                            <a href="neon-stack.html">Stack Rush</a>
+                            <a href="neon-survivor.html">Neon Survivor</a>
+                            <a href="fruit-fly-simulator.html">Fruit Fly Simulator</a>
+                        </div>
+                    </article>
+
+                    <article class="lane-card lane-card--explore">
+                        <p class="lane-label">Big Experiments</p>
+                        <h3>Downloadable builds, shared sandboxes, and stranger worlds.</h3>
+                        <p>Explore the more ambitious side of the site with downloadable prototypes, world builders, and cinematic one-offs.</p>
+                        <div class="lane-links">
+                            <a href="dragonfall-jungle-siege.html">Dragonfall</a>
+                            <a href="client/">Town Builder</a>
+                            <a href="echoseed-blueprint-shadow-room.html">EchoSeed</a>
+                        </div>
+                    </article>
                 </div>
             </section>
 
             <section id="games" class="games-section">
                 <div class="section-heading">
-                    <h2>Featured Games</h2>
-                    <p>Choose any game and start playing instantly.</p>
+                    <p class="section-kicker">Featured Lineup</p>
+                    <h2>Start anywhere. The front page is the arcade floor.</h2>
+                    <p>Choose any game and launch right away, from browser-first multiplayer rooms to downloadable side projects.</p>
                 </div>
 
                 <div class="games-grid">
-                    <article class="game-card">
+                    <article class="game-card game-card--feature">
                         <img src="assets/dragonfall/dragonfall-hero.png" alt="Dragonfall Jungle Siege cover">
                         <div class="game-info">
-                            <span class="level-tag">Download</span>
+                            <span class="level-tag level-tag--warm">Download</span>
                             <h3>Dragonfall: Jungle Siege</h3>
                             <p>Fight through the jungle, city, Neon City, and mushroom forest finale in the latest downloadable Unreal build with installer helper and shortcut setup.</p>
                             <a href="dragonfall-jungle-siege.html" class="btn btn-card">Open Download Page</a>
                         </div>
                     </article>
 
-                    <article class="game-card">
+                    <article class="game-card game-card--feature">
                         <img src="arcade-lounge-cover.svg" alt="Nova Arcade Lounge cover">
                         <div class="game-info">
                             <span class="level-tag">New</span>
@@ -94,10 +154,10 @@
                     </article>
 
                     <article class="game-card">
-                        <img src="IMG_0046.JPG" alt="EchoSeed Blueprint Shadow Room game cover">
+                        <img src="IMG_0046.JPG" alt="EchoSeed Shadow Room game cover">
                         <div class="game-info">
                             <span class="level-tag">Featured</span>
-                            <h3>EchoSeed – Shadow Room</h3>
+                            <h3>EchoSeed - Shadow Room</h3>
                             <p>Explore the EchoSeed chamber and test your reflexes in a neon puzzle-action experience.</p>
                             <a href="echoseed-blueprint-shadow-room.html" class="btn btn-card">Launch Game</a>
                         </div>
@@ -117,7 +177,7 @@
                         <img src="space-shooter-cover.svg" alt="Space shooter game cover">
                         <div class="game-info">
                             <span class="level-tag">Featured</span>
-                            <h3>Space Shooter – Starline Defense</h3>
+                            <h3>Space Shooter - Starline Defense</h3>
                             <p>Blast through waves of enemies and survive the chaos in deep space.</p>
                             <a href="space-shooter.html" class="btn btn-card">Launch Game</a>
                         </div>
@@ -127,7 +187,7 @@
                         <img src="backgammon-cover.svg" alt="SuperSplash backgammon game cover">
                         <div class="game-info">
                             <span class="level-tag">Featured</span>
-                            <h3>SuperSplash Backgammon Blitz – Neon Match</h3>
+                            <h3>SuperSplash Backgammon Blitz - Neon Match</h3>
                             <p>Host a live room, invite a friend, or battle a sharper solo bot in this neon backgammon duel.</p>
                             <a href="backgammon.html" class="btn btn-card">Launch Game</a>
                         </div>
@@ -137,7 +197,7 @@
                         <img src="IMG_0051.JPG" alt="Car soccer game cover">
                         <div class="game-info">
                             <span class="level-tag">Featured</span>
-                            <h3>Car Soccer Mini – Turbo Arena</h3>
+                            <h3>Car Soccer Mini - Turbo Arena</h3>
                             <p>Host a live 1v1 arena, share the room into Arcade Lounge, and drift, demo, and boost through a sharper turbo-soccer showdown.</p>
                             <a href="games/car-soccer-mini/" class="btn btn-card">Launch Game</a>
                         </div>
@@ -192,6 +252,7 @@
                             <a href="super-neon-bros.html" class="btn btn-card">Launch Game</a>
                         </div>
                     </article>
+
                     <article class="game-card">
                         <img src="poker-cover.svg" alt="Orbit Holdem Live poker game cover">
                         <div class="game-info">
@@ -246,6 +307,7 @@
 
             <section id="reviews" class="games-section reviews-section">
                 <div class="section-heading">
+                    <p class="section-kicker">Community Pulse</p>
                     <h2>Front Page Reviews</h2>
                     <p>Leave a review here and it will be stored on the live backend so it stays visible on the front page for everyone.</p>
                 </div>
