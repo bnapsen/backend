@@ -211,6 +211,7 @@ body {
 
 .detail-panel,
 .gallery-panel,
+.lobby-panel,
 .status-panel {
   padding: 1.25rem;
 }
@@ -223,6 +224,229 @@ body {
 .feature-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 1rem;
+}
+
+.lobby-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.lobby-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.lobby-card h3 {
+  margin: 0 0 0.45rem;
+  font-family: "Oxanium", sans-serif;
+  font-size: 1.16rem;
+}
+
+.lobby-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.join-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.join-form input {
+  flex: 1 1 180px;
+  min-height: 3rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(5, 11, 20, 0.92);
+  color: var(--text);
+  padding: 0.85rem 1rem;
+  font: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.join-form input::placeholder {
+  color: rgba(184, 200, 221, 0.52);
+}
+
+.panel-status {
+  min-height: 1.35rem;
+  margin-top: 0.85rem;
+  color: var(--muted);
+}
+
+.join-result {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(127, 215, 255, 0.22);
+  background: rgba(7, 16, 27, 0.9);
+}
+
+.join-result.hidden,
+.hidden {
+  display: none;
+}
+
+.join-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.join-result-header strong {
+  font-family: "Oxanium", sans-serif;
+  font-size: 1.3rem;
+  letter-spacing: 0.14em;
+}
+
+.room-host-label {
+  color: var(--accent-2);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.join-note {
+  margin-top: 0.55rem;
+}
+
+.result-meta,
+.song-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.result-meta {
+  margin-top: 0.8rem;
+}
+
+.result-meta span,
+.lobby-chip {
+  border-radius: 999px;
+  padding: 0.34rem 0.7rem;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.copy-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-top: 0.85rem;
+}
+
+.copy-row code {
+  flex: 1 1 260px;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: #eef7ff;
+  overflow-wrap: anywhere;
+}
+
+.share-link {
+  display: inline-flex;
+  margin-top: 0.95rem;
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.public-lobbies-card {
+  margin-top: 1rem;
+}
+
+.public-lobbies-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.public-lobbies-header p {
+  margin-top: 0.35rem;
+}
+
+.public-lobbies-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.room-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.room-card-top,
+.room-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.room-card-top strong {
+  font-family: "Oxanium", sans-serif;
+  font-size: 1.22rem;
+  letter-spacing: 0.14em;
+}
+
+.room-card p {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+}
+
+.room-card-actions {
+  margin-top: 0.95rem;
+}
+
+.room-code-button {
+  min-width: 9rem;
+}
+
+.empty-state {
+  margin-top: 1rem;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  padding: 1rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.compact {
+  margin-top: 0.85rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .feature-card h3,
@@ -284,7 +508,9 @@ body {
   .hero,
   .spec-grid,
   .status-grid,
-  .gallery-grid {
+  .gallery-grid,
+  .lobby-grid,
+  .public-lobbies-list {
     grid-template-columns: 1fr;
   }
 

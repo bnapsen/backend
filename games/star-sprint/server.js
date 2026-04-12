@@ -43,6 +43,10 @@ const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 const MAX_SONGS = 80;
 const MAX_VISIBLE_SONGS = 40;
 const MAX_SONG_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_CITY_RAID_LOBBIES = 120;
+const CITY_RAID_ROOM_CODE_LENGTH = 5;
+const CITY_RAID_DEFAULT_PORT = 7777;
+const CITY_RAID_LOBBY_TTL_MS = 2 * 60 * 1000;
 const SONG_EXTENSION_TO_MIME = new Map([
   ['.aac', 'audio/aac'],
   ['.flac', 'audio/flac'],
@@ -70,6 +74,7 @@ const RETIRED_SONG_IDS = new Set([
   'a491df71-e9ee-41c3-ba7f-ca60e7572375',
 ]);
 const rooms = new Map();
+const cityRaidLobbies = new Map();
 const CHESS_TIME_CONTROLS = Object.freeze({
   untimed: {
     id: 'untimed',
@@ -267,6 +272,364 @@ function sanitizeSongField(raw, maxLength) {
 
 function normalizeDeleteToken(raw) {
   return String(raw || '').trim().slice(0, 160);
+}
+
+function sanitizeCityRaidField(raw, maxLength) {
+  return String(raw || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, maxLength);
+}
+
+function normalizeCityRaidRoomCode(raw) {
+  return String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, CITY_RAID_ROOM_CODE_LENGTH);
+}
+
+function normalizeCityRaidPort(raw) {
+  const value = Number.parseInt(String(raw || CITY_RAID_DEFAULT_PORT), 10);
+  if (!Number.isInteger(value) || value < 1 || value > 65535) {
+    return CITY_RAID_DEFAULT_PORT;
+  }
+  return value;
+}
+
+function normalizeCityRaidJoinAddress(raw, fallbackPort = CITY_RAID_DEFAULT_PORT) {
+  const value = String(raw || '').trim();
+  if (!value) {
+    return '';
+  }
+
+  const match = /^([a-z0-9.-]+)(?::(\d{1,5}))?$/i.exec(value);
+  if (!match) {
+    return '';
+  }
+
+  const host = match[1].toLowerCase();
+  const port = normalizeCityRaidPort(match[2] || fallbackPort);
+  return `${host}:${port}`;
+}
+
+function createUniqueCityRaidRoomCode() {
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    let code = '';
+    for (let index = 0; index < CITY_RAID_ROOM_CODE_LENGTH; index += 1) {
+      code += ROOM_CHARS.charAt(Math.floor(Math.random() * ROOM_CHARS.length));
+    }
+    if (!cityRaidLobbies.has(code)) {
+      return code;
+    }
+  }
+
+  return crypto.randomUUID().replace(/-/g, '').slice(0, CITY_RAID_ROOM_CODE_LENGTH).toUpperCase();
+}
+
+function pruneCityRaidLobbies() {
+  const now = Date.now();
+  for (const [roomCode, lobby] of cityRaidLobbies.entries()) {
+    if (!lobby || now > Number(lobby.expiresAt || 0)) {
+      cityRaidLobbies.delete(roomCode);
+    }
+  }
+
+  if (cityRaidLobbies.size <= MAX_CITY_RAID_LOBBIES) {
+    return;
+  }
+
+  const oldestEntries = [...cityRaidLobbies.entries()]
+    .sort((left, right) => Number(left[1].createdAt || 0) - Number(right[1].createdAt || 0));
+  while (oldestEntries.length > 0 && cityRaidLobbies.size > MAX_CITY_RAID_LOBBIES) {
+    const [roomCode] = oldestEntries.shift();
+    cityRaidLobbies.delete(roomCode);
+  }
+}
+
+function cityRaidShareUrl(roomCode) {
+  return `https://bnapsen.com/city-raid.html?room=${encodeURIComponent(roomCode)}`;
+}
+
+function publicCityRaidLobby(lobby) {
+  return {
+    roomCode: String(lobby.roomCode || ''),
+    hostName: String(lobby.hostName || ''),
+    note: String(lobby.note || ''),
+    joinAddress: String(lobby.joinAddress || ''),
+    publicAddressHint: String(lobby.publicAddressHint || ''),
+    version: String(lobby.version || ''),
+    isPublic: Boolean(lobby.isPublic),
+    createdAt: new Date(Number(lobby.createdAt || Date.now())).toISOString(),
+    updatedAt: new Date(Number(lobby.updatedAt || Date.now())).toISOString(),
+    expiresAt: new Date(Number(lobby.expiresAt || Date.now())).toISOString(),
+    shareUrl: cityRaidShareUrl(String(lobby.roomCode || '')),
+  };
+}
+
+function activeCityRaidLobby(roomCode) {
+  pruneCityRaidLobbies();
+  const normalizedRoomCode = normalizeCityRaidRoomCode(roomCode);
+  if (!normalizedRoomCode) {
+    return null;
+  }
+  return cityRaidLobbies.get(normalizedRoomCode) || null;
+}
+
+async function handleCityRaidLobbiesRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  pruneCityRaidLobbies();
+
+  if (req.method === 'GET') {
+    const lobbies = [...cityRaidLobbies.values()]
+      .filter((lobby) => lobby && lobby.isPublic)
+      .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
+      .slice(0, 24)
+      .map(publicCityRaidLobby);
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      lobbies,
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const hostName = sanitizeCityRaidField(body.hostName, 48) || 'City Raid Host';
+  const note = sanitizeCityRaidField(body.note, 120);
+  const version = sanitizeCityRaidField(body.version, 32);
+  const requestedRoomCode = normalizeCityRaidRoomCode(body.roomCode);
+  const port = normalizeCityRaidPort(body.port);
+  const joinAddress = normalizeCityRaidJoinAddress(body.joinAddress, port);
+  const publicAddressHint = sanitizeCityRaidField(body.publicAddressHint, 80);
+  const isPublic = body.isPublic !== false;
+
+  if (!joinAddress) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'A public join address such as 203.0.113.10:7777 is required.',
+    });
+    return;
+  }
+
+  const roomCode = requestedRoomCode && !cityRaidLobbies.has(requestedRoomCode)
+    ? requestedRoomCode
+    : createUniqueCityRaidRoomCode();
+  const heartbeatToken = crypto.randomBytes(24).toString('hex');
+  const now = Date.now();
+  const lobby = {
+    roomCode,
+    heartbeatToken,
+    hostName,
+    note,
+    version,
+    port,
+    joinAddress,
+    publicAddressHint: publicAddressHint || joinAddress,
+    isPublic,
+    createdAt: now,
+    updatedAt: now,
+    expiresAt: now + CITY_RAID_LOBBY_TTL_MS,
+  };
+  cityRaidLobbies.set(roomCode, lobby);
+  pruneCityRaidLobbies();
+
+  sendJsonResponse(req, res, 201, {
+    ok: true,
+    roomCode,
+    heartbeatToken,
+    shareUrl: cityRaidShareUrl(roomCode),
+    lobby: publicCityRaidLobby(lobby),
+  });
+}
+
+async function handleCityRaidLobbyHeartbeatRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const roomCode = normalizeCityRaidRoomCode(body.roomCode);
+  const heartbeatToken = normalizeDeleteToken(body.heartbeatToken);
+  const lobby = activeCityRaidLobby(roomCode);
+  if (!lobby) {
+    sendJsonResponse(req, res, 404, {
+      ok: false,
+      error: 'City Raid lobby not found.',
+    });
+    return;
+  }
+
+  if (!heartbeatToken || heartbeatToken !== String(lobby.heartbeatToken || '')) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Heartbeat token did not match this City Raid room.',
+    });
+    return;
+  }
+
+  const note = sanitizeCityRaidField(body.note, 120);
+  const version = sanitizeCityRaidField(body.version, 32);
+  const publicAddressHint = sanitizeCityRaidField(body.publicAddressHint, 80);
+  const joinAddress = normalizeCityRaidJoinAddress(body.joinAddress, lobby.port);
+  lobby.updatedAt = Date.now();
+  lobby.expiresAt = lobby.updatedAt + CITY_RAID_LOBBY_TTL_MS;
+  if (note) {
+    lobby.note = note;
+  }
+  if (version) {
+    lobby.version = version;
+  }
+  if (publicAddressHint) {
+    lobby.publicAddressHint = publicAddressHint;
+  }
+  if (joinAddress) {
+    lobby.joinAddress = joinAddress;
+  }
+  cityRaidLobbies.set(roomCode, lobby);
+
+  sendJsonResponse(req, res, 200, {
+    ok: true,
+    lobby: publicCityRaidLobby(lobby),
+  });
+}
+
+async function handleCityRaidLobbyCloseRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const roomCode = normalizeCityRaidRoomCode(body.roomCode);
+  const heartbeatToken = normalizeDeleteToken(body.heartbeatToken);
+  const lobby = activeCityRaidLobby(roomCode);
+  if (!lobby) {
+    sendJsonResponse(req, res, 404, {
+      ok: false,
+      error: 'City Raid lobby not found.',
+    });
+    return;
+  }
+
+  if (!heartbeatToken || heartbeatToken !== String(lobby.heartbeatToken || '')) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Heartbeat token did not match this City Raid room.',
+    });
+    return;
+  }
+
+  cityRaidLobbies.delete(roomCode);
+  sendJsonResponse(req, res, 200, {
+    ok: true,
+    closedRoomCode: roomCode,
+  });
+}
+
+async function handleCityRaidLobbyResolveRequest(req, res, requestUrl) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  const roomCode = normalizeCityRaidRoomCode(requestUrl.searchParams.get('roomCode'));
+  const lobby = activeCityRaidLobby(roomCode);
+  if (!lobby) {
+    sendJsonResponse(req, res, 404, {
+      ok: false,
+      error: 'City Raid lobby not found or expired.',
+    });
+    return;
+  }
+
+  sendJsonResponse(req, res, 200, {
+    ok: true,
+    roomCode,
+    joinAddress: String(lobby.joinAddress || ''),
+    lobby: publicCityRaidLobby(lobby),
+  });
 }
 
 function sanitizeSongFileName(raw) {
@@ -2272,6 +2635,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/cityraid/lobbies') {
+    await handleCityRaidLobbiesRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/cityraid/lobbies/heartbeat') {
+    await handleCityRaidLobbyHeartbeatRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/cityraid/lobbies/close') {
+    await handleCityRaidLobbyCloseRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/cityraid/lobbies/resolve') {
+    await handleCityRaidLobbyResolveRequest(req, res, requestUrl);
+    return;
+  }
+
   if (requestUrl.pathname.startsWith('/media/songs/')) {
     handleSongMediaRequest(req, res, requestUrl);
     return;
@@ -2284,6 +2667,7 @@ const server = http.createServer(async (req, res) => {
     websocket: true,
     reviewsApi: '/api/reviews',
     songsApi: '/api/songs',
+    cityRaidApi: '/api/cityraid/lobbies',
   });
 });
 
@@ -2373,6 +2757,7 @@ wss.on('connection', (socket) => {
 });
 
 setInterval(tickRealtimeRooms, TICK_MS);
+setInterval(pruneCityRaidLobbies, 30 * 1000);
 cleanupRetiredSongs();
 
 server.listen(PORT, HOST, () => {

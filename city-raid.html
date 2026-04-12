@@ -14,9 +14,9 @@
     <header class="topbar">
       <a class="back-link" href="index.html">Back to Nova Arcade</a>
       <div class="topbar-badges">
-        <span class="badge">Windows Download</span>
+        <span class="badge">Windows Co-op Download</span>
         <span class="badge ghost">Unreal Engine 5</span>
-        <span class="badge ghost">Updated Apr 2026</span>
+        <span class="badge ghost">Room Codes + Lobby Links</span>
       </div>
     </header>
 
@@ -26,28 +26,29 @@
           <p class="eyebrow">Fresh city combat prototype</p>
           <h1>City Raid</h1>
           <p class="lede">
-            City Raid is the latest Unreal prototype in the Nova lineup: a stripped-down urban survival run with wave pressure,
-            long-range beacon markers, and a custom hero-style pass before you deploy into the block.
+            City Raid is now a downloadable Unreal co-op build with website-powered room codes, live lobby links,
+            and quick host or join helpers so you can pull a friend straight into the block.
           </p>
 
           <div class="cta-row">
-            <a class="btn btn-primary" href="https://media.githubusercontent.com/media/bnapsen/backend/main/assets/downloads/city-raid/City-Raid-Win64.zip?v=20260412a">Download for Windows</a>
-            <a class="btn btn-primary" href="#screens">See Screenshots</a>
+            <a id="city-raid-download-link" class="btn btn-primary" href="https://media.githubusercontent.com/media/bnapsen/backend/main/assets/downloads/city-raid/City-Raid-Win64.zip?v=20260412b">Download for Windows</a>
+            <a class="btn btn-primary" href="#co-op">Join the Co-op Board</a>
+            <a class="btn btn-secondary" href="#screens">See Screenshots</a>
             <a class="btn btn-secondary" href="index.html#games">Back to Lineup</a>
           </div>
 
           <div class="spec-grid">
             <article class="spec-card">
               <span class="spec-label">Mode</span>
-              <strong>Single-player Unreal prototype</strong>
+              <strong>Solo or downloadable co-op listen-server raid</strong>
             </article>
             <article class="spec-card">
-              <span class="spec-label">Loop</span>
-              <strong>Wave defense, beacon chasing, and city-lane survival</strong>
+              <span class="spec-label">Website Layer</span>
+              <strong>Live lobbies, room codes, share links, and join lookup</strong>
             </article>
             <article class="spec-card">
               <span class="spec-label">Build Status</span>
-              <strong>Packaged Windows zip live with install helper</strong>
+              <strong>Packaged Windows zip live with host and join helpers</strong>
             </article>
           </div>
         </div>
@@ -55,6 +56,77 @@
         <div class="hero-media">
           <img src="city-raid-cover.svg" alt="City Raid cover art" />
         </div>
+      </section>
+
+      <section id="co-op" class="panel lobby-panel">
+        <div class="section-heading">
+          <p class="eyebrow">Co-op launch board</p>
+          <h2>Download it, host a room, or jump in with a room code</h2>
+        </div>
+
+        <div class="lobby-grid">
+          <article class="lobby-card">
+            <h3>Host a raid</h3>
+            <p>
+              Download the build, extract it, and run <code>HOST-CITY-RAID-MULTIPLAYER.bat</code>. The helper
+              registers your room on this page, prints a room code, keeps it alive while the game is open,
+              and gives you a share link for friends.
+            </p>
+            <ol class="steps compact">
+              <li>Download and extract the Windows zip.</li>
+              <li>Run <code>HOST-CITY-RAID-MULTIPLAYER.bat</code>.</li>
+              <li>Share the room code or share link it gives you.</li>
+            </ol>
+            <p class="fine-print">Default host flow uses port <code>7777</code>. If your router blocks it, the helper tells you what to forward.</p>
+          </article>
+
+          <article class="lobby-card join-card">
+            <h3>Join by room code</h3>
+            <p>Paste a City Raid room code and this page will resolve the current host address for you.</p>
+
+            <form id="city-raid-join-form" class="join-form">
+              <label class="sr-only" for="city-raid-room-code">City Raid room code</label>
+              <input id="city-raid-room-code" name="roomCode" type="text" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE" />
+              <button id="city-raid-resolve-button" class="btn btn-primary" type="submit">Find Room</button>
+            </form>
+            <p id="city-raid-join-status" class="panel-status" aria-live="polite"></p>
+
+            <div id="city-raid-join-result" class="join-result hidden">
+              <div class="join-result-header">
+                <strong id="city-raid-resolved-room-code">-----</strong>
+                <span id="city-raid-resolved-host-name" class="room-host-label">City Raid Host</span>
+              </div>
+              <p id="city-raid-resolved-note" class="join-note">Room ready to join.</p>
+              <div class="result-meta">
+                <span id="city-raid-resolved-version">Current build</span>
+                <span id="city-raid-resolved-updated">Fresh heartbeat</span>
+              </div>
+              <div class="copy-row">
+                <code id="city-raid-resolved-address">203.0.113.10:7777</code>
+                <button id="city-raid-copy-address" class="btn btn-secondary" type="button">Copy Address</button>
+              </div>
+              <div class="copy-row">
+                <code id="city-raid-launch-command">FIRSTPERSON.exe 203.0.113.10:7777</code>
+                <button id="city-raid-copy-command" class="btn btn-secondary" type="button">Copy Launch Line</button>
+              </div>
+              <a id="city-raid-share-link" class="share-link" href="https://bnapsen.com/city-raid.html" target="_blank" rel="noreferrer">Open room share link</a>
+              <p class="fine-print">After you extract the download, run <code>JOIN-CITY-RAID-MULTIPLAYER.bat</code> and paste this same room code, or launch the game with the copied address.</p>
+            </div>
+          </article>
+        </div>
+
+        <article class="lobby-card public-lobbies-card">
+          <div class="public-lobbies-header">
+            <div>
+              <h3>Public rooms live now</h3>
+              <p>These rooms refresh from the live backend. If a host closes the game, their room drops off automatically.</p>
+            </div>
+            <button id="city-raid-refresh-lobbies" class="btn btn-secondary" type="button">Refresh Board</button>
+          </div>
+          <p id="city-raid-lobbies-status" class="panel-status" aria-live="polite"></p>
+          <div id="city-raid-lobbies-empty" class="empty-state">No public City Raid rooms are live right now. Host one from the downloaded build and it will appear here.</div>
+          <div id="city-raid-lobbies-list" class="public-lobbies-list"></div>
+        </article>
       </section>
 
       <section class="panel detail-panel">
@@ -106,32 +178,33 @@
       <section class="panel status-panel">
         <div class="section-heading">
           <p class="eyebrow">Download notes</p>
-          <h2>Ready to download from the website</h2>
+          <h2>Ready to download, host, and join from the website</h2>
         </div>
         <div class="status-grid">
           <article class="status-card">
             <h3>What is in the zip</h3>
-            <p>The package includes the full City Raid Windows build, Unreal prerequisites, a quick-play launcher, and a one-click install assistant with shortcut creation.</p>
+            <p>The package includes the full City Raid Windows build, Unreal prerequisites, a quick-play launcher, the install assistant, and multiplayer host and join helpers.</p>
           </article>
           <article class="status-card">
-            <h3>Quick install flow</h3>
-            <p>Extract the zip, run <code>INSTALL-CITY-RAID.bat</code>, and the assistant copies the game into your local Programs folder with desktop and Start Menu shortcuts.</p>
+            <h3>Host flow</h3>
+            <p>Run <code>HOST-CITY-RAID-MULTIPLAYER.bat</code> to launch a listen-server, publish a room code, and keep the room live on this website while you play.</p>
           </article>
           <article class="status-card">
-            <h3>Direct play option</h3>
-            <p>If you do not want shortcuts, you can still open <code>PLAY-CITY-RAID.bat</code> or launch <code>FIRSTPERSON.exe</code> directly from the extracted folder.</p>
+            <h3>Join flow</h3>
+            <p>Run <code>JOIN-CITY-RAID-MULTIPLAYER.bat</code> and paste a room code, or copy a launch line from the live room board above.</p>
           </article>
         </div>
         <ol class="steps">
           <li>Download the Windows zip package.</li>
           <li>Extract the archive fully before trying to launch the game.</li>
-          <li>Run <code>INSTALL-CITY-RAID.bat</code> for the guided install assistant, or <code>PLAY-CITY-RAID.bat</code> for a portable launch.</li>
+          <li>Run <code>INSTALL-CITY-RAID.bat</code> for the guided install assistant, or jump straight into <code>HOST-CITY-RAID-MULTIPLAYER.bat</code> or <code>JOIN-CITY-RAID-MULTIPLAYER.bat</code>.</li>
         </ol>
-        <p class="fine-print">Portable build size: about 429 MB zipped and about 644 MB extracted.</p>
-        <p class="fine-print">Current build: packaged from the latest CityRaidTPS UE 5.2 project with wave HUD, beacon markers, the urban survival pass, and the helper installer flow for local play.</p>
-        <p class="fine-print">SHA-256: <code>FC4306112A3872A5E1EC593C7B2F273FA09667DEEE0E60D0BAF04F24E0D27A78</code></p>
+        <p class="fine-print">Portable build size: about 407 MB zipped and about 508 MB extracted.</p>
+        <p class="fine-print">Current build: repackaged from the latest CityRaidTPS UE 5.2 project as a cleaner Windows co-op download with wave HUD, beacon markers, and website-connected room helpers.</p>
+        <p class="fine-print">SHA-256: <code>9D4CC2A075C6D3B708AD58F6A4162B26A427B234CACA5DE23FA5E0D81DFE4941</code></p>
       </section>
     </main>
   </div>
+  <script src="city-raid.js"></script>
 </body>
 </html>
