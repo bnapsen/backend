@@ -122,6 +122,22 @@ async function readJson(url, options) {
     return payload;
 }
 
+function ensureLobbiesPayload(payload) {
+    if (!payload || !Array.isArray(payload.lobbies)) {
+        throw new Error("The City Raid lobby service is still deploying. Try again in a minute.");
+    }
+
+    return payload;
+}
+
+function ensureResolvedRoomPayload(payload) {
+    if (!payload || !payload.lobby || !payload.roomCode || !payload.joinAddress) {
+        throw new Error("City Raid room lookup is still deploying. Try again in a minute.");
+    }
+
+    return payload;
+}
+
 function showJoinResult(payload) {
     const lobby = payload && payload.lobby ? payload.lobby : {};
     const roomCode = safeText(payload.roomCode || lobby.roomCode, "-----");
@@ -234,12 +250,12 @@ async function loadLobbies() {
     setLobbiesStatus("Refreshing live rooms...");
 
     try {
-        const payload = await readJson(lobbiesEndpoint(), {
+        const payload = ensureLobbiesPayload(await readJson(lobbiesEndpoint(), {
             method: "GET",
             headers: {
                 Accept: "application/json",
             },
-        });
+        }));
         renderLobbies(payload.lobbies);
         setLobbiesStatus(payload.lobbies && payload.lobbies.length ? "" : "No public rooms are active right now.");
     } catch (error) {
@@ -260,12 +276,12 @@ async function resolveRoomCode(rawRoomCode) {
     setJoinStatus(`Resolving room ${roomCode}...`);
 
     try {
-        const payload = await readJson(resolveEndpoint(roomCode), {
+        const payload = ensureResolvedRoomPayload(await readJson(resolveEndpoint(roomCode), {
             method: "GET",
             headers: {
                 Accept: "application/json",
             },
-        });
+        }));
         showJoinResult(payload);
         setJoinStatus(`Room ${roomCode} is ready.`);
     } catch (error) {
