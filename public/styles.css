@@ -2,6 +2,7 @@
   --bg: #0f172a;
   --bg-accent: #172554;
   --panel: rgba(15, 23, 42, 0.82);
+  --panel-strong: rgba(15, 23, 42, 0.94);
   --panel-border: rgba(148, 163, 184, 0.24);
   --text: #e2e8f0;
   --muted: #94a3b8;
@@ -75,6 +76,10 @@ h1 {
   padding: 22px;
 }
 
+.setup-panel {
+  max-width: 560px;
+}
+
 .field,
 .join-row {
   display: flex;
@@ -107,12 +112,26 @@ button {
   color: var(--text);
   background: rgba(30, 41, 59, 0.92);
   cursor: pointer;
-  transition: transform 140ms ease, background 140ms ease, border-color 140ms ease;
+  transition:
+    transform 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 button:hover {
   transform: translateY(-1px);
   border-color: rgba(249, 115, 22, 0.55);
+}
+
+button:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid rgba(251, 146, 60, 0.9);
+  outline-offset: 2px;
 }
 
 button.primary {
@@ -138,9 +157,35 @@ button.primary {
   color: var(--muted);
 }
 
+.hint,
+.status,
+.goal-text,
+.winner-text,
+.your-progress,
+.activity-text {
+  margin: 0;
+}
+
 .status {
   min-height: 1.4rem;
-  margin: 14px 0 0;
+  margin-top: 14px;
+}
+
+.goal-text {
+  color: #cbd5e1;
+}
+
+.your-progress {
+  margin-top: 8px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.activity-text {
+  min-height: 3rem;
+  margin-top: 10px;
+  line-height: 1.45;
+  color: #cbd5e1;
 }
 
 .hidden {
@@ -163,15 +208,31 @@ button.primary {
   align-items: center;
 }
 
-.room-actions,
-.controls,
-.control-row {
+.room-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.controls {
+  display: grid;
   gap: 10px;
 }
 
+.control-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.controls button {
+  min-width: 0;
+  font-weight: 700;
+}
+
 .layout {
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) 320px;
 }
 
 .room-code {
@@ -182,16 +243,28 @@ button.primary {
 }
 
 .arena {
+  position: relative;
   display: grid;
   gap: 6px;
   aspect-ratio: 1;
+  padding: 4px;
+  border-radius: 22px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.62), rgba(15, 23, 42, 0.12)),
+    linear-gradient(135deg, rgba(249, 115, 22, 0.08), rgba(59, 130, 246, 0.06));
 }
 
 .cell {
   position: relative;
+  overflow: hidden;
   border-radius: 12px;
   background: linear-gradient(180deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.95));
   border: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.cell::after {
+  transition: transform 150ms ease;
 }
 
 .cell.star::before,
@@ -205,16 +278,31 @@ button.primary {
 .cell.star::before {
   background: radial-gradient(circle, #fff7ae 0%, var(--star) 60%, #eab308 100%);
   box-shadow: 0 0 24px rgba(253, 224, 71, 0.55);
+  animation: star-pulse 1.7s ease-in-out infinite;
+}
+
+.cell.star.star-fresh::before {
+  animation:
+    star-arrive 0.45s ease-out,
+    star-pulse 1.7s 0.45s ease-in-out infinite;
 }
 
 .cell.player::after {
   background: var(--player-color, #fff);
   border: 3px solid rgba(255, 255, 255, 0.25);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.28),
+    0 8px 18px rgba(15, 23, 42, 0.32);
+}
+
+.cell.player.player-shifted::after {
+  animation: player-hop 0.22s ease-out;
 }
 
 .cell.you {
   outline: 2px solid var(--you);
   outline-offset: -3px;
+  box-shadow: inset 0 0 0 1px rgba(248, 250, 252, 0.2);
 }
 
 .scoreboard {
@@ -231,8 +319,24 @@ button.primary {
   justify-content: space-between;
   gap: 16px;
   padding: 12px 14px;
+  border: 1px solid transparent;
   border-radius: 16px;
   background: rgba(30, 41, 59, 0.7);
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.scoreboard li.you-row {
+  background: rgba(71, 85, 105, 0.62);
+  border-color: rgba(248, 250, 252, 0.2);
+}
+
+.scoreboard li.leading {
+  border-color: rgba(253, 224, 71, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(253, 224, 71, 0.1);
 }
 
 .player-badge {
@@ -245,6 +349,145 @@ button.primary {
   width: 12px;
   height: 12px;
   border-radius: 999px;
+}
+
+.arena.feedback-move {
+  animation: arena-bump 0.22s ease-out;
+}
+
+.arena.feedback-blocked {
+  animation: arena-shake 0.3s ease-out;
+}
+
+.arena.feedback-score {
+  animation: arena-bloom 0.38s ease-out;
+}
+
+.arena.feedback-win {
+  animation: arena-win 0.72s ease-out;
+}
+
+.arena.feedback-reset {
+  animation: arena-reset 0.42s ease-out;
+}
+
+.arena.feedback-join {
+  animation: arena-join 0.3s ease-out;
+}
+
+@keyframes star-pulse {
+  0%,
+  100% {
+    transform: scale(0.94);
+    box-shadow: 0 0 20px rgba(253, 224, 71, 0.42);
+  }
+  50% {
+    transform: scale(1);
+    box-shadow: 0 0 30px rgba(253, 224, 71, 0.66);
+  }
+}
+
+@keyframes star-arrive {
+  0% {
+    transform: scale(0.25);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes player-hop {
+  0% {
+    transform: scale(0.86);
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes arena-bump {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.01);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes arena-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+  75% {
+    transform: translateX(-2px);
+  }
+}
+
+@keyframes arena-bloom {
+  0% {
+    box-shadow: inset 0 0 0 0 rgba(253, 224, 71, 0);
+  }
+  30% {
+    box-shadow: inset 0 0 0 10px rgba(253, 224, 71, 0.14);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 rgba(253, 224, 71, 0);
+  }
+}
+
+@keyframes arena-win {
+  0% {
+    transform: scale(1);
+    box-shadow: inset 0 0 0 0 rgba(251, 146, 60, 0);
+  }
+  30% {
+    transform: scale(1.01);
+    box-shadow: inset 0 0 0 12px rgba(251, 146, 60, 0.18);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: inset 0 0 0 0 rgba(251, 146, 60, 0);
+  }
+}
+
+@keyframes arena-reset {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes arena-join {
+  0% {
+    transform: scale(0.985);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 @media (max-width: 900px) {
@@ -263,10 +506,34 @@ button.primary {
     padding-top: 24px;
   }
 
-  .join-row,
-  .controls,
-  .control-row {
+  .join-row {
     flex-direction: column;
+  }
+
+  .room-actions {
+    justify-content: flex-start;
+  }
+
+  .room-actions button {
+    flex: 1 1 140px;
+  }
+
+  .controls {
+    gap: 12px;
+  }
+
+  .control-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

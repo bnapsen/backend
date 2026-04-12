@@ -51,6 +51,18 @@ This repo includes a `Dockerfile` and `render.yaml`, so you can deploy it as a D
 3. Render should detect `render.yaml` and deploy the app.
 4. After deploy, open your public `onrender.com` URL and share it.
 
+## Serve the Frontend from GitHub Pages
+
+If you want GitHub Pages to serve the browser UI while Render keeps the live game API:
+
+1. Keep the backend deployed on Render.
+2. Point `api.bnapsen.com` at your Render service.
+3. Let GitHub Pages publish the `public/` directory using `.github/workflows/deploy-pages.yml`.
+4. In your repository settings, configure the GitHub Pages custom domain as `bnapsen.com`.
+5. Point `bnapsen.com` and `www.bnapsen.com` at GitHub Pages instead of Render.
+
+The frontend in `public/app.js` automatically uses `https://api.bnapsen.com` when it is served from `bnapsen.com`, `www.bnapsen.com`, or a `github.io` Pages URL. Local development and Render-hosted same-origin mode still keep using relative `/api/*` requests.
+
 ## How to play
 
 - Create a room in the first browser tab

@@ -28,7 +28,7 @@
         </div>
       </div>
 
-      <p class="hint">Use arrow keys or WASD to move once you’re in.</p>
+      <p class="hint">Use arrow keys or WASD to move once you're in. Tap the controls on mobile.</p>
       <p class="status" id="status-text"></p>
     </section>
 
@@ -39,8 +39,9 @@
           <p class="room-code" id="room-code">-----</p>
         </div>
         <div class="room-actions">
-          <button id="copy-button">Copy code</button>
-          <button id="reset-button">New round</button>
+          <button id="sound-button" type="button" aria-pressed="true">Sound: On</button>
+          <button id="copy-button" type="button">Copy code</button>
+          <button id="reset-button" type="button">New round</button>
         </div>
       </div>
 
@@ -52,7 +53,8 @@
         <aside class="panel sidebar">
           <div>
             <p class="label">Goal</p>
-            <p class="goal-text">First to 5 stars wins.</p>
+            <p class="goal-text" id="goal-text">First to 5 stars wins.</p>
+            <p class="your-progress" id="your-progress">You are at 0 / 5.</p>
           </div>
           <div>
             <p class="label">Players</p>
@@ -61,13 +63,14 @@
           <div>
             <p class="label">Round status</p>
             <p class="winner-text" id="winner-text">Waiting for players...</p>
+            <p class="activity-text" id="activity-text" aria-live="polite">Share a room code to get the race started.</p>
           </div>
           <div class="controls">
-            <button data-direction="up">Up</button>
+            <button data-direction="up" type="button">Up</button>
             <div class="control-row">
-              <button data-direction="left">Left</button>
-              <button data-direction="down">Down</button>
-              <button data-direction="right">Right</button>
+              <button data-direction="left" type="button">Left</button>
+              <button data-direction="down" type="button">Down</button>
+              <button data-direction="right" type="button">Right</button>
             </div>
           </div>
         </aside>
@@ -78,4 +81,3 @@
   <script src="/app.js" type="module"></script>
 </body>
 </html>
-
