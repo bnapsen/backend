@@ -1,0 +1,312 @@
+.jukebox-body {
+    background:
+        radial-gradient(circle at 18% 12%, rgba(255, 154, 74, 0.16), transparent 28%),
+        radial-gradient(circle at 82% 10%, rgba(114, 236, 255, 0.16), transparent 26%),
+        linear-gradient(180deg, #07111d 0%, #040914 100%);
+}
+
+.jukebox-shell {
+    position: relative;
+    z-index: 1;
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 1.35rem 1.2rem 2.6rem;
+}
+
+.jukebox-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    color: var(--accent);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.jukebox-back-link::before {
+    content: "<";
+    font-size: 1rem;
+}
+
+.jukebox-hero,
+.jukebox-panel {
+    background: linear-gradient(165deg, rgba(11, 20, 36, 0.94), rgba(6, 13, 25, 0.92));
+    border: 1px solid var(--line);
+    box-shadow: 0 20px 56px rgba(1, 6, 14, 0.42);
+}
+
+.jukebox-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+    gap: 1.2rem;
+    padding: 1.3rem;
+    border-radius: 30px;
+    overflow: hidden;
+    position: relative;
+}
+
+.jukebox-hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.06), transparent 25%, transparent 72%, rgba(114, 236, 255, 0.08)),
+        repeating-linear-gradient(
+            135deg,
+            transparent 0,
+            transparent 24px,
+            rgba(255, 255, 255, 0.018) 24px,
+            rgba(255, 255, 255, 0.018) 25px
+        );
+    opacity: 0.55;
+}
+
+.jukebox-copy,
+.jukebox-feature {
+    position: relative;
+    z-index: 1;
+}
+
+.jukebox-copy {
+    padding: 0.8rem 0.6rem 0.4rem;
+}
+
+.jukebox-copy h1 {
+    margin: 0.9rem 0 0.8rem;
+    font-family: var(--display);
+    font-size: clamp(3rem, 8vw, 6rem);
+    line-height: 0.92;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, #fff3d4 0%, #ffaf6d 42%, #72ecff 100%);
+    -webkit-background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 30px rgba(114, 236, 255, 0.2);
+}
+
+.jukebox-lede {
+    max-width: 700px;
+    margin: 0;
+    color: var(--muted);
+    font-size: 1.06rem;
+}
+
+.jukebox-highlights {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.9rem;
+    margin-top: 1.5rem;
+}
+
+.jukebox-stat,
+.jukebox-feature,
+.song-card {
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        linear-gradient(140deg, rgba(255, 154, 74, 0.08), transparent 30%),
+        rgba(4, 10, 19, 0.72);
+}
+
+.jukebox-stat {
+    padding: 1rem 1.05rem;
+}
+
+.jukebox-stat strong {
+    display: block;
+    font-family: var(--display);
+    font-size: 1.35rem;
+    letter-spacing: 0.05em;
+}
+
+.jukebox-stat span {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--muted);
+}
+
+.jukebox-feature {
+    display: grid;
+    gap: 0.8rem;
+    align-self: stretch;
+    padding: 1.15rem;
+}
+
+.jukebox-feature h2,
+.jukebox-panel-head h2 {
+    margin: 0;
+    font-family: var(--display);
+    letter-spacing: 0.04em;
+}
+
+.jukebox-feature p,
+.jukebox-panel-head p,
+.songs-status,
+.jukebox-upload-note,
+.song-description,
+.song-meta {
+    color: var(--muted);
+}
+
+.jukebox-feature audio,
+.song-player audio {
+    width: 100%;
+}
+
+.jukebox-grid {
+    display: grid;
+    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+    gap: 1rem;
+    margin-top: 1.4rem;
+}
+
+.jukebox-panel {
+    border-radius: 28px;
+    padding: 1.1rem;
+}
+
+.jukebox-panel-head {
+    display: grid;
+    gap: 0.55rem;
+    margin-bottom: 1rem;
+}
+
+.jukebox-panel-head--library {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+}
+
+.song-upload-form {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.song-upload-form input[type="file"] {
+    padding: 0.75rem 0.85rem;
+}
+
+.jukebox-upload-note {
+    margin-top: -0.2rem;
+    font-size: 0.94rem;
+    line-height: 1.55;
+}
+
+.song-count-badge {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 0.42rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid rgba(114, 236, 255, 0.22);
+    background: rgba(114, 236, 255, 0.08);
+    color: var(--accent);
+    font-size: 0.92rem;
+    font-weight: 700;
+}
+
+.songs-status {
+    min-height: 1.3rem;
+    margin: 0 0 0.75rem;
+}
+
+.songs-list {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.song-card {
+    padding: 1rem;
+}
+
+.song-card-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.8rem;
+    align-items: start;
+}
+
+.song-card h3,
+.song-credit,
+.song-description,
+.song-meta {
+    margin: 0;
+}
+
+.song-card h3 {
+    font-family: var(--display);
+    font-size: 1.35rem;
+    letter-spacing: 0.03em;
+}
+
+.song-source {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 154, 74, 0.28);
+    background: rgba(255, 154, 74, 0.12);
+    color: #ffd0a4;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.song-source--community {
+    border-color: rgba(114, 236, 255, 0.24);
+    background: rgba(114, 236, 255, 0.1);
+    color: var(--accent);
+}
+
+.song-credit {
+    margin-top: 0.4rem;
+    color: #d9f7ff;
+    font-weight: 600;
+}
+
+.song-description {
+    margin-top: 0.7rem;
+    line-height: 1.6;
+}
+
+.song-player {
+    margin-top: 0.95rem;
+}
+
+.song-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-top: 0.85rem;
+    font-size: 0.92rem;
+}
+
+.hidden {
+    display: none;
+}
+
+@media (max-width: 1080px) {
+    .jukebox-hero,
+    .jukebox-grid,
+    .jukebox-highlights {
+        grid-template-columns: 1fr;
+    }
+
+    .jukebox-panel-head--library,
+    .song-card-top {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .jukebox-shell {
+        padding: 1rem 0.9rem 1.8rem;
+    }
+
+    .jukebox-hero,
+    .jukebox-panel {
+        padding: 1rem;
+    }
+}

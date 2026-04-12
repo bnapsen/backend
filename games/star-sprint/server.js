@@ -5,6 +5,7 @@ const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const Busboy = require('busboy');
 const { WebSocketServer } = require('ws');
 const Chess = require('./chess-core.js');
 const Backgammon = require('./backgammon-core.js');
@@ -34,9 +35,37 @@ const ALLOWED_HTTP_ORIGIN_HOSTS = new Set([
 ]);
 const DATA_DIR = path.join(__dirname, 'data');
 const REVIEWS_FILE = path.join(DATA_DIR, 'reviews.json');
+const SONGS_FILE = path.join(DATA_DIR, 'songs.json');
+const SONG_UPLOAD_DIR = path.join(DATA_DIR, 'songs');
 const MAX_REVIEWS = 100;
 const MAX_VISIBLE_REVIEWS = 30;
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
+const MAX_SONGS = 80;
+const MAX_VISIBLE_SONGS = 40;
+const MAX_SONG_UPLOAD_BYTES = 50 * 1024 * 1024;
+const SONG_EXTENSION_TO_MIME = new Map([
+  ['.aac', 'audio/aac'],
+  ['.flac', 'audio/flac'],
+  ['.m4a', 'audio/mp4'],
+  ['.mp3', 'audio/mpeg'],
+  ['.ogg', 'audio/ogg'],
+  ['.wav', 'audio/wav'],
+]);
+const SEEDED_SONGS = Object.freeze([
+  {
+    id: 'seed-sude',
+    title: 'Sude',
+    artist: 'Ben Wagner',
+    uploaderName: 'Ben Wagner',
+    description: 'The first track inside Nova Jukebox.',
+    createdAt: '2026-04-12T12:26:58.000Z',
+    sizeBytes: 35835052,
+    mimeType: 'audio/wav',
+    storage: 'seeded',
+    audioPath: '/assets/music/sude.wav',
+    fileName: 'sude.wav',
+  },
+]);
 const rooms = new Map();
 const CHESS_TIME_CONTROLS = Object.freeze({
   untimed: {
@@ -212,11 +241,79 @@ function ensureDataDir() {
   }
 }
 
+function ensureSongUploadDir() {
+  ensureDataDir();
+  if (!fs.existsSync(SONG_UPLOAD_DIR)) {
+    fs.mkdirSync(SONG_UPLOAD_DIR, { recursive: true });
+  }
+}
+
 function sanitizeReviewField(raw, maxLength) {
   return String(raw || '')
     .trim()
     .replace(/\s+/g, ' ')
     .slice(0, maxLength);
+}
+
+function sanitizeSongField(raw, maxLength) {
+  return String(raw || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, maxLength);
+}
+
+function sanitizeSongFileName(raw) {
+  return path.basename(String(raw || ''))
+    .replace(/[^\w.\- ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+}
+
+function normalizeSongUploadType(fileName, mimeType) {
+  const extension = path.extname(String(fileName || '')).toLowerCase();
+  const allowedMimeType = SONG_EXTENSION_TO_MIME.get(extension);
+  if (!allowedMimeType) {
+    return null;
+  }
+
+  const normalizedMimeType = String(mimeType || '')
+    .split(';', 1)[0]
+    .trim()
+    .toLowerCase();
+
+  if (!normalizedMimeType) {
+    return {
+      extension,
+      mimeType: allowedMimeType,
+    };
+  }
+
+  const allowedMimeTypes = new Set([allowedMimeType]);
+  if (allowedMimeType === 'audio/wav') {
+    allowedMimeTypes.add('audio/x-wav');
+    allowedMimeTypes.add('audio/wave');
+  }
+  if (allowedMimeType === 'audio/mpeg') {
+    allowedMimeTypes.add('audio/mp3');
+    allowedMimeTypes.add('audio/x-mp3');
+  }
+  if (allowedMimeType === 'audio/mp4') {
+    allowedMimeTypes.add('audio/x-m4a');
+  }
+
+  if (!allowedMimeTypes.has(normalizedMimeType)) {
+    return null;
+  }
+
+  return {
+    extension,
+    mimeType: allowedMimeType,
+  };
+}
+
+function contentTypeForSongFile(fileName, fallback = 'application/octet-stream') {
+  return SONG_EXTENSION_TO_MIME.get(path.extname(String(fileName || '')).toLowerCase()) || fallback;
 }
 
 function readStoredReviews() {
@@ -251,6 +348,65 @@ function writeStoredReviews(reviews) {
 
 function visibleReviews() {
   return readStoredReviews().slice(0, MAX_VISIBLE_REVIEWS);
+}
+
+function readStoredSongs() {
+  if (!fs.existsSync(SONGS_FILE)) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SONGS_FILE, 'utf8'));
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .filter((entry) => entry && typeof entry === 'object')
+      .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
+      .slice(0, MAX_SONGS);
+  } catch (error) {
+    console.error('Failed to read stored songs:', error.message);
+    return [];
+  }
+}
+
+function writeStoredSongs(songs) {
+  ensureDataDir();
+  const nextSongs = songs
+    .filter((entry) => entry && typeof entry === 'object')
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
+    .slice(0, MAX_SONGS);
+  const tempFile = `${SONGS_FILE}.tmp`;
+  fs.writeFileSync(tempFile, JSON.stringify(nextSongs, null, 2));
+  fs.renameSync(tempFile, SONGS_FILE);
+  return nextSongs;
+}
+
+function publicSongEntry(song) {
+  const isUploaded = song.storage === 'uploaded';
+  return {
+    id: String(song.id || ''),
+    title: String(song.title || ''),
+    artist: String(song.artist || ''),
+    uploaderName: String(song.uploaderName || ''),
+    description: String(song.description || ''),
+    createdAt: String(song.createdAt || ''),
+    sizeBytes: Number(song.sizeBytes || 0),
+    mimeType: String(song.mimeType || ''),
+    source: isUploaded ? 'community' : 'featured',
+    audioPath: isUploaded
+      ? `/media/songs/${encodeURIComponent(String(song.storageName || ''))}`
+      : String(song.audioPath || ''),
+    originalFileName: String(song.fileName || ''),
+  };
+}
+
+function visibleSongs() {
+  return [...readStoredSongs(), ...SEEDED_SONGS]
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
+    .slice(0, MAX_VISIBLE_SONGS)
+    .map(publicSongEntry);
 }
 
 function readJsonBody(req) {
@@ -365,6 +521,348 @@ async function handleReviewsRequest(req, res) {
       error: 'Unable to save the review right now.',
     });
   }
+}
+
+function readSongUpload(req) {
+  return new Promise((resolve, reject) => {
+    const contentType = String(req.headers['content-type'] || '').toLowerCase();
+    if (!contentType.includes('multipart/form-data')) {
+      reject(new Error('Song uploads require multipart/form-data.'));
+      return;
+    }
+
+    let settled = false;
+    let uploadedFile = null;
+    let invalidFileType = false;
+    let fileTooLarge = false;
+    const fields = {};
+
+    function fail(error) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(error);
+    }
+
+    function succeed(payload) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(payload);
+    }
+
+    const busboy = Busboy({
+      headers: req.headers,
+      limits: {
+        files: 1,
+        fields: 8,
+        fileSize: MAX_SONG_UPLOAD_BYTES,
+      },
+    });
+
+    busboy.on('field', (name, value) => {
+      if (!name) {
+        return;
+      }
+      fields[String(name)] = String(value || '');
+    });
+
+    busboy.on('file', (fieldName, file, info) => {
+      if (fieldName !== 'songFile' || uploadedFile) {
+        file.resume();
+        return;
+      }
+
+      const originalFileName = sanitizeSongFileName(info.filename);
+      const normalizedUpload = normalizeSongUploadType(originalFileName, info.mimeType);
+      if (!originalFileName || !normalizedUpload) {
+        invalidFileType = true;
+        file.resume();
+        return;
+      }
+
+      const chunks = [];
+      let sizeBytes = 0;
+      uploadedFile = {
+        originalFileName,
+        mimeType: normalizedUpload.mimeType,
+        sizeBytes: 0,
+        buffer: null,
+      };
+
+      file.on('data', (chunk) => {
+        chunks.push(chunk);
+        sizeBytes += chunk.length;
+      });
+
+      file.on('limit', () => {
+        fileTooLarge = true;
+      });
+
+      file.on('end', () => {
+        if (fileTooLarge) {
+          return;
+        }
+        uploadedFile.sizeBytes = sizeBytes;
+        uploadedFile.buffer = Buffer.concat(chunks);
+      });
+    });
+
+    busboy.on('filesLimit', () => {
+      fail(new Error('Upload only one song at a time.'));
+    });
+
+    busboy.on('error', fail);
+
+    busboy.on('finish', () => {
+      if (settled) {
+        return;
+      }
+
+      if (fileTooLarge) {
+        fail(new Error('Song uploads must be 50 MB or smaller.'));
+        return;
+      }
+
+      if (invalidFileType) {
+        fail(new Error('Upload a supported audio file: mp3, wav, ogg, m4a, aac, or flac.'));
+        return;
+      }
+
+      if (!uploadedFile) {
+        fail(new Error('Choose an audio file to upload.'));
+        return;
+      }
+
+      if (!uploadedFile.buffer || uploadedFile.sizeBytes <= 0) {
+        fail(new Error('That audio file could not be read.'));
+        return;
+      }
+
+      succeed({
+        fields,
+        file: uploadedFile,
+      });
+    });
+
+    req.pipe(busboy);
+  });
+}
+
+function persistUploadedSong(songFile) {
+  ensureSongUploadDir();
+  const extension = path.extname(songFile.originalFileName).toLowerCase();
+  const storageName = `${Date.now()}-${crypto.randomUUID()}${extension}`;
+  const tempPath = path.join(SONG_UPLOAD_DIR, `${storageName}.tmp`);
+  const finalPath = path.join(SONG_UPLOAD_DIR, storageName);
+  fs.writeFileSync(tempPath, songFile.buffer);
+  fs.renameSync(tempPath, finalPath);
+  return storageName;
+}
+
+async function handleSongsRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method === 'GET') {
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      songs: visibleSongs(),
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let upload;
+  try {
+    upload = await readSongUpload(req);
+  } catch (error) {
+    const statusCode = error.message.includes('50 MB') ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const title = sanitizeSongField(upload.fields.title, 80);
+  const artist = sanitizeSongField(upload.fields.artist, 80);
+  const uploaderName = sanitizeSongField(upload.fields.uploaderName || artist, 48);
+  const description = sanitizeSongField(upload.fields.description, 280);
+
+  if (!title || !uploaderName) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Track title and uploader name are required.',
+    });
+    return;
+  }
+
+  let storageName = '';
+  try {
+    storageName = persistUploadedSong(upload.file);
+    const song = {
+      id: crypto.randomUUID(),
+      title,
+      artist: artist || uploaderName,
+      uploaderName,
+      description,
+      createdAt: new Date().toISOString(),
+      sizeBytes: upload.file.sizeBytes,
+      mimeType: upload.file.mimeType,
+      storage: 'uploaded',
+      storageName,
+      fileName: upload.file.originalFileName,
+    };
+    const nextSongs = writeStoredSongs([song, ...readStoredSongs()]);
+    sendJsonResponse(req, res, 201, {
+      ok: true,
+      song: publicSongEntry(song),
+      songs: [...nextSongs, ...SEEDED_SONGS]
+        .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
+        .slice(0, MAX_VISIBLE_SONGS)
+        .map(publicSongEntry),
+    });
+  } catch (error) {
+    if (storageName) {
+      try {
+        fs.unlinkSync(path.join(SONG_UPLOAD_DIR, storageName));
+      } catch (cleanupError) {
+        // Best effort cleanup only.
+      }
+    }
+    console.error('Failed to persist song upload:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to save that song right now.',
+    });
+  }
+}
+
+function streamMediaFile(req, res, filePath, contentType) {
+  let stats;
+  try {
+    stats = fs.statSync(filePath);
+  } catch (error) {
+    sendJsonResponse(req, res, 404, {
+      ok: false,
+      error: 'Song not found.',
+    });
+    return;
+  }
+
+  if (!stats.isFile()) {
+    sendJsonResponse(req, res, 404, {
+      ok: false,
+      error: 'Song not found.',
+    });
+    return;
+  }
+
+  const baseHeaders = {
+    ...corsHeaders(req),
+    'Content-Type': contentType,
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'public, max-age=86400',
+  };
+  const rangeHeader = String(req.headers.range || '').trim();
+
+  if (rangeHeader.startsWith('bytes=')) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+    if (!match) {
+      res.writeHead(416, {
+        ...baseHeaders,
+        'Content-Range': `bytes */${stats.size}`,
+      });
+      res.end();
+      return;
+    }
+
+    let start;
+    let end;
+    if (!match[1] && match[2]) {
+      const suffixLength = Number(match[2]);
+      start = Math.max(stats.size - suffixLength, 0);
+      end = stats.size - 1;
+    } else {
+      start = Number(match[1] || 0);
+      end = match[2] ? Number(match[2]) : stats.size - 1;
+    }
+
+    if (
+      !Number.isFinite(start) ||
+      !Number.isFinite(end) ||
+      start < 0 ||
+      end < start ||
+      end >= stats.size
+    ) {
+      res.writeHead(416, {
+        ...baseHeaders,
+        'Content-Range': `bytes */${stats.size}`,
+      });
+      res.end();
+      return;
+    }
+
+    res.writeHead(206, {
+      ...baseHeaders,
+      'Content-Length': end - start + 1,
+      'Content-Range': `bytes ${start}-${end}/${stats.size}`,
+    });
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+    fs.createReadStream(filePath, { start, end }).pipe(res);
+    return;
+  }
+
+  res.writeHead(200, {
+    ...baseHeaders,
+    'Content-Length': stats.size,
+  });
+  if (req.method === 'HEAD') {
+    res.end();
+    return;
+  }
+  fs.createReadStream(filePath).pipe(res);
+}
+
+function handleSongMediaRequest(req, res, requestUrl) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  const storageName = decodeURIComponent(requestUrl.pathname.slice('/media/songs/'.length));
+  const safeStorageName = path.basename(storageName);
+  if (!safeStorageName || safeStorageName !== storageName) {
+    sendJsonResponse(req, res, 404, {
+      ok: false,
+      error: 'Song not found.',
+    });
+    return;
+  }
+
+  const filePath = path.join(SONG_UPLOAD_DIR, safeStorageName);
+  streamMediaFile(req, res, filePath, contentTypeForSongFile(filePath));
 }
 
 function sanitizeName(raw) {
@@ -1634,12 +2132,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/songs') {
+    await handleSongsRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith('/media/songs/')) {
+    handleSongMediaRequest(req, res, requestUrl);
+    return;
+  }
+
   sendJsonResponse(req, res, 200, {
     ok: true,
     service: 'nova-arcade-realtime',
     games: Object.keys(GAME_DEFS),
     websocket: true,
     reviewsApi: '/api/reviews',
+    songsApi: '/api/songs',
   });
 });
 

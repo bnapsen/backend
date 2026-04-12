@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nova Jukebox | Upload Songs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="jukebox.css">
+</head>
+<body class="jukebox-body">
+    <div class="jukebox-shell">
+        <a class="jukebox-back-link" href="index.html">Back to Nova Arcade</a>
+
+        <section class="jukebox-hero">
+            <div class="jukebox-copy">
+                <p class="eyebrow">Community upload deck</p>
+                <h1>Nova Jukebox</h1>
+                <p class="jukebox-lede">
+                    Give the arcade its own listening room. Upload songs, leave a note for the next visitor,
+                    and stream what the community drops in one shared playlist wall.
+                </p>
+
+                <div class="jukebox-highlights" aria-label="Nova Jukebox highlights">
+                    <article class="jukebox-stat">
+                        <strong>50 MB</strong>
+                        <span>max upload size per track</span>
+                    </article>
+                    <article class="jukebox-stat">
+                        <strong>6</strong>
+                        <span>audio formats supported</span>
+                    </article>
+                    <article class="jukebox-stat">
+                        <strong>Live</strong>
+                        <span>community shelf backed by Render</span>
+                    </article>
+                </div>
+            </div>
+
+            <aside class="jukebox-feature">
+                <p class="section-kicker">First Track In</p>
+                <h2>Sude</h2>
+                <p>The room launches with your first upload already spinning so the shelf never feels empty.</p>
+                <audio controls preload="none" src="assets/music/sude.wav"></audio>
+            </aside>
+        </section>
+
+        <main class="jukebox-grid">
+            <section class="jukebox-panel upload-panel">
+                <div class="jukebox-panel-head">
+                    <div>
+                        <p class="section-kicker">Open Mic</p>
+                        <h2>Upload a Song</h2>
+                    </div>
+                    <p>Drop a track, credit the artist, and let the next visitor hit play right away.</p>
+                </div>
+
+                <form id="song-upload-form" class="song-upload-form">
+                    <label class="review-field">
+                        <span>Track title</span>
+                        <input id="song-title" name="title" type="text" maxlength="80" placeholder="Sude" required>
+                    </label>
+
+                    <label class="review-field">
+                        <span>Artist name</span>
+                        <input id="song-artist" name="artist" type="text" maxlength="80" placeholder="Ben Wagner">
+                    </label>
+
+                    <label class="review-field">
+                        <span>Uploader name</span>
+                        <input id="song-uploader" name="uploaderName" type="text" maxlength="48" placeholder="Who is sending this in?" required>
+                    </label>
+
+                    <label class="review-field">
+                        <span>Short note</span>
+                        <textarea id="song-description" name="description" rows="5" maxlength="280" placeholder="Tell listeners what this track is about."></textarea>
+                    </label>
+
+                    <label class="review-field">
+                        <span>Audio file</span>
+                        <input id="song-file" name="songFile" type="file" accept=".aac,.flac,.m4a,.mp3,.ogg,.wav,audio/*" required>
+                    </label>
+
+                    <div class="jukebox-upload-note">
+                        Supported formats: WAV, MP3, OGG, M4A, AAC, FLAC.
+                        Keep each upload at or under 50 MB.
+                    </div>
+
+                    <button type="submit" class="btn btn-primary review-submit">Upload Track</button>
+                    <p id="song-upload-status" class="form-status" aria-live="polite"></p>
+                </form>
+            </section>
+
+            <section class="jukebox-panel library-panel">
+                <div class="jukebox-panel-head jukebox-panel-head--library">
+                    <div>
+                        <p class="section-kicker">Shared Shelf</p>
+                        <h2>Community Songs</h2>
+                    </div>
+                    <p id="song-count-badge" class="song-count-badge">Loading songs...</p>
+                </div>
+
+                <p id="songs-status" class="songs-status">Loading the jukebox...</p>
+                <p id="songs-empty" class="reviews-empty hidden">No songs have landed yet. Upload the first one above.</p>
+                <div id="songs-list" class="songs-list" aria-live="polite"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="jukebox.js" defer></script>
+</body>
+</html>
