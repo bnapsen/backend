@@ -2,7 +2,7 @@ services:
   - type: web
     name: star-sprint-backend
     runtime: node
-    autoDeploy: false
+    autoDeployTrigger: commit
     rootDir: games/star-sprint
     buildCommand: npm install
     startCommand: npm start
