@@ -23,6 +23,8 @@ const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const COLORS = ['white', 'black'];
 const TICK_MS = 50;
 const ALLOWED_HTTP_ORIGIN_HOSTS = new Set([
+  'bnapsen.com',
+  'www.bnapsen.com',
   'classiccarcollectorshub.com',
   'www.classiccarcollectorshub.com',
   'bnapsen.github.io',
