@@ -418,6 +418,8 @@ async function uploadSelectedFile(file) {
 
     const formData = new FormData();
     formData.append("songFile", file, file.name);
+    formData.append("title", inferTitleFromFileName(file.name));
+    formData.append("uploaderName", "Guest upload");
 
     try {
         const response = await fetch(songsEndpoint(), {
