@@ -1,5 +1,6 @@
 const PROD_SONGS_API_BASE = "https://backend-ujaa.onrender.com";
 const SONG_OWNERSHIP_STORAGE_KEY = "nova-jukebox:owned-uploads";
+const ALLOWED_SONG_EXTENSIONS = new Set([".aac", ".flac", ".m4a", ".mp3", ".ogg", ".wav"]);
 const FALLBACK_SONGS = [
     {
         id: "seed-sude",
@@ -17,12 +18,25 @@ const FALLBACK_SONGS = [
 ];
 
 const uploadForm = document.getElementById("song-upload-form");
+const fileInput = document.getElementById("song-file");
+const dropZone = document.getElementById("song-drop-zone");
+const pickButton = document.getElementById("song-pick-button");
+const previewPanel = document.getElementById("song-file-preview");
+const previewTitle = document.getElementById("song-preview-title");
+const previewStatus = document.getElementById("song-preview-status");
+const previewFileName = document.getElementById("song-preview-file-name");
+const previewMeta = document.getElementById("song-preview-meta");
+const previewAudio = document.getElementById("song-preview-audio");
 const uploadStatus = document.getElementById("song-upload-status");
 const songsStatus = document.getElementById("songs-status");
 const songsEmpty = document.getElementById("songs-empty");
 const songsList = document.getElementById("songs-list");
 const songCountBadge = document.getElementById("song-count-badge");
-const submitButton = uploadForm ? uploadForm.querySelector('button[type="submit"]') : null;
+
+const state = {
+    activePreviewUrl: "",
+    uploadInFlight: false,
+};
 
 function songsApiBase() {
     const explicit = typeof window.SONGS_API_BASE === "string" ? window.SONGS_API_BASE.trim() : "";
@@ -125,14 +139,9 @@ function setSongsStatus(message, isError = false) {
     songsStatus.style.color = isError ? "#ff9c8f" : "";
 }
 
-function setSubmitDisabled(disabled) {
-    if (!submitButton) {
-        return;
-    }
-
-    submitButton.disabled = disabled;
-    submitButton.style.opacity = disabled ? "0.7" : "";
-    submitButton.style.cursor = disabled ? "wait" : "";
+function setPreviewStatus(message, isError = false) {
+    previewStatus.textContent = message;
+    previewStatus.style.color = isError ? "#ff9c8f" : "";
 }
 
 function formatDate(isoDate) {
@@ -164,6 +173,78 @@ function formatBytes(bytes) {
 
     const digits = amount >= 100 || unitIndex === 0 ? 0 : 1;
     return `${amount.toFixed(digits)} ${units[unitIndex]}`;
+}
+
+function inferTitleFromFileName(fileName) {
+    return String(fileName || "")
+        .replace(/\.[^.]+$/, "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() || "Untitled Upload";
+}
+
+function fileExtension(fileName) {
+    const match = /\.([^.]+)$/.exec(String(fileName || ""));
+    return match ? `.${match[1].toLowerCase()}` : "";
+}
+
+function isSupportedSongFile(file) {
+    if (!file) {
+        return false;
+    }
+
+    if (String(file.type || "").toLowerCase().startsWith("audio/")) {
+        return true;
+    }
+
+    return ALLOWED_SONG_EXTENSIONS.has(fileExtension(file.name));
+}
+
+function releasePreviewUrl() {
+    if (state.activePreviewUrl) {
+        URL.revokeObjectURL(state.activePreviewUrl);
+        state.activePreviewUrl = "";
+    }
+}
+
+function setPreviewAudioSource(source) {
+    previewAudio.pause();
+    previewAudio.removeAttribute("src");
+    previewAudio.load();
+    if (!source) {
+        return;
+    }
+    previewAudio.src = source;
+}
+
+function showLocalPreview(file, statusMessage) {
+    releasePreviewUrl();
+    state.activePreviewUrl = URL.createObjectURL(file);
+    previewPanel.classList.remove("hidden");
+    previewTitle.textContent = inferTitleFromFileName(file.name);
+    previewFileName.textContent = file.name;
+    previewMeta.textContent = `${formatBytes(file.size)} · ${fileExtension(file.name).slice(1).toUpperCase() || "Audio file"}`;
+    setPreviewStatus(statusMessage);
+    setPreviewAudioSource(state.activePreviewUrl);
+}
+
+function showUploadedPreview(song, fallbackFile) {
+    previewPanel.classList.remove("hidden");
+    previewTitle.textContent = song.title || inferTitleFromFileName(fallbackFile?.name || "");
+    previewFileName.textContent = song.originalFileName || fallbackFile?.name || "";
+    previewMeta.textContent = `${formatBytes(song.sizeBytes || fallbackFile?.size || 0)} · Live on Nova Jukebox`;
+    setPreviewStatus("Uploaded live");
+    releasePreviewUrl();
+    setPreviewAudioSource(resolveAudioUrl(song));
+}
+
+function setDropZoneState({ dragging = false, busy = false } = {}) {
+    dropZone.classList.toggle("is-dragging", dragging);
+    dropZone.classList.toggle("is-busy", busy);
+    dropZone.setAttribute("aria-disabled", String(busy));
+    if (pickButton) {
+        pickButton.disabled = busy;
+    }
 }
 
 function trackCredit(song) {
@@ -316,15 +397,27 @@ async function loadSongs() {
     }
 }
 
-async function handleUpload(event) {
-    event.preventDefault();
-    if (!uploadForm) {
+async function uploadSelectedFile(file) {
+    if (state.uploadInFlight) {
         return;
     }
 
-    const formData = new FormData(uploadForm);
-    setSubmitDisabled(true);
-    setUploadStatus("Uploading track...");
+    if (!file) {
+        return;
+    }
+
+    if (!isSupportedSongFile(file)) {
+        setUploadStatus("Choose an audio file in WAV, MP3, OGG, M4A, AAC, or FLAC format.", true);
+        return;
+    }
+
+    state.uploadInFlight = true;
+    setDropZoneState({ busy: true });
+    setUploadStatus(`Uploading ${file.name}...`);
+    showLocalPreview(file, "Uploading now");
+
+    const formData = new FormData();
+    formData.append("songFile", file, file.name);
 
     try {
         const response = await fetch(songsEndpoint(), {
@@ -338,19 +431,121 @@ async function handleUpload(event) {
 
         if (payload.song && payload.song.id && payload.deleteToken) {
             rememberOwnedUpload(payload.song.id, payload.deleteToken);
+            showUploadedPreview(payload.song, file);
         }
-        uploadForm.reset();
-        setUploadStatus("Track uploaded. It is live now, and this browser can remove it later.");
+
         renderSongs(payload.songs || FALLBACK_SONGS);
         setSongsStatus("");
+        setUploadStatus(`${inferTitleFromFileName(file.name)} is live on the jukebox now.`);
+        fileInput.value = "";
     } catch (error) {
+        setPreviewStatus("Upload failed", true);
         setUploadStatus(error.message, true);
     } finally {
-        setSubmitDisabled(false);
+        state.uploadInFlight = false;
+        setDropZoneState({ busy: false });
     }
 }
 
-if (uploadForm && uploadStatus && songsStatus && songsEmpty && songsList && songCountBadge) {
-    uploadForm.addEventListener("submit", handleUpload);
+function handleFileSelection(fileList) {
+    const file = fileList && fileList[0];
+    if (!file) {
+        return;
+    }
+
+    uploadSelectedFile(file);
+}
+
+function openFilePicker() {
+    if (state.uploadInFlight) {
+        return;
+    }
+
+    fileInput.click();
+}
+
+function hasDraggedFiles(event) {
+    const types = event.dataTransfer ? Array.from(event.dataTransfer.types || []) : [];
+    return types.includes("Files");
+}
+
+function bindUploadInteractions() {
+    if (!uploadForm || !fileInput || !dropZone || !pickButton) {
+        return;
+    }
+
+    pickButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openFilePicker();
+    });
+
+    dropZone.addEventListener("click", () => {
+        openFilePicker();
+    });
+
+    dropZone.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+            return;
+        }
+        event.preventDefault();
+        openFilePicker();
+    });
+
+    fileInput.addEventListener("change", () => {
+        handleFileSelection(fileInput.files);
+    });
+
+    for (const eventName of ["dragenter", "dragover"]) {
+        dropZone.addEventListener(eventName, (event) => {
+            if (!hasDraggedFiles(event)) {
+                return;
+            }
+            event.preventDefault();
+            if (!state.uploadInFlight) {
+                setDropZoneState({ dragging: true, busy: false });
+            }
+        });
+    }
+
+    dropZone.addEventListener("dragleave", (event) => {
+        event.preventDefault();
+        if (!dropZone.contains(event.relatedTarget)) {
+            setDropZoneState({ dragging: false, busy: state.uploadInFlight });
+        }
+    });
+
+    dropZone.addEventListener("drop", (event) => {
+        if (!hasDraggedFiles(event)) {
+            return;
+        }
+        event.preventDefault();
+        setDropZoneState({ dragging: false, busy: state.uploadInFlight });
+        if (state.uploadInFlight) {
+            return;
+        }
+        handleFileSelection(event.dataTransfer.files);
+    });
+}
+
+if (
+    uploadForm &&
+    fileInput &&
+    dropZone &&
+    pickButton &&
+    previewPanel &&
+    previewTitle &&
+    previewStatus &&
+    previewFileName &&
+    previewMeta &&
+    previewAudio &&
+    uploadStatus &&
+    songsStatus &&
+    songsEmpty &&
+    songsList &&
+    songCountBadge
+) {
+    bindUploadInteractions();
     loadSongs();
+    window.addEventListener("beforeunload", releasePreviewUrl);
 }

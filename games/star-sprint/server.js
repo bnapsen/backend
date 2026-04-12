@@ -274,6 +274,15 @@ function sanitizeSongFileName(raw) {
     .slice(0, 120);
 }
 
+function inferSongTitle(fileName) {
+  const extension = path.extname(String(fileName || ''));
+  const baseName = path.basename(String(fileName || ''), extension)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return sanitizeSongField(baseName, 80) || 'Untitled Upload';
+}
+
 function normalizeSongUploadType(fileName, mimeType) {
   const extension = path.extname(String(fileName || '')).toLowerCase();
   const allowedMimeType = SONG_EXTENSION_TO_MIME.get(extension);
@@ -710,18 +719,10 @@ async function handleSongsRequest(req, res) {
     return;
   }
 
-  const title = sanitizeSongField(upload.fields.title, 80);
+  const title = sanitizeSongField(upload.fields.title, 80) || inferSongTitle(upload.file.originalFileName);
   const artist = sanitizeSongField(upload.fields.artist, 80);
-  const uploaderName = sanitizeSongField(upload.fields.uploaderName || artist, 48);
+  const uploaderName = sanitizeSongField(upload.fields.uploaderName || artist, 48) || 'Guest upload';
   const description = sanitizeSongField(upload.fields.description, 280);
-
-  if (!title || !uploaderName) {
-    sendJsonResponse(req, res, 400, {
-      ok: false,
-      error: 'Track title and uploader name are required.',
-    });
-    return;
-  }
 
   let storageName = '';
   try {

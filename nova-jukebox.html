@@ -54,41 +54,36 @@
                         <p class="section-kicker">Open Mic</p>
                         <h2>Upload a Song</h2>
                     </div>
-                    <p>Drop a track, credit the artist, and let the next visitor hit play right away.</p>
+                    <p>Drag a song in or click to choose one. The filename becomes the track title automatically.</p>
                 </div>
 
                 <form id="song-upload-form" class="song-upload-form">
-                    <label class="review-field">
-                        <span>Track title</span>
-                        <input id="song-title" name="title" type="text" maxlength="80" placeholder="Sude" required>
-                    </label>
+                    <input id="song-file" name="songFile" class="visually-hidden" type="file" accept=".aac,.flac,.m4a,.mp3,.ogg,.wav,audio/*">
 
-                    <label class="review-field">
-                        <span>Artist name</span>
-                        <input id="song-artist" name="artist" type="text" maxlength="80" placeholder="Ben Wagner">
-                    </label>
+                    <div id="song-drop-zone" class="song-drop-zone" tabindex="0" role="button" aria-describedby="song-drop-help song-upload-status">
+                        <p class="song-drop-kicker">Drop a song here</p>
+                        <h3>Drag and drop your track</h3>
+                        <p id="song-drop-help">Or click anywhere in this panel to choose a file. No text fields required.</p>
+                        <button id="song-pick-button" class="btn btn-primary song-pick-button" type="button">Choose Song</button>
+                    </div>
 
-                    <label class="review-field">
-                        <span>Uploader name</span>
-                        <input id="song-uploader" name="uploaderName" type="text" maxlength="48" placeholder="Who is sending this in?" required>
-                    </label>
-
-                    <label class="review-field">
-                        <span>Short note</span>
-                        <textarea id="song-description" name="description" rows="5" maxlength="280" placeholder="Tell listeners what this track is about."></textarea>
-                    </label>
-
-                    <label class="review-field">
-                        <span>Audio file</span>
-                        <input id="song-file" name="songFile" type="file" accept=".aac,.flac,.m4a,.mp3,.ogg,.wav,audio/*" required>
-                    </label>
+                    <section id="song-file-preview" class="song-file-preview hidden" aria-live="polite">
+                        <div class="song-file-preview-head">
+                            <div>
+                                <p class="song-preview-label">Ready to upload</p>
+                                <h3 id="song-preview-title">No song selected yet</h3>
+                            </div>
+                            <p id="song-preview-status" class="song-preview-status">Waiting for a file</p>
+                        </div>
+                        <p id="song-preview-file-name" class="song-preview-file-name"></p>
+                        <p id="song-preview-meta" class="song-preview-meta"></p>
+                        <audio id="song-preview-audio" controls preload="metadata"></audio>
+                    </section>
 
                     <div class="jukebox-upload-note">
                         Supported formats: WAV, MP3, OGG, M4A, AAC, FLAC.
-                        Keep each upload at or under 50 MB. Songs uploaded from this browser can be removed later with the in-page button.
+                        Keep each upload at or under 50 MB. Drop or choose a song and it uploads with the file name as the title.
                     </div>
-
-                    <button type="submit" class="btn btn-primary review-submit">Upload Track</button>
                     <p id="song-upload-status" class="form-status" aria-live="polite"></p>
                 </form>
             </section>
