@@ -14,7 +14,7 @@
     <header class="topbar">
       <a class="back-link" href="index.html">Back to Nova Arcade</a>
       <div class="topbar-badges">
-        <span class="badge">Featured Unreal Project</span>
+        <span class="badge">Windows Download</span>
         <span class="badge ghost">Unreal Engine 5</span>
         <span class="badge ghost">Updated Apr 2026</span>
       </div>
@@ -31,9 +31,9 @@
           </p>
 
           <div class="cta-row">
+            <a class="btn btn-primary" href="https://media.githubusercontent.com/media/bnapsen/backend/main/assets/downloads/city-raid/City-Raid-Win64.zip?v=20260412a">Download for Windows</a>
             <a class="btn btn-primary" href="#screens">See Screenshots</a>
             <a class="btn btn-secondary" href="index.html#games">Back to Lineup</a>
-            <span class="btn btn-disabled">Public Download Next</span>
           </div>
 
           <div class="spec-grid">
@@ -47,7 +47,7 @@
             </article>
             <article class="spec-card">
               <span class="spec-label">Build Status</span>
-              <strong>Playable locally, public Windows package coming next</strong>
+              <strong>Packaged Windows zip live with install helper</strong>
             </article>
           </div>
         </div>
@@ -105,23 +105,31 @@
 
       <section class="panel status-panel">
         <div class="section-heading">
-          <p class="eyebrow">Build status</p>
-          <h2>Featured on the site now, public package next</h2>
+          <p class="eyebrow">Download notes</p>
+          <h2>Ready to download from the website</h2>
         </div>
         <div class="status-grid">
           <article class="status-card">
-            <h3>What is live today</h3>
-            <p>City Raid now has its own feature page on the website and sits beside the rest of the Unreal work in the front-page lineup.</p>
+            <h3>What is in the zip</h3>
+            <p>The package includes the full City Raid Windows build, Unreal prerequisites, a quick-play launcher, and a one-click install assistant with shortcut creation.</p>
           </article>
           <article class="status-card">
-            <h3>What still needs packaging</h3>
-            <p>The project has a local Windows build, but it has not been bundled into a public downloadable zip yet, so this page stays honest about the current state.</p>
+            <h3>Quick install flow</h3>
+            <p>Extract the zip, run <code>INSTALL-CITY-RAID.bat</code>, and the assistant copies the game into your local Programs folder with desktop and Start Menu shortcuts.</p>
           </article>
           <article class="status-card">
-            <h3>Next clean upgrade</h3>
-            <p>Once the Windows package is zipped and dropped into the site assets, this page can gain a real download button just like Dragonfall.</p>
+            <h3>Direct play option</h3>
+            <p>If you do not want shortcuts, you can still open <code>PLAY-CITY-RAID.bat</code> or launch <code>FIRSTPERSON.exe</code> directly from the extracted folder.</p>
           </article>
         </div>
+        <ol class="steps">
+          <li>Download the Windows zip package.</li>
+          <li>Extract the archive fully before trying to launch the game.</li>
+          <li>Run <code>INSTALL-CITY-RAID.bat</code> for the guided install assistant, or <code>PLAY-CITY-RAID.bat</code> for a portable launch.</li>
+        </ol>
+        <p class="fine-print">Portable build size: about 429 MB zipped and about 644 MB extracted.</p>
+        <p class="fine-print">Current build: packaged from the latest CityRaidTPS UE 5.2 project with wave HUD, beacon markers, the urban survival pass, and the helper installer flow for local play.</p>
+        <p class="fine-print">SHA-256: <code>FC4306112A3872A5E1EC593C7B2F273FA09667DEEE0E60D0BAF04F24E0D27A78</code></p>
       </section>
     </main>
   </div>

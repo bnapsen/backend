@@ -153,13 +153,6 @@ body {
   background: rgba(255, 255, 255, 0.05);
 }
 
-.btn-disabled {
-  color: var(--muted);
-  border: 1px dashed rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.03);
-  cursor: default;
-}
-
 .spec-grid,
 .feature-grid,
 .gallery-grid,
@@ -242,6 +235,21 @@ body {
 .shot figcaption,
 .status-card p {
   margin: 0;
+  color: var(--muted);
+}
+
+.steps {
+  margin: 1rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--text);
+}
+
+.steps li + li {
+  margin-top: 0.45rem;
+}
+
+.fine-print {
+  margin: 0.85rem 0 0;
   color: var(--muted);
 }
 
