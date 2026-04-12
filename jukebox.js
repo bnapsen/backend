@@ -1,4 +1,5 @@
 const PROD_SONGS_API_BASE = "https://backend-ujaa.onrender.com";
+const SONG_OWNERSHIP_STORAGE_KEY = "nova-jukebox:owned-uploads";
 const FALLBACK_SONGS = [
     {
         id: "seed-sude",
@@ -43,6 +44,58 @@ function songsApiBase() {
 
 function songsEndpoint() {
     return `${songsApiBase()}/api/songs`;
+}
+
+function songDeleteEndpoint() {
+    return `${songsApiBase()}/api/songs/delete`;
+}
+
+function readOwnedUploads() {
+    try {
+        const raw = window.localStorage.getItem(SONG_OWNERSHIP_STORAGE_KEY);
+        if (!raw) {
+            return {};
+        }
+
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
+function writeOwnedUploads(ownedUploads) {
+    try {
+        window.localStorage.setItem(SONG_OWNERSHIP_STORAGE_KEY, JSON.stringify(ownedUploads));
+    } catch {
+        // Ignore storage failures in restrictive browsers.
+    }
+}
+
+function rememberOwnedUpload(songId, deleteToken) {
+    if (!songId || !deleteToken) {
+        return;
+    }
+
+    const ownedUploads = readOwnedUploads();
+    ownedUploads[songId] = deleteToken;
+    writeOwnedUploads(ownedUploads);
+}
+
+function forgetOwnedUpload(songId) {
+    if (!songId) {
+        return;
+    }
+
+    const ownedUploads = readOwnedUploads();
+    delete ownedUploads[songId];
+    writeOwnedUploads(ownedUploads);
+}
+
+function deleteTokenForSong(songId) {
+    const ownedUploads = readOwnedUploads();
+    const token = ownedUploads[songId];
+    return typeof token === "string" ? token : "";
 }
 
 function resolveAudioUrl(song) {
@@ -118,10 +171,50 @@ function trackCredit(song) {
     const uploader = String(song.uploaderName || "").trim();
 
     if (artist && uploader && artist.toLowerCase() !== uploader.toLowerCase()) {
-        return `${artist} · uploaded by ${uploader}`;
+        return `${artist} - uploaded by ${uploader}`;
     }
 
     return artist || uploader || "Community upload";
+}
+
+async function removeSong(songId, deleteButton) {
+    const deleteToken = deleteTokenForSong(songId);
+    if (!deleteToken) {
+        setSongsStatus("This browser does not have delete access for that upload.", true);
+        return;
+    }
+
+    if (!window.confirm("Remove this uploaded song from Nova Jukebox?")) {
+        return;
+    }
+
+    deleteButton.disabled = true;
+    deleteButton.textContent = "Removing...";
+
+    try {
+        const response = await fetch(songDeleteEndpoint(), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                songId,
+                deleteToken,
+            }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+            throw new Error(payload.error || "Unable to remove that upload.");
+        }
+
+        forgetOwnedUpload(songId);
+        renderSongs(payload.songs || FALLBACK_SONGS);
+        setSongsStatus("Upload removed from the jukebox.");
+    } catch (error) {
+        setSongsStatus(error.message, true);
+        deleteButton.disabled = false;
+        deleteButton.textContent = "Remove Upload";
+    }
 }
 
 function createSongCard(song) {
@@ -176,6 +269,23 @@ function createSongCard(song) {
 
     article.append(top, description, playerWrap, meta);
 
+    const deleteToken = deleteTokenForSong(song.id);
+    if (deleteToken && String(song.source || "") === "community") {
+        const actions = document.createElement("div");
+        actions.className = "song-actions";
+
+        const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
+        deleteButton.className = "song-remove-button";
+        deleteButton.textContent = "Remove Upload";
+        deleteButton.addEventListener("click", () => {
+            removeSong(song.id, deleteButton);
+        });
+
+        actions.appendChild(deleteButton);
+        article.appendChild(actions);
+    }
+
     return article;
 }
 
@@ -226,8 +336,11 @@ async function handleUpload(event) {
             throw new Error(payload.error || "Upload failed.");
         }
 
+        if (payload.song && payload.song.id && payload.deleteToken) {
+            rememberOwnedUpload(payload.song.id, payload.deleteToken);
+        }
         uploadForm.reset();
-        setUploadStatus("Track uploaded. It is live on the jukebox now.");
+        setUploadStatus("Track uploaded. It is live now, and this browser can remove it later.");
         renderSongs(payload.songs || FALLBACK_SONGS);
         setSongsStatus("");
     } catch (error) {

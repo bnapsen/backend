@@ -283,6 +283,40 @@
     font-size: 0.92rem;
 }
 
+.song-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.95rem;
+}
+
+.song-remove-button {
+    border: 1px solid rgba(255, 154, 74, 0.3);
+    background: rgba(255, 154, 74, 0.12);
+    color: #ffe0be;
+    padding: 0.72rem 1rem;
+    border-radius: 999px;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+        transform 180ms ease,
+        border-color 180ms ease,
+        background 180ms ease;
+}
+
+.song-remove-button:hover,
+.song-remove-button:focus-visible {
+    transform: translateY(-1px);
+    border-color: rgba(255, 154, 74, 0.5);
+    background: rgba(255, 154, 74, 0.18);
+}
+
+.song-remove-button:disabled {
+    cursor: wait;
+    opacity: 0.72;
+    transform: none;
+}
+
 .hidden {
     display: none;
 }

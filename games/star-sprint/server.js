@@ -262,6 +262,10 @@ function sanitizeSongField(raw, maxLength) {
     .slice(0, maxLength);
 }
 
+function normalizeDeleteToken(raw) {
+  return String(raw || '').trim().slice(0, 160);
+}
+
 function sanitizeSongFileName(raw) {
   return path.basename(String(raw || ''))
     .replace(/[^\w.\- ]+/g, ' ')
@@ -404,6 +408,13 @@ function publicSongEntry(song) {
 
 function visibleSongs() {
   return [...readStoredSongs(), ...SEEDED_SONGS]
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
+    .slice(0, MAX_VISIBLE_SONGS)
+    .map(publicSongEntry);
+}
+
+function publicSongsFromStored(storedSongs) {
+  return [...storedSongs, ...SEEDED_SONGS]
     .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
     .slice(0, MAX_VISIBLE_SONGS)
     .map(publicSongEntry);
@@ -717,6 +728,7 @@ async function handleSongsRequest(req, res) {
     storageName = persistUploadedSong(upload.file);
     const song = {
       id: crypto.randomUUID(),
+      deleteToken: crypto.randomBytes(24).toString('hex'),
       title,
       artist: artist || uploaderName,
       uploaderName,
@@ -732,10 +744,8 @@ async function handleSongsRequest(req, res) {
     sendJsonResponse(req, res, 201, {
       ok: true,
       song: publicSongEntry(song),
-      songs: [...nextSongs, ...SEEDED_SONGS]
-        .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
-        .slice(0, MAX_VISIBLE_SONGS)
-        .map(publicSongEntry),
+      deleteToken: song.deleteToken,
+      songs: publicSongsFromStored(nextSongs),
     });
   } catch (error) {
     if (storageName) {
@@ -749,6 +759,98 @@ async function handleSongsRequest(req, res) {
     sendJsonResponse(req, res, 500, {
       ok: false,
       error: 'Unable to save that song right now.',
+    });
+  }
+}
+
+async function handleSongDeleteRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const songId = sanitizeSongField(body.songId, 80);
+  const deleteToken = normalizeDeleteToken(body.deleteToken);
+  const legacyTitle = sanitizeSongField(body.legacyTitle, 80);
+  const legacyUploaderName = sanitizeSongField(body.legacyUploaderName, 48);
+  const legacyFileName = sanitizeSongFileName(body.legacyFileName);
+
+  if (!songId) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Song id is required.',
+    });
+    return;
+  }
+
+  const storedSongs = readStoredSongs();
+  const song = storedSongs.find((entry) => String(entry.id || '') === songId);
+  if (!song) {
+    sendJsonResponse(req, res, 404, {
+      ok: false,
+      error: 'Song not found.',
+    });
+    return;
+  }
+
+  const storedDeleteToken = normalizeDeleteToken(song.deleteToken);
+  const deleteByToken = Boolean(storedDeleteToken) && storedDeleteToken === deleteToken;
+  const deleteLegacySong =
+    !storedDeleteToken &&
+    legacyTitle === sanitizeSongField(song.title, 80) &&
+    legacyUploaderName === sanitizeSongField(song.uploaderName, 48) &&
+    legacyFileName === sanitizeSongFileName(song.fileName);
+
+  if (!deleteByToken && !deleteLegacySong) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Delete permission not found for that upload.',
+    });
+    return;
+  }
+
+  const nextSongs = storedSongs.filter((entry) => String(entry.id || '') !== songId);
+  try {
+    writeStoredSongs(nextSongs);
+    if (song.storage === 'uploaded' && song.storageName) {
+      const uploadPath = path.join(SONG_UPLOAD_DIR, String(song.storageName));
+      if (fs.existsSync(uploadPath)) {
+        fs.unlinkSync(uploadPath);
+      }
+    }
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      removedSongId: songId,
+      songs: publicSongsFromStored(nextSongs),
+    });
+  } catch (error) {
+    console.error('Failed to remove song:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to remove that song right now.',
     });
   }
 }
@@ -2134,6 +2236,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/songs') {
     await handleSongsRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/songs/delete') {
+    await handleSongDeleteRequest(req, res);
     return;
   }
 
