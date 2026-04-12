@@ -66,6 +66,9 @@ const SEEDED_SONGS = Object.freeze([
     fileName: 'sude.wav',
   },
 ]);
+const RETIRED_SONG_IDS = new Set([
+  'a491df71-e9ee-41c3-ba7f-ca60e7572375',
+]);
 const rooms = new Map();
 const CHESS_TIME_CONTROLS = Object.freeze({
   untimed: {
@@ -394,6 +397,30 @@ function writeStoredSongs(songs) {
   fs.writeFileSync(tempFile, JSON.stringify(nextSongs, null, 2));
   fs.renameSync(tempFile, SONGS_FILE);
   return nextSongs;
+}
+
+function cleanupRetiredSongs() {
+  const storedSongs = readStoredSongs();
+  const retiredSongs = storedSongs.filter((song) => RETIRED_SONG_IDS.has(String(song.id || '')));
+  if (retiredSongs.length === 0) {
+    return;
+  }
+
+  try {
+    const nextSongs = storedSongs.filter((song) => !RETIRED_SONG_IDS.has(String(song.id || '')));
+    writeStoredSongs(nextSongs);
+    ensureSongUploadDir();
+    for (const song of retiredSongs) {
+      if (song.storage === 'uploaded' && song.storageName) {
+        const uploadPath = path.join(SONG_UPLOAD_DIR, String(song.storageName));
+        if (fs.existsSync(uploadPath)) {
+          fs.unlinkSync(uploadPath);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to clean retired songs:', error.message);
+  }
 }
 
 function publicSongEntry(song) {
@@ -2346,6 +2373,7 @@ wss.on('connection', (socket) => {
 });
 
 setInterval(tickRealtimeRooms, TICK_MS);
+cleanupRetiredSongs();
 
 server.listen(PORT, HOST, () => {
   console.log(`Nova Arcade realtime server running at ws://${HOST}:${PORT}`);
