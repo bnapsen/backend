@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Spider Simulator cover art</title>
+  <desc id="desc">A dramatic spider-themed game cover with web lines, city lights, and a giant spider silhouette above the skyline.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#050812"/>
+      <stop offset="40%" stop-color="#11192e"/>
+      <stop offset="100%" stop-color="#1c120d"/>
+    </linearGradient>
+    <linearGradient id="haze" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#59b8ff" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#ff9052" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="titleGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#eff8ff"/>
+      <stop offset="55%" stop-color="#91d4ff"/>
+      <stop offset="100%" stop-color="#ffc084"/>
+    </linearGradient>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <circle cx="260" cy="150" r="250" fill="#2d8cff" opacity="0.18"/>
+  <circle cx="1330" cy="150" r="280" fill="#ff9b57" opacity="0.16"/>
+  <ellipse cx="860" cy="440" rx="760" ry="330" fill="url(#haze)"/>
+
+  <g stroke="#7dcfff" stroke-opacity="0.28" stroke-width="2" fill="none">
+    <path d="M800 0v420"/>
+    <path d="M800 42L610 376"/>
+    <path d="M800 42L990 376"/>
+    <path d="M800 42L454 520"/>
+    <path d="M800 42L1146 520"/>
+    <path d="M800 42L320 676"/>
+    <path d="M800 42L1280 676"/>
+    <path d="M468 284q332 96 664 0"/>
+    <path d="M352 446q448 128 896 0"/>
+    <path d="M242 626q558 152 1116 0"/>
+  </g>
+
+  <g fill="#0b1220">
+    <path d="M0 828L142 770L270 786L412 734L574 770L724 698L904 738L1072 678L1248 728L1432 664L1600 710V1000H0Z"/>
+    <path d="M0 884L154 840L292 852L458 802L632 842L810 780L988 834L1162 780L1330 836L1488 784L1600 812V1000H0Z" fill="#121a2b"/>
+  </g>
+
+  <g fill="#101a2d">
+    <rect x="114" y="340" width="128" height="374" rx="8"/>
+    <rect x="274" y="266" width="166" height="454" rx="10"/>
+    <rect x="478" y="350" width="112" height="370" rx="8"/>
+    <rect x="630" y="250" width="156" height="470" rx="10"/>
+    <rect x="836" y="212" width="144" height="506" rx="10"/>
+    <rect x="1024" y="318" width="118" height="400" rx="8"/>
+    <rect x="1188" y="254" width="174" height="464" rx="10"/>
+    <rect x="1394" y="356" width="98" height="362" rx="8"/>
+  </g>
+
+  <g fill="#9fd9ff" opacity="0.82">
+    <rect x="324" y="308" width="18" height="210" rx="9"/>
+    <rect x="706" y="302" width="16" height="246" rx="8"/>
+    <rect x="888" y="270" width="18" height="258" rx="9"/>
+    <rect x="1262" y="296" width="20" height="228" rx="10"/>
+  </g>
+
+  <g fill="#03070d" filter="url(#softGlow)">
+    <ellipse cx="848" cy="414" rx="132" ry="86"/>
+    <circle cx="780" cy="396" r="28"/>
+    <circle cx="916" cy="396" r="28"/>
+    <path d="M758 446q90 42 180 0" fill="none" stroke="#03070d" stroke-width="52" stroke-linecap="round"/>
+    <path d="M720 430L596 344M734 454L572 432M736 486L600 572M978 430L1102 344M962 454L1124 432M960 486L1096 572M760 360L668 258M944 360L1036 258" stroke="#03070d" stroke-width="22" stroke-linecap="round"/>
+  </g>
+
+  <g fill="url(#titleGlow)" font-family="Oxanium, Arial, sans-serif">
+    <text x="112" y="128" font-size="38" font-weight="700" letter-spacing="7">DOWNLOADABLE WINDOWS BUILD</text>
+    <text x="112" y="236" font-size="128" font-weight="800">SPIDER</text>
+    <text x="112" y="352" font-size="128" font-weight="800">SIMULATOR</text>
+    <text x="118" y="416" font-size="30" font-weight="600" letter-spacing="4" opacity="0.9">SWING. CLIMB. COCOON. SURVIVE THE SWARM.</text>
+  </g>
+
+  <g stroke="#ffbf8b" stroke-width="6" fill="none" opacity="0.78">
+    <circle cx="1294" cy="194" r="72"/>
+    <circle cx="1294" cy="194" r="118"/>
+    <path d="M1294 82v42M1294 264v42M1182 194h42M1364 194h42"/>
+  </g>
+</svg>

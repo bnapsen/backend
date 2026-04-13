@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Spider Simulator predator loop visual</title>
+  <desc id="desc">A stylized Spider Simulator close-up with a giant spider and cocoon-themed graphics.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f15"/>
+      <stop offset="55%" stop-color="#1a1622"/>
+      <stop offset="100%" stop-color="#27150f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#76d6ff" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#76d6ff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="eyeGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <circle cx="820" cy="440" r="360" fill="url(#glow)"/>
+  <g stroke="#6fcfff" stroke-opacity="0.22" stroke-width="3" fill="none">
+    <path d="M220 180q280 140 560 0t560 0"/>
+    <path d="M140 340q340 180 680 0t640 0"/>
+    <path d="M80 540q380 210 740 0t700 0"/>
+  </g>
+  <g fill="#05080e">
+    <ellipse cx="800" cy="470" rx="186" ry="118"/>
+    <ellipse cx="800" cy="360" rx="120" ry="88"/>
+    <ellipse cx="800" cy="278" rx="70" ry="56"/>
+  </g>
+  <g fill="#90ebff" filter="url(#eyeGlow)">
+    <ellipse cx="758" cy="260" rx="14" ry="18"/>
+    <ellipse cx="842" cy="260" rx="14" ry="18"/>
+    <ellipse cx="722" cy="282" rx="10" ry="14"/>
+    <ellipse cx="878" cy="282" rx="10" ry="14"/>
+  </g>
+  <g stroke="#05080e" stroke-width="28" stroke-linecap="round" fill="none">
+    <path d="M694 346L518 250"/>
+    <path d="M676 404L444 392"/>
+    <path d="M670 486L470 594"/>
+    <path d="M712 560L602 716"/>
+    <path d="M906 346L1082 250"/>
+    <path d="M924 404L1156 392"/>
+    <path d="M930 486L1130 594"/>
+    <path d="M888 560L998 716"/>
+  </g>
+  <g stroke="#f4f9ff" stroke-width="7" fill="none" opacity="0.92">
+    <path d="M1124 182c18 26 26 58 26 94 0 96-56 168-56 234 0 48 24 80 64 108-26 14-52 20-78 20-108 0-180-92-180-210 0-126 76-266 224-266z"/>
+    <path d="M1084 234c-16 28-24 62-24 100 0 62 18 118 42 162"/>
+    <path d="M1140 254c-14 22-22 52-22 90 0 42 10 82 30 118"/>
+  </g>
+  <g fill="#f6fbff" font-family="Oxanium, Arial, sans-serif">
+    <text x="100" y="102" font-size="34" font-weight="700" letter-spacing="5">PREDATOR LOOP //</text>
+    <text x="100" y="168" font-size="86" font-weight="800">WEB. COCOON. FEED.</text>
+    <text x="104" y="224" font-size="28" font-weight="600" letter-spacing="3" opacity="0.86">LOCK PREY DOWN, RECOVER HEALTH, AND BUILD VENOM BOMB CHARGE</text>
+  </g>
+</svg>
