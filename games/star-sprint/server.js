@@ -39,13 +39,6 @@ const SONGS_FILE = path.join(DATA_DIR, 'songs.json');
 const SONG_UPLOAD_DIR = path.join(DATA_DIR, 'songs');
 const CITY_RAID_DOWNLOAD_DIR = path.resolve(__dirname, '..', '..', 'assets', 'downloads', 'city-raid');
 const CITY_RAID_ZIP_NAME = 'City-Raid-Win64.zip';
-const CITY_RAID_ZIP_PARTS = Object.freeze([
-  `${CITY_RAID_ZIP_NAME}.part01`,
-  `${CITY_RAID_ZIP_NAME}.part02`,
-  `${CITY_RAID_ZIP_NAME}.part03`,
-  `${CITY_RAID_ZIP_NAME}.part04`,
-  `${CITY_RAID_ZIP_NAME}.part05`,
-]);
 const MAX_REVIEWS = 100;
 const MAX_VISIBLE_REVIEWS = 30;
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
@@ -1368,7 +1361,15 @@ function handleSongMediaRequest(req, res, requestUrl) {
 }
 
 async function getCityRaidZipPartStats() {
-  return Promise.all(CITY_RAID_ZIP_PARTS.map(async (partName) => {
+  const partNames = (await fs.promises.readdir(CITY_RAID_DOWNLOAD_DIR))
+    .filter((fileName) => fileName.startsWith(`${CITY_RAID_ZIP_NAME}.part`))
+    .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+
+  if (!partNames.length) {
+    throw new Error('Missing City Raid package parts.');
+  }
+
+  return Promise.all(partNames.map(async (partName) => {
     const filePath = path.join(CITY_RAID_DOWNLOAD_DIR, partName);
     const stats = await fs.promises.stat(filePath);
     if (!stats.isFile()) {
