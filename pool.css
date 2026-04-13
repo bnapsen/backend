@@ -34,6 +34,10 @@ body {
     var(--bg);
 }
 
+body.table-focus-active {
+  overflow: hidden;
+}
+
 body::before {
   content: "";
   position: fixed;
@@ -506,6 +510,41 @@ button:disabled {
   border: 1px solid rgba(255, 235, 208, 0.08);
 }
 
+.table-focus-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+  border-radius: 999px;
+  padding: 0.62rem 0.9rem;
+  color: var(--text);
+  background: rgba(7, 14, 22, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(10px);
+}
+
+.table-stage.mobile-focus {
+  position: fixed;
+  inset:
+    max(6px, env(safe-area-inset-top))
+    max(6px, env(safe-area-inset-right))
+    max(6px, env(safe-area-inset-bottom))
+    max(6px, env(safe-area-inset-left));
+  z-index: 1200;
+  width: auto;
+  min-height: 0;
+  height: auto;
+  aspect-ratio: auto;
+  border-radius: 24px;
+  padding: 10px;
+}
+
+.table-stage.mobile-focus .table-focus-btn {
+  top: 10px;
+  right: 10px;
+}
+
 #poolTable {
   position: absolute;
   inset: 12px;
@@ -864,6 +903,14 @@ button:disabled {
     aspect-ratio: 4 / 3.05;
   }
 
+  .table-focus-btn {
+    top: 8px;
+    right: 8px;
+    padding: 0.56rem 0.76rem;
+    font-size: 0.72rem;
+    backdrop-filter: none;
+  }
+
   #poolTable {
     inset: 8px;
     width: calc(100% - 16px);
@@ -920,6 +967,16 @@ button:disabled {
 
   .table-stage {
     aspect-ratio: 4 / 3.25;
+  }
+
+  .table-stage.mobile-focus {
+    inset:
+      max(4px, env(safe-area-inset-top))
+      max(4px, env(safe-area-inset-right))
+      max(4px, env(safe-area-inset-bottom))
+      max(4px, env(safe-area-inset-left));
+    border-radius: 18px;
+    padding: 8px;
   }
 
   .start-overlay {

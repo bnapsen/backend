@@ -57,6 +57,7 @@
     powerFill: document.getElementById('powerFill'),
     powerText: document.getElementById('powerText'),
     tableStage: document.getElementById('tableStage'),
+    tableFocusBtn: document.getElementById('tableFocusBtn'),
     boardColumn: document.querySelector('.board-column'),
     layout: document.getElementById('layout'),
     startOverlay: document.getElementById('startOverlay'),
@@ -95,6 +96,7 @@
     summarySignature: '',
     setupCollapsed: false,
     sidebarCollapsed: false,
+    mobileTableFocus: false,
     soundEnabled: true,
     audioTelemetry: null,
     lastShotSoundAt: 0,
@@ -174,6 +176,66 @@
       return Math.min(dpr, isAndroidDevice() ? 1.2 : 1.4);
     }
     return Math.min(dpr, 2);
+  }
+
+  function supportsStageFullscreen() {
+    return Boolean(ui.tableStage && typeof ui.tableStage.requestFullscreen === 'function');
+  }
+
+  function isStageFullscreen() {
+    return document.fullscreenElement === ui.tableStage;
+  }
+
+  function isTableFocusActive() {
+    return state.mobileTableFocus || isStageFullscreen();
+  }
+
+  async function enterTableFocusMode() {
+    if (!isMobileDeviceProfile() || isTableFocusActive()) {
+      return;
+    }
+    state.mobileTableFocus = true;
+    document.body.classList.add('table-focus-active');
+    ui.tableStage.classList.add('mobile-focus');
+    if (supportsStageFullscreen()) {
+      try {
+        await ui.tableStage.requestFullscreen({ navigationUI: 'hide' });
+      } catch (error) {
+        // CSS focus mode is a good fallback on mobile browsers that deny fullscreen.
+      }
+    }
+    updateTableFocusUi();
+    resizeCanvas();
+    queueDrawFrame();
+  }
+
+  async function exitTableFocusMode() {
+    state.mobileTableFocus = false;
+    if (isStageFullscreen() && typeof document.exitFullscreen === 'function') {
+      try {
+        await document.exitFullscreen();
+      } catch (error) {
+        // Ignore fullscreen exit issues and keep the CSS fallback cleared.
+      }
+    }
+    document.body.classList.remove('table-focus-active');
+    ui.tableStage.classList.remove('mobile-focus');
+    updateTableFocusUi();
+    resizeCanvas();
+    queueDrawFrame();
+  }
+
+  function updateTableFocusUi() {
+    if (!ui.tableFocusBtn) {
+      return;
+    }
+    const active = isTableFocusActive();
+    ui.tableFocusBtn.hidden = !isMobileDeviceProfile();
+    ui.tableFocusBtn.dataset.active = active ? 'true' : 'false';
+    ui.tableFocusBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    ui.tableFocusBtn.textContent = active ? 'Close full table' : 'Expand table';
+    document.body.classList.toggle('table-focus-active', active);
+    ui.tableStage.classList.toggle('mobile-focus', active);
   }
 
   function scrollTableIntoView(behavior = 'smooth') {
@@ -1356,6 +1418,10 @@
 
   function updatePowerUi() {
     ui.powerFill.style.width = `${Math.round(clamp(state.power / CUE_UI.maxPower, 0, 1) * 100)}%`;
+    if (isMobileDeviceProfile() && !isTableFocusActive()) {
+      ui.powerText.textContent = 'Tap the table once to expand it full-screen on your phone, then aim and shoot from the focused table view.';
+      return;
+    }
     if (state.aiming && canShoot()) {
       const percent = Math.max(5, Math.round(state.power * 100));
       ui.powerText.textContent = percent > 100
@@ -1566,6 +1632,7 @@
 
   function renderUi() {
     updateSoundToggleUi();
+    updateTableFocusUi();
     ui.inviteInput.value = state.roomCode ? buildInviteUrl() : '';
     ui.copyBtn.disabled = !state.roomCode || isSoloMode();
     ui.copyCodeBtn.disabled = !state.roomCode || isSoloMode();
@@ -2285,6 +2352,9 @@
         return true;
       }
     }
+    if (!isSoloMode() && state.snapshot && state.snapshot.moving) {
+      return true;
+    }
     if (state.aiming) {
       return true;
     }
@@ -2436,6 +2506,11 @@
   }
 
   function beginAim(event) {
+    if (isMobileDeviceProfile() && !isTableFocusActive()) {
+      event.preventDefault();
+      enterTableFocusMode();
+      return;
+    }
     if (!canShoot()) {
       return;
     }
@@ -2638,6 +2713,16 @@
   ui.soundToggleBtn.addEventListener('click', () => {
     setSoundEnabled(!state.soundEnabled, { preview: !state.soundEnabled });
   });
+  if (ui.tableFocusBtn) {
+    ui.tableFocusBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (isTableFocusActive()) {
+        exitTableFocusMode();
+      } else {
+        enterTableFocusMode();
+      }
+    });
+  }
   ui.toggleSetupBtn.addEventListener('click', () => {
     state.setupCollapsed = !state.setupCollapsed;
     savePanelPrefs();
@@ -2702,6 +2787,24 @@
   canvas.addEventListener('pointerup', finishAim);
   canvas.addEventListener('pointercancel', finishAim);
   window.addEventListener('resize', () => {
+    if (!isMobileDeviceProfile() && isTableFocusActive()) {
+      state.mobileTableFocus = false;
+      document.body.classList.remove('table-focus-active');
+      ui.tableStage.classList.remove('mobile-focus');
+    }
+    resizeCanvas();
+    updateTableFocusUi();
+    queueDrawFrame();
+  });
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => {
+      resizeCanvas();
+      updateTableFocusUi();
+      queueDrawFrame();
+    }, 90);
+  });
+  document.addEventListener('fullscreenchange', () => {
+    updateTableFocusUi();
     resizeCanvas();
     queueDrawFrame();
   });
