@@ -19,6 +19,14 @@ const VIDEO_EXTENSION_TO_MIME = new Map([
   ['.3gp', 'video/3gpp'],
   ['.3gpp', 'video/3gpp'],
 ]);
+const VIDEO_MIME_TO_EXTENSION = new Map([
+  ['video/mp4', '.mp4'],
+  ['video/x-m4v', '.m4v'],
+  ['video/quicktime', '.mov'],
+  ['video/webm', '.webm'],
+  ['video/3gpp', '.3gp'],
+  ['video/3gp', '.3gp'],
+]);
 
 function ensureDirectory(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -44,16 +52,20 @@ function inferClipTitle(fileName) {
 }
 
 function normalizeClipUploadType(fileName, mimeType) {
+  const normalizedMimeType = String(mimeType || '').toLowerCase();
   const extension = path.extname(String(fileName || '')).toLowerCase();
-  const allowedMimeType = VIDEO_EXTENSION_TO_MIME.get(extension);
+  const inferredExtension = VIDEO_EXTENSION_TO_MIME.has(extension)
+    ? extension
+    : VIDEO_MIME_TO_EXTENSION.get(normalizedMimeType || '') || '';
+  const allowedMimeType = VIDEO_EXTENSION_TO_MIME.get(inferredExtension);
+
   if (!allowedMimeType) {
     return null;
   }
 
-  const normalizedMimeType = String(mimeType || '').toLowerCase();
   if (!normalizedMimeType || normalizedMimeType.startsWith('video/')) {
     return {
-      extension,
+      extension: inferredExtension,
       mimeType: allowedMimeType,
     };
   }
