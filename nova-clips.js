@@ -28,7 +28,65 @@ const state = {
     uploadInFlight: false,
     observer: null,
     selectedFile: null,
+    audioUnlocked: false,
 };
+
+function updateMuteButtonState(video, muteButton) {
+    if (!muteButton) {
+        return;
+    }
+    muteButton.textContent = video.muted ? "Unmute" : "Mute";
+}
+
+async function playFeedVideo(video) {
+    const muteButton = video.parentElement?.querySelector(".clip-mute-toggle");
+    const userMuted = video.dataset.userMuted === "true";
+    const shouldTrySound = !userMuted;
+
+    if (shouldTrySound) {
+        video.muted = false;
+        video.defaultMuted = false;
+        updateMuteButtonState(video, muteButton);
+        try {
+            await video.play();
+            return;
+        } catch {
+            // Fall through to muted autoplay for browsers that block sound until user interaction.
+        }
+    }
+
+    video.muted = true;
+    video.defaultMuted = true;
+    updateMuteButtonState(video, muteButton);
+    try {
+        await video.play();
+    } catch {
+        // Ignore autoplay failures.
+    }
+}
+
+function unlockFeedAudio() {
+    if (state.audioUnlocked) {
+        return;
+    }
+
+    state.audioUnlocked = true;
+    clipsFeed.querySelectorAll("video[data-feed-video='true']").forEach((video) => {
+        if (video.dataset.userMuted === "true") {
+            return;
+        }
+        video.muted = false;
+        video.defaultMuted = false;
+        const muteButton = video.parentElement?.querySelector(".clip-mute-toggle");
+        updateMuteButtonState(video, muteButton);
+    });
+
+    clipsFeed
+        .querySelectorAll("video[data-feed-video='true'][data-in-view='true']")
+        .forEach((video) => {
+            playFeedVideo(video);
+        });
+}
 
 function clipsApiBase() {
     const explicit = typeof window.CLIPS_API_BASE === "string" ? window.CLIPS_API_BASE.trim() : "";
@@ -387,8 +445,10 @@ function attachFeedObserver() {
             }
 
             if (entry.isIntersecting && entry.intersectionRatio >= 0.65) {
-                video.play().catch(() => {});
+                video.dataset.inView = "true";
+                playFeedVideo(video);
             } else {
+                video.dataset.inView = "false";
                 video.pause();
             }
         });
@@ -415,7 +475,10 @@ function createClipCard(clip) {
     video.setAttribute("preload", "metadata");
     video.setAttribute("data-feed-video", "true");
     video.controls = true;
-    video.muted = true;
+    video.dataset.userMuted = "false";
+    video.dataset.inView = "false";
+    video.defaultMuted = false;
+    video.muted = false;
     video.poster = resolveClipUrl(clip.posterPath);
     video.src = resolveClipUrl(clip.videoPath);
     mediaShell.appendChild(video);
@@ -423,10 +486,22 @@ function createClipCard(clip) {
     const muteButton = document.createElement("button");
     muteButton.type = "button";
     muteButton.className = "clip-mute-toggle";
-    muteButton.textContent = "Unmute";
-    muteButton.addEventListener("click", () => {
-        video.muted = !video.muted;
-        muteButton.textContent = video.muted ? "Unmute" : "Mute";
+    updateMuteButtonState(video, muteButton);
+    muteButton.addEventListener("click", async () => {
+        const nextMuted = !video.muted;
+        video.dataset.userMuted = nextMuted ? "true" : "false";
+        if (!nextMuted) {
+            state.audioUnlocked = true;
+            video.muted = false;
+            video.defaultMuted = false;
+            updateMuteButtonState(video, muteButton);
+            await video.play().catch(() => {});
+            return;
+        }
+
+        video.muted = true;
+        video.defaultMuted = true;
+        updateMuteButtonState(video, muteButton);
     });
     mediaShell.appendChild(muteButton);
 
@@ -694,5 +769,8 @@ uploadForm?.addEventListener("keydown", async (event) => {
         await uploadClip(file);
     }
 });
+
+window.addEventListener("pointerdown", unlockFeedAudio, { once: true, capture: true });
+window.addEventListener("keydown", unlockFeedAudio, { once: true, capture: true });
 
 fetchClips();
