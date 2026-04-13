@@ -16,6 +16,13 @@ const MiniPool = require('./mini-pool-core.js');
 const ArcadeChat = require('./arcade-chat-core.js');
 const CarSoccer = require('./car-soccer-core.js');
 const ZombieSiege = require('./zombie-siege-core.js');
+const { createSongsStore } = require('./songs-store.js');
+const {
+  createSongMediaManager,
+  sanitizeSongFileName,
+  inferSongTitle,
+  normalizeSongUploadType,
+} = require('./song-media.js');
 const { createClipsStore } = require('./clips-store.js');
 const {
   createClipMediaManager,
@@ -60,14 +67,6 @@ const MAX_CITY_RAID_LOBBIES = 120;
 const CITY_RAID_ROOM_CODE_LENGTH = 5;
 const CITY_RAID_DEFAULT_PORT = 7777;
 const CITY_RAID_LOBBY_TTL_MS = 2 * 60 * 1000;
-const SONG_EXTENSION_TO_MIME = new Map([
-  ['.aac', 'audio/aac'],
-  ['.flac', 'audio/flac'],
-  ['.m4a', 'audio/mp4'],
-  ['.mp3', 'audio/mpeg'],
-  ['.ogg', 'audio/ogg'],
-  ['.wav', 'audio/wav'],
-]);
 const SEEDED_SONGS = Object.freeze([
   {
     id: 'seed-sude',
@@ -88,6 +87,15 @@ const RETIRED_SONG_IDS = new Set([
 ]);
 const rooms = new Map();
 const cityRaidLobbies = new Map();
+const songMediaManager = createSongMediaManager({
+  dataDir: DATA_DIR,
+});
+const songsStore = createSongsStore({
+  dataDir: DATA_DIR,
+  databaseUrl: process.env.DATABASE_URL || '',
+  maxSongs: MAX_SONGS,
+  maxVisibleSongs: MAX_VISIBLE_SONGS,
+});
 const clipMediaManager = createClipMediaManager({
   dataDir: DATA_DIR,
 });
@@ -273,11 +281,6 @@ function ensureDirectory(dirPath) {
 
 function ensureDataDir() {
   ensureDirectory(DATA_DIR);
-}
-
-function ensureSongUploadDir() {
-  ensureDataDir();
-  ensureDirectory(SONG_UPLOAD_DIR);
 }
 
 function bootstrapPersistentDataDir() {
@@ -713,69 +716,6 @@ async function handleCityRaidLobbyResolveRequest(req, res, requestUrl) {
   });
 }
 
-function sanitizeSongFileName(raw) {
-  return path.basename(String(raw || ''))
-    .replace(/[^\w.\- ]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 120);
-}
-
-function inferSongTitle(fileName) {
-  const extension = path.extname(String(fileName || ''));
-  const baseName = path.basename(String(fileName || ''), extension)
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return sanitizeSongField(baseName, 80) || 'Untitled Upload';
-}
-
-function normalizeSongUploadType(fileName, mimeType) {
-  const extension = path.extname(String(fileName || '')).toLowerCase();
-  const allowedMimeType = SONG_EXTENSION_TO_MIME.get(extension);
-  if (!allowedMimeType) {
-    return null;
-  }
-
-  const normalizedMimeType = String(mimeType || '')
-    .split(';', 1)[0]
-    .trim()
-    .toLowerCase();
-
-  if (!normalizedMimeType) {
-    return {
-      extension,
-      mimeType: allowedMimeType,
-    };
-  }
-
-  const allowedMimeTypes = new Set([allowedMimeType]);
-  if (allowedMimeType === 'audio/wav') {
-    allowedMimeTypes.add('audio/x-wav');
-    allowedMimeTypes.add('audio/wave');
-  }
-  if (allowedMimeType === 'audio/mpeg') {
-    allowedMimeTypes.add('audio/mp3');
-    allowedMimeTypes.add('audio/x-mp3');
-  }
-  if (allowedMimeType === 'audio/mp4') {
-    allowedMimeTypes.add('audio/x-m4a');
-  }
-
-  if (!allowedMimeTypes.has(normalizedMimeType)) {
-    return null;
-  }
-
-  return {
-    extension,
-    mimeType: allowedMimeType,
-  };
-}
-
-function contentTypeForSongFile(fileName, fallback = 'application/octet-stream') {
-  return SONG_EXTENSION_TO_MIME.get(path.extname(String(fileName || '')).toLowerCase()) || fallback;
-}
-
 function readStoredReviews() {
   if (!fs.existsSync(REVIEWS_FILE)) {
     return [];
@@ -810,65 +750,26 @@ function visibleReviews() {
   return readStoredReviews().slice(0, MAX_VISIBLE_REVIEWS);
 }
 
-function readStoredSongs() {
-  if (!fs.existsSync(SONGS_FILE)) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(fs.readFileSync(SONGS_FILE, 'utf8'));
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed
-      .filter((entry) => entry && typeof entry === 'object')
-      .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
-      .slice(0, MAX_SONGS);
-  } catch (error) {
-    console.error('Failed to read stored songs:', error.message);
-    return [];
-  }
-}
-
-function writeStoredSongs(songs) {
-  ensureDataDir();
-  const nextSongs = songs
-    .filter((entry) => entry && typeof entry === 'object')
-    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
-    .slice(0, MAX_SONGS);
-  const tempFile = `${SONGS_FILE}.tmp`;
-  fs.writeFileSync(tempFile, JSON.stringify(nextSongs, null, 2));
-  fs.renameSync(tempFile, SONGS_FILE);
-  return nextSongs;
-}
-
-function cleanupRetiredSongs() {
-  const storedSongs = readStoredSongs();
+async function cleanupRetiredSongs() {
+  const storedSongs = await songsStore.listStoredSongs(MAX_SONGS);
   const retiredSongs = storedSongs.filter((song) => RETIRED_SONG_IDS.has(String(song.id || '')));
-  if (retiredSongs.length === 0) {
+  if (!retiredSongs.length) {
     return;
   }
 
   try {
-    const nextSongs = storedSongs.filter((song) => !RETIRED_SONG_IDS.has(String(song.id || '')));
-    writeStoredSongs(nextSongs);
-    ensureSongUploadDir();
-    for (const song of retiredSongs) {
-      if (song.storage === 'uploaded' && song.storageName) {
-        const uploadPath = path.join(SONG_UPLOAD_DIR, String(song.storageName));
-        if (fs.existsSync(uploadPath)) {
-          fs.unlinkSync(uploadPath);
-        }
-      }
-    }
+    await Promise.all(retiredSongs.map(async (song) => {
+      await songsStore.deleteSong(song.id);
+      await songMediaManager.deleteSongAsset(song);
+    }));
   } catch (error) {
     console.error('Failed to clean retired songs:', error.message);
   }
 }
 
 function publicSongEntry(song) {
-  const isUploaded = song.storage === 'uploaded';
+  const isUploaded = !String(song.audioPath || '').trim();
+  const media = isUploaded ? songMediaManager.publicSongMedia(song) : null;
   return {
     id: String(song.id || ''),
     title: String(song.title || ''),
@@ -880,17 +781,15 @@ function publicSongEntry(song) {
     mimeType: String(song.mimeType || ''),
     source: isUploaded ? 'community' : 'featured',
     audioPath: isUploaded
-      ? `/media/songs/${encodeURIComponent(String(song.storageName || ''))}`
+      ? media.audioPath
       : String(song.audioPath || ''),
     originalFileName: String(song.fileName || ''),
   };
 }
 
-function visibleSongs() {
-  return [...readStoredSongs(), ...SEEDED_SONGS]
-    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
-    .slice(0, MAX_VISIBLE_SONGS)
-    .map(publicSongEntry);
+async function visibleSongs() {
+  const storedSongs = await songsStore.listVisibleSongs(MAX_VISIBLE_SONGS);
+  return publicSongsFromStored(storedSongs);
 }
 
 function publicSongsFromStored(storedSongs) {
@@ -1159,17 +1058,6 @@ function readSongUpload(req) {
 
     req.pipe(busboy);
   });
-}
-
-function persistUploadedSong(songFile) {
-  ensureSongUploadDir();
-  const extension = path.extname(songFile.originalFileName).toLowerCase();
-  const storageName = `${Date.now()}-${crypto.randomUUID()}${extension}`;
-  const tempPath = path.join(SONG_UPLOAD_DIR, `${storageName}.tmp`);
-  const finalPath = path.join(SONG_UPLOAD_DIR, storageName);
-  fs.writeFileSync(tempPath, songFile.buffer);
-  fs.renameSync(tempPath, finalPath);
-  return storageName;
 }
 
 function readClipUpload(req) {
@@ -1540,11 +1428,25 @@ async function handleClipMediaRequest(req, res, requestUrl, assetType) {
     return;
   }
 
-  const pathPrefix = assetType === 'video' ? '/media/clips/videos/' : '/media/clips/posters/';
-  const storageKey = decodeURIComponent(requestUrl.pathname.slice(pathPrefix.length));
+  const pathParts = requestUrl.pathname.split('/').filter(Boolean);
+  const providerPathIndex = pathParts[1] === 'clips' && (pathParts[2] === 'local' || pathParts[2] === 's3')
+    ? 2
+    : -1;
+  const storageProvider = providerPathIndex >= 0 ? pathParts[providerPathIndex] : 'local';
+  const expectedTypeIndex = providerPathIndex >= 0 ? providerPathIndex + 1 : 2;
+  const storageKeyIndex = expectedTypeIndex + 1;
+  const storageKey = decodeURIComponent(pathParts[storageKeyIndex] || '');
+
+  if (pathParts[expectedTypeIndex] !== `${assetType}s`) {
+    sendJsonResponse(req, res, 404, {
+      ok: false,
+      error: 'Clip media not found.',
+    });
+    return;
+  }
 
   try {
-    await clipMediaManager.streamAsset(req, res, assetType, storageKey, streamMediaFile);
+    await clipMediaManager.streamAsset(req, res, assetType, storageProvider, storageKey, streamMediaFile);
   } catch (error) {
     sendJsonResponse(req, res, error.code === 'NOT_FOUND' ? 404 : 500, {
       ok: false,
@@ -1565,7 +1467,7 @@ async function handleSongsRequest(req, res) {
   if (req.method === 'GET') {
     sendJsonResponse(req, res, 200, {
       ok: true,
-      songs: visibleSongs(),
+      songs: await visibleSongs(),
     });
     return;
   }
@@ -1595,9 +1497,8 @@ async function handleSongsRequest(req, res) {
   const uploaderName = sanitizeSongField(upload.fields.uploaderName || artist, 48) || 'Guest upload';
   const description = sanitizeSongField(upload.fields.description, 280);
 
-  let storageName = '';
   try {
-    storageName = persistUploadedSong(upload.file);
+    const persistedMedia = await songMediaManager.persistUpload(upload.file);
     const song = {
       id: crypto.randomUUID(),
       deleteToken: crypto.randomBytes(24).toString('hex'),
@@ -1608,11 +1509,13 @@ async function handleSongsRequest(req, res) {
       createdAt: new Date().toISOString(),
       sizeBytes: upload.file.sizeBytes,
       mimeType: upload.file.mimeType,
-      storage: 'uploaded',
-      storageName,
+      storageProvider: persistedMedia.storageProvider,
+      audioStorageKey: persistedMedia.audioStorageKey,
       fileName: upload.file.originalFileName,
+      status: 'active',
     };
-    const nextSongs = writeStoredSongs([song, ...readStoredSongs()]);
+    await songsStore.insertSong(song);
+    const nextSongs = await songsStore.listVisibleSongs(MAX_VISIBLE_SONGS);
     sendJsonResponse(req, res, 201, {
       ok: true,
       song: publicSongEntry(song),
@@ -1620,13 +1523,6 @@ async function handleSongsRequest(req, res) {
       songs: publicSongsFromStored(nextSongs),
     });
   } catch (error) {
-    if (storageName) {
-      try {
-        fs.unlinkSync(path.join(SONG_UPLOAD_DIR, storageName));
-      } catch (cleanupError) {
-        // Best effort cleanup only.
-      }
-    }
     console.error('Failed to persist song upload:', error.message);
     sendJsonResponse(req, res, 500, {
       ok: false,
@@ -1678,8 +1574,7 @@ async function handleSongDeleteRequest(req, res) {
     return;
   }
 
-  const storedSongs = readStoredSongs();
-  const song = storedSongs.find((entry) => String(entry.id || '') === songId);
+  const song = await songsStore.findSongById(songId);
   if (!song) {
     sendJsonResponse(req, res, 404, {
       ok: false,
@@ -1704,15 +1599,10 @@ async function handleSongDeleteRequest(req, res) {
     return;
   }
 
-  const nextSongs = storedSongs.filter((entry) => String(entry.id || '') !== songId);
   try {
-    writeStoredSongs(nextSongs);
-    if (song.storage === 'uploaded' && song.storageName) {
-      const uploadPath = path.join(SONG_UPLOAD_DIR, String(song.storageName));
-      if (fs.existsSync(uploadPath)) {
-        fs.unlinkSync(uploadPath);
-      }
-    }
+    await songsStore.deleteSong(songId);
+    await songMediaManager.deleteSongAsset(song);
+    const nextSongs = await songsStore.listVisibleSongs(MAX_VISIBLE_SONGS);
     sendJsonResponse(req, res, 200, {
       ok: true,
       removedSongId: songId,
@@ -1825,18 +1715,18 @@ function handleSongMediaRequest(req, res, requestUrl) {
     return;
   }
 
-  const storageName = decodeURIComponent(requestUrl.pathname.slice('/media/songs/'.length));
-  const safeStorageName = path.basename(storageName);
-  if (!safeStorageName || safeStorageName !== storageName) {
-    sendJsonResponse(req, res, 404, {
-      ok: false,
-      error: 'Song not found.',
-    });
-    return;
-  }
+  const pathParts = requestUrl.pathname.split('/').filter(Boolean);
+  const hasProvider = pathParts.length >= 4;
+  const storageProvider = hasProvider ? pathParts[2] : 'local';
+  const storageKey = decodeURIComponent(pathParts[hasProvider ? 3 : 2] || '');
 
-  const filePath = path.join(SONG_UPLOAD_DIR, safeStorageName);
-  streamMediaFile(req, res, filePath, contentTypeForSongFile(filePath));
+  songMediaManager.streamAsset(req, res, storageProvider, storageKey, streamMediaFile)
+    .catch((error) => {
+      sendJsonResponse(req, res, error.code === 'NOT_FOUND' ? 404 : 500, {
+        ok: false,
+        error: error.code === 'NOT_FOUND' ? 'Song not found.' : 'Unable to load song media.',
+      });
+    });
 }
 
 async function getCityRaidZipPartStats() {
@@ -3221,12 +3111,20 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (requestUrl.pathname.startsWith('/media/clips/videos/')) {
+  if (
+    requestUrl.pathname.startsWith('/media/clips/videos/') ||
+    requestUrl.pathname.startsWith('/media/clips/local/videos/') ||
+    requestUrl.pathname.startsWith('/media/clips/s3/videos/')
+  ) {
     await handleClipMediaRequest(req, res, requestUrl, 'video');
     return;
   }
 
-  if (requestUrl.pathname.startsWith('/media/clips/posters/')) {
+  if (
+    requestUrl.pathname.startsWith('/media/clips/posters/') ||
+    requestUrl.pathname.startsWith('/media/clips/local/posters/') ||
+    requestUrl.pathname.startsWith('/media/clips/s3/posters/')
+  ) {
     await handleClipMediaRequest(req, res, requestUrl, 'poster');
     return;
   }
@@ -3334,19 +3232,29 @@ wss.on('connection', (socket) => {
 
 setInterval(tickRealtimeRooms, TICK_MS);
 bootstrapPersistentDataDir();
-cleanupRetiredSongs();
 logStorageConfiguration();
+songMediaManager.ensureSongDirs();
+songMediaManager.logConfiguration();
 clipMediaManager.ensureClipDirs();
 clipMediaManager.logConfiguration();
 
-clipsStore.init()
-  .then(() => {
+Promise.all([
+  songsStore.init(),
+  clipsStore.init(),
+])
+  .then(async () => {
+    await Promise.all([
+      songMediaManager.ensureBucket(),
+      clipMediaManager.ensureBucket(),
+    ]);
+    await cleanupRetiredSongs();
+    console.log(`Song metadata store: ${songsStore.usesPostgres ? 'postgres' : 'local json'}`);
     console.log(`Clip metadata store: ${clipsStore.usesPostgres ? 'postgres' : 'local json'}`);
     server.listen(PORT, HOST, () => {
       console.log(`Nova Arcade realtime server running at ws://${HOST}:${PORT}`);
     });
   })
   .catch((error) => {
-    console.error('Failed to initialize clip services:', error.message);
+    console.error('Failed to initialize media services:', error.message);
     process.exit(1);
   });

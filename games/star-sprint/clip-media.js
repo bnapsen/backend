@@ -7,7 +7,14 @@ const path = require('path');
 const { promisify } = require('util');
 const ffmpegStatic = require('ffmpeg-static');
 const ffprobeStatic = require('ffprobe-static');
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  HeadBucketCommand,
+  CreateBucketCommand,
+} = require('@aws-sdk/client-s3');
 
 const execFile = promisify(childProcess.execFile);
 
@@ -82,6 +89,10 @@ function safeMediaKey(raw) {
   return key && key === String(raw || '').trim() ? key : '';
 }
 
+function storageProviderForEntry(storageProvider) {
+  return String(storageProvider || '').toLowerCase() === 's3' ? 's3' : 'local';
+}
+
 function createClipMediaManager({ dataDir }) {
   const clipsRootDir = path.join(dataDir, 'clips');
   const tempDir = path.join(clipsRootDir, 'tmp');
@@ -108,6 +119,7 @@ function createClipMediaManager({ dataDir }) {
       },
     })
     : null;
+  let bucketReadyPromise = null;
 
   function ensureClipDirs() {
     ensureDirectory(clipsRootDir);
@@ -116,6 +128,34 @@ function createClipMediaManager({ dataDir }) {
       ensureDirectory(videosDir);
       ensureDirectory(postersDir);
     }
+  }
+
+  async function ensureBucket() {
+    if (!s3Enabled) {
+      return;
+    }
+    if (!bucketReadyPromise) {
+      bucketReadyPromise = (async () => {
+        try {
+          await s3Client.send(new HeadBucketCommand({
+            Bucket: process.env.S3_BUCKET,
+          }));
+        } catch (error) {
+          const statusCode = Number(error && error.$metadata && error.$metadata.httpStatusCode);
+          const errorName = String(error && error.name || '');
+          if (statusCode !== 404 && errorName !== 'NotFound' && errorName !== 'NoSuchBucket') {
+            throw error;
+          }
+          await s3Client.send(new CreateBucketCommand({
+            Bucket: process.env.S3_BUCKET,
+          }));
+        }
+      })().catch((error) => {
+        bucketReadyPromise = null;
+        throw error;
+      });
+    }
+    await bucketReadyPromise;
   }
 
   async function runMediaTool(binaryPath, args) {
@@ -202,6 +242,7 @@ function createClipMediaManager({ dataDir }) {
     }
 
     if (s3Enabled) {
+      await ensureBucket();
       const prefix = assetType === 'video' ? 'clips/videos' : 'clips/posters';
       const body = await fs.promises.readFile(tempPath);
       await s3Client.send(new PutObjectCommand({
@@ -268,16 +309,19 @@ function createClipMediaManager({ dataDir }) {
   }
 
   function publicClipMedia(clip) {
+    const provider = storageProviderForEntry(clip.storageProvider);
     return {
-      videoPath: `/media/clips/videos/${encodeURIComponent(String(clip.videoStorageKey || ''))}`,
-      posterPath: `/media/clips/posters/${encodeURIComponent(String(clip.posterStorageKey || ''))}`,
+      videoPath: `/media/clips/${provider}/videos/${encodeURIComponent(String(clip.videoStorageKey || ''))}`,
+      posterPath: `/media/clips/${provider}/posters/${encodeURIComponent(String(clip.posterStorageKey || ''))}`,
     };
   }
 
   async function deleteClipAssets(clip) {
+    const provider = storageProviderForEntry(clip.storageProvider);
     const safeVideoKey = safeMediaKey(clip.videoStorageKey);
     const safePosterKey = safeMediaKey(clip.posterStorageKey);
-    if (s3Enabled) {
+    if (provider === 's3') {
+      await ensureBucket();
       const commands = [];
       if (safeVideoKey) {
         commands.push(s3Client.send(new DeleteObjectCommand({
@@ -301,7 +345,8 @@ function createClipMediaManager({ dataDir }) {
     ]);
   }
 
-  async function streamAsset(req, res, assetType, rawKey, streamLocalFile) {
+  async function streamAsset(req, res, assetType, rawProvider, rawKey, streamLocalFile) {
+    const provider = storageProviderForEntry(rawProvider);
     const safeKeyName = safeMediaKey(rawKey);
     if (!safeKeyName) {
       const error = new Error('Clip media not found.');
@@ -309,13 +354,14 @@ function createClipMediaManager({ dataDir }) {
       throw error;
     }
 
-    if (!s3Enabled) {
+    if (provider !== 's3') {
       const targetDir = assetType === 'video' ? videosDir : postersDir;
       const filePath = path.join(targetDir, safeKeyName);
       streamLocalFile(req, res, filePath, assetType === 'video' ? 'video/mp4' : 'image/jpeg');
       return;
     }
 
+    await ensureBucket();
     const prefix = assetType === 'video' ? 'clips/videos' : 'clips/posters';
     const range = assetType === 'video' ? String(req.headers.range || '').trim() : '';
     const response = await s3Client.send(new GetObjectCommand({
@@ -328,6 +374,8 @@ function createClipMediaManager({ dataDir }) {
       'Content-Type': assetType === 'video' ? 'video/mp4' : 'image/jpeg',
       'Cache-Control': 'public, max-age=31536000, immutable',
       'Accept-Ranges': assetType === 'video' ? 'bytes' : 'none',
+      'Access-Control-Allow-Origin': '*',
+      Vary: 'Origin',
     };
 
     if (response.ContentLength != null) {
@@ -356,6 +404,7 @@ function createClipMediaManager({ dataDir }) {
     deleteClipAssets,
     streamAsset,
     ensureClipDirs,
+    ensureBucket,
     logConfiguration,
   };
 }

@@ -103,6 +103,57 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
     fs.renameSync(tempFile, reportsFile);
   }
 
+  async function importLocalClipsToPostgres() {
+    const localClips = readLocalClips();
+    if (!localClips.length) {
+      return;
+    }
+
+    for (const clip of localClips) {
+      await pool.query(
+        `INSERT INTO clips (
+          id,
+          delete_token,
+          title,
+          caption,
+          uploader_name,
+          created_at,
+          duration_seconds,
+          size_bytes,
+          mime_type,
+          width,
+          height,
+          storage_provider,
+          video_storage_key,
+          poster_storage_key,
+          report_count,
+          status
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+        )
+        ON CONFLICT (id) DO NOTHING`,
+        [
+          clip.id,
+          clip.deleteToken,
+          clip.title,
+          clip.caption,
+          clip.uploaderName,
+          clip.createdAt,
+          clip.durationSeconds,
+          clip.sizeBytes,
+          clip.mimeType,
+          clip.width,
+          clip.height,
+          clip.storageProvider,
+          clip.videoStorageKey,
+          clip.posterStorageKey,
+          clip.reportCount,
+          clip.status,
+        ],
+      );
+    }
+  }
+
   async function init() {
     if (!pool) {
       ensureLocalDataDir();
@@ -148,6 +199,8 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
       CREATE UNIQUE INDEX IF NOT EXISTS clip_reports_unique_reporter_idx
       ON clip_reports (clip_id, reporter_hash);
     `);
+
+    await importLocalClipsToPostgres();
   }
 
   async function listVisibleClips(limit = maxVisibleClips) {

@@ -1,12 +1,40 @@
+databases:
+  - name: nova-arcade-db
+    plan: free
+    databaseName: nova_arcade
+    user: nova_arcade
+
 services:
+  - type: pserv
+    name: nova-arcade-object-storage
+    runtime: docker
+    plan: starter
+    branch: main
+    autoDeployTrigger: commit
+    rootDir: games/star-sprint
+    dockerfilePath: docker/minio/Dockerfile
+    dockerContext: .
+    healthCheckPath: /minio/health/live
+    envVars:
+      - key: MINIO_ROOT_USER
+        generateValue: true
+      - key: MINIO_ROOT_PASSWORD
+        generateValue: true
+    disk:
+      name: nova-arcade-object-storage-data
+      mountPath: /data
+      sizeGB: 10
+
   - type: web
     name: backend
     runtime: node
+    plan: starter
     branch: main
     autoDeployTrigger: commit
     rootDir: games/star-sprint
     buildFilter:
       paths:
+        - render.yaml
         - games/star-sprint/**
     buildCommand: npm install
     startCommand: npm start
@@ -14,6 +42,28 @@ services:
     envVars:
       - key: DATA_DIR
         value: /var/data/nova-jukebox
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nova-arcade-db
+          property: connectionString
+      - key: S3_BUCKET
+        value: nova-arcade-media
+      - key: S3_REGION
+        value: us-east-1
+      - key: S3_ENDPOINT
+        value: http://nova-arcade-object-storage:9000
+      - key: S3_FORCE_PATH_STYLE
+        value: "true"
+      - key: S3_ACCESS_KEY_ID
+        fromService:
+          type: pserv
+          name: nova-arcade-object-storage
+          envVarKey: MINIO_ROOT_USER
+      - key: S3_SECRET_ACCESS_KEY
+        fromService:
+          type: pserv
+          name: nova-arcade-object-storage
+          envVarKey: MINIO_ROOT_PASSWORD
     disk:
       name: nova-jukebox-data
       mountPath: /var/data
