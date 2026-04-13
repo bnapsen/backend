@@ -168,7 +168,7 @@ function createClipMediaManager({ dataDir }) {
     await runMediaTool(ffmpegPath, [
       '-y',
       '-i', inputPath,
-      '-vf', "scale='min(720,iw)':-2:force_original_aspect_ratio=decrease,fps=30",
+      '-vf', 'scale=720:1280:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=30',
       '-c:v', 'libx264',
       '-preset', 'veryfast',
       '-crf', '28',
