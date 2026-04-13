@@ -37,6 +37,15 @@ const DATA_DIR = path.join(__dirname, 'data');
 const REVIEWS_FILE = path.join(DATA_DIR, 'reviews.json');
 const SONGS_FILE = path.join(DATA_DIR, 'songs.json');
 const SONG_UPLOAD_DIR = path.join(DATA_DIR, 'songs');
+const CITY_RAID_DOWNLOAD_DIR = path.resolve(__dirname, '..', '..', 'assets', 'downloads', 'city-raid');
+const CITY_RAID_ZIP_NAME = 'City-Raid-Win64.zip';
+const CITY_RAID_ZIP_PARTS = Object.freeze([
+  `${CITY_RAID_ZIP_NAME}.part01`,
+  `${CITY_RAID_ZIP_NAME}.part02`,
+  `${CITY_RAID_ZIP_NAME}.part03`,
+  `${CITY_RAID_ZIP_NAME}.part04`,
+  `${CITY_RAID_ZIP_NAME}.part05`,
+]);
 const MAX_REVIEWS = 100;
 const MAX_VISIBLE_REVIEWS = 30;
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
@@ -1358,6 +1367,83 @@ function handleSongMediaRequest(req, res, requestUrl) {
   streamMediaFile(req, res, filePath, contentTypeForSongFile(filePath));
 }
 
+async function getCityRaidZipPartStats() {
+  return Promise.all(CITY_RAID_ZIP_PARTS.map(async (partName) => {
+    const filePath = path.join(CITY_RAID_DOWNLOAD_DIR, partName);
+    const stats = await fs.promises.stat(filePath);
+    if (!stats.isFile()) {
+      throw new Error(`Missing City Raid package part: ${partName}`);
+    }
+    return {
+      filePath,
+      size: stats.size,
+    };
+  }));
+}
+
+function streamCityRaidZipParts(res, partStats) {
+  let index = 0;
+
+  const pipeNext = () => {
+    if (index >= partStats.length) {
+      res.end();
+      return;
+    }
+
+    const current = partStats[index];
+    const stream = fs.createReadStream(current.filePath);
+
+    stream.on('error', (error) => {
+      res.destroy(error);
+    });
+
+    stream.on('end', () => {
+      index += 1;
+      pipeNext();
+    });
+
+    stream.pipe(res, { end: false });
+  };
+
+  pipeNext();
+}
+
+async function handleCityRaidZipDownload(req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Use GET or HEAD for the City Raid zip.',
+    });
+    return;
+  }
+
+  try {
+    const partStats = await getCityRaidZipPartStats();
+    const totalSize = partStats.reduce((sum, part) => sum + part.size, 0);
+    res.writeHead(200, {
+      ...corsHeaders(req),
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${CITY_RAID_ZIP_NAME}"`,
+      'Content-Length': totalSize,
+      'Cache-Control': 'public, max-age=300',
+      'Accept-Ranges': 'none',
+    });
+
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+
+    streamCityRaidZipParts(res, partStats);
+  } catch (error) {
+    console.error('Failed to serve City Raid zip:', error);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'The City Raid zip is not available right now.',
+    });
+  }
+}
+
 function sanitizeName(raw) {
   const value = String(raw || '').trim().replace(/\s+/g, ' ');
   return value.slice(0, 18) || 'Guest';
@@ -2637,6 +2723,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname.startsWith('/media/songs/')) {
     handleSongMediaRequest(req, res, requestUrl);
+    return;
+  }
+
+  if (requestUrl.pathname === '/downloads/city-raid/City-Raid-Win64.zip') {
+    await handleCityRaidZipDownload(req, res);
     return;
   }
 
