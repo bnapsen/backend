@@ -13,7 +13,7 @@
   const query = new URLSearchParams(window.location.search);
 
   const canvas = document.getElementById('poolTable');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true }) || canvas.getContext('2d');
 
   const ui = {
     nameInput: document.getElementById('nameInput'),
@@ -57,6 +57,7 @@
     powerFill: document.getElementById('powerFill'),
     powerText: document.getElementById('powerText'),
     tableStage: document.getElementById('tableStage'),
+    boardColumn: document.querySelector('.board-column'),
     layout: document.getElementById('layout'),
     startOverlay: document.getElementById('startOverlay'),
     startNote: document.getElementById('startNote'),
@@ -146,6 +147,45 @@
     feltSrc: 'assets/pool/felt-green-gradient-cc0.png',
     woodSrc: 'assets/pool/synthetic-wood-polyhaven-1k.jpg',
   });
+
+  function isAndroidDevice() {
+    return /Android/i.test(window.navigator.userAgent || '');
+  }
+
+  function isCompactViewport() {
+    return window.matchMedia('(max-width: 920px)').matches;
+  }
+
+  function isCoarsePointer() {
+    return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
+  }
+
+  function isMobileDeviceProfile() {
+    return isCompactViewport() || isCoarsePointer();
+  }
+
+  function useLiteRenderingProfile() {
+    return isMobileDeviceProfile() || isAndroidDevice();
+  }
+
+  function preferredCanvasDpr() {
+    const dpr = window.devicePixelRatio || 1;
+    if (isMobileDeviceProfile()) {
+      return Math.min(dpr, isAndroidDevice() ? 1.2 : 1.4);
+    }
+    return Math.min(dpr, 2);
+  }
+
+  function scrollTableIntoView(behavior = 'smooth') {
+    if (!isMobileDeviceProfile() || !ui.boardColumn) {
+      return;
+    }
+    ui.boardColumn.scrollIntoView({
+      behavior,
+      block: 'start',
+      inline: 'nearest',
+    });
+  }
 
   function loadTextureAsset(src) {
     const image = new Image();
@@ -696,14 +736,21 @@
     ui.layout.classList.toggle('setup-collapsed', state.setupCollapsed);
     ui.layout.classList.toggle('sidebar-collapsed', state.sidebarCollapsed);
     if (ui.toggleSetupBtn) {
-      ui.toggleSetupBtn.textContent = state.setupCollapsed ? 'Show setup' : 'Hide setup';
+      ui.toggleSetupBtn.textContent = isMobileDeviceProfile()
+        ? state.setupCollapsed ? 'Setup' : 'Hide setup'
+        : state.setupCollapsed ? 'Show setup' : 'Hide setup';
       ui.toggleSetupBtn.dataset.active = state.setupCollapsed ? 'false' : 'true';
     }
     if (ui.toggleSidebarBtn) {
-      ui.toggleSidebarBtn.textContent = state.sidebarCollapsed ? 'Show feed' : 'Hide feed';
+      ui.toggleSidebarBtn.textContent = isMobileDeviceProfile()
+        ? state.sidebarCollapsed ? 'Feed' : 'Hide feed'
+        : state.sidebarCollapsed ? 'Show feed' : 'Hide feed';
       ui.toggleSidebarBtn.dataset.active = state.sidebarCollapsed ? 'false' : 'true';
     }
-    requestAnimationFrame(resizeCanvas);
+    requestAnimationFrame(() => {
+      resizeCanvas();
+      queueDrawFrame();
+    });
   }
 
   function describeVariant(variant) {
@@ -954,6 +1001,7 @@
     state.lastFrameAt = performance.now();
     ui.roomInput.value = '';
     setNetworkStatus('online', 'Solo');
+    scrollTableIntoView();
     const variant = selectedVariant();
     refreshLocalSnapshot({
       forceRender: true,
@@ -1263,7 +1311,7 @@
     if (!rect.width || !rect.height) {
       return;
     }
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = preferredCanvasDpr();
     const nextWidth = Math.max(1, Math.round(rect.width * dpr));
     const nextHeight = Math.max(1, Math.round(rect.height * dpr));
     if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
@@ -1540,6 +1588,7 @@
     renderEvents();
     renderStartOverlay();
     updatePowerUi();
+    queueDrawFrame();
   }
 
   function setDrawTransform() {
@@ -1572,6 +1621,7 @@
 
   function drawTable() {
     const table = activeTable();
+    const liteRendering = useLiteRenderingProfile();
     const feltX = table.rail;
     const feltY = table.rail;
     const feltW = table.width - table.rail * 2;
@@ -1581,14 +1631,16 @@
     const outerW = table.width - outerInset * 2;
     const outerH = table.height - outerInset * 2;
 
-    ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-    ctx.shadowBlur = 42;
-    ctx.shadowOffsetY = 18;
-    roundedRectPath(outerInset, outerInset, outerW, outerH, 28);
-    ctx.fillStyle = '#1f130c';
-    ctx.fill();
-    ctx.restore();
+    if (!liteRendering) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+      ctx.shadowBlur = 42;
+      ctx.shadowOffsetY = 18;
+      roundedRectPath(outerInset, outerInset, outerW, outerH, 28);
+      ctx.fillStyle = '#1f130c';
+      ctx.fill();
+      ctx.restore();
+    }
 
     roundedRectPath(outerInset, outerInset, outerW, outerH, 28);
     ctx.fillStyle = '#4a2b16';
@@ -1596,40 +1648,48 @@
     ctx.save();
     roundedRectPath(outerInset, outerInset, outerW, outerH, 28);
     ctx.clip();
-    drawTexture(textureAssets.wood, outerInset, outerInset, outerW, outerH, 0.8);
+    if (!liteRendering) {
+      drawTexture(textureAssets.wood, outerInset, outerInset, outerW, outerH, 0.8);
+    }
     const woodTint = ctx.createLinearGradient(0, 0, table.width, table.height);
-    woodTint.addColorStop(0, 'rgba(122, 77, 39, 0.56)');
-    woodTint.addColorStop(0.55, 'rgba(42, 23, 12, 0.46)');
-    woodTint.addColorStop(1, 'rgba(152, 103, 57, 0.34)');
+    woodTint.addColorStop(0, liteRendering ? 'rgba(105, 67, 34, 0.82)' : 'rgba(122, 77, 39, 0.56)');
+    woodTint.addColorStop(0.55, liteRendering ? 'rgba(56, 31, 16, 0.68)' : 'rgba(42, 23, 12, 0.46)');
+    woodTint.addColorStop(1, liteRendering ? 'rgba(128, 86, 48, 0.52)' : 'rgba(152, 103, 57, 0.34)');
     ctx.fillStyle = woodTint;
     ctx.fillRect(outerInset, outerInset, outerW, outerH);
     ctx.restore();
 
-    const railGlow = ctx.createLinearGradient(feltX - 18, feltY - 18, feltX + feltW + 18, feltY + feltH + 18);
-    railGlow.addColorStop(0, 'rgba(247, 231, 205, 0.18)');
-    railGlow.addColorStop(0.5, 'rgba(108, 68, 32, 0)');
-    railGlow.addColorStop(1, 'rgba(247, 231, 205, 0.22)');
-    ctx.strokeStyle = railGlow;
-    ctx.lineWidth = 24;
-    ctx.strokeRect(feltX - 12, feltY - 12, feltW + 24, feltH + 24);
+    if (!liteRendering) {
+      const railGlow = ctx.createLinearGradient(feltX - 18, feltY - 18, feltX + feltW + 18, feltY + feltH + 18);
+      railGlow.addColorStop(0, 'rgba(247, 231, 205, 0.18)');
+      railGlow.addColorStop(0.5, 'rgba(108, 68, 32, 0)');
+      railGlow.addColorStop(1, 'rgba(247, 231, 205, 0.22)');
+      ctx.strokeStyle = railGlow;
+      ctx.lineWidth = 24;
+      ctx.strokeRect(feltX - 12, feltY - 12, feltW + 24, feltH + 24);
+    }
 
     ctx.fillStyle = '#0b4727';
     ctx.fillRect(feltX, feltY, feltW, feltH);
-    drawTexture(textureAssets.felt, feltX, feltY, feltW, feltH, 0.44);
+    if (!liteRendering) {
+      drawTexture(textureAssets.felt, feltX, feltY, feltW, feltH, 0.44);
+    }
 
     const feltGradient = ctx.createLinearGradient(feltX, feltY, feltX + feltW, feltY + feltH);
-    feltGradient.addColorStop(0, 'rgba(16, 102, 58, 0.7)');
-    feltGradient.addColorStop(0.52, 'rgba(8, 74, 44, 0.32)');
-    feltGradient.addColorStop(1, 'rgba(11, 92, 61, 0.62)');
+    feltGradient.addColorStop(0, liteRendering ? 'rgba(18, 109, 66, 0.9)' : 'rgba(16, 102, 58, 0.7)');
+    feltGradient.addColorStop(0.52, liteRendering ? 'rgba(8, 74, 44, 0.46)' : 'rgba(8, 74, 44, 0.32)');
+    feltGradient.addColorStop(1, liteRendering ? 'rgba(12, 95, 64, 0.82)' : 'rgba(11, 92, 61, 0.62)');
     ctx.fillStyle = feltGradient;
     ctx.fillRect(feltX, feltY, feltW, feltH);
 
-    const sheen = ctx.createRadialGradient(table.width * 0.46, table.height * 0.26, 18, table.width * 0.46, table.height * 0.26, table.width * 0.46);
-    sheen.addColorStop(0, 'rgba(255,255,255,0.18)');
-    sheen.addColorStop(0.34, 'rgba(255,255,255,0.08)');
-    sheen.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = sheen;
-    ctx.fillRect(feltX, feltY, feltW, feltH);
+    if (!liteRendering) {
+      const sheen = ctx.createRadialGradient(table.width * 0.46, table.height * 0.26, 18, table.width * 0.46, table.height * 0.26, table.width * 0.46);
+      sheen.addColorStop(0, 'rgba(255,255,255,0.18)');
+      sheen.addColorStop(0.34, 'rgba(255,255,255,0.08)');
+      sheen.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = sheen;
+      ctx.fillRect(feltX, feltY, feltW, feltH);
+    }
 
     ctx.strokeStyle = 'rgba(245, 248, 251, 0.12)';
     ctx.lineWidth = 2.8;
@@ -1673,15 +1733,17 @@
     }
 
     for (const pocket of pocketCoords(table)) {
-      ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.42)';
-      ctx.shadowBlur = 18;
-      ctx.shadowOffsetY = 6;
-      ctx.beginPath();
-      ctx.arc(pocket.x, pocket.y, table.pocketR + 9, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(61, 33, 17, 0.95)';
-      ctx.fill();
-      ctx.restore();
+      if (!liteRendering) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.42)';
+        ctx.shadowBlur = 18;
+        ctx.shadowOffsetY = 6;
+        ctx.beginPath();
+        ctx.arc(pocket.x, pocket.y, table.pocketR + 9, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(61, 33, 17, 0.95)';
+        ctx.fill();
+        ctx.restore();
+      }
 
       const leatherGradient = ctx.createRadialGradient(
         pocket.x - 5,
@@ -1696,23 +1758,27 @@
       leatherGradient.addColorStop(1, '#1a100a');
       ctx.beginPath();
       ctx.arc(pocket.x, pocket.y, table.pocketR + 8, 0, Math.PI * 2);
-      ctx.fillStyle = leatherGradient;
+      ctx.fillStyle = liteRendering ? '#432615' : leatherGradient;
       ctx.fill();
 
-      const pocketGradient = ctx.createRadialGradient(
-        pocket.x - 4,
-        pocket.y - 4,
-        1,
-        pocket.x,
-        pocket.y,
-        table.pocketR
-      );
-      pocketGradient.addColorStop(0, '#454545');
-      pocketGradient.addColorStop(0.4, '#171717');
-      pocketGradient.addColorStop(1, '#020202');
       ctx.beginPath();
       ctx.arc(pocket.x, pocket.y, table.pocketR - 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = pocketGradient;
+      if (!liteRendering) {
+        const pocketGradient = ctx.createRadialGradient(
+          pocket.x - 4,
+          pocket.y - 4,
+          1,
+          pocket.x,
+          pocket.y,
+          table.pocketR
+        );
+        pocketGradient.addColorStop(0, '#454545');
+        pocketGradient.addColorStop(0.4, '#171717');
+        pocketGradient.addColorStop(1, '#020202');
+        ctx.fillStyle = pocketGradient;
+      } else {
+        ctx.fillStyle = '#050505';
+      }
       ctx.fill();
 
       ctx.beginPath();
@@ -2207,6 +2273,27 @@
     maybeTakeSoloBotTurn(now);
   }
 
+  function shouldAnimateFrame() {
+    if (document.hidden) {
+      return false;
+    }
+    if (isSoloMode()) {
+      if (state.localGame && state.localGame.activeShot) {
+        return true;
+      }
+      if (state.soloBotDueAt > 0) {
+        return true;
+      }
+    }
+    if (state.aiming) {
+      return true;
+    }
+    if (Math.abs(state.powerTarget - state.power) > 0.0025) {
+      return true;
+    }
+    return Math.abs(normalizeAngle(state.aimAngleTarget - state.aimAngle)) > 0.0025;
+  }
+
   function queueDrawFrame() {
     if (state.frameHandle) {
       return;
@@ -2224,7 +2311,9 @@
     drawBalls();
     drawCueAndGuide();
     drawOverlay();
-    queueDrawFrame();
+    if (shouldAnimateFrame()) {
+      queueDrawFrame();
+    }
   }
 
   function handleSnapshot(payload) {
@@ -2256,6 +2345,7 @@
 
     savePrefs();
     collapsePlayChrome();
+    scrollTableIntoView();
     resetAimState();
     state.mode = 'online';
     state.localGame = null;
@@ -2380,6 +2470,7 @@
     state.power = 0;
     state.powerTarget = 0;
     updatePowerUi();
+    queueDrawFrame();
     try {
       canvas.setPointerCapture(event.pointerId);
     } catch (error) {
@@ -2510,7 +2601,7 @@
     const storedSetupPref = localStorage.getItem(STORAGE_KEYS.setupCollapsed);
     const storedSidebarPref = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed);
     const storedSoundPref = localStorage.getItem(STORAGE_KEYS.soundEnabled);
-    state.setupCollapsed = storedSetupPref === null ? false : storedSetupPref === '1';
+    state.setupCollapsed = storedSetupPref === null ? isMobileDeviceProfile() : storedSetupPref === '1';
     state.sidebarCollapsed = storedSidebarPref === null ? true : storedSidebarPref === '1';
     state.soundEnabled = storedSoundPref === null ? true : storedSoundPref === '1';
     state.audioTelemetry = summarizeAudioSnapshot(null);
@@ -2610,7 +2701,16 @@
   canvas.addEventListener('pointermove', moveAim);
   canvas.addEventListener('pointerup', finishAim);
   canvas.addEventListener('pointercancel', finishAim);
-  window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('resize', () => {
+    resizeCanvas();
+    queueDrawFrame();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      state.lastFrameAt = performance.now();
+      queueDrawFrame();
+    }
+  });
 
   hydrate();
   queueDrawFrame();

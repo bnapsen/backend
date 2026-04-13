@@ -19,12 +19,14 @@
 html,
 body {
   min-height: 100%;
+  overscroll-behavior: none;
 }
 
 body {
   margin: 0;
   color: var(--text);
   font-family: Inter, system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
   background:
     radial-gradient(circle at top left, rgba(113, 241, 209, 0.15), transparent 28%),
     radial-gradient(circle at top right, rgba(255, 213, 124, 0.14), transparent 32%),
@@ -48,7 +50,11 @@ body::before {
 .page-shell {
   width: min(1680px, calc(100vw - 18px));
   margin: 0 auto;
-  padding: 18px 0 28px;
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(10px, env(safe-area-inset-right))
+    max(28px, env(safe-area-inset-bottom))
+    max(10px, env(safe-area-inset-left));
 }
 
 .topbar,
@@ -155,6 +161,7 @@ h2 {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  touch-action: manipulation;
 }
 
 .toolbar-btn[data-active="true"] {
@@ -359,6 +366,7 @@ button {
   cursor: pointer;
   font-weight: 700;
   transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+  touch-action: manipulation;
 }
 
 button:hover,
@@ -772,9 +780,13 @@ button:disabled {
 }
 
 @media (max-width: 920px) {
+  body::before {
+    display: none;
+  }
+
   .page-shell {
     width: min(100%, calc(100vw - 18px));
-    padding-top: 10px;
+    padding-top: max(8px, env(safe-area-inset-top));
   }
 
   .layout,
@@ -784,9 +796,16 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .layout {
+    gap: 10px;
+  }
+
   .topbar {
     position: static;
     flex-wrap: wrap;
+    padding: 12px 14px;
+    border-radius: 20px;
+    backdrop-filter: none;
   }
 
   .brand-block {
@@ -794,15 +813,121 @@ button:disabled {
     width: 100%;
   }
 
+  .topbar-status {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .toolbar-btn,
+  .status-pill {
+    padding: 0.62rem 0.76rem;
+    font-size: 0.72rem;
+  }
+
+  .setup-column {
+    order: 2;
+  }
+
+  .board-column {
+    order: 1;
+  }
+
+  .sidebar {
+    order: 3;
+  }
+
+  .panel {
+    padding: 14px;
+    border-radius: 22px;
+    backdrop-filter: none;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+  }
+
+  .board-header {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .board-header > :last-child {
+    grid-column: 1 / -1;
+  }
+
   .table-meta {
     grid-template-columns: 1fr;
   }
 
+  .table-stage {
+    padding: 8px;
+    border-radius: 22px;
+    aspect-ratio: 4 / 3.05;
+  }
+
+  #poolTable {
+    inset: 8px;
+    width: calc(100% - 16px);
+    height: calc(100% - 16px);
+  }
+
   .start-card {
     padding: 20px 18px 16px;
+    border-radius: 22px;
+    backdrop-filter: none;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, 0.26);
   }
 
   .start-actions button {
     flex-basis: 100%;
+  }
+
+  .score-card strong {
+    font-size: 1.38rem;
+  }
+
+  .power-card,
+  .tip-card {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-shell {
+    width: 100%;
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+
+  .topbar-status {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  .toolbar-btn,
+  .status-pill {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .board-header {
+    grid-template-columns: 1fr;
+  }
+
+  .board-header > :last-child {
+    grid-column: auto;
+  }
+
+  .table-stage {
+    aspect-ratio: 4 / 3.25;
+  }
+
+  .start-overlay {
+    inset: 10px;
+    padding: 8px;
+  }
+
+  .start-card h2 {
+    font-size: clamp(1.48rem, 7vw, 2.1rem);
   }
 }
