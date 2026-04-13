@@ -33,7 +33,8 @@ const ALLOWED_HTTP_ORIGIN_HOSTS = new Set([
   'localhost',
   '127.0.0.1',
 ]);
-const DATA_DIR = path.join(__dirname, 'data');
+const DEFAULT_DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = path.resolve(process.env.DATA_DIR || DEFAULT_DATA_DIR);
 const REVIEWS_FILE = path.join(DATA_DIR, 'reviews.json');
 const SONGS_FILE = path.join(DATA_DIR, 'songs.json');
 const SONG_UPLOAD_DIR = path.join(DATA_DIR, 'songs');
@@ -245,16 +246,68 @@ function sendJsonResponse(req, res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+function ensureDirectory(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
   }
+}
+
+function ensureDataDir() {
+  ensureDirectory(DATA_DIR);
 }
 
 function ensureSongUploadDir() {
   ensureDataDir();
-  if (!fs.existsSync(SONG_UPLOAD_DIR)) {
-    fs.mkdirSync(SONG_UPLOAD_DIR, { recursive: true });
+  ensureDirectory(SONG_UPLOAD_DIR);
+}
+
+function bootstrapPersistentDataDir() {
+  if (DATA_DIR === DEFAULT_DATA_DIR) {
+    return;
+  }
+
+  ensureDataDir();
+
+  const legacyReviewsFile = path.join(DEFAULT_DATA_DIR, 'reviews.json');
+  const legacySongsFile = path.join(DEFAULT_DATA_DIR, 'songs.json');
+  const legacySongUploadDir = path.join(DEFAULT_DATA_DIR, 'songs');
+
+  try {
+    if (!fs.existsSync(REVIEWS_FILE) && fs.existsSync(legacyReviewsFile)) {
+      fs.copyFileSync(legacyReviewsFile, REVIEWS_FILE);
+    }
+
+    if (!fs.existsSync(SONGS_FILE) && fs.existsSync(legacySongsFile)) {
+      fs.copyFileSync(legacySongsFile, SONGS_FILE);
+    }
+
+    if (!fs.existsSync(SONG_UPLOAD_DIR) && fs.existsSync(legacySongUploadDir)) {
+      fs.cpSync(legacySongUploadDir, SONG_UPLOAD_DIR, { recursive: true });
+    }
+  } catch (error) {
+    console.error('Failed to bootstrap persistent jukebox data:', error.message);
+  }
+}
+
+function logStorageConfiguration() {
+  const usesCustomDataDir = DATA_DIR !== DEFAULT_DATA_DIR;
+  console.log(`Nova Arcade data dir: ${DATA_DIR}`);
+
+  if (usesCustomDataDir) {
+    console.log('Nova Arcade uploads are configured to persist in custom storage.');
+    return;
+  }
+
+  const isLikelyRenderRuntime =
+    Boolean(process.env.RENDER) ||
+    Boolean(process.env.RENDER_INSTANCE_ID) ||
+    Boolean(process.env.RENDER_SERVICE_ID);
+
+  if (isLikelyRenderRuntime) {
+    console.warn(
+      'Nova Arcade is using the default local data directory on Render. ' +
+      'Uploads may be lost when the instance restarts unless DATA_DIR points to a mounted persistent disk.',
+    );
   }
 }
 
@@ -2828,7 +2881,9 @@ wss.on('connection', (socket) => {
 });
 
 setInterval(tickRealtimeRooms, TICK_MS);
+bootstrapPersistentDataDir();
 cleanupRetiredSongs();
+logStorageConfiguration();
 
 server.listen(PORT, HOST, () => {
   console.log(`Nova Arcade realtime server running at ws://${HOST}:${PORT}`);

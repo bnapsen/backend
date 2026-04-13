@@ -36,3 +36,4 @@ GET /healthz
 - Render blueprint lives at the repo root in `render.yaml`
 - Production WebSocket URL is configured in `game.js`
 - City Raid lobby API path: `/api/cityraid/lobbies`
+- Nova Jukebox uploads should use a persistent disk-backed `DATA_DIR` on Render so songs survive restarts and deploys
