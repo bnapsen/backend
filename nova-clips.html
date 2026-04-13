@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nova Clips | 30 Second Video Feed</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="nova-clips.css">
+</head>
+<body class="clips-body">
+    <div class="clips-shell">
+        <a class="clips-back-link" href="index.html">Back to Nova Arcade</a>
+
+        <section class="clips-hero">
+            <div class="clips-copy">
+                <p class="eyebrow">Short video app</p>
+                <h1>Nova Clips</h1>
+                <p class="clips-lede">
+                    Upload a clip, keep it live on the site, and scroll a vertical feed of community videos.
+                    This is the arcade's short-form app: 30 seconds max, persistent storage, playable feed,
+                    delete controls for your own uploads, and report controls for the rest.
+                </p>
+
+                <div class="clips-highlights" aria-label="Nova Clips highlights">
+                    <article class="clips-stat">
+                        <strong>30 sec</strong>
+                        <span>hard clip duration cap</span>
+                    </article>
+                    <article class="clips-stat">
+                        <strong>Persistent</strong>
+                        <span>clips stay live until deleted</span>
+                    </article>
+                    <article class="clips-stat">
+                        <strong>Vertical feed</strong>
+                        <span>TikTok-style browsing on phone or desktop</span>
+                    </article>
+                </div>
+            </div>
+
+            <aside class="clips-feature">
+                <p class="section-kicker">How it works</p>
+                <h2>Upload. Scroll. Keep it live.</h2>
+                <p>Videos are checked for duration, normalized into a web-ready mp4, given a poster image, and added to the live feed.</p>
+                <ul class="clips-feature-list">
+                    <li>Up to 30 seconds per clip</li>
+                    <li>Delete your own uploads later</li>
+                    <li>Report other clips if needed</li>
+                    <li>Phone-friendly full-height feed cards</li>
+                </ul>
+            </aside>
+        </section>
+
+        <main class="clips-layout">
+            <section class="clips-panel upload-panel">
+                <div class="clips-panel-head">
+                    <div>
+                        <p class="section-kicker">Upload a clip</p>
+                        <h2>Post something that stays up</h2>
+                    </div>
+                    <p>We turn uploads into a feed-ready clip and keep it on the live shelf until it gets deleted.</p>
+                </div>
+
+                <form id="clip-upload-form" class="clip-upload-form">
+                    <input id="clip-file" name="clipFile" class="visually-hidden" type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v">
+
+                    <div id="clip-drop-zone" class="clip-drop-zone" tabindex="0" role="button" aria-describedby="clip-drop-help clip-upload-status">
+                        <p class="clip-drop-kicker">Drop a clip here</p>
+                        <h3>Choose a 30-second video</h3>
+                        <p id="clip-drop-help">Tap or click here, or drag a file in. MP4, WEBM, MOV, and M4V supported.</p>
+                        <button id="clip-pick-button" class="btn btn-primary clip-pick-button" type="button">Choose Video</button>
+                    </div>
+
+                    <section id="clip-preview-panel" class="clip-preview-panel hidden" aria-live="polite">
+                        <div class="clip-preview-head">
+                            <div>
+                                <p class="clip-preview-label">Ready to upload</p>
+                                <h3 id="clip-preview-title">No clip selected yet</h3>
+                            </div>
+                            <p id="clip-preview-status" class="clip-preview-status">Waiting for a file</p>
+                        </div>
+                        <video id="clip-preview-video" class="clip-preview-video" controls playsinline preload="metadata"></video>
+                        <p id="clip-preview-file-name" class="clip-preview-file-name"></p>
+                        <p id="clip-preview-meta" class="clip-preview-meta"></p>
+                    </section>
+
+                    <div class="clip-fields">
+                        <label class="clip-field">
+                            <span>Display name</span>
+                            <input id="clip-uploader-name" name="uploaderName" maxlength="48" placeholder="Guest uploader">
+                        </label>
+                        <label class="clip-field">
+                            <span>Optional title override</span>
+                            <input id="clip-title" name="title" maxlength="80" placeholder="Defaults to the file name">
+                        </label>
+                        <label class="clip-field clip-field--full">
+                            <span>Caption</span>
+                            <textarea id="clip-caption" name="caption" maxlength="240" rows="3" placeholder="Say something about the clip"></textarea>
+                        </label>
+                    </div>
+
+                    <div class="clips-upload-note">
+                        The backend enforces a 30-second limit and generates a poster image for the feed.
+                        The current upload ceiling is 80 MB before processing.
+                    </div>
+                    <p id="clip-upload-status" class="form-status" aria-live="polite"></p>
+                    <button id="clip-submit-button" class="btn btn-primary clip-submit-button" type="button">Upload Clip</button>
+                </form>
+            </section>
+
+            <section class="clips-panel feed-panel">
+                <div class="clips-panel-head clips-panel-head--feed">
+                    <div>
+                        <p class="section-kicker">Live feed</p>
+                        <h2>Community clips</h2>
+                    </div>
+                    <p id="clip-count-badge" class="clip-count-badge">Loading clips...</p>
+                </div>
+
+                <p id="clips-status" class="clips-status">Loading the feed...</p>
+                <p id="clips-empty" class="clips-empty hidden">No clips are live yet. Upload the first one above.</p>
+                <div id="clips-feed" class="clips-feed" aria-live="polite"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="nova-clips.js" defer></script>
+</body>
+</html>

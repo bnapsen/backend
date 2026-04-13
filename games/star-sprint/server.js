@@ -16,6 +16,13 @@ const MiniPool = require('./mini-pool-core.js');
 const ArcadeChat = require('./arcade-chat-core.js');
 const CarSoccer = require('./car-soccer-core.js');
 const ZombieSiege = require('./zombie-siege-core.js');
+const { createClipsStore } = require('./clips-store.js');
+const {
+  createClipMediaManager,
+  sanitizeClipFileName,
+  inferClipTitle,
+  normalizeClipUploadType,
+} = require('./clip-media.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
@@ -46,6 +53,9 @@ const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 const MAX_SONGS = 80;
 const MAX_VISIBLE_SONGS = 40;
 const MAX_SONG_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_CLIPS = 300;
+const MAX_VISIBLE_CLIPS = 60;
+const MAX_CLIP_UPLOAD_BYTES = 80 * 1024 * 1024;
 const MAX_CITY_RAID_LOBBIES = 120;
 const CITY_RAID_ROOM_CODE_LENGTH = 5;
 const CITY_RAID_DEFAULT_PORT = 7777;
@@ -78,6 +88,15 @@ const RETIRED_SONG_IDS = new Set([
 ]);
 const rooms = new Map();
 const cityRaidLobbies = new Map();
+const clipMediaManager = createClipMediaManager({
+  dataDir: DATA_DIR,
+});
+const clipsStore = createClipsStore({
+  dataDir: DATA_DIR,
+  databaseUrl: process.env.DATABASE_URL || '',
+  maxClips: MAX_CLIPS,
+  maxVisibleClips: MAX_VISIBLE_CLIPS,
+});
 const CHESS_TIME_CONTROLS = Object.freeze({
   untimed: {
     id: 'untimed',
@@ -319,6 +338,13 @@ function sanitizeReviewField(raw, maxLength) {
 }
 
 function sanitizeSongField(raw, maxLength) {
+  return String(raw || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, maxLength);
+}
+
+function sanitizeClipField(raw, maxLength) {
   return String(raw || '')
     .trim()
     .replace(/\s+/g, ' ')
@@ -874,6 +900,25 @@ function publicSongsFromStored(storedSongs) {
     .map(publicSongEntry);
 }
 
+function publicClipEntry(clip) {
+  const media = clipMediaManager.publicClipMedia(clip);
+  return {
+    id: String(clip.id || ''),
+    title: String(clip.title || ''),
+    caption: String(clip.caption || ''),
+    uploaderName: String(clip.uploaderName || ''),
+    createdAt: String(clip.createdAt || ''),
+    durationSeconds: Number(clip.durationSeconds || 0),
+    sizeBytes: Number(clip.sizeBytes || 0),
+    mimeType: String(clip.mimeType || ''),
+    width: Number(clip.width || 0),
+    height: Number(clip.height || 0),
+    videoPath: media.videoPath,
+    posterPath: media.posterPath,
+    source: 'community',
+  };
+}
+
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
@@ -1125,6 +1170,387 @@ function persistUploadedSong(songFile) {
   fs.writeFileSync(tempPath, songFile.buffer);
   fs.renameSync(tempPath, finalPath);
   return storageName;
+}
+
+function readClipUpload(req) {
+  return new Promise((resolve, reject) => {
+    const contentType = String(req.headers['content-type'] || '').toLowerCase();
+    if (!contentType.includes('multipart/form-data')) {
+      reject(new Error('Clip uploads require multipart/form-data.'));
+      return;
+    }
+
+    let settled = false;
+    let uploadedFile = null;
+    let invalidFileType = false;
+    let fileTooLarge = false;
+    const fields = {};
+
+    function fail(error) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(error);
+    }
+
+    function succeed(payload) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(payload);
+    }
+
+    const busboy = Busboy({
+      headers: req.headers,
+      limits: {
+        files: 1,
+        fields: 12,
+        fileSize: MAX_CLIP_UPLOAD_BYTES,
+      },
+    });
+
+    busboy.on('field', (name, value) => {
+      if (!name) {
+        return;
+      }
+      fields[String(name)] = String(value || '');
+    });
+
+    busboy.on('file', (fieldName, file, info) => {
+      if (fieldName !== 'clipFile' || uploadedFile) {
+        file.resume();
+        return;
+      }
+
+      const originalFileName = sanitizeClipFileName(info.filename);
+      const normalizedUpload = normalizeClipUploadType(originalFileName, info.mimeType);
+      if (!originalFileName || !normalizedUpload) {
+        invalidFileType = true;
+        file.resume();
+        return;
+      }
+
+      const chunks = [];
+      let sizeBytes = 0;
+      uploadedFile = {
+        originalFileName,
+        mimeType: normalizedUpload.mimeType,
+        sizeBytes: 0,
+        buffer: null,
+      };
+
+      file.on('data', (chunk) => {
+        chunks.push(chunk);
+        sizeBytes += chunk.length;
+      });
+
+      file.on('limit', () => {
+        fileTooLarge = true;
+      });
+
+      file.on('end', () => {
+        if (fileTooLarge) {
+          return;
+        }
+        uploadedFile.sizeBytes = sizeBytes;
+        uploadedFile.buffer = Buffer.concat(chunks);
+      });
+    });
+
+    busboy.on('filesLimit', () => {
+      fail(new Error('Upload only one clip at a time.'));
+    });
+
+    busboy.on('error', fail);
+
+    busboy.on('finish', () => {
+      if (settled) {
+        return;
+      }
+
+      if (fileTooLarge) {
+        fail(new Error('Videos must be 80 MB or smaller.'));
+        return;
+      }
+
+      if (invalidFileType) {
+        fail(new Error('Upload a supported video file: mp4, webm, mov, or m4v.'));
+        return;
+      }
+
+      if (!uploadedFile) {
+        fail(new Error('Choose a video file to upload.'));
+        return;
+      }
+
+      if (!uploadedFile.buffer || uploadedFile.sizeBytes <= 0) {
+        fail(new Error('That video file could not be read.'));
+        return;
+      }
+
+      succeed({
+        fields,
+        file: uploadedFile,
+      });
+    });
+
+    req.pipe(busboy);
+  });
+}
+
+async function visibleClips() {
+  const clips = await clipsStore.listVisibleClips();
+  return clips.map(publicClipEntry);
+}
+
+async function handleClipsRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method === 'GET') {
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      clips: await visibleClips(),
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let upload;
+  try {
+    upload = await readClipUpload(req);
+  } catch (error) {
+    const statusCode = error.message.includes('80 MB') ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const title = sanitizeClipField(upload.fields.title, 80) || inferClipTitle(upload.file.originalFileName);
+  const caption = sanitizeClipField(upload.fields.caption, 240);
+  const uploaderName = sanitizeClipField(upload.fields.uploaderName, 48) || 'Guest uploader';
+
+  let storedClip = null;
+  let processedClip = null;
+  try {
+    processedClip = await clipMediaManager.processUpload(upload.file);
+    storedClip = await clipsStore.insertClip({
+      id: crypto.randomUUID(),
+      deleteToken: crypto.randomBytes(24).toString('hex'),
+      title,
+      caption,
+      uploaderName,
+      createdAt: new Date().toISOString(),
+      durationSeconds: processedClip.durationSeconds,
+      sizeBytes: processedClip.sizeBytes,
+      mimeType: processedClip.mimeType,
+      width: processedClip.width,
+      height: processedClip.height,
+      storageProvider: processedClip.storageProvider,
+      videoStorageKey: processedClip.videoStorageKey,
+      posterStorageKey: processedClip.posterStorageKey,
+      reportCount: 0,
+      status: 'active',
+    });
+
+    sendJsonResponse(req, res, 201, {
+      ok: true,
+      clip: publicClipEntry(storedClip),
+      deleteToken: storedClip.deleteToken,
+      clips: await visibleClips(),
+    });
+  } catch (error) {
+    if (storedClip) {
+      await Promise.allSettled([
+        clipsStore.deleteClip(storedClip.id),
+        clipMediaManager.deleteClipAssets(storedClip),
+      ]);
+    } else if (processedClip) {
+      await Promise.allSettled([
+        clipMediaManager.deleteClipAssets(processedClip),
+      ]);
+    }
+
+    console.error('Failed to persist clip upload:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: error.message || 'Unable to save that clip right now.',
+    });
+  }
+}
+
+async function handleClipDeleteRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const clipId = sanitizeClipField(body.clipId, 80);
+  const deleteToken = normalizeDeleteToken(body.deleteToken);
+  if (!clipId || !deleteToken) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Clip id and delete token are required.',
+    });
+    return;
+  }
+
+  const clip = await clipsStore.findClipById(clipId);
+  if (!clip) {
+    sendJsonResponse(req, res, 404, {
+      ok: false,
+      error: 'Clip not found.',
+    });
+    return;
+  }
+
+  if (clip.deleteToken !== deleteToken) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Delete permission not found for that clip.',
+    });
+    return;
+  }
+
+  try {
+    const removedClip = await clipsStore.deleteClip(clipId);
+    if (removedClip) {
+      await clipMediaManager.deleteClipAssets(removedClip);
+    }
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      removedClipId: clipId,
+      clips: await visibleClips(),
+    });
+  } catch (error) {
+    console.error('Failed to remove clip:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to remove that clip right now.',
+    });
+  }
+}
+
+async function handleClipReportRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const clipId = sanitizeClipField(body.clipId, 80);
+  const reporterKey = sanitizeClipField(body.reporterKey, 120);
+  if (!clipId || !reporterKey) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Clip id and reporter key are required.',
+    });
+    return;
+  }
+
+  try {
+    const result = await clipsStore.registerReport(clipId, reporterKey);
+    if (!result.clip) {
+      sendJsonResponse(req, res, 404, {
+        ok: false,
+        error: 'Clip not found.',
+      });
+      return;
+    }
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      alreadyReported: result.alreadyReported,
+      clipId,
+    });
+  } catch (error) {
+    console.error('Failed to report clip:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to report that clip right now.',
+    });
+  }
+}
+
+async function handleClipMediaRequest(req, res, requestUrl, assetType) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  const pathPrefix = assetType === 'video' ? '/media/clips/videos/' : '/media/clips/posters/';
+  const storageKey = decodeURIComponent(requestUrl.pathname.slice(pathPrefix.length));
+
+  try {
+    await clipMediaManager.streamAsset(req, res, assetType, storageKey, streamMediaFile);
+  } catch (error) {
+    sendJsonResponse(req, res, error.code === 'NOT_FOUND' ? 404 : 500, {
+      ok: false,
+      error: error.code === 'NOT_FOUND' ? 'Clip media not found.' : 'Unable to load clip media.',
+    });
+  }
 }
 
 async function handleSongsRequest(req, res) {
@@ -2770,13 +3196,38 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/clips') {
+    await handleClipsRequest(req, res);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/songs/delete') {
     await handleSongDeleteRequest(req, res);
     return;
   }
 
+  if (requestUrl.pathname === '/api/clips/delete') {
+    await handleClipDeleteRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/clips/report') {
+    await handleClipReportRequest(req, res);
+    return;
+  }
+
   if (requestUrl.pathname.startsWith('/media/songs/')) {
     handleSongMediaRequest(req, res, requestUrl);
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith('/media/clips/videos/')) {
+    await handleClipMediaRequest(req, res, requestUrl, 'video');
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith('/media/clips/posters/')) {
+    await handleClipMediaRequest(req, res, requestUrl, 'poster');
     return;
   }
 
@@ -2792,6 +3243,7 @@ const server = http.createServer(async (req, res) => {
     websocket: true,
     reviewsApi: '/api/reviews',
     songsApi: '/api/songs',
+    clipsApi: '/api/clips',
   });
 });
 
@@ -2884,7 +3336,17 @@ setInterval(tickRealtimeRooms, TICK_MS);
 bootstrapPersistentDataDir();
 cleanupRetiredSongs();
 logStorageConfiguration();
+clipMediaManager.ensureClipDirs();
+clipMediaManager.logConfiguration();
 
-server.listen(PORT, HOST, () => {
-  console.log(`Nova Arcade realtime server running at ws://${HOST}:${PORT}`);
-});
+clipsStore.init()
+  .then(() => {
+    console.log(`Clip metadata store: ${clipsStore.usesPostgres ? 'postgres' : 'local json'}`);
+    server.listen(PORT, HOST, () => {
+      console.log(`Nova Arcade realtime server running at ws://${HOST}:${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Failed to initialize clip services:', error.message);
+    process.exit(1);
+  });

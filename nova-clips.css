@@ -1,0 +1,414 @@
+.clips-body {
+    min-height: 100vh;
+    color: #f4fbff;
+    background:
+        radial-gradient(circle at 12% 12%, rgba(255, 143, 88, 0.16), transparent 26%),
+        radial-gradient(circle at 88% 10%, rgba(104, 224, 255, 0.18), transparent 32%),
+        radial-gradient(circle at 50% 110%, rgba(70, 120, 255, 0.12), transparent 40%),
+        linear-gradient(180deg, #07111d 0%, #030912 100%);
+}
+
+.clips-shell {
+    position: relative;
+    z-index: 1;
+    max-width: 1380px;
+    margin: 0 auto;
+    padding: 1.6rem 1.25rem 2.8rem;
+}
+
+.clips-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-bottom: 1rem;
+    color: #c6d9f2;
+    text-decoration: none;
+}
+
+.clips-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.85fr);
+    gap: 1.2rem;
+    padding: 1.4rem;
+    border: 1px solid rgba(127, 162, 205, 0.16);
+    border-radius: 32px;
+    background:
+        linear-gradient(135deg, rgba(9, 18, 32, 0.96) 0%, rgba(13, 28, 48, 0.82) 58%, rgba(255, 115, 72, 0.12) 100%);
+    box-shadow: 0 30px 90px rgba(2, 7, 14, 0.48);
+}
+
+.clips-lede {
+    max-width: 60ch;
+    color: #dbe9fb;
+}
+
+.clips-highlights {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.8rem;
+    margin-top: 1.1rem;
+}
+
+.clips-stat,
+.clips-feature,
+.clips-panel {
+    border: 1px solid rgba(125, 162, 214, 0.16);
+    border-radius: 26px;
+    background: rgba(8, 18, 33, 0.78);
+    box-shadow: 0 24px 60px rgba(2, 7, 14, 0.34);
+}
+
+.clips-stat {
+    padding: 0.95rem 1rem;
+}
+
+.clips-stat strong {
+    display: block;
+    font-family: "Oxanium", "Segoe UI", sans-serif;
+    font-size: 1.25rem;
+}
+
+.clips-stat span {
+    color: #aabbd3;
+    font-size: 0.95rem;
+}
+
+.clips-feature {
+    padding: 1.15rem;
+    background:
+        linear-gradient(180deg, rgba(11, 21, 37, 0.98), rgba(12, 18, 30, 0.94));
+}
+
+.clips-feature h2 {
+    margin: 0.35rem 0 0.65rem;
+}
+
+.clips-feature p,
+.clips-upload-note,
+.clips-status,
+.clips-empty {
+    color: #b7c9df;
+}
+
+.clips-feature-list {
+    margin: 1rem 0 0;
+    padding-left: 1.15rem;
+    color: #e7f4ff;
+}
+
+.clips-layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+    gap: 1.2rem;
+    margin-top: 1.3rem;
+    align-items: start;
+}
+
+.clips-panel {
+    padding: 1.15rem;
+}
+
+.upload-panel {
+    position: sticky;
+    top: 1.25rem;
+}
+
+.clips-panel-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.clips-panel-head h2 {
+    margin: 0.25rem 0 0;
+}
+
+.clips-panel-head p:last-child,
+.clip-count-badge {
+    max-width: 28ch;
+    color: #b7c9df;
+}
+
+.clip-upload-form,
+.clips-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 0.95rem;
+}
+
+.clip-drop-zone {
+    padding: 1.3rem;
+    border: 1px dashed rgba(113, 216, 255, 0.4);
+    border-radius: 24px;
+    background:
+        linear-gradient(180deg, rgba(10, 22, 38, 0.92), rgba(8, 16, 27, 0.92));
+    cursor: pointer;
+    transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.clip-drop-zone:hover,
+.clip-drop-zone:focus-visible,
+.clip-drop-zone.is-dragging {
+    transform: translateY(-2px);
+    border-color: rgba(113, 216, 255, 0.86);
+    background:
+        linear-gradient(180deg, rgba(12, 28, 48, 0.98), rgba(9, 18, 32, 0.94));
+}
+
+.clip-drop-zone.is-busy {
+    opacity: 0.8;
+    cursor: progress;
+}
+
+.clip-drop-kicker,
+.clip-preview-label {
+    margin: 0;
+    font-size: 0.84rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #84dfff;
+}
+
+.clip-drop-zone h3,
+.clip-preview-head h3 {
+    margin: 0.4rem 0 0.4rem;
+    font-family: "Oxanium", "Segoe UI", sans-serif;
+}
+
+.clip-pick-button,
+.clip-submit-button {
+    margin-top: 1rem;
+}
+
+.clip-preview-panel {
+    padding: 1rem;
+    border: 1px solid rgba(125, 162, 214, 0.16);
+    border-radius: 24px;
+    background: rgba(8, 16, 28, 0.94);
+}
+
+.clip-preview-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.clip-preview-status,
+.clip-preview-file-name,
+.clip-preview-meta {
+    color: #a9bdd8;
+}
+
+.clip-preview-video {
+    width: 100%;
+    margin-top: 0.8rem;
+    border-radius: 20px;
+    background: #04070d;
+    aspect-ratio: 9 / 16;
+    object-fit: cover;
+}
+
+.clip-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+}
+
+.clip-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.clip-field--full {
+    grid-column: 1 / -1;
+}
+
+.clip-field span {
+    color: #dce8f8;
+    font-size: 0.92rem;
+}
+
+.clip-field input,
+.clip-field textarea {
+    width: 100%;
+    padding: 0.9rem 1rem;
+    border: 1px solid rgba(123, 156, 199, 0.18);
+    border-radius: 18px;
+    color: #f7fbff;
+    background: rgba(5, 11, 20, 0.9);
+    resize: vertical;
+}
+
+.clips-feed {
+    max-height: min(86vh, 1120px);
+    overflow: auto;
+    padding-right: 0.15rem;
+    scroll-snap-type: y proximity;
+}
+
+.clips-feed::-webkit-scrollbar {
+    width: 10px;
+}
+
+.clips-feed::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(117, 160, 214, 0.22);
+}
+
+.clip-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) 320px;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(127, 162, 205, 0.14);
+    border-radius: 28px;
+    background:
+        linear-gradient(180deg, rgba(7, 16, 27, 0.97), rgba(6, 13, 23, 0.94));
+    scroll-snap-align: start;
+}
+
+.clip-card-video-shell {
+    position: relative;
+    min-height: min(78vh, 820px);
+    border-radius: 24px;
+    overflow: hidden;
+    background: #02050a;
+}
+
+.clip-card video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #02050a;
+}
+
+.clip-card-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.clip-pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.clip-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    background: rgba(16, 32, 55, 0.92);
+    color: #cbe2fb;
+    font-size: 0.82rem;
+}
+
+.clip-card-title {
+    margin: 0;
+    font-family: "Oxanium", "Segoe UI", sans-serif;
+    font-size: 1.45rem;
+}
+
+.clip-card-caption {
+    margin: 0;
+    color: #dce8f8;
+}
+
+.clip-card-byline,
+.clip-card-date,
+.clip-card-note {
+    margin: 0;
+    color: #9db5d0;
+}
+
+.clip-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: auto;
+}
+
+.clip-action {
+    border: 1px solid rgba(113, 216, 255, 0.24);
+    border-radius: 999px;
+    padding: 0.72rem 1rem;
+    color: #eef8ff;
+    background: rgba(10, 20, 34, 0.96);
+    cursor: pointer;
+}
+
+.clip-action:hover,
+.clip-action:focus-visible {
+    background: rgba(14, 31, 50, 0.98);
+}
+
+.clip-action--delete {
+    border-color: rgba(255, 124, 115, 0.34);
+}
+
+.clip-action--report {
+    border-color: rgba(255, 196, 108, 0.3);
+}
+
+.clip-mute-toggle {
+    position: absolute;
+    right: 0.9rem;
+    bottom: 0.9rem;
+    padding: 0.65rem 0.9rem;
+    border: 0;
+    border-radius: 999px;
+    color: #f5fbff;
+    background: rgba(3, 7, 13, 0.72);
+    backdrop-filter: blur(12px);
+    cursor: pointer;
+}
+
+.hidden {
+    display: none !important;
+}
+
+@media (max-width: 1120px) {
+    .clips-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .upload-panel {
+        position: static;
+    }
+
+    .clip-card {
+        grid-template-columns: 1fr;
+    }
+
+    .clip-card-meta {
+        order: -1;
+    }
+}
+
+@media (max-width: 780px) {
+    .clips-shell {
+        padding: 1rem 0.85rem 2rem;
+    }
+
+    .clips-hero {
+        grid-template-columns: 1fr;
+    }
+
+    .clips-highlights,
+    .clip-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .clip-card {
+        padding: 0.8rem;
+    }
+
+    .clip-card-video-shell {
+        min-height: 72vh;
+    }
+}
