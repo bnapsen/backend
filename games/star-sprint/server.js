@@ -47,6 +47,7 @@ const MAX_CITY_RAID_LOBBIES = 120;
 const CITY_RAID_ROOM_CODE_LENGTH = 5;
 const CITY_RAID_DEFAULT_PORT = 7777;
 const CITY_RAID_LOBBY_TTL_MS = 2 * 60 * 1000;
+const CITY_RAID_API_VERSION = '2026-04-13';
 const SONG_EXTENSION_TO_MIME = new Map([
   ['.aac', 'audio/aac'],
   ['.flac', 'audio/flac'],
@@ -2616,6 +2617,7 @@ const server = http.createServer(async (req, res) => {
       service: 'nova-arcade-realtime',
       games: Object.keys(GAME_DEFS),
       rooms: rooms.size,
+      cityRaidApiVersion: CITY_RAID_API_VERSION,
     });
     return;
   }
@@ -2668,6 +2670,7 @@ const server = http.createServer(async (req, res) => {
     reviewsApi: '/api/reviews',
     songsApi: '/api/songs',
     cityRaidApi: '/api/cityraid/lobbies',
+    cityRaidApiVersion: CITY_RAID_API_VERSION,
   });
 });
 

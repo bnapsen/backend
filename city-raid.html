@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>City Raid | Download</title>
+  <title>City Raid | Download + Co-op</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -14,26 +14,26 @@
     <header class="topbar">
       <a class="back-link" href="index.html">Back to Nova Arcade</a>
       <div class="topbar-badges">
-        <span class="badge">Windows Download</span>
+        <span class="badge">Windows Download + Co-op</span>
         <span class="badge ghost">Unreal Engine 5</span>
-        <span class="badge ghost">Spider Survival Prototype</span>
+        <span class="badge ghost">Room Codes + Lobby Links</span>
       </div>
     </header>
 
     <main class="layout">
       <section class="panel hero">
         <div class="hero-copy">
-          <p class="eyebrow">Fresh downloadable build</p>
+          <p class="eyebrow">Fresh downloadable spider build</p>
           <h1>City Raid</h1>
           <p class="lede">
-            Swing, climb, float, and hunt across an overrun city as a spider protagonist while waves of bugs,
-            flies, birds, and mites flood the blocks. This downloadable Unreal build is the current live
-            Windows package from the latest CityRaidTPS project.
+            City Raid is the current downloadable Unreal spider build with website-powered room codes, live lobby links,
+            and a separate co-op helper pack so you can host or join raids without guessing the launch flow.
           </p>
 
           <div class="cta-row">
-            <a class="btn btn-primary" href="assets/downloads/city-raid/City-Raid-Download-Assistant.cmd">Download Assistant</a>
-            <a class="btn btn-secondary" href="#screens">See Screenshots</a>
+            <a class="btn btn-primary" href="assets/downloads/city-raid/City-Raid-Download-Assistant.cmd">Download Game Assistant</a>
+            <a class="btn btn-primary" href="assets/downloads/city-raid/City-Raid-Coop-Helpers.zip">Download Co-op Helpers</a>
+            <a class="btn btn-secondary" href="#co-op">Open Co-op Board</a>
             <a class="btn btn-secondary" href="#manual-download">Manual Download Parts</a>
             <a class="btn btn-secondary" href="index.html#games">Back to Lineup</a>
           </div>
@@ -41,15 +41,15 @@
           <div class="spec-grid">
             <article class="spec-card">
               <span class="spec-label">Mode</span>
-              <strong>Single-player swarm survival prototype</strong>
+              <strong>Solo spider survival or website-assisted co-op listen server</strong>
             </article>
             <article class="spec-card">
               <span class="spec-label">Hero</span>
-              <strong>Spider traversal, webs, venom bomb, and wall climbing</strong>
+              <strong>Web swing, wall climb, cocoon swarms, feed, and charge venom</strong>
             </article>
             <article class="spec-card">
-              <span class="spec-label">Build</span>
-              <strong>Fresh packaged Windows zip from April 12, 2026</strong>
+              <span class="spec-label">Download Flow</span>
+              <strong>Split Windows package plus a lightweight co-op helper pack</strong>
             </article>
           </div>
         </div>
@@ -57,6 +57,77 @@
         <div class="hero-media">
           <img src="city-raid-cover.svg" alt="City Raid cover art" />
         </div>
+      </section>
+
+      <section id="co-op" class="panel lobby-panel">
+        <div class="section-heading">
+          <p class="eyebrow">Co-op launch board</p>
+          <h2>Download the build, add the helper pack, then host or join by room code</h2>
+        </div>
+
+        <div class="lobby-grid">
+          <article class="lobby-card">
+            <h3>Host a raid</h3>
+            <p>
+              Download the game with the assistant, extract it fully, then unzip the co-op helper pack into the same
+              folder as <code>FIRSTPERSON.exe</code>. Run <code>HOST-CITY-RAID-MULTIPLAYER.bat</code> and it will
+              register your room on this page while the game is open.
+            </p>
+            <ol class="steps compact">
+              <li>Run <code>City-Raid-Download-Assistant.cmd</code> and extract the rebuilt zip.</li>
+              <li>Unzip <code>City-Raid-Coop-Helpers.zip</code> into the extracted game folder.</li>
+              <li>Run <code>HOST-CITY-RAID-MULTIPLAYER.bat</code> and share the room code it gives you.</li>
+            </ol>
+            <p class="fine-print">Default host flow uses port <code>7777</code>. If your router blocks it, forward UDP 7777 and allow the game through Windows Firewall.</p>
+          </article>
+
+          <article class="lobby-card join-card">
+            <h3>Join by room code</h3>
+            <p>Paste a City Raid room code and this page will resolve the current host address for you.</p>
+
+            <form id="city-raid-join-form" class="join-form">
+              <label class="sr-only" for="city-raid-room-code">City Raid room code</label>
+              <input id="city-raid-room-code" name="roomCode" type="text" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE" />
+              <button id="city-raid-resolve-button" class="btn btn-primary" type="submit">Find Room</button>
+            </form>
+            <p id="city-raid-join-status" class="panel-status" aria-live="polite"></p>
+
+            <div id="city-raid-join-result" class="join-result hidden">
+              <div class="join-result-header">
+                <strong id="city-raid-resolved-room-code">-----</strong>
+                <span id="city-raid-resolved-host-name" class="room-host-label">City Raid Host</span>
+              </div>
+              <p id="city-raid-resolved-note" class="join-note">Room ready to join.</p>
+              <div class="result-meta">
+                <span id="city-raid-resolved-version">Current build</span>
+                <span id="city-raid-resolved-updated">Fresh heartbeat</span>
+              </div>
+              <div class="copy-row">
+                <code id="city-raid-resolved-address">203.0.113.10:7777</code>
+                <button id="city-raid-copy-address" class="btn btn-secondary" type="button">Copy Address</button>
+              </div>
+              <div class="copy-row">
+                <code id="city-raid-launch-command">FIRSTPERSON.exe 203.0.113.10:7777</code>
+                <button id="city-raid-copy-command" class="btn btn-secondary" type="button">Copy Launch Line</button>
+              </div>
+              <a id="city-raid-share-link" class="share-link" href="https://bnapsen.com/city-raid.html" target="_blank" rel="noreferrer">Open room share link</a>
+              <p class="fine-print">After you extract the game and helper pack, run <code>JOIN-CITY-RAID-MULTIPLAYER.bat</code> and paste this same room code, or launch the game with the copied address.</p>
+            </div>
+          </article>
+        </div>
+
+        <article class="lobby-card public-lobbies-card">
+          <div class="public-lobbies-header">
+            <div>
+              <h3>Public rooms live now</h3>
+              <p>These rooms refresh from the live backend. If a host closes the game, their room drops off automatically.</p>
+            </div>
+            <button id="city-raid-refresh-lobbies" class="btn btn-secondary" type="button">Refresh Board</button>
+          </div>
+          <p id="city-raid-lobbies-status" class="panel-status" aria-live="polite"></p>
+          <div id="city-raid-lobbies-empty" class="empty-state">No public City Raid rooms are live right now. Host one from the downloaded build and it will appear here.</div>
+          <div id="city-raid-lobbies-list" class="public-lobbies-list"></div>
+        </article>
       </section>
 
       <section class="panel detail-panel">
@@ -78,8 +149,8 @@
             <p>Wrap enemies in web, cocoon them, feed to recover health, and build up the venom-bomb ultimate while you stay mobile.</p>
           </article>
           <article class="feature-card">
-            <h3>New pause menu</h3>
-            <p>The latest build adds a real in-game Escape menu with Resume, Restart District, and Quit Game so the downloadable version feels less prototype-rough.</p>
+            <h3>Co-op layer</h3>
+            <p>The website now handles room codes, launch-line lookup, and public lobby sharing so multiplayer is easier to spin up than passing raw IPs around.</p>
           </article>
         </div>
       </section>
@@ -108,37 +179,37 @@
       <section class="panel status-panel">
         <div class="section-heading">
           <p class="eyebrow">Download notes</p>
-          <h2>How to play locally</h2>
+          <h2>How to get the game and co-op tools in the right places</h2>
         </div>
         <div class="status-grid">
           <article class="status-card">
-            <h3>Inside the zip</h3>
-            <p>The packaged build is served here as five split download parts plus a tiny Windows download assistant that rebuilds the full zip for you.</p>
+            <h3>Game download</h3>
+            <p>The game itself is served as five split download parts plus a Windows assistant that rebuilds the full zip for you.</p>
           </article>
           <article class="status-card">
-            <h3>What to expect</h3>
-            <p>This build is focused on the downloadable single-player game. It does not ship the older website room-code board that an earlier placeholder page described.</p>
+            <h3>Co-op helper pack</h3>
+            <p>The host and join scripts are in a separate helper zip so the website can evolve the multiplayer flow without repackaging the whole game build every time.</p>
           </article>
           <article class="status-card">
-            <h3>Current highlight</h3>
-            <p>The latest refresh specifically includes the new in-game Escape pause/options flow on top of the spider traversal and swarm systems.</p>
+            <h3>What goes where</h3>
+            <p>Extract the game first, then drop the helper pack contents into that same extracted folder so the batch files can find <code>FIRSTPERSON.exe</code>.</p>
           </article>
         </div>
 
         <ol class="steps">
-          <li>Download <code>City-Raid-Download-Assistant.cmd</code>.</li>
-          <li>Run it and let it pull the five hosted package parts into one zip.</li>
-          <li>Let it extract the archive fully before launching the game.</li>
-          <li>Run <code>FIRSTPERSON.exe</code> from the extracted folder.</li>
+          <li>Download <code>City-Raid-Download-Assistant.cmd</code> and let it rebuild the full Windows zip.</li>
+          <li>Extract the rebuilt archive fully before trying to launch the game.</li>
+          <li>Download <code>City-Raid-Coop-Helpers.zip</code> and unzip it into the extracted game folder.</li>
+          <li>Run <code>HOST-CITY-RAID-MULTIPLAYER.bat</code> or <code>JOIN-CITY-RAID-MULTIPLAYER.bat</code>.</li>
         </ol>
 
-        <p class="fine-print">Reconstructed zip size: about 402 MB. Extracted size is a little over 1 GB.</p>
+        <p class="fine-print">Reconstructed game zip size: about 402 MB. Extracted size is a little over 1 GB.</p>
+        <p class="fine-print">Co-op helper pack size: about 6 KB. It includes the host, join, install, and quick-play helpers plus a short README.</p>
         <p class="fine-print">Packaged from the latest CityRaidTPS Unreal project on April 12, 2026.</p>
-        <p class="fine-print">The split download layout keeps the game publishable on GitHub Pages while still serving the full Windows package.</p>
-        <p class="fine-print">SHA-256: <code>0F2B6CD1767F0D3A1E23557486A05D1AAF05BD059E0E9FFA738CA2653740B309</code></p>
+        <p class="fine-print">Game SHA-256: <code>0F2B6CD1767F0D3A1E23557486A05D1AAF05BD059E0E9FFA738CA2653740B309</code></p>
 
         <div id="manual-download" class="status-card" style="margin-top: 1rem;">
-          <h3>Manual part download</h3>
+          <h3>Manual download links</h3>
           <p>If the assistant gets blocked by Windows policy, download all five parts below into one folder, combine them in order, and then extract the rebuilt zip.</p>
           <p class="fine-print">
             <a href="assets/downloads/city-raid/City-Raid-Win64.zip.part01">Part 01</a> |
@@ -146,11 +217,13 @@
             <a href="assets/downloads/city-raid/City-Raid-Win64.zip.part03">Part 03</a> |
             <a href="assets/downloads/city-raid/City-Raid-Win64.zip.part04">Part 04</a> |
             <a href="assets/downloads/city-raid/City-Raid-Win64.zip.part05">Part 05</a> |
-            <a href="assets/downloads/city-raid/City-Raid-Download-Assistant.ps1">PowerShell helper</a>
+            <a href="assets/downloads/city-raid/City-Raid-Download-Assistant.ps1">PowerShell rebuild helper</a> |
+            <a href="assets/downloads/city-raid/City-Raid-Coop-Helpers.zip">Co-op helper pack</a>
           </p>
         </div>
       </section>
     </main>
   </div>
+  <script src="city-raid.js"></script>
 </body>
 </html>
