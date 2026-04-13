@@ -32,5 +32,7 @@ GET /healthz
 
 - Public page path: `/games/star-sprint/`
 - Backend root directory: `games/star-sprint`
+- Render service name: `backend`
 - Render blueprint lives at the repo root in `render.yaml`
 - Production WebSocket URL is configured in `game.js`
+- City Raid lobby API path: `/api/cityraid/lobbies`

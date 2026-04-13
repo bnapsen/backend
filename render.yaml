@@ -1,9 +1,13 @@
 services:
   - type: web
-    name: star-sprint-backend
+    name: backend
     runtime: node
+    branch: main
     autoDeployTrigger: commit
     rootDir: games/star-sprint
+    buildFilter:
+      paths:
+        - games/star-sprint/**
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /healthz
