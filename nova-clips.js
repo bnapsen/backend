@@ -1,7 +1,7 @@
 const PROD_CLIPS_API_BASE = "https://backend-ujaa.onrender.com";
 const CLIP_OWNERSHIP_STORAGE_KEY = "nova-clips:owned-uploads";
 const CLIP_REPORTER_STORAGE_KEY = "nova-clips:reporter-id";
-const ALLOWED_CLIP_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v"]);
+const ALLOWED_CLIP_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".3gp", ".3gpp"]);
 
 const uploadForm = document.getElementById("clip-upload-form");
 const fileInput = document.getElementById("clip-file");
@@ -256,6 +256,19 @@ function loadVideoMetadata(file) {
             reject(new Error("That video could not be read."));
         };
     });
+}
+
+function showFallbackPreview(file, statusMessage) {
+    releasePreviewUrl();
+    previewPanel.classList.remove("hidden");
+    previewTitle.textContent = titleInput.value.trim() || inferTitleFromFileName(file.name);
+    previewFileName.textContent = file.name;
+    previewMeta.textContent = `${formatBytes(file.size)} - Local preview unavailable, server will validate and convert it.`;
+    setPreviewStatus(statusMessage);
+    previewVideo.pause();
+    previewVideo.removeAttribute("src");
+    previewVideo.removeAttribute("poster");
+    previewVideo.load();
 }
 
 function showLocalPreview(file, metadata, statusMessage) {
@@ -531,7 +544,7 @@ async function handleClipSelection(file) {
 
     if (!isSupportedClipFile(file)) {
         state.selectedFile = null;
-        setUploadStatus("Choose a supported video file: mp4, webm, mov, or m4v.", true);
+        setUploadStatus("Choose a supported video file: mp4, webm, mov, m4v, or 3gp.", true);
         return;
     }
 
@@ -542,6 +555,7 @@ async function handleClipSelection(file) {
     }
 
     setUploadStatus("");
+    state.selectedFile = file;
 
     try {
         const metadata = await loadVideoMetadata(file);
@@ -553,18 +567,26 @@ async function handleClipSelection(file) {
             throw new Error("Videos must be 30 seconds or shorter.");
         }
 
-        state.selectedFile = file;
         showLocalPreview(file, metadata, "Looks good");
     } catch (error) {
-        state.selectedFile = null;
-        releasePreviewUrl();
-        previewPanel.classList.add("hidden");
-        setUploadStatus(error.message, true);
+        if (String(error && error.message || "").includes("30 seconds")) {
+            state.selectedFile = null;
+            releasePreviewUrl();
+            previewPanel.classList.add("hidden");
+            setUploadStatus(error.message, true);
+            return;
+        }
+
+        showFallbackPreview(file, "Ready to upload");
+        setUploadStatus("This device could not preview that clip locally, but the upload can still work and the server will validate it.");
     }
 }
 
 async function uploadClip(file) {
     if (!file || state.uploadInFlight) {
+        if (!file) {
+            setUploadStatus("Choose a clip first.");
+        }
         return;
     }
 
@@ -589,7 +611,12 @@ async function uploadClip(file) {
             method: "POST",
             body: formData,
         });
-        const payload = await response.json();
+        let payload = null;
+        try {
+            payload = await response.json();
+        } catch {
+            throw new Error("The upload service returned an unreadable response.");
+        }
         if (!response.ok || !payload.ok) {
             throw new Error(payload.error || "Unable to save that clip right now.");
         }

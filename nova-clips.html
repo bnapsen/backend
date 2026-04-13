@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="nova-clips.css">
+    <link rel="stylesheet" href="nova-clips.css?v=20260413b">
 </head>
 <body class="clips-body">
     <div class="clips-shell">
@@ -64,12 +64,12 @@
                 </div>
 
                 <form id="clip-upload-form" class="clip-upload-form">
-                    <input id="clip-file" name="clipFile" class="visually-hidden" type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v">
+                    <input id="clip-file" name="clipFile" class="visually-hidden" type="file" accept="video/mp4,video/webm,video/quicktime,video/3gpp,.mp4,.webm,.mov,.m4v,.3gp,.3gpp">
 
                     <div id="clip-drop-zone" class="clip-drop-zone" tabindex="0" role="button" aria-describedby="clip-drop-help clip-upload-status">
                         <p class="clip-drop-kicker">Drop a clip here</p>
                         <h3>Choose a 30-second video</h3>
-                        <p id="clip-drop-help">Tap or click here, or drag a file in. MP4, WEBM, MOV, and M4V supported.</p>
+                        <p id="clip-drop-help">Tap or click here, or drag a file in. MP4, WEBM, MOV, M4V, and 3GP supported.</p>
                         <button id="clip-pick-button" class="btn btn-primary clip-pick-button" type="button">Choose Video</button>
                     </div>
 
@@ -103,6 +103,7 @@
 
                     <div class="clips-upload-note">
                         The backend enforces a 30-second limit and generates a poster image for the feed.
+                        If your device cannot preview a clip locally, you can still upload it and let the server validate and convert it.
                         The current upload ceiling is 80 MB before processing.
                     </div>
                     <p id="clip-upload-status" class="form-status" aria-live="polite"></p>
@@ -126,6 +127,6 @@
         </main>
     </div>
 
-    <script src="nova-clips.js" defer></script>
+    <script src="nova-clips.js?v=20260413b" defer></script>
 </body>
 </html>

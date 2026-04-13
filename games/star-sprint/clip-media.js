@@ -16,6 +16,8 @@ const VIDEO_EXTENSION_TO_MIME = new Map([
   ['.m4v', 'video/mp4'],
   ['.mov', 'video/quicktime'],
   ['.webm', 'video/webm'],
+  ['.3gp', 'video/3gpp'],
+  ['.3gpp', 'video/3gpp'],
 ]);
 
 function ensureDirectory(dirPath) {
