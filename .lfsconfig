@@ -1,0 +1,3 @@
+[lfs]
+	fetchexclude = assets/downloads/**
+	skipdownloaderrors = true
