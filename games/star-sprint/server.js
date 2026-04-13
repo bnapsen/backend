@@ -47,7 +47,6 @@ const MAX_CITY_RAID_LOBBIES = 120;
 const CITY_RAID_ROOM_CODE_LENGTH = 5;
 const CITY_RAID_DEFAULT_PORT = 7777;
 const CITY_RAID_LOBBY_TTL_MS = 2 * 60 * 1000;
-const CITY_RAID_API_VERSION = '2026-04-13';
 const SONG_EXTENSION_TO_MIME = new Map([
   ['.aac', 'audio/aac'],
   ['.flac', 'audio/flac'],
@@ -2617,7 +2616,6 @@ const server = http.createServer(async (req, res) => {
       service: 'nova-arcade-realtime',
       games: Object.keys(GAME_DEFS),
       rooms: rooms.size,
-      cityRaidApiVersion: CITY_RAID_API_VERSION,
     });
     return;
   }
@@ -2637,26 +2635,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (requestUrl.pathname === '/api/cityraid/lobbies') {
-    await handleCityRaidLobbiesRequest(req, res);
-    return;
-  }
-
-  if (requestUrl.pathname === '/api/cityraid/lobbies/heartbeat') {
-    await handleCityRaidLobbyHeartbeatRequest(req, res);
-    return;
-  }
-
-  if (requestUrl.pathname === '/api/cityraid/lobbies/close') {
-    await handleCityRaidLobbyCloseRequest(req, res);
-    return;
-  }
-
-  if (requestUrl.pathname === '/api/cityraid/lobbies/resolve') {
-    await handleCityRaidLobbyResolveRequest(req, res, requestUrl);
-    return;
-  }
-
   if (requestUrl.pathname.startsWith('/media/songs/')) {
     handleSongMediaRequest(req, res, requestUrl);
     return;
@@ -2669,8 +2647,6 @@ const server = http.createServer(async (req, res) => {
     websocket: true,
     reviewsApi: '/api/reviews',
     songsApi: '/api/songs',
-    cityRaidApi: '/api/cityraid/lobbies',
-    cityRaidApiVersion: CITY_RAID_API_VERSION,
   });
 });
 
@@ -2760,7 +2736,6 @@ wss.on('connection', (socket) => {
 });
 
 setInterval(tickRealtimeRooms, TICK_MS);
-setInterval(pruneCityRaidLobbies, 30 * 1000);
 cleanupRetiredSongs();
 
 server.listen(PORT, HOST, () => {
