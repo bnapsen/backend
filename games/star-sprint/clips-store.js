@@ -6,6 +6,9 @@ const path = require('path');
 const { Pool } = require('pg');
 const { createS3JsonStore } = require('./s3-json-store.js');
 
+const MAX_PUBLIC_CLIP_COMMENTS = 10;
+const MAX_STORED_CLIP_COMMENTS = 200;
+
 function ensureDirectory(dirPath) {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
@@ -14,6 +17,51 @@ function ensureDirectory(dirPath) {
 
 function clipSort(left, right) {
   return String(right.createdAt || '').localeCompare(String(left.createdAt || ''));
+}
+
+function normalizeLimit(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0
+    ? Math.floor(numericValue)
+    : 0;
+}
+
+function normalizeEmoji(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .slice(0, 12);
+}
+
+function normalizeEmojiCounts(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return {};
+  }
+
+  const nextCounts = {};
+  for (const [emoji, count] of Object.entries(raw)) {
+    const safeEmoji = normalizeEmoji(emoji);
+    const safeCount = Number(count || 0);
+    if (!safeEmoji || !Number.isFinite(safeCount) || safeCount <= 0) {
+      continue;
+    }
+    nextCounts[safeEmoji] = Math.floor(safeCount);
+  }
+  return nextCounts;
+}
+
+function commentSort(left, right) {
+  return String(right.createdAt || '').localeCompare(String(left.createdAt || ''));
+}
+
+function commentRecord(record) {
+  return {
+    id: String(record.id || ''),
+    authorName: String(record.authorName || record.uploaderName || 'Guest viewer'),
+    body: String(record.body || record.message || ''),
+    emoji: normalizeEmoji(record.emoji || ''),
+    createdAt: String(record.createdAt || ''),
+  };
 }
 
 function clipRecord(record) {
@@ -34,19 +82,216 @@ function clipRecord(record) {
     posterStorageKey: String(record.posterStorageKey || ''),
     reportCount: Number(record.reportCount || 0),
     status: String(record.status || 'active'),
+    viewCount: Number(record.viewCount || 0),
+    likeCount: Number(record.likeCount || 0),
+    dislikeCount: Number(record.dislikeCount || 0),
+    emojiCounts: normalizeEmojiCounts(record.emojiCounts),
+    commentCount: Number(record.commentCount || 0),
+    comments: Array.isArray(record.comments)
+      ? record.comments.map(commentRecord).filter((comment) => comment.id)
+      : [],
   };
 }
 
-function normalizeLimit(value) {
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) && numericValue > 0
-    ? Math.floor(numericValue)
-    : 0;
+function hashViewerToken(token) {
+  const safeToken = String(token || '').trim();
+  if (!safeToken) {
+    return '';
+  }
+  return crypto.createHash('sha256').update(safeToken).digest('hex');
+}
+
+function normalizeInteractionBucket(record) {
+  const source = record && typeof record === 'object' ? record : {};
+  const nextBucket = {};
+
+  for (const [clipId, rawEntry] of Object.entries(source)) {
+    const safeClipId = String(clipId || '').trim();
+    if (!safeClipId) {
+      continue;
+    }
+
+    const viewHashes = Array.isArray(rawEntry && rawEntry.viewHashes)
+      ? [...new Set(
+        rawEntry.viewHashes
+          .map((value) => String(value || '').trim())
+          .filter(Boolean),
+      )]
+      : [];
+
+    const voteSource = rawEntry && typeof rawEntry.voteMap === 'object' ? rawEntry.voteMap : {};
+    const voteMap = {};
+    for (const [viewerHash, rawValue] of Object.entries(voteSource)) {
+      const safeViewerHash = String(viewerHash || '').trim();
+      const reaction = parseStoredReaction(rawValue);
+      if (!safeViewerHash || !reaction) {
+        continue;
+      }
+      voteMap[safeViewerHash] = serializeStoredReaction(reaction);
+    }
+
+    nextBucket[safeClipId] = {
+      viewHashes,
+      voteMap,
+    };
+  }
+
+  return nextBucket;
+}
+
+function normalizeCommentsBucket(record) {
+  const source = record && typeof record === 'object' ? record : {};
+  const nextBucket = {};
+
+  for (const [clipId, rawComments] of Object.entries(source)) {
+    const safeClipId = String(clipId || '').trim();
+    if (!safeClipId || !Array.isArray(rawComments)) {
+      continue;
+    }
+
+    nextBucket[safeClipId] = rawComments
+      .map(commentRecord)
+      .filter((comment) => comment.id && (comment.body || comment.emoji))
+      .sort(commentSort)
+      .slice(0, MAX_STORED_CLIP_COMMENTS);
+  }
+
+  return nextBucket;
+}
+
+function buildReactionSummary(voteMap) {
+  const summary = {
+    likeCount: 0,
+    dislikeCount: 0,
+    emojiCounts: {},
+  };
+
+  for (const rawValue of Object.values(voteMap || {})) {
+    const reaction = parseStoredReaction(rawValue);
+    if (!reaction) {
+      continue;
+    }
+
+    if (reaction.type === 'like') {
+      summary.likeCount += 1;
+      continue;
+    }
+
+    if (reaction.type === 'dislike') {
+      summary.dislikeCount += 1;
+      continue;
+    }
+
+    if (reaction.type === 'emoji' && reaction.emoji) {
+      summary.emojiCounts[reaction.emoji] = Number(summary.emojiCounts[reaction.emoji] || 0) + 1;
+    }
+  }
+
+  return summary;
+}
+
+function normalizeReactionInput(reactionType, emoji = '') {
+  const safeType = String(reactionType || '').trim().toLowerCase();
+  if (safeType === 'like' || safeType === 'dislike') {
+    return { type: safeType, emoji: '' };
+  }
+  if (safeType === 'emoji') {
+    const safeEmoji = normalizeEmoji(emoji);
+    return safeEmoji ? { type: 'emoji', emoji: safeEmoji } : null;
+  }
+  return null;
+}
+
+function serializeStoredReaction(reaction) {
+  if (!reaction) {
+    return '';
+  }
+  if (reaction.type === 'like' || reaction.type === 'dislike') {
+    return reaction.type;
+  }
+  if (reaction.type === 'emoji' && reaction.emoji) {
+    return `emoji:${reaction.emoji}`;
+  }
+  return '';
+}
+
+function parseStoredReaction(rawValue) {
+  const safeValue = String(rawValue || '').trim();
+  if (safeValue === 'like' || safeValue === 'dislike') {
+    return { type: safeValue, emoji: '' };
+  }
+  if (safeValue.startsWith('emoji:')) {
+    const emoji = normalizeEmoji(safeValue.slice(6));
+    return emoji ? { type: 'emoji', emoji } : null;
+  }
+  return null;
+}
+
+function publicReaction(reaction) {
+  return reaction ? { type: reaction.type, emoji: reaction.emoji || '' } : null;
+}
+
+function decorateClip(baseClip, interactionBucket, commentsBucket) {
+  const clip = clipRecord(baseClip);
+  const interaction = interactionBucket && interactionBucket[clip.id]
+    ? interactionBucket[clip.id]
+    : { viewHashes: [], voteMap: {} };
+  const comments = Array.isArray(commentsBucket && commentsBucket[clip.id])
+    ? commentsBucket[clip.id].slice().sort(commentSort)
+    : [];
+  const reactionSummary = buildReactionSummary(interaction.voteMap);
+
+  return clipRecord({
+    ...clip,
+    viewCount: Array.isArray(interaction.viewHashes) ? interaction.viewHashes.length : 0,
+    likeCount: reactionSummary.likeCount,
+    dislikeCount: reactionSummary.dislikeCount,
+    emojiCounts: reactionSummary.emojiCounts,
+    commentCount: comments.length,
+    comments: comments.slice(0, MAX_PUBLIC_CLIP_COMMENTS),
+  });
+}
+
+function mapPostgresClipRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return clipRecord({
+    id: row.id,
+    deleteToken: row.delete_token,
+    title: row.title,
+    caption: row.caption,
+    uploaderName: row.uploader_name,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    durationSeconds: row.duration_seconds,
+    sizeBytes: row.size_bytes,
+    mimeType: row.mime_type,
+    width: row.width,
+    height: row.height,
+    storageProvider: row.storage_provider,
+    videoStorageKey: row.video_storage_key,
+    posterStorageKey: row.poster_storage_key,
+    reportCount: row.report_count,
+    status: row.status,
+  });
+}
+
+function mapPostgresCommentRow(row) {
+  return commentRecord({
+    id: row.id,
+    authorName: row.author_name,
+    body: row.body,
+    emoji: row.emoji,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  });
 }
 
 function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleClips = 80 }) {
   const clipsFile = path.join(dataDir, 'clips.json');
   const reportsFile = path.join(dataDir, 'clip-reports.json');
+  const interactionsFile = path.join(dataDir, 'clip-interactions.json');
+  const commentsFile = path.join(dataDir, 'clip-comments.json');
   const metadataStore = createS3JsonStore();
   const usesObjectStorage = metadataStore.enabled;
   const usesPostgres = !usesObjectStorage && Boolean(String(databaseUrl || '').trim());
@@ -152,15 +397,84 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
     await metadataStore.writeJson('clips/metadata/reports.json', reports && typeof reports === 'object' ? reports : {});
   }
 
+  function readLocalInteractions() {
+    if (!fs.existsSync(interactionsFile)) {
+      return {};
+    }
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(interactionsFile, 'utf8'));
+      return normalizeInteractionBucket(parsed);
+    } catch (error) {
+      console.error('Failed to read clip interactions:', error.message);
+      return {};
+    }
+  }
+
+  async function readObjectStorageInteractions() {
+    const parsed = await metadataStore.readJson('clips/metadata/interactions.json', {});
+    return normalizeInteractionBucket(parsed);
+  }
+
+  function writeLocalInteractions(interactions) {
+    ensureLocalDataDir();
+    const tempFile = `${interactionsFile}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(normalizeInteractionBucket(interactions), null, 2));
+    fs.renameSync(tempFile, interactionsFile);
+  }
+
+  async function writeObjectStorageInteractions(interactions) {
+    await metadataStore.writeJson('clips/metadata/interactions.json', normalizeInteractionBucket(interactions));
+  }
+
+  function readLocalComments() {
+    if (!fs.existsSync(commentsFile)) {
+      return {};
+    }
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(commentsFile, 'utf8'));
+      return normalizeCommentsBucket(parsed);
+    } catch (error) {
+      console.error('Failed to read clip comments:', error.message);
+      return {};
+    }
+  }
+
+  async function readObjectStorageComments() {
+    const parsed = await metadataStore.readJson('clips/metadata/comments.json', {});
+    return normalizeCommentsBucket(parsed);
+  }
+
+  function writeLocalComments(comments) {
+    ensureLocalDataDir();
+    const tempFile = `${commentsFile}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(normalizeCommentsBucket(comments), null, 2));
+    fs.renameSync(tempFile, commentsFile);
+  }
+
+  async function writeObjectStorageComments(comments) {
+    await metadataStore.writeJson('clips/metadata/comments.json', normalizeCommentsBucket(comments));
+  }
+
   async function importLocalClipsToObjectStorage() {
     const localClips = readLocalClips();
     const localReports = readLocalReports();
-    if (!localClips.length && !Object.keys(localReports).length) {
+    const localInteractions = readLocalInteractions();
+    const localComments = readLocalComments();
+    if (
+      !localClips.length &&
+      !Object.keys(localReports).length &&
+      !Object.keys(localInteractions).length &&
+      !Object.keys(localComments).length
+    ) {
       return;
     }
 
     const remoteClips = await readObjectStorageClips();
     const remoteReports = await readObjectStorageReports();
+    const remoteInteractions = await readObjectStorageInteractions();
+    const remoteComments = await readObjectStorageComments();
 
     const clipMap = new Map();
     for (const clip of [...remoteClips, ...localClips]) {
@@ -176,8 +490,34 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
       mergedReports[clipId] = [...seenHashes];
     }
 
+    const mergedInteractions = normalizeInteractionBucket(remoteInteractions);
+    for (const [clipId, interaction] of Object.entries(localInteractions)) {
+      const existing = mergedInteractions[clipId] || { viewHashes: [], voteMap: {} };
+      mergedInteractions[clipId] = {
+        viewHashes: [...new Set([...(existing.viewHashes || []), ...(interaction.viewHashes || [])])],
+        voteMap: {
+          ...(existing.voteMap || {}),
+          ...(interaction.voteMap || {}),
+        },
+      };
+    }
+
+    const mergedComments = normalizeCommentsBucket(remoteComments);
+    for (const [clipId, comments] of Object.entries(localComments)) {
+      mergedComments[clipId] = [
+        ...(Array.isArray(mergedComments[clipId]) ? mergedComments[clipId] : []),
+        ...(Array.isArray(comments) ? comments : []),
+      ]
+        .map(commentRecord)
+        .filter((comment) => comment.id && (comment.body || comment.emoji))
+        .sort(commentSort)
+        .slice(0, MAX_STORED_CLIP_COMMENTS);
+    }
+
     await writeObjectStorageClips([...clipMap.values()]);
     await writeObjectStorageReports(mergedReports);
+    await writeObjectStorageInteractions(mergedInteractions);
+    await writeObjectStorageComments(mergedComments);
   }
 
   async function importLocalClipsToPostgres() {
@@ -283,20 +623,178 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
       ON clip_reports (clip_id, reporter_hash);
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS clip_views (
+        id TEXT PRIMARY KEY,
+        clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+        viewer_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS clip_views_unique_viewer_idx
+      ON clip_views (clip_id, viewer_hash);
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS clip_reactions (
+        id TEXT PRIMARY KEY,
+        clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+        viewer_hash TEXT NOT NULL,
+        reaction_type TEXT NOT NULL,
+        emoji TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS clip_reactions_unique_viewer_idx
+      ON clip_reactions (clip_id, viewer_hash);
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS clip_comments (
+        id TEXT PRIMARY KEY,
+        clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+        commenter_hash TEXT NOT NULL,
+        author_name TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        emoji TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS clip_comments_clip_created_idx
+      ON clip_comments (clip_id, created_at DESC);
+    `);
+
     await importLocalClipsToPostgres();
+  }
+
+  async function decoratePostgresClips(baseClips) {
+    if (!baseClips.length) {
+      return [];
+    }
+
+    const clipIds = baseClips.map((clip) => clip.id);
+    const [viewResult, reactionResult, commentCountResult, commentsResult] = await Promise.all([
+      pool.query(
+        `SELECT clip_id, COUNT(*)::INT AS view_count
+        FROM clip_views
+        WHERE clip_id = ANY($1::text[])
+        GROUP BY clip_id`,
+        [clipIds],
+      ),
+      pool.query(
+        `SELECT clip_id, reaction_type, emoji, COUNT(*)::INT AS reaction_count
+        FROM clip_reactions
+        WHERE clip_id = ANY($1::text[])
+        GROUP BY clip_id, reaction_type, emoji`,
+        [clipIds],
+      ),
+      pool.query(
+        `SELECT clip_id, COUNT(*)::INT AS comment_count
+        FROM clip_comments
+        WHERE clip_id = ANY($1::text[])
+        GROUP BY clip_id`,
+        [clipIds],
+      ),
+      pool.query(
+        `SELECT id, clip_id, author_name, body, emoji, created_at
+        FROM clip_comments
+        WHERE clip_id = ANY($1::text[])
+        ORDER BY created_at DESC`,
+        [clipIds],
+      ),
+    ]);
+
+    const viewCounts = new Map();
+    for (const row of viewResult.rows) {
+      viewCounts.set(String(row.clip_id), Number(row.view_count || 0));
+    }
+
+    const reactionSummaryMap = new Map();
+    for (const row of reactionResult.rows) {
+      const clipId = String(row.clip_id);
+      const summary = reactionSummaryMap.get(clipId) || {
+        likeCount: 0,
+        dislikeCount: 0,
+        emojiCounts: {},
+      };
+      const reactionType = String(row.reaction_type || '');
+      const reactionCount = Number(row.reaction_count || 0);
+      if (reactionType === 'like') {
+        summary.likeCount += reactionCount;
+      } else if (reactionType === 'dislike') {
+        summary.dislikeCount += reactionCount;
+      } else if (reactionType === 'emoji') {
+        const emoji = normalizeEmoji(row.emoji || '');
+        if (emoji) {
+          summary.emojiCounts[emoji] = Number(summary.emojiCounts[emoji] || 0) + reactionCount;
+        }
+      }
+      reactionSummaryMap.set(clipId, summary);
+    }
+
+    const commentCounts = new Map();
+    for (const row of commentCountResult.rows) {
+      commentCounts.set(String(row.clip_id), Number(row.comment_count || 0));
+    }
+
+    const commentsMap = new Map();
+    for (const row of commentsResult.rows) {
+      const clipId = String(row.clip_id);
+      const comments = commentsMap.get(clipId) || [];
+      if (comments.length < MAX_PUBLIC_CLIP_COMMENTS) {
+        comments.push(mapPostgresCommentRow(row));
+      }
+      commentsMap.set(clipId, comments);
+    }
+
+    return baseClips.map((clip) => {
+      const reactionSummary = reactionSummaryMap.get(clip.id) || {
+        likeCount: 0,
+        dislikeCount: 0,
+        emojiCounts: {},
+      };
+      return clipRecord({
+        ...clip,
+        viewCount: viewCounts.get(clip.id) || 0,
+        likeCount: reactionSummary.likeCount,
+        dislikeCount: reactionSummary.dislikeCount,
+        emojiCounts: reactionSummary.emojiCounts,
+        commentCount: commentCounts.get(clip.id) || 0,
+        comments: commentsMap.get(clip.id) || [],
+      });
+    });
   }
 
   async function listVisibleClips(limit = visibleClipLimit) {
     if (usesObjectStorage) {
+      const [clips, interactions, comments] = await Promise.all([
+        readObjectStorageClips(),
+        readObjectStorageInteractions(),
+        readObjectStorageComments(),
+      ]);
       return applyVisibleClipLimit(
-        (await readObjectStorageClips()).filter((clip) => clip.status === 'active'),
+        clips
+          .filter((clip) => clip.status === 'active')
+          .map((clip) => decorateClip(clip, interactions, comments)),
         limit,
       );
     }
 
     if (!pool) {
+      const clips = readLocalClips();
+      const interactions = readLocalInteractions();
+      const comments = readLocalComments();
       return applyVisibleClipLimit(
-        readLocalClips().filter((clip) => clip.status === 'active'),
+        clips
+          .filter((clip) => clip.status === 'active')
+          .map((clip) => decorateClip(clip, interactions, comments)),
         limit,
       );
     }
@@ -329,24 +827,7 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
       queryArgs,
     );
 
-    return result.rows.map((row) => clipRecord({
-      id: row.id,
-      deleteToken: row.delete_token,
-      title: row.title,
-      caption: row.caption,
-      uploaderName: row.uploader_name,
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
-      durationSeconds: row.duration_seconds,
-      sizeBytes: row.size_bytes,
-      mimeType: row.mime_type,
-      width: row.width,
-      height: row.height,
-      storageProvider: row.storage_provider,
-      videoStorageKey: row.video_storage_key,
-      posterStorageKey: row.poster_storage_key,
-      reportCount: row.report_count,
-      status: row.status,
-    }));
+    return decoratePostgresClips(result.rows.map(mapPostgresClipRow));
   }
 
   async function getStorageStats() {
@@ -400,12 +881,20 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
     const nextClip = clipRecord(clip);
     if (usesObjectStorage) {
       const nextClips = await writeObjectStorageClips([nextClip, ...await readObjectStorageClips()]);
-      return nextClips.find((entry) => entry.id === nextClip.id) || nextClip;
+      return decorateClip(
+        nextClips.find((entry) => entry.id === nextClip.id) || nextClip,
+        await readObjectStorageInteractions(),
+        await readObjectStorageComments(),
+      );
     }
 
     if (!pool) {
       const nextClips = writeLocalClips([nextClip, ...readLocalClips()]);
-      return nextClips.find((entry) => entry.id === nextClip.id) || nextClip;
+      return decorateClip(
+        nextClips.find((entry) => entry.id === nextClip.id) || nextClip,
+        readLocalInteractions(),
+        readLocalComments(),
+      );
     }
 
     await pool.query(
@@ -459,11 +948,19 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
     }
 
     if (usesObjectStorage) {
-      return (await readObjectStorageClips()).find((clip) => clip.id === safeClipId) || null;
+      const [clips, interactions, comments] = await Promise.all([
+        readObjectStorageClips(),
+        readObjectStorageInteractions(),
+        readObjectStorageComments(),
+      ]);
+      const clip = clips.find((entry) => entry.id === safeClipId) || null;
+      return clip ? decorateClip(clip, interactions, comments) : null;
     }
 
     if (!pool) {
-      return readLocalClips().find((clip) => clip.id === safeClipId) || null;
+      const clips = readLocalClips();
+      const clip = clips.find((entry) => entry.id === safeClipId) || null;
+      return clip ? decorateClip(clip, readLocalInteractions(), readLocalComments()) : null;
     }
 
     const result = await pool.query(
@@ -490,25 +987,13 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
       [safeClipId],
     );
 
-    const row = result.rows[0];
-    return row ? clipRecord({
-      id: row.id,
-      deleteToken: row.delete_token,
-      title: row.title,
-      caption: row.caption,
-      uploaderName: row.uploader_name,
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
-      durationSeconds: row.duration_seconds,
-      sizeBytes: row.size_bytes,
-      mimeType: row.mime_type,
-      width: row.width,
-      height: row.height,
-      storageProvider: row.storage_provider,
-      videoStorageKey: row.video_storage_key,
-      posterStorageKey: row.poster_storage_key,
-      reportCount: row.report_count,
-      status: row.status,
-    }) : null;
+    const clip = mapPostgresClipRow(result.rows[0]);
+    if (!clip) {
+      return null;
+    }
+
+    const [decoratedClip] = await decoratePostgresClips([clip]);
+    return decoratedClip || null;
   }
 
   async function deleteClip(clipId) {
@@ -527,6 +1012,12 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
       const reports = await readObjectStorageReports();
       delete reports[safeClipId];
       await writeObjectStorageReports(reports);
+      const interactions = await readObjectStorageInteractions();
+      delete interactions[safeClipId];
+      await writeObjectStorageInteractions(interactions);
+      const comments = await readObjectStorageComments();
+      delete comments[safeClipId];
+      await writeObjectStorageComments(comments);
       return removedClip;
     }
 
@@ -540,6 +1031,12 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
       const reports = readLocalReports();
       delete reports[safeClipId];
       writeLocalReports(reports);
+      const interactions = readLocalInteractions();
+      delete interactions[safeClipId];
+      writeLocalInteractions(interactions);
+      const comments = readLocalComments();
+      delete comments[safeClipId];
+      writeLocalComments(comments);
       return removedClip;
     }
 
@@ -566,32 +1063,12 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
       [safeClipId],
     );
 
-    const row = result.rows[0];
-    return row ? clipRecord({
-      id: row.id,
-      deleteToken: row.delete_token,
-      title: row.title,
-      caption: row.caption,
-      uploaderName: row.uploader_name,
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
-      durationSeconds: row.duration_seconds,
-      sizeBytes: row.size_bytes,
-      mimeType: row.mime_type,
-      width: row.width,
-      height: row.height,
-      storageProvider: row.storage_provider,
-      videoStorageKey: row.video_storage_key,
-      posterStorageKey: row.poster_storage_key,
-      reportCount: row.report_count,
-      status: row.status,
-    }) : null;
+    return mapPostgresClipRow(result.rows[0]);
   }
 
   async function registerReport(clipId, reporterToken) {
     const safeClipId = String(clipId || '').trim();
-    const reporterHash = crypto.createHash('sha256')
-      .update(String(reporterToken || '').trim())
-      .digest('hex');
+    const reporterHash = hashViewerToken(reporterToken);
 
     if (!safeClipId || !reporterHash) {
       return { clip: null, alreadyReported: false };
@@ -607,7 +1084,10 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
       const reports = await readObjectStorageReports();
       const seenHashes = new Set(Array.isArray(reports[safeClipId]) ? reports[safeClipId] : []);
       if (seenHashes.has(reporterHash)) {
-        return { clip: targetClip, alreadyReported: true };
+        return {
+          clip: decorateClip(targetClip, await readObjectStorageInteractions(), await readObjectStorageComments()),
+          alreadyReported: true,
+        };
       }
 
       seenHashes.add(reporterHash);
@@ -616,7 +1096,10 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
 
       targetClip.reportCount += 1;
       await writeObjectStorageClips(clips);
-      return { clip: targetClip, alreadyReported: false };
+      return {
+        clip: decorateClip(targetClip, await readObjectStorageInteractions(), await readObjectStorageComments()),
+        alreadyReported: false,
+      };
     }
 
     if (!pool) {
@@ -629,7 +1112,10 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
       const reports = readLocalReports();
       const seenHashes = new Set(Array.isArray(reports[safeClipId]) ? reports[safeClipId] : []);
       if (seenHashes.has(reporterHash)) {
-        return { clip: targetClip, alreadyReported: true };
+        return {
+          clip: decorateClip(targetClip, readLocalInteractions(), readLocalComments()),
+          alreadyReported: true,
+        };
       }
 
       seenHashes.add(reporterHash);
@@ -638,7 +1124,10 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
 
       targetClip.reportCount += 1;
       writeLocalClips(clips);
-      return { clip: targetClip, alreadyReported: false };
+      return {
+        clip: decorateClip(targetClip, readLocalInteractions(), readLocalComments()),
+        alreadyReported: false,
+      };
     }
 
     const client = await pool.connect();
@@ -713,25 +1202,9 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
       }
 
       await client.query('COMMIT');
+      const [clip] = await decoratePostgresClips([mapPostgresClipRow(updatedRow)]);
       return {
-        clip: clipRecord({
-          id: updatedRow.id,
-          deleteToken: updatedRow.delete_token,
-          title: updatedRow.title,
-          caption: updatedRow.caption,
-          uploaderName: updatedRow.uploader_name,
-          createdAt: updatedRow.created_at instanceof Date ? updatedRow.created_at.toISOString() : updatedRow.created_at,
-          durationSeconds: updatedRow.duration_seconds,
-          sizeBytes: updatedRow.size_bytes,
-          mimeType: updatedRow.mime_type,
-          width: updatedRow.width,
-          height: updatedRow.height,
-          storageProvider: updatedRow.storage_provider,
-          videoStorageKey: updatedRow.video_storage_key,
-          posterStorageKey: updatedRow.poster_storage_key,
-          reportCount: updatedRow.report_count,
-          status: updatedRow.status,
-        }),
+        clip,
         alreadyReported,
       };
     } catch (error) {
@@ -740,6 +1213,318 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
     } finally {
       client.release();
     }
+  }
+
+  async function registerView(clipId, viewerToken) {
+    const safeClipId = String(clipId || '').trim();
+    const viewerHash = hashViewerToken(viewerToken);
+    if (!safeClipId || !viewerHash) {
+      return { clip: null, countedView: false };
+    }
+
+    if (usesObjectStorage) {
+      const [clips, interactions, comments] = await Promise.all([
+        readObjectStorageClips(),
+        readObjectStorageInteractions(),
+        readObjectStorageComments(),
+      ]);
+      const targetClip = clips.find((clip) => clip.id === safeClipId && clip.status === 'active');
+      if (!targetClip) {
+        return { clip: null, countedView: false };
+      }
+
+      const interaction = interactions[safeClipId] || { viewHashes: [], voteMap: {} };
+      const seenViews = new Set(interaction.viewHashes || []);
+      if (seenViews.has(viewerHash)) {
+        return { clip: decorateClip(targetClip, interactions, comments), countedView: false };
+      }
+
+      seenViews.add(viewerHash);
+      interactions[safeClipId] = {
+        viewHashes: [...seenViews],
+        voteMap: interaction.voteMap || {},
+      };
+      await writeObjectStorageInteractions(interactions);
+      return { clip: decorateClip(targetClip, interactions, comments), countedView: true };
+    }
+
+    if (!pool) {
+      const clips = readLocalClips();
+      const interactions = readLocalInteractions();
+      const comments = readLocalComments();
+      const targetClip = clips.find((clip) => clip.id === safeClipId && clip.status === 'active');
+      if (!targetClip) {
+        return { clip: null, countedView: false };
+      }
+
+      const interaction = interactions[safeClipId] || { viewHashes: [], voteMap: {} };
+      const seenViews = new Set(interaction.viewHashes || []);
+      if (seenViews.has(viewerHash)) {
+        return { clip: decorateClip(targetClip, interactions, comments), countedView: false };
+      }
+
+      seenViews.add(viewerHash);
+      interactions[safeClipId] = {
+        viewHashes: [...seenViews],
+        voteMap: interaction.voteMap || {},
+      };
+      writeLocalInteractions(interactions);
+      return { clip: decorateClip(targetClip, interactions, comments), countedView: true };
+    }
+
+    const insertView = await pool.query(
+      `INSERT INTO clip_views (id, clip_id, viewer_hash)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (clip_id, viewer_hash) DO NOTHING`,
+      [crypto.randomUUID(), safeClipId, viewerHash],
+    );
+
+    const clip = await findClipById(safeClipId);
+    return {
+      clip,
+      countedView: insertView.rowCount > 0,
+    };
+  }
+
+  async function registerReaction(clipId, viewerToken, reactionType, emoji = '') {
+    const safeClipId = String(clipId || '').trim();
+    const viewerHash = hashViewerToken(viewerToken);
+    const requestedReaction = normalizeReactionInput(reactionType, emoji);
+    if (!safeClipId || !viewerHash) {
+      return { clip: null, activeReaction: null };
+    }
+
+    if (usesObjectStorage) {
+      const [clips, interactions, comments] = await Promise.all([
+        readObjectStorageClips(),
+        readObjectStorageInteractions(),
+        readObjectStorageComments(),
+      ]);
+      const targetClip = clips.find((clip) => clip.id === safeClipId && clip.status === 'active');
+      if (!targetClip) {
+        return { clip: null, activeReaction: null };
+      }
+
+      const interaction = interactions[safeClipId] || { viewHashes: [], voteMap: {} };
+      const currentReaction = parseStoredReaction(interaction.voteMap[viewerHash]);
+      const requestedValue = serializeStoredReaction(requestedReaction);
+      const currentValue = serializeStoredReaction(currentReaction);
+      let nextReaction = requestedReaction;
+
+      if (!requestedReaction || (requestedValue && requestedValue === currentValue)) {
+        delete interaction.voteMap[viewerHash];
+        nextReaction = null;
+      } else {
+        interaction.voteMap[viewerHash] = requestedValue;
+      }
+
+      interactions[safeClipId] = interaction;
+      await writeObjectStorageInteractions(interactions);
+      return {
+        clip: decorateClip(targetClip, interactions, comments),
+        activeReaction: publicReaction(nextReaction),
+      };
+    }
+
+    if (!pool) {
+      const clips = readLocalClips();
+      const interactions = readLocalInteractions();
+      const comments = readLocalComments();
+      const targetClip = clips.find((clip) => clip.id === safeClipId && clip.status === 'active');
+      if (!targetClip) {
+        return { clip: null, activeReaction: null };
+      }
+
+      const interaction = interactions[safeClipId] || { viewHashes: [], voteMap: {} };
+      const currentReaction = parseStoredReaction(interaction.voteMap[viewerHash]);
+      const requestedValue = serializeStoredReaction(requestedReaction);
+      const currentValue = serializeStoredReaction(currentReaction);
+      let nextReaction = requestedReaction;
+
+      if (!requestedReaction || (requestedValue && requestedValue === currentValue)) {
+        delete interaction.voteMap[viewerHash];
+        nextReaction = null;
+      } else {
+        interaction.voteMap[viewerHash] = requestedValue;
+      }
+
+      interactions[safeClipId] = interaction;
+      writeLocalInteractions(interactions);
+      return {
+        clip: decorateClip(targetClip, interactions, comments),
+        activeReaction: publicReaction(nextReaction),
+      };
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const clipResult = await client.query(
+        'SELECT id FROM clips WHERE id = $1 AND status = $2 LIMIT 1',
+        [safeClipId, 'active'],
+      );
+      if (!clipResult.rows[0]) {
+        await client.query('ROLLBACK');
+        return { clip: null, activeReaction: null };
+      }
+
+      const existingReactionResult = await client.query(
+        `SELECT reaction_type, emoji
+        FROM clip_reactions
+        WHERE clip_id = $1 AND viewer_hash = $2
+        LIMIT 1`,
+        [safeClipId, viewerHash],
+      );
+      const currentReaction = existingReactionResult.rows[0]
+        ? normalizeReactionInput(
+          existingReactionResult.rows[0].reaction_type,
+          existingReactionResult.rows[0].emoji,
+        )
+        : null;
+      const currentValue = serializeStoredReaction(currentReaction);
+      const requestedValue = serializeStoredReaction(requestedReaction);
+
+      let nextReaction = requestedReaction;
+      if (!requestedReaction || (requestedValue && requestedValue === currentValue)) {
+        await client.query(
+          'DELETE FROM clip_reactions WHERE clip_id = $1 AND viewer_hash = $2',
+          [safeClipId, viewerHash],
+        );
+        nextReaction = null;
+      } else {
+        await client.query(
+          `INSERT INTO clip_reactions (
+            id,
+            clip_id,
+            viewer_hash,
+            reaction_type,
+            emoji,
+            created_at,
+            updated_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, NOW(), NOW()
+          )
+          ON CONFLICT (clip_id, viewer_hash) DO UPDATE SET
+            reaction_type = EXCLUDED.reaction_type,
+            emoji = EXCLUDED.emoji,
+            updated_at = NOW()`,
+          [
+            crypto.randomUUID(),
+            safeClipId,
+            viewerHash,
+            requestedReaction.type,
+            requestedReaction.emoji || '',
+          ],
+        );
+      }
+
+      await client.query('COMMIT');
+      return {
+        clip: await findClipById(safeClipId),
+        activeReaction: publicReaction(nextReaction),
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async function addComment(clipId, commenterToken, { authorName = 'Guest viewer', body = '', emoji = '' } = {}) {
+    const safeClipId = String(clipId || '').trim();
+    const commenterHash = hashViewerToken(commenterToken);
+    const nextComment = commentRecord({
+      id: crypto.randomUUID(),
+      authorName,
+      body,
+      emoji,
+      createdAt: new Date().toISOString(),
+    });
+
+    if (!safeClipId || !commenterHash || (!nextComment.body && !nextComment.emoji)) {
+      return { clip: null, comment: null };
+    }
+
+    if (usesObjectStorage) {
+      const [clips, interactions, comments] = await Promise.all([
+        readObjectStorageClips(),
+        readObjectStorageInteractions(),
+        readObjectStorageComments(),
+      ]);
+      const targetClip = clips.find((clip) => clip.id === safeClipId && clip.status === 'active');
+      if (!targetClip) {
+        return { clip: null, comment: null };
+      }
+
+      comments[safeClipId] = [
+        nextComment,
+        ...(Array.isArray(comments[safeClipId]) ? comments[safeClipId] : []),
+      ]
+        .map(commentRecord)
+        .filter((comment) => comment.id && (comment.body || comment.emoji))
+        .sort(commentSort)
+        .slice(0, MAX_STORED_CLIP_COMMENTS);
+
+      await writeObjectStorageComments(comments);
+      return {
+        clip: decorateClip(targetClip, interactions, comments),
+        comment: nextComment,
+      };
+    }
+
+    if (!pool) {
+      const clips = readLocalClips();
+      const interactions = readLocalInteractions();
+      const comments = readLocalComments();
+      const targetClip = clips.find((clip) => clip.id === safeClipId && clip.status === 'active');
+      if (!targetClip) {
+        return { clip: null, comment: null };
+      }
+
+      comments[safeClipId] = [
+        nextComment,
+        ...(Array.isArray(comments[safeClipId]) ? comments[safeClipId] : []),
+      ]
+        .map(commentRecord)
+        .filter((comment) => comment.id && (comment.body || comment.emoji))
+        .sort(commentSort)
+        .slice(0, MAX_STORED_CLIP_COMMENTS);
+
+      writeLocalComments(comments);
+      return {
+        clip: decorateClip(targetClip, interactions, comments),
+        comment: nextComment,
+      };
+    }
+
+    await pool.query(
+      `INSERT INTO clip_comments (
+        id,
+        clip_id,
+        commenter_hash,
+        author_name,
+        body,
+        emoji,
+        created_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7
+      )`,
+      [
+        nextComment.id,
+        safeClipId,
+        commenterHash,
+        nextComment.authorName,
+        nextComment.body,
+        nextComment.emoji,
+        nextComment.createdAt,
+      ],
+    );
+
+    return {
+      clip: await findClipById(safeClipId),
+      comment: nextComment,
+    };
   }
 
   async function close() {
@@ -756,6 +1541,9 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
     findClipById,
     deleteClip,
     registerReport,
+    registerView,
+    registerReaction,
+    addComment,
     close,
     usesObjectStorage,
     usesPostgres,

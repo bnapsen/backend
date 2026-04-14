@@ -2,7 +2,12 @@ const PROD_CLIPS_API_BASE = "https://nova-arcade-backend-1000121513328.us-centra
 const CLIP_OWNERSHIP_STORAGE_KEY = "nova-clips:owned-uploads";
 const MAX_CLIP_UPLOAD_BYTES = 24 * 1024 * 1024;
 const CLIP_REPORTER_STORAGE_KEY = "nova-clips:reporter-id";
+const CLIP_VIEWER_STORAGE_KEY = "nova-clips:viewer-id";
+const CLIP_COMMENTER_NAME_STORAGE_KEY = "nova-clips:commenter-name";
+const CLIP_REACTION_STORAGE_KEY = "nova-clips:reactions";
+const CLIP_VIEWED_STORAGE_KEY = "nova-clips:viewed";
 const ALLOWED_CLIP_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".3gp", ".3gpp"]);
+const EMOJI_REACTION_OPTIONS = ["❤️", "🔥", "😂", "👏"];
 
 const uploadForm = document.getElementById("clip-upload-form");
 const fileInput = document.getElementById("clip-file");
@@ -38,7 +43,12 @@ const state = {
     selectedFile: null,
     audioUnlocked: false,
     storageStats: null,
+    renderedClips: [],
+    viewTimers: new Map(),
+    viewedClipIds: new Set(),
 };
+
+state.viewedClipIds = new Set(readViewedClipIds());
 
 function updateMuteButtonState(video, muteButton) {
     if (!muteButton) {
@@ -127,6 +137,18 @@ function clipReportEndpoint() {
     return `${clipsApiBase()}/api/clips/report`;
 }
 
+function clipViewEndpoint() {
+    return `${clipsApiBase()}/api/clips/view`;
+}
+
+function clipReactionEndpoint() {
+    return `${clipsApiBase()}/api/clips/react`;
+}
+
+function clipCommentEndpoint() {
+    return `${clipsApiBase()}/api/clips/comment`;
+}
+
 function clipStorageAdminEndpoint() {
     return `${clipsApiBase()}/api/clips/admin/storage`;
 }
@@ -189,6 +211,116 @@ function reporterKey() {
         return nextValue;
     } catch {
         return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+}
+
+function viewerKey() {
+    try {
+        const existing = window.localStorage.getItem(CLIP_VIEWER_STORAGE_KEY);
+        if (existing) {
+            return existing;
+        }
+        const nextValue = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        window.localStorage.setItem(CLIP_VIEWER_STORAGE_KEY, nextValue);
+        return nextValue;
+    } catch {
+        return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+}
+
+function readCommenterName() {
+    try {
+        return window.localStorage.getItem(CLIP_COMMENTER_NAME_STORAGE_KEY) || "";
+    } catch {
+        return "";
+    }
+}
+
+function writeCommenterName(name) {
+    try {
+        if (!name) {
+            window.localStorage.removeItem(CLIP_COMMENTER_NAME_STORAGE_KEY);
+            return;
+        }
+        window.localStorage.setItem(CLIP_COMMENTER_NAME_STORAGE_KEY, name);
+    } catch {
+        // Ignore storage failures.
+    }
+}
+
+function readReactionSelections() {
+    try {
+        const raw = window.localStorage.getItem(CLIP_REACTION_STORAGE_KEY);
+        if (!raw) {
+            return {};
+        }
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
+function writeReactionSelections(reactions) {
+    try {
+        window.localStorage.setItem(CLIP_REACTION_STORAGE_KEY, JSON.stringify(reactions));
+    } catch {
+        // Ignore storage failures.
+    }
+}
+
+function reactionSelectionValue(reaction) {
+    if (!reaction || typeof reaction !== "object" || !reaction.type) {
+        return "";
+    }
+    if (reaction.type === "emoji" && reaction.emoji) {
+        return `emoji:${reaction.emoji}`;
+    }
+    return reaction.type;
+}
+
+function reactionSelectionForClip(clipId) {
+    const value = String(readReactionSelections()[clipId] || "");
+    if (value === "like" || value === "dislike") {
+        return { type: value, emoji: "" };
+    }
+    if (value.startsWith("emoji:")) {
+        return { type: "emoji", emoji: value.slice(6) };
+    }
+    return null;
+}
+
+function rememberReactionSelection(clipId, reaction) {
+    const reactions = readReactionSelections();
+    const nextValue = reactionSelectionValue(reaction);
+    if (!nextValue) {
+        delete reactions[clipId];
+    } else {
+        reactions[clipId] = nextValue;
+    }
+    writeReactionSelections(reactions);
+}
+
+function readViewedClipIds() {
+    try {
+        const raw = window.localStorage.getItem(CLIP_VIEWED_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.map((value) => String(value || "")).filter(Boolean) : [];
+    } catch {
+        return [];
+    }
+}
+
+function rememberViewedClip(clipId) {
+    if (!clipId) {
+        return;
+    }
+
+    state.viewedClipIds.add(clipId);
+    try {
+        window.localStorage.setItem(CLIP_VIEWED_STORAGE_KEY, JSON.stringify([...state.viewedClipIds]));
+    } catch {
+        // Ignore storage failures.
     }
 }
 
@@ -273,6 +405,70 @@ function formatDuration(seconds) {
     const minutes = Math.floor(totalSeconds / 60);
     const remainingSeconds = totalSeconds % 60;
     return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function formatCount(value, label) {
+    const safeValue = Number(value || 0);
+    return `${safeValue.toLocaleString()} ${label}`;
+}
+
+function currentCommenterName() {
+    return readCommenterName() || uploaderNameInput?.value?.trim() || "";
+}
+
+function rememberClipInState(updatedClip) {
+    if (!updatedClip || !updatedClip.id) {
+        return;
+    }
+
+    const nextClips = Array.isArray(state.renderedClips) ? state.renderedClips.slice() : [];
+    const clipIndex = nextClips.findIndex((clip) => clip.id === updatedClip.id);
+    if (clipIndex >= 0) {
+        nextClips[clipIndex] = updatedClip;
+    } else {
+        nextClips.unshift(updatedClip);
+    }
+    state.renderedClips = nextClips;
+}
+
+function renderClipMetrics(card, clip) {
+    if (!card || !clip) {
+        return;
+    }
+
+    const viewNode = card.querySelector("[data-clip-view-count]");
+    const likeNode = card.querySelector("[data-clip-like-count]");
+    const dislikeNode = card.querySelector("[data-clip-dislike-count]");
+    const commentNode = card.querySelector("[data-clip-comment-count]");
+    if (viewNode) {
+        viewNode.textContent = formatCount(clip.viewCount, "views");
+    }
+    if (likeNode) {
+        likeNode.textContent = formatCount(clip.likeCount, "likes");
+    }
+    if (dislikeNode) {
+        dislikeNode.textContent = formatCount(clip.dislikeCount, "dislikes");
+    }
+    if (commentNode) {
+        commentNode.textContent = formatCount(clip.commentCount, "comments");
+    }
+}
+
+function replaceClipCard(updatedClip) {
+    if (!updatedClip || !updatedClip.id) {
+        return;
+    }
+
+    rememberClipInState(updatedClip);
+    const existingCard = clipsFeed.querySelector(`[data-clip-id="${updatedClip.id}"]`);
+    if (!existingCard) {
+        renderClips(state.renderedClips, { preserveScroll: true });
+        return;
+    }
+
+    const nextCard = createClipCard(updatedClip);
+    existingCard.replaceWith(nextCard);
+    attachFeedObserver();
 }
 
 function inferTitleFromFileName(fileName) {
@@ -459,6 +655,111 @@ async function reportClip(clipId, reportButton) {
     }
 }
 
+async function registerClipView(clipId) {
+    if (!clipId || state.viewedClipIds.has(clipId)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(clipViewEndpoint(), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                clipId,
+                viewerKey: viewerKey(),
+            }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok || !payload.clip) {
+            return;
+        }
+
+        rememberViewedClip(clipId);
+        rememberClipInState(payload.clip);
+        const card = clipsFeed.querySelector(`[data-clip-id="${clipId}"]`);
+        if (card) {
+            renderClipMetrics(card, payload.clip);
+        }
+    } catch {
+        // Ignore view tracking failures so playback keeps feeling smooth.
+    }
+}
+
+async function submitClipReaction(clipId, reactionType, emoji, button) {
+    button.disabled = true;
+
+    try {
+        const response = await fetch(clipReactionEndpoint(), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                clipId,
+                viewerKey: viewerKey(),
+                reactionType,
+                emoji,
+            }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok || !payload.clip) {
+            throw new Error(payload.error || "Unable to save that reaction.");
+        }
+
+        rememberReactionSelection(clipId, payload.activeReaction || null);
+        replaceClipCard(payload.clip);
+    } catch (error) {
+        setClipsStatus(error.message, true);
+        button.disabled = false;
+    }
+}
+
+async function submitClipComment(clipId, nameInput, commentInput, submitButton, emoji = "") {
+    const authorName = String(nameInput?.value || "").trim();
+    const comment = String(commentInput?.value || "").trim();
+    if (!comment && !emoji) {
+        setClipsStatus("Write a comment or tap an emoji first.", true);
+        return;
+    }
+
+    submitButton.disabled = true;
+    submitButton.textContent = "Posting...";
+
+    try {
+        const response = await fetch(clipCommentEndpoint(), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                clipId,
+                viewerKey: viewerKey(),
+                authorName,
+                comment,
+                emoji,
+            }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok || !payload.clip) {
+            throw new Error(payload.error || "Unable to post that comment.");
+        }
+
+        writeCommenterName(authorName);
+        if (commentInput) {
+            commentInput.value = "";
+        }
+        replaceClipCard(payload.clip);
+        setClipsStatus("Comment posted.");
+    } catch (error) {
+        setClipsStatus(error.message, true);
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Post";
+    }
+}
+
 function attachFeedObserver() {
     if (state.observer) {
         state.observer.disconnect();
@@ -474,8 +775,24 @@ function attachFeedObserver() {
             if (entry.isIntersecting && entry.intersectionRatio >= 0.65) {
                 video.dataset.inView = "true";
                 playFeedVideo(video);
+                const clipId = video.closest(".clip-card")?.dataset.clipId || "";
+                if (clipId && !state.viewedClipIds.has(clipId) && !state.viewTimers.has(clipId)) {
+                    const timerId = window.setTimeout(() => {
+                        state.viewTimers.delete(clipId);
+                        if (video.dataset.inView === "true") {
+                            registerClipView(clipId);
+                        }
+                    }, 1800);
+                    state.viewTimers.set(clipId, timerId);
+                }
             } else {
                 video.dataset.inView = "false";
+                const clipId = video.closest(".clip-card")?.dataset.clipId || "";
+                const timerId = clipId ? state.viewTimers.get(clipId) : 0;
+                if (timerId) {
+                    window.clearTimeout(timerId);
+                    state.viewTimers.delete(clipId);
+                }
                 video.pause();
             }
         });
@@ -492,6 +809,7 @@ function attachFeedObserver() {
 function createClipCard(clip) {
     const article = document.createElement("article");
     article.className = "clip-card";
+    article.dataset.clipId = clip.id;
 
     const mediaShell = document.createElement("div");
     mediaShell.className = "clip-card-video-shell";
@@ -564,9 +882,145 @@ function createClipCard(clip) {
     date.className = "clip-card-date";
     date.textContent = formatDate(clip.createdAt);
 
+    const metrics = document.createElement("div");
+    metrics.className = "clip-card-metrics";
+
+    const viewMetric = document.createElement("span");
+    viewMetric.className = "clip-metric";
+    viewMetric.dataset.clipViewCount = "true";
+    viewMetric.textContent = formatCount(clip.viewCount, "views");
+    metrics.appendChild(viewMetric);
+
+    const likeMetric = document.createElement("span");
+    likeMetric.className = "clip-metric";
+    likeMetric.dataset.clipLikeCount = "true";
+    likeMetric.textContent = formatCount(clip.likeCount, "likes");
+    metrics.appendChild(likeMetric);
+
+    const dislikeMetric = document.createElement("span");
+    dislikeMetric.className = "clip-metric";
+    dislikeMetric.dataset.clipDislikeCount = "true";
+    dislikeMetric.textContent = formatCount(clip.dislikeCount, "dislikes");
+    metrics.appendChild(dislikeMetric);
+
+    const commentMetric = document.createElement("span");
+    commentMetric.className = "clip-metric";
+    commentMetric.dataset.clipCommentCount = "true";
+    commentMetric.textContent = formatCount(clip.commentCount, "comments");
+    metrics.appendChild(commentMetric);
+
+    const reactionRow = document.createElement("div");
+    reactionRow.className = "clip-reaction-row";
+    const selectedReaction = reactionSelectionForClip(clip.id);
+
+    const makeReactionButton = (label, count, reactionType, emoji = "") => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "clip-reaction-button";
+        if (
+            selectedReaction &&
+            selectedReaction.type === reactionType &&
+            (reactionType !== "emoji" || selectedReaction.emoji === emoji)
+        ) {
+            button.classList.add("is-active");
+        }
+        button.textContent = `${label} ${Number(count || 0).toLocaleString()}`;
+        button.addEventListener("click", () => {
+            submitClipReaction(clip.id, reactionType, emoji, button);
+        });
+        return button;
+    };
+
+    reactionRow.appendChild(makeReactionButton("👍", clip.likeCount, "like"));
+    reactionRow.appendChild(makeReactionButton("👎", clip.dislikeCount, "dislike"));
+    EMOJI_REACTION_OPTIONS.forEach((emoji) => {
+        reactionRow.appendChild(makeReactionButton(emoji, Number(clip.emojiCounts?.[emoji] || 0), "emoji", emoji));
+    });
+
     const note = document.createElement("p");
     note.className = "clip-card-note";
-    note.textContent = "Delete your own uploads from this browser, or report someone else's clip for review.";
+    note.textContent = "Like, dislike, react with emoji, comment below, delete your own uploads, or report someone else's clip for review.";
+
+    const commentsSection = document.createElement("section");
+    commentsSection.className = "clip-comments";
+
+    const commentsHeading = document.createElement("p");
+    commentsHeading.className = "clip-comments-heading";
+    commentsHeading.textContent = clip.commentCount ? `${clip.commentCount} comments` : "No comments yet";
+    commentsSection.appendChild(commentsHeading);
+
+    const commentsList = document.createElement("div");
+    commentsList.className = "clip-comments-list";
+    if (Array.isArray(clip.comments) && clip.comments.length) {
+        clip.comments.forEach((comment) => {
+            const commentRow = document.createElement("div");
+            commentRow.className = "clip-comment";
+
+            const commentAuthor = document.createElement("strong");
+            commentAuthor.className = "clip-comment-author";
+            commentAuthor.textContent = comment.authorName || "Guest viewer";
+
+            const commentBody = document.createElement("span");
+            commentBody.className = "clip-comment-body";
+            commentBody.textContent = [comment.emoji, comment.body].filter(Boolean).join(" ");
+
+            commentRow.appendChild(commentAuthor);
+            commentRow.appendChild(commentBody);
+            commentsList.appendChild(commentRow);
+        });
+    } else {
+        const emptyComments = document.createElement("p");
+        emptyComments.className = "clip-comment-empty";
+        emptyComments.textContent = "Start the conversation.";
+        commentsList.appendChild(emptyComments);
+    }
+    commentsSection.appendChild(commentsList);
+
+    const commentForm = document.createElement("form");
+    commentForm.className = "clip-comment-form";
+
+    const commentNameInput = document.createElement("input");
+    commentNameInput.type = "text";
+    commentNameInput.className = "clip-comment-name";
+    commentNameInput.maxLength = 48;
+    commentNameInput.placeholder = "Name";
+    commentNameInput.value = currentCommenterName();
+
+    const commentInput = document.createElement("input");
+    commentInput.type = "text";
+    commentInput.className = "clip-comment-input";
+    commentInput.maxLength = 180;
+    commentInput.placeholder = "Leave a comment";
+
+    const commentEmojiRow = document.createElement("div");
+    commentEmojiRow.className = "clip-comment-emoji-row";
+    EMOJI_REACTION_OPTIONS.forEach((emoji) => {
+        const emojiButton = document.createElement("button");
+        emojiButton.type = "button";
+        emojiButton.className = "clip-comment-emoji";
+        emojiButton.textContent = emoji;
+        emojiButton.addEventListener("click", () => {
+            commentInput.value = `${commentInput.value}${emoji}`.trim();
+            commentInput.focus();
+        });
+        commentEmojiRow.appendChild(emojiButton);
+    });
+
+    const commentSubmit = document.createElement("button");
+    commentSubmit.type = "submit";
+    commentSubmit.className = "clip-action clip-action--comment";
+    commentSubmit.textContent = "Post";
+
+    commentForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        submitClipComment(clip.id, commentNameInput, commentInput, commentSubmit);
+    });
+
+    commentForm.appendChild(commentNameInput);
+    commentForm.appendChild(commentInput);
+    commentForm.appendChild(commentSubmit);
+    commentsSection.appendChild(commentEmojiRow);
+    commentsSection.appendChild(commentForm);
 
     const actions = document.createElement("div");
     actions.className = "clip-card-actions";
@@ -597,7 +1051,10 @@ function createClipCard(clip) {
     meta.appendChild(caption);
     meta.appendChild(byline);
     meta.appendChild(date);
+    meta.appendChild(metrics);
+    meta.appendChild(reactionRow);
     meta.appendChild(note);
+    meta.appendChild(commentsSection);
     meta.appendChild(actions);
 
     article.appendChild(mediaShell);
@@ -621,10 +1078,14 @@ function updateClipCountBadge(visibleCount) {
     clipCountBadge.textContent = safeVisibleCount ? `${safeVisibleCount} clips live` : "No clips yet";
 }
 
-function renderClips(clips) {
+function renderClips(clips, options = {}) {
+    const previousScrollTop = options.preserveScroll ? clipsFeed.scrollTop : 0;
+    state.viewTimers.forEach((timerId) => window.clearTimeout(timerId));
+    state.viewTimers.clear();
     clipsFeed.innerHTML = "";
 
     const safeClips = Array.isArray(clips) ? clips : [];
+    state.renderedClips = safeClips;
     updateClipCountBadge(safeClips.length);
     clipsEmpty.classList.toggle("hidden", safeClips.length !== 0);
     setClipsStatus(safeClips.length ? "Scroll the live feed." : "No clips are live yet.");
@@ -634,6 +1095,9 @@ function renderClips(clips) {
     });
 
     attachFeedObserver();
+    if (options.preserveScroll) {
+        clipsFeed.scrollTop = previousScrollTop;
+    }
 }
 
 function renderClipAdminStats(stats) {
