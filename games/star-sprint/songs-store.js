@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const { createS3JsonStore } = require('./s3-json-store.js');
 
 function ensureDirectory(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -39,7 +40,9 @@ function songRecord(record) {
 
 function createSongsStore({ dataDir, databaseUrl = '', maxSongs = 80, maxVisibleSongs = 40 }) {
   const songsFile = path.join(dataDir, 'songs.json');
-  const usesPostgres = Boolean(String(databaseUrl || '').trim());
+  const metadataStore = createS3JsonStore();
+  const usesObjectStorage = metadataStore.enabled;
+  const usesPostgres = !usesObjectStorage && Boolean(String(databaseUrl || '').trim());
   const pool = usesPostgres
     ? new Pool({
       connectionString: databaseUrl,
@@ -74,6 +77,18 @@ function createSongsStore({ dataDir, databaseUrl = '', maxSongs = 80, maxVisible
     }
   }
 
+  async function readObjectStorageSongs() {
+    const parsed = await metadataStore.readJson('songs/metadata/songs.json', []);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((entry) => entry && typeof entry === 'object')
+      .map(songRecord)
+      .sort(songSort)
+      .slice(0, maxSongs);
+  }
+
   function writeLocalSongs(songs) {
     ensureLocalDataDir();
     const nextSongs = songs
@@ -84,6 +99,31 @@ function createSongsStore({ dataDir, databaseUrl = '', maxSongs = 80, maxVisible
     fs.writeFileSync(tempFile, JSON.stringify(nextSongs, null, 2));
     fs.renameSync(tempFile, songsFile);
     return nextSongs;
+  }
+
+  async function writeObjectStorageSongs(songs) {
+    const nextSongs = songs
+      .map(songRecord)
+      .sort(songSort)
+      .slice(0, maxSongs);
+    await metadataStore.writeJson('songs/metadata/songs.json', nextSongs);
+    return nextSongs;
+  }
+
+  async function importLocalSongsToObjectStorage() {
+    const localSongs = readLocalSongs();
+    if (!localSongs.length) {
+      return;
+    }
+
+    const remoteSongs = await readObjectStorageSongs();
+    const byId = new Map();
+    for (const song of [...remoteSongs, ...localSongs]) {
+      byId.set(song.id, songRecord(song));
+    }
+
+    const mergedSongs = [...byId.values()].sort(songSort).slice(0, maxSongs);
+    await writeObjectStorageSongs(mergedSongs);
   }
 
   async function importLocalSongsToPostgres() {
@@ -132,6 +172,12 @@ function createSongsStore({ dataDir, databaseUrl = '', maxSongs = 80, maxVisible
   }
 
   async function init() {
+    if (usesObjectStorage) {
+      await metadataStore.ensureReady();
+      await importLocalSongsToObjectStorage();
+      return;
+    }
+
     if (!pool) {
       ensureLocalDataDir();
       return;
@@ -164,6 +210,12 @@ function createSongsStore({ dataDir, databaseUrl = '', maxSongs = 80, maxVisible
   }
 
   async function listStoredSongs(limit = maxSongs) {
+    if (usesObjectStorage) {
+      return (await readObjectStorageSongs())
+        .filter((song) => song.status === 'active')
+        .slice(0, limit);
+    }
+
     if (!pool) {
       return readLocalSongs()
         .filter((song) => song.status === 'active')
@@ -215,6 +267,11 @@ function createSongsStore({ dataDir, databaseUrl = '', maxSongs = 80, maxVisible
 
   async function insertSong(song) {
     const nextSong = songRecord(song);
+    if (usesObjectStorage) {
+      const nextSongs = await writeObjectStorageSongs([nextSong, ...await readObjectStorageSongs()]);
+      return nextSongs.find((entry) => entry.id === nextSong.id) || nextSong;
+    }
+
     if (!pool) {
       const nextSongs = writeLocalSongs([nextSong, ...readLocalSongs()]);
       return nextSongs.find((entry) => entry.id === nextSong.id) || nextSong;
@@ -264,6 +321,10 @@ function createSongsStore({ dataDir, databaseUrl = '', maxSongs = 80, maxVisible
       return null;
     }
 
+    if (usesObjectStorage) {
+      return (await readObjectStorageSongs()).find((song) => song.id === safeSongId) || null;
+    }
+
     if (!pool) {
       return readLocalSongs().find((song) => song.id === safeSongId) || null;
     }
@@ -311,6 +372,16 @@ function createSongsStore({ dataDir, databaseUrl = '', maxSongs = 80, maxVisible
     const safeSongId = String(songId || '').trim();
     if (!safeSongId) {
       return null;
+    }
+
+    if (usesObjectStorage) {
+      const songs = await readObjectStorageSongs();
+      const removedSong = songs.find((song) => song.id === safeSongId) || null;
+      if (!removedSong) {
+        return null;
+      }
+      await writeObjectStorageSongs(songs.filter((song) => song.id !== safeSongId));
+      return removedSong;
     }
 
     if (!pool) {
@@ -375,6 +446,7 @@ function createSongsStore({ dataDir, databaseUrl = '', maxSongs = 80, maxVisible
     findSongById,
     deleteSong,
     close,
+    usesObjectStorage,
     usesPostgres,
   };
 }

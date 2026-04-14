@@ -3248,8 +3248,16 @@ Promise.all([
       clipMediaManager.ensureBucket(),
     ]);
     await cleanupRetiredSongs();
-    console.log(`Song metadata store: ${songsStore.usesPostgres ? 'postgres' : 'local json'}`);
-    console.log(`Clip metadata store: ${clipsStore.usesPostgres ? 'postgres' : 'local json'}`);
+    console.log(
+      `Song metadata store: ${
+        songsStore.usesObjectStorage ? 's3-compatible object storage' : songsStore.usesPostgres ? 'postgres' : 'local json'
+      }`,
+    );
+    console.log(
+      `Clip metadata store: ${
+        clipsStore.usesObjectStorage ? 's3-compatible object storage' : clipsStore.usesPostgres ? 'postgres' : 'local json'
+      }`,
+    );
     server.listen(PORT, HOST, () => {
       console.log(`Nova Arcade realtime server running at ws://${HOST}:${PORT}`);
     });

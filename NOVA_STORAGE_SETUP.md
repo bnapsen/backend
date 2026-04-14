@@ -1,55 +1,79 @@
-# Nova Arcade durable storage
+# Nova Arcade cheap durable storage
 
-This repo now supports two durable storage layers:
+This project now supports the lowest-cost durable setup:
 
-- object storage for song files and clip media
-- Postgres for song and clip metadata
+- free Render web service for the backend
+- Cloudflare R2 for uploaded media
+- Cloudflare R2 JSON files for song and clip metadata
 
-## What is already in the code
+No Render Postgres is required for this setup.
+
+## What changed
 
 - `games/star-sprint/song-media.js`
-- `games/star-sprint/songs-store.js`
 - `games/star-sprint/clip-media.js`
+- `games/star-sprint/songs-store.js`
 - `games/star-sprint/clips-store.js`
-- `render.yaml`
+- `games/star-sprint/s3-json-store.js`
+- `games/star-sprint/migrate-live-uploads-to-object-storage.js`
 
-Songs and clips now:
+When the standard `S3_*` variables are present:
 
-- store metadata in Postgres when `DATABASE_URL` is set
-- store media in S3-compatible object storage when the `S3_*` variables are set
-- fall back to local disk only when those durable services are not configured
-- keep serving older local files during migration by using provider-specific media URLs
+- songs and clips store media in the bucket
+- songs and clips store metadata in JSON files in the same bucket
+- the backend no longer needs a Render disk or Postgres to keep uploads
 
-## Render setup
+## Required environment variables
 
-The `render.yaml` file defines:
+Set these on the Render `backend` service:
 
-- `nova-arcade-db` as the Postgres database
-- `nova-arcade-object-storage` as a MinIO private service
-- `backend` wired to both
+- `S3_BUCKET`
+- `S3_REGION`
+- `S3_ENDPOINT`
+- `S3_FORCE_PATH_STYLE`
+- `S3_ACCESS_KEY_ID`
+- `S3_SECRET_ACCESS_KEY`
 
-Important: Render only applies `render.yaml` automatically if the repo is connected as a Blueprint. A normal git-backed service will keep ignoring new resources in `render.yaml`.
+For Cloudflare R2, the common values are:
 
-## To make the live site durable
+- `S3_REGION=auto`
+- `S3_FORCE_PATH_STYLE=true`
+- `S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com`
 
-1. In Render, create or update the repo as a Blueprint.
-2. Let Render provision:
-   - `nova-arcade-db`
-   - `nova-arcade-object-storage`
-   - `backend`
-3. Confirm the backend has these environment variables:
-   - `DATABASE_URL`
-   - `S3_BUCKET`
-   - `S3_REGION`
-   - `S3_ENDPOINT`
-   - `S3_FORCE_PATH_STYLE`
-   - `S3_ACCESS_KEY_ID`
-   - `S3_SECRET_ACCESS_KEY`
-4. Deploy the backend again.
-5. Upload a song and a clip, then restart the backend and confirm both still exist.
+## Bucket layout
 
-## Notes
+- `songs/audio/*`
+- `songs/metadata/songs.json`
+- `clips/videos/*`
+- `clips/posters/*`
+- `clips/metadata/clips.json`
+- `clips/metadata/reports.json`
 
-- Existing local songs and clips are imported into Postgres on startup when `DATABASE_URL` is enabled.
-- Existing local media URLs keep working during the transition.
-- New uploads use object storage once the `S3_*` variables are active.
+## Before redeploying the backend
+
+If the live Render service still has uploads stored locally, migrate them first:
+
+```powershell
+$env:S3_BUCKET='your-bucket'
+$env:S3_REGION='auto'
+$env:S3_ENDPOINT='https://<account-id>.r2.cloudflarestorage.com'
+$env:S3_FORCE_PATH_STYLE='true'
+$env:S3_ACCESS_KEY_ID='...'
+$env:S3_SECRET_ACCESS_KEY='...'
+node .\games\star-sprint\migrate-live-uploads-to-object-storage.js
+```
+
+That script reads current live uploads from `https://backend-ujaa.onrender.com`, writes them into object storage, and writes the metadata JSON files there too.
+
+## After redeploy
+
+Verify that:
+
+- songs return `/media/songs/s3/...`
+- clips return `/media/clips/s3/videos/...`
+- uploads still exist after restarting the Render backend
+
+## Cost notes
+
+- Render can stay on the free web tier for this path
+- Cloudflare R2 includes a free tier, so small hobby usage can stay near zero cost

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const { createS3JsonStore } = require('./s3-json-store.js');
 
 function ensureDirectory(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -39,7 +40,9 @@ function clipRecord(record) {
 function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibleClips = 80 }) {
   const clipsFile = path.join(dataDir, 'clips.json');
   const reportsFile = path.join(dataDir, 'clip-reports.json');
-  const usesPostgres = Boolean(String(databaseUrl || '').trim());
+  const metadataStore = createS3JsonStore();
+  const usesObjectStorage = metadataStore.enabled;
+  const usesPostgres = !usesObjectStorage && Boolean(String(databaseUrl || '').trim());
   const pool = usesPostgres
     ? new Pool({
       connectionString: databaseUrl,
@@ -70,6 +73,14 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
     }
   }
 
+  async function readObjectStorageClips() {
+    const parsed = await metadataStore.readJson('clips/metadata/clips.json', []);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.map(clipRecord).sort(clipSort).slice(0, maxClips);
+  }
+
   function writeLocalClips(clips) {
     ensureLocalDataDir();
     const nextClips = clips
@@ -79,6 +90,15 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
     const tempFile = `${clipsFile}.tmp`;
     fs.writeFileSync(tempFile, JSON.stringify(nextClips, null, 2));
     fs.renameSync(tempFile, clipsFile);
+    return nextClips;
+  }
+
+  async function writeObjectStorageClips(clips) {
+    const nextClips = clips
+      .map(clipRecord)
+      .sort(clipSort)
+      .slice(0, maxClips);
+    await metadataStore.writeJson('clips/metadata/clips.json', nextClips);
     return nextClips;
   }
 
@@ -96,11 +116,48 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
     }
   }
 
+  async function readObjectStorageReports() {
+    const parsed = await metadataStore.readJson('clips/metadata/reports.json', {});
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  }
+
   function writeLocalReports(reports) {
     ensureLocalDataDir();
     const tempFile = `${reportsFile}.tmp`;
     fs.writeFileSync(tempFile, JSON.stringify(reports, null, 2));
     fs.renameSync(tempFile, reportsFile);
+  }
+
+  async function writeObjectStorageReports(reports) {
+    await metadataStore.writeJson('clips/metadata/reports.json', reports && typeof reports === 'object' ? reports : {});
+  }
+
+  async function importLocalClipsToObjectStorage() {
+    const localClips = readLocalClips();
+    const localReports = readLocalReports();
+    if (!localClips.length && !Object.keys(localReports).length) {
+      return;
+    }
+
+    const remoteClips = await readObjectStorageClips();
+    const remoteReports = await readObjectStorageReports();
+
+    const clipMap = new Map();
+    for (const clip of [...remoteClips, ...localClips]) {
+      clipMap.set(clip.id, clipRecord(clip));
+    }
+
+    const mergedReports = { ...remoteReports };
+    for (const [clipId, reportHashes] of Object.entries(localReports)) {
+      const seenHashes = new Set([
+        ...(Array.isArray(remoteReports[clipId]) ? remoteReports[clipId] : []),
+        ...(Array.isArray(reportHashes) ? reportHashes : []),
+      ]);
+      mergedReports[clipId] = [...seenHashes];
+    }
+
+    await writeObjectStorageClips([...clipMap.values()]);
+    await writeObjectStorageReports(mergedReports);
   }
 
   async function importLocalClipsToPostgres() {
@@ -155,6 +212,12 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
   }
 
   async function init() {
+    if (usesObjectStorage) {
+      await metadataStore.ensureReady();
+      await importLocalClipsToObjectStorage();
+      return;
+    }
+
     if (!pool) {
       ensureLocalDataDir();
       return;
@@ -204,6 +267,12 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
   }
 
   async function listVisibleClips(limit = maxVisibleClips) {
+    if (usesObjectStorage) {
+      return (await readObjectStorageClips())
+        .filter((clip) => clip.status === 'active')
+        .slice(0, limit);
+    }
+
     if (!pool) {
       return readLocalClips()
         .filter((clip) => clip.status === 'active')
@@ -257,6 +326,11 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
 
   async function insertClip(clip) {
     const nextClip = clipRecord(clip);
+    if (usesObjectStorage) {
+      const nextClips = await writeObjectStorageClips([nextClip, ...await readObjectStorageClips()]);
+      return nextClips.find((entry) => entry.id === nextClip.id) || nextClip;
+    }
+
     if (!pool) {
       const nextClips = writeLocalClips([nextClip, ...readLocalClips()]);
       return nextClips.find((entry) => entry.id === nextClip.id) || nextClip;
@@ -312,6 +386,10 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
       return null;
     }
 
+    if (usesObjectStorage) {
+      return (await readObjectStorageClips()).find((clip) => clip.id === safeClipId) || null;
+    }
+
     if (!pool) {
       return readLocalClips().find((clip) => clip.id === safeClipId) || null;
     }
@@ -365,6 +443,19 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
     const safeClipId = String(clipId || '').trim();
     if (!safeClipId) {
       return null;
+    }
+
+    if (usesObjectStorage) {
+      const clips = await readObjectStorageClips();
+      const removedClip = clips.find((clip) => clip.id === safeClipId) || null;
+      if (!removedClip) {
+        return null;
+      }
+      await writeObjectStorageClips(clips.filter((clip) => clip.id !== safeClipId));
+      const reports = await readObjectStorageReports();
+      delete reports[safeClipId];
+      await writeObjectStorageReports(reports);
+      return removedClip;
     }
 
     if (!pool) {
@@ -432,6 +523,28 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
 
     if (!safeClipId || !reporterHash) {
       return { clip: null, alreadyReported: false };
+    }
+
+    if (usesObjectStorage) {
+      const clips = await readObjectStorageClips();
+      const targetClip = clips.find((clip) => clip.id === safeClipId && clip.status === 'active');
+      if (!targetClip) {
+        return { clip: null, alreadyReported: false };
+      }
+
+      const reports = await readObjectStorageReports();
+      const seenHashes = new Set(Array.isArray(reports[safeClipId]) ? reports[safeClipId] : []);
+      if (seenHashes.has(reporterHash)) {
+        return { clip: targetClip, alreadyReported: true };
+      }
+
+      seenHashes.add(reporterHash);
+      reports[safeClipId] = [...seenHashes];
+      await writeObjectStorageReports(reports);
+
+      targetClip.reportCount += 1;
+      await writeObjectStorageClips(clips);
+      return { clip: targetClip, alreadyReported: false };
     }
 
     if (!pool) {
@@ -571,6 +684,7 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
     deleteClip,
     registerReport,
     close,
+    usesObjectStorage,
     usesPostgres,
   };
 }
