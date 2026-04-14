@@ -1,0 +1,75 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="stadium" x1="120" y1="34" x2="1098" y2="590" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#061323"/>
+      <stop offset="0.52" stop-color="#081827"/>
+      <stop offset="1" stop-color="#03080F"/>
+    </linearGradient>
+    <linearGradient id="pitch" x1="600" y1="124" x2="600" y2="540" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#143155"/>
+      <stop offset="0.48" stop-color="#0F2642"/>
+      <stop offset="0.52" stop-color="#291B2D"/>
+      <stop offset="1" stop-color="#3E2218"/>
+    </linearGradient>
+    <radialGradient id="centerGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(600 302) rotate(90) scale(152 152)">
+      <stop stop-color="#EAFBFF" stop-opacity="0.9"/>
+      <stop offset="0.4" stop-color="#92E8FF" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#92E8FF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="ballGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" rx="40" fill="#02060B"/>
+  <rect x="16" y="16" width="1168" height="598" rx="32" fill="url(#stadium)"/>
+  <path d="M132 116H1068C1109 116 1142 149 1142 190V438C1142 479 1109 512 1068 512H132C91 512 58 479 58 438V190C58 149 91 116 132 116Z" fill="url(#pitch)" stroke="#35506B" stroke-width="4"/>
+
+  <path d="M600 116V512" stroke="#D9F4FF" stroke-opacity="0.35" stroke-width="4"/>
+  <circle cx="600" cy="314" r="88" stroke="#E9F8FF" stroke-opacity="0.4" stroke-width="4"/>
+  <path d="M124 250H206V378H124" stroke="#C7EFFF" stroke-opacity="0.3" stroke-width="4"/>
+  <path d="M1076 250H994V378H1076" stroke="#FFE1CF" stroke-opacity="0.35" stroke-width="4"/>
+  <path d="M88 222H148V406H88" stroke="#C7EFFF" stroke-opacity="0.18" stroke-width="4"/>
+  <path d="M1112 222H1052V406H1112" stroke="#FFE1CF" stroke-opacity="0.2" stroke-width="4"/>
+
+  <ellipse cx="600" cy="302" rx="186" ry="148" fill="url(#centerGlow)"/>
+
+  <g opacity="0.3">
+    <path d="M106 94C238 144 296 148 456 162" stroke="#5DCFFF" stroke-width="8" stroke-linecap="round"/>
+    <path d="M1092 94C962 144 900 148 742 162" stroke="#FF985C" stroke-width="8" stroke-linecap="round"/>
+    <path d="M104 536C238 488 300 484 458 468" stroke="#5DCFFF" stroke-width="8" stroke-linecap="round"/>
+    <path d="M1096 536C962 488 900 484 742 468" stroke="#FF985C" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#ballGlow)">
+    <circle cx="600" cy="302" r="42" fill="#F6FBFF"/>
+    <path d="M600 266L628 284L618 316H582L572 284L600 266Z" fill="#0D2037"/>
+    <path d="M572 284L550 304L562 334L582 316" fill="#163B61"/>
+    <path d="M628 284L650 304L638 334L618 316" fill="#613119"/>
+  </g>
+
+  <g transform="translate(308 344) rotate(-16)">
+    <path d="M-88 44C-12 8 48 -6 122 -12" stroke="#46CFFF" stroke-opacity="0.65" stroke-width="18" stroke-linecap="round"/>
+    <path d="M26 0H116L154 28L138 62H30L0 44L26 0Z" fill="#0E263A" stroke="#6DDBFF" stroke-width="4"/>
+    <path d="M52 8H100L118 22H42L52 8Z" fill="#BCEEFF"/>
+    <circle cx="44" cy="64" r="16" fill="#06121E" stroke="#A4E9FF" stroke-width="4"/>
+    <circle cx="122" cy="64" r="16" fill="#06121E" stroke="#A4E9FF" stroke-width="4"/>
+    <path d="M154 28L188 38L168 58L138 62" fill="#60D7FF"/>
+  </g>
+
+  <g transform="translate(844 258) rotate(14)">
+    <path d="M88 -44C12 -8 -48 6 -122 12" stroke="#FF8A54" stroke-opacity="0.7" stroke-width="18" stroke-linecap="round"/>
+    <path d="M-26 0H-116L-154 28L-138 62H-30L0 44L-26 0Z" fill="#382018" stroke="#FFB380" stroke-width="4"/>
+    <path d="M-52 8H-100L-118 22H-42L-52 8Z" fill="#FFE5D4"/>
+    <circle cx="-44" cy="64" r="16" fill="#140A07" stroke="#FFD0AA" stroke-width="4"/>
+    <circle cx="-122" cy="64" r="16" fill="#140A07" stroke="#FFD0AA" stroke-width="4"/>
+    <path d="M-154 28L-188 38L-168 58L-138 62" fill="#FF995D"/>
+  </g>
+
+  <text x="84" y="502" fill="#F4FAFF" font-size="68" font-family="Segoe UI, Arial, sans-serif" font-weight="800" letter-spacing="2">CAR SOCCER MINI</text>
+  <text x="84" y="556" fill="#A4BDDA" font-size="34" font-family="Segoe UI, Arial, sans-serif" font-weight="700" letter-spacing="6">TURBO ARENA</text>
+</svg>
