@@ -4,6 +4,7 @@ const MAX_CLIP_UPLOAD_BYTES = 24 * 1024 * 1024;
 const CLIP_REPORTER_STORAGE_KEY = "nova-clips:reporter-id";
 const CLIP_VIEWER_STORAGE_KEY = "nova-clips:viewer-id";
 const CLIP_COMMENTER_NAME_STORAGE_KEY = "nova-clips:commenter-name";
+const CLIP_COMMENT_OWNERSHIP_STORAGE_KEY = "nova-clips:owned-comments";
 const CLIP_REACTION_STORAGE_KEY = "nova-clips:reactions";
 const CLIP_VIEWED_STORAGE_KEY = "nova-clips:viewed";
 const ALLOWED_CLIP_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".3gp", ".3gpp"]);
@@ -149,6 +150,14 @@ function clipCommentEndpoint() {
     return `${clipsApiBase()}/api/clips/comment`;
 }
 
+function clipCommentDeleteEndpoint() {
+    return `${clipsApiBase()}/api/clips/comment/delete`;
+}
+
+function clipCommentPinEndpoint() {
+    return `${clipsApiBase()}/api/clips/comment/pin`;
+}
+
 function clipStorageAdminEndpoint() {
     return `${clipsApiBase()}/api/clips/admin/storage`;
 }
@@ -198,6 +207,69 @@ function deleteTokenForClip(clipId) {
     const ownedUploads = readOwnedUploads();
     const token = ownedUploads[clipId];
     return typeof token === "string" ? token : "";
+}
+
+function readOwnedComments() {
+    try {
+        const raw = window.localStorage.getItem(CLIP_COMMENT_OWNERSHIP_STORAGE_KEY);
+        if (!raw) {
+            return {};
+        }
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
+function writeOwnedComments(ownedComments) {
+    try {
+        window.localStorage.setItem(CLIP_COMMENT_OWNERSHIP_STORAGE_KEY, JSON.stringify(ownedComments));
+    } catch {
+        // Ignore storage failures.
+    }
+}
+
+function rememberOwnedComment(commentId, clipId) {
+    if (!commentId) {
+        return;
+    }
+
+    const ownedComments = readOwnedComments();
+    ownedComments[commentId] = clipId || true;
+    writeOwnedComments(ownedComments);
+}
+
+function forgetOwnedComment(commentId) {
+    if (!commentId) {
+        return;
+    }
+
+    const ownedComments = readOwnedComments();
+    delete ownedComments[commentId];
+    writeOwnedComments(ownedComments);
+}
+
+function forgetOwnedCommentsForClip(clipId) {
+    if (!clipId) {
+        return;
+    }
+
+    const ownedComments = readOwnedComments();
+    let changed = false;
+    Object.entries(ownedComments).forEach(([commentId, ownedClipId]) => {
+        if (ownedClipId === clipId) {
+            delete ownedComments[commentId];
+            changed = true;
+        }
+    });
+    if (changed) {
+        writeOwnedComments(ownedComments);
+    }
+}
+
+function ownsComment(commentId) {
+    return Boolean(readOwnedComments()[commentId]);
 }
 
 function reporterKey() {
@@ -616,6 +688,7 @@ async function removeClip(clipId, deleteButton) {
         }
 
         forgetOwnedUpload(clipId);
+        forgetOwnedCommentsForClip(clipId);
         renderClips(payload.clips || []);
         await fetchClipAdminStats();
         setClipsStatus("Clip removed from the feed.");
@@ -750,6 +823,9 @@ async function submitClipComment(clipId, nameInput, commentInput, submitButton, 
         if (commentInput) {
             commentInput.value = "";
         }
+        if (payload.comment?.id) {
+            rememberOwnedComment(payload.comment.id, clipId);
+        }
         replaceClipCard(payload.clip);
         setClipsStatus("Comment posted.");
     } catch (error) {
@@ -757,6 +833,80 @@ async function submitClipComment(clipId, nameInput, commentInput, submitButton, 
     } finally {
         submitButton.disabled = false;
         submitButton.textContent = "Post";
+    }
+}
+
+async function submitClipCommentDelete(clipId, commentId, button) {
+    if (!clipId || !commentId || !button) {
+        return;
+    }
+
+    button.disabled = true;
+
+    try {
+        const response = await fetch(clipCommentDeleteEndpoint(), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                clipId,
+                commentId,
+                viewerKey: viewerKey(),
+                deleteToken: deleteTokenForClip(clipId),
+            }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok || !payload.clip) {
+            throw new Error(payload.error || "Unable to delete that comment.");
+        }
+
+        if (payload.deletedCommentId) {
+            forgetOwnedComment(payload.deletedCommentId);
+        }
+        replaceClipCard(payload.clip);
+        setClipsStatus("Comment deleted.");
+    } catch (error) {
+        setClipsStatus(error.message, true);
+        button.disabled = false;
+    }
+}
+
+async function submitClipCommentPin(clipId, commentId, button) {
+    if (!clipId || !commentId || !button) {
+        return;
+    }
+
+    const deleteToken = deleteTokenForClip(clipId);
+    if (!deleteToken) {
+        setClipsStatus("Only the clip owner can pin a top comment.", true);
+        return;
+    }
+
+    button.disabled = true;
+
+    try {
+        const response = await fetch(clipCommentPinEndpoint(), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                clipId,
+                commentId,
+                deleteToken,
+            }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok || !payload.clip) {
+            throw new Error(payload.error || "Unable to pin that comment.");
+        }
+
+        replaceClipCard(payload.clip);
+        setClipsStatus("Top comment pinned.");
+    } catch (error) {
+        setClipsStatus(error.message, true);
+        button.disabled = false;
     }
 }
 
@@ -912,6 +1062,8 @@ function createClipCard(clip) {
     const reactionRow = document.createElement("div");
     reactionRow.className = "clip-reaction-row";
     const selectedReaction = reactionSelectionForClip(clip.id);
+    const clipDeleteToken = deleteTokenForClip(clip.id);
+    const clipOwner = Boolean(clipDeleteToken);
 
     const makeReactionButton = (label, count, reactionType, emoji = "") => {
         const button = document.createElement("button");
@@ -939,7 +1091,9 @@ function createClipCard(clip) {
 
     const note = document.createElement("p");
     note.className = "clip-card-note";
-    note.textContent = "Like, dislike, react with emoji, comment below, delete your own uploads, or report someone else's clip for review.";
+    note.textContent = clipOwner
+        ? "Like, dislike, react with emoji, comment below, pin a top comment, or delete anything on your own clip."
+        : "Like, dislike, react with emoji, comment below, or report someone else's clip for review.";
 
     const commentsSection = document.createElement("section");
     commentsSection.className = "clip-comments";
@@ -956,15 +1110,62 @@ function createClipCard(clip) {
             const commentRow = document.createElement("div");
             commentRow.className = "clip-comment";
 
+            const commentHead = document.createElement("div");
+            commentHead.className = "clip-comment-head";
+
+            const commentAuthorRow = document.createElement("div");
+            commentAuthorRow.className = "clip-comment-author-row";
+
             const commentAuthor = document.createElement("strong");
             commentAuthor.className = "clip-comment-author";
             commentAuthor.textContent = comment.authorName || "Guest viewer";
+            commentAuthorRow.appendChild(commentAuthor);
+
+            if (comment.pinned) {
+                const pinnedBadge = document.createElement("span");
+                pinnedBadge.className = "clip-comment-badge";
+                pinnedBadge.textContent = "Pinned top comment";
+                commentAuthorRow.appendChild(pinnedBadge);
+            }
+
+            commentHead.appendChild(commentAuthorRow);
+
+            const commentTools = document.createElement("div");
+            commentTools.className = "clip-comment-tools";
+            const commentOwnedByViewer = ownsComment(comment.id);
+            const canDeleteComment = clipOwner || commentOwnedByViewer;
+
+            if (clipOwner && !comment.pinned) {
+                const pinButton = document.createElement("button");
+                pinButton.type = "button";
+                pinButton.className = "clip-comment-tool";
+                pinButton.textContent = "Pin";
+                pinButton.addEventListener("click", () => {
+                    submitClipCommentPin(clip.id, comment.id, pinButton);
+                });
+                commentTools.appendChild(pinButton);
+            }
+
+            if (canDeleteComment) {
+                const deleteCommentButton = document.createElement("button");
+                deleteCommentButton.type = "button";
+                deleteCommentButton.className = "clip-comment-tool clip-comment-tool--danger";
+                deleteCommentButton.textContent = "Delete";
+                deleteCommentButton.addEventListener("click", () => {
+                    submitClipCommentDelete(clip.id, comment.id, deleteCommentButton);
+                });
+                commentTools.appendChild(deleteCommentButton);
+            }
+
+            if (commentTools.childElementCount) {
+                commentHead.appendChild(commentTools);
+            }
 
             const commentBody = document.createElement("span");
             commentBody.className = "clip-comment-body";
             commentBody.textContent = [comment.emoji, comment.body].filter(Boolean).join(" ");
 
-            commentRow.appendChild(commentAuthor);
+            commentRow.appendChild(commentHead);
             commentRow.appendChild(commentBody);
             commentsList.appendChild(commentRow);
         });

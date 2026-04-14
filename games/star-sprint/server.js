@@ -812,6 +812,7 @@ function publicClipEntry(clip) {
         authorName: String(comment.authorName || 'Guest viewer'),
         body: String(comment.body || ''),
         emoji: String(comment.emoji || ''),
+        pinned: Boolean(comment.pinned),
         createdAt: String(comment.createdAt || ''),
       }))
       : [],
@@ -1659,6 +1660,186 @@ async function handleClipCommentRequest(req, res) {
     sendJsonResponse(req, res, 500, {
       ok: false,
       error: 'Unable to save that comment right now.',
+    });
+  }
+}
+
+async function handleClipCommentDeleteRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const clipId = sanitizeClipField(body.clipId, 80);
+  const commentId = sanitizeClipField(body.commentId, 80);
+  const viewerKey = sanitizeClipField(body.viewerKey, 120);
+  const deleteToken = normalizeDeleteToken(body.deleteToken);
+  if (!clipId || !commentId) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Clip id and comment id are required.',
+    });
+    return;
+  }
+
+  try {
+    const result = await clipsStore.deleteComment(clipId, commentId, {
+      viewerToken: viewerKey,
+      deleteToken,
+    });
+
+    if (result.error === 'clip-not-found') {
+      sendJsonResponse(req, res, 404, {
+        ok: false,
+        error: 'Clip not found.',
+      });
+      return;
+    }
+
+    if (result.error === 'comment-not-found') {
+      sendJsonResponse(req, res, 404, {
+        ok: false,
+        error: 'Comment not found.',
+      });
+      return;
+    }
+
+    if (result.error === 'forbidden') {
+      sendJsonResponse(req, res, 403, {
+        ok: false,
+        error: 'Delete permission not found for that comment.',
+      });
+      return;
+    }
+
+    if (!result.clip || !result.comment) {
+      sendJsonResponse(req, res, 500, {
+        ok: false,
+        error: 'Unable to remove that comment right now.',
+      });
+      return;
+    }
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      deletedCommentId: result.comment.id,
+      clip: publicClipEntry(result.clip),
+    });
+  } catch (error) {
+    console.error('Failed to remove clip comment:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to remove that comment right now.',
+    });
+  }
+}
+
+async function handleClipCommentPinRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const clipId = sanitizeClipField(body.clipId, 80);
+  const commentId = sanitizeClipField(body.commentId, 80);
+  const deleteToken = normalizeDeleteToken(body.deleteToken);
+  if (!clipId || !commentId || !deleteToken) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Clip id, comment id, and delete token are required.',
+    });
+    return;
+  }
+
+  try {
+    const result = await clipsStore.pinComment(clipId, commentId, deleteToken);
+
+    if (result.error === 'clip-not-found') {
+      sendJsonResponse(req, res, 404, {
+        ok: false,
+        error: 'Clip not found.',
+      });
+      return;
+    }
+
+    if (result.error === 'comment-not-found') {
+      sendJsonResponse(req, res, 404, {
+        ok: false,
+        error: 'Comment not found.',
+      });
+      return;
+    }
+
+    if (result.error === 'forbidden') {
+      sendJsonResponse(req, res, 403, {
+        ok: false,
+        error: 'Pin permission not found for that clip.',
+      });
+      return;
+    }
+
+    if (!result.clip || !result.comment) {
+      sendJsonResponse(req, res, 500, {
+        ok: false,
+        error: 'Unable to pin that comment right now.',
+      });
+      return;
+    }
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      pinnedCommentId: result.comment.id,
+      clip: publicClipEntry(result.clip),
+    });
+  } catch (error) {
+    console.error('Failed to pin clip comment:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to pin that comment right now.',
     });
   }
 }
@@ -3384,6 +3565,16 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/clips/comment') {
     await handleClipCommentRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/clips/comment/delete') {
+    await handleClipCommentDeleteRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/clips/comment/pin') {
+    await handleClipCommentPinRequest(req, res);
     return;
   }
 

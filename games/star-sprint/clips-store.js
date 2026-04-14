@@ -51,6 +51,11 @@ function normalizeEmojiCounts(raw) {
 }
 
 function commentSort(left, right) {
+  const leftPinned = Boolean(left && left.pinned);
+  const rightPinned = Boolean(right && right.pinned);
+  if (leftPinned !== rightPinned) {
+    return leftPinned ? -1 : 1;
+  }
   return String(right.createdAt || '').localeCompare(String(left.createdAt || ''));
 }
 
@@ -61,6 +66,8 @@ function commentRecord(record) {
     body: String(record.body || record.message || ''),
     emoji: normalizeEmoji(record.emoji || ''),
     createdAt: String(record.createdAt || ''),
+    commenterHash: String(record.commenterHash || record.commenter_hash || ''),
+    pinned: Boolean(record.pinned),
   };
 }
 
@@ -284,6 +291,8 @@ function mapPostgresCommentRow(row) {
     body: row.body,
     emoji: row.emoji,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    commenterHash: row.commenter_hash,
+    pinned: row.pinned,
   });
 }
 
@@ -662,8 +671,14 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         author_name TEXT NOT NULL,
         body TEXT NOT NULL DEFAULT '',
         emoji TEXT NOT NULL DEFAULT '',
+        pinned BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+    `);
+
+    await pool.query(`
+      ALTER TABLE clip_comments
+      ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT FALSE;
     `);
 
     await pool.query(`
@@ -703,10 +718,10 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         [clipIds],
       ),
       pool.query(
-        `SELECT id, clip_id, author_name, body, emoji, created_at
+        `SELECT id, clip_id, commenter_hash, author_name, body, emoji, pinned, created_at
         FROM clip_comments
         WHERE clip_id = ANY($1::text[])
-        ORDER BY created_at DESC`,
+        ORDER BY pinned DESC, created_at DESC`,
         [clipIds],
       ),
     ]);
@@ -1440,6 +1455,8 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
       body,
       emoji,
       createdAt: new Date().toISOString(),
+      commenterHash,
+      pinned: false,
     });
 
     if (!safeClipId || !commenterHash || (!nextComment.body && !nextComment.emoji)) {
@@ -1506,9 +1523,10 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         author_name,
         body,
         emoji,
+        pinned,
         created_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7
+        $1, $2, $3, $4, $5, $6, $7, $8
       )`,
       [
         nextComment.id,
@@ -1517,6 +1535,7 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         nextComment.authorName,
         nextComment.body,
         nextComment.emoji,
+        nextComment.pinned,
         nextComment.createdAt,
       ],
     );
@@ -1524,6 +1543,276 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
     return {
       clip: await findClipById(safeClipId),
       comment: nextComment,
+    };
+  }
+
+  async function deleteComment(clipId, commentId, { viewerToken = '', deleteToken = '' } = {}) {
+    const safeClipId = String(clipId || '').trim();
+    const safeCommentId = String(commentId || '').trim();
+    const viewerHash = hashViewerToken(viewerToken);
+    const safeDeleteToken = String(deleteToken || '').trim();
+
+    if (!safeClipId || !safeCommentId) {
+      return { clip: null, comment: null, error: 'missing-ids' };
+    }
+
+    if (usesObjectStorage) {
+      const [clips, interactions, comments] = await Promise.all([
+        readObjectStorageClips(),
+        readObjectStorageInteractions(),
+        readObjectStorageComments(),
+      ]);
+      const targetClip = clips.find((clip) => clip.id === safeClipId && clip.status === 'active');
+      if (!targetClip) {
+        return { clip: null, comment: null, error: 'clip-not-found' };
+      }
+
+      const clipComments = Array.isArray(comments[safeClipId]) ? comments[safeClipId].map(commentRecord) : [];
+      const targetComment = clipComments.find((comment) => comment.id === safeCommentId) || null;
+      if (!targetComment) {
+        return {
+          clip: decorateClip(targetClip, interactions, comments),
+          comment: null,
+          error: 'comment-not-found',
+        };
+      }
+
+      const canDelete = (
+        safeDeleteToken &&
+        targetClip.deleteToken === safeDeleteToken
+      ) || (
+        viewerHash &&
+        targetComment.commenterHash &&
+        viewerHash === targetComment.commenterHash
+      );
+
+      if (!canDelete) {
+        return {
+          clip: decorateClip(targetClip, interactions, comments),
+          comment: targetComment,
+          error: 'forbidden',
+        };
+      }
+
+      comments[safeClipId] = clipComments.filter((comment) => comment.id !== safeCommentId);
+      await writeObjectStorageComments(comments);
+      return {
+        clip: decorateClip(targetClip, interactions, comments),
+        comment: targetComment,
+        error: '',
+      };
+    }
+
+    if (!pool) {
+      const clips = readLocalClips();
+      const interactions = readLocalInteractions();
+      const comments = readLocalComments();
+      const targetClip = clips.find((clip) => clip.id === safeClipId && clip.status === 'active');
+      if (!targetClip) {
+        return { clip: null, comment: null, error: 'clip-not-found' };
+      }
+
+      const clipComments = Array.isArray(comments[safeClipId]) ? comments[safeClipId].map(commentRecord) : [];
+      const targetComment = clipComments.find((comment) => comment.id === safeCommentId) || null;
+      if (!targetComment) {
+        return {
+          clip: decorateClip(targetClip, interactions, comments),
+          comment: null,
+          error: 'comment-not-found',
+        };
+      }
+
+      const canDelete = (
+        safeDeleteToken &&
+        targetClip.deleteToken === safeDeleteToken
+      ) || (
+        viewerHash &&
+        targetComment.commenterHash &&
+        viewerHash === targetComment.commenterHash
+      );
+
+      if (!canDelete) {
+        return {
+          clip: decorateClip(targetClip, interactions, comments),
+          comment: targetComment,
+          error: 'forbidden',
+        };
+      }
+
+      comments[safeClipId] = clipComments.filter((comment) => comment.id !== safeCommentId);
+      writeLocalComments(comments);
+      return {
+        clip: decorateClip(targetClip, interactions, comments),
+        comment: targetComment,
+        error: '',
+      };
+    }
+
+    const clip = await findClipById(safeClipId);
+    if (!clip || clip.status !== 'active') {
+      return { clip: null, comment: null, error: 'clip-not-found' };
+    }
+
+    const commentResult = await pool.query(
+      `SELECT id, clip_id, commenter_hash, author_name, body, emoji, pinned, created_at
+      FROM clip_comments
+      WHERE clip_id = $1 AND id = $2
+      LIMIT 1`,
+      [safeClipId, safeCommentId],
+    );
+    const targetComment = commentResult.rows[0] ? mapPostgresCommentRow(commentResult.rows[0]) : null;
+    if (!targetComment) {
+      return { clip, comment: null, error: 'comment-not-found' };
+    }
+
+    const canDelete = (
+      safeDeleteToken &&
+      clip.deleteToken === safeDeleteToken
+    ) || (
+      viewerHash &&
+      targetComment.commenterHash &&
+      viewerHash === targetComment.commenterHash
+    );
+
+    if (!canDelete) {
+      return { clip, comment: targetComment, error: 'forbidden' };
+    }
+
+    await pool.query(
+      'DELETE FROM clip_comments WHERE clip_id = $1 AND id = $2',
+      [safeClipId, safeCommentId],
+    );
+
+    return {
+      clip: await findClipById(safeClipId),
+      comment: targetComment,
+      error: '',
+    };
+  }
+
+  async function pinComment(clipId, commentId, deleteToken) {
+    const safeClipId = String(clipId || '').trim();
+    const safeCommentId = String(commentId || '').trim();
+    const safeDeleteToken = String(deleteToken || '').trim();
+
+    if (!safeClipId || !safeCommentId || !safeDeleteToken) {
+      return { clip: null, comment: null, error: 'missing-ids' };
+    }
+
+    if (usesObjectStorage) {
+      const [clips, interactions, comments] = await Promise.all([
+        readObjectStorageClips(),
+        readObjectStorageInteractions(),
+        readObjectStorageComments(),
+      ]);
+      const targetClip = clips.find((clip) => clip.id === safeClipId && clip.status === 'active');
+      if (!targetClip) {
+        return { clip: null, comment: null, error: 'clip-not-found' };
+      }
+      if (targetClip.deleteToken !== safeDeleteToken) {
+        return { clip: decorateClip(targetClip, interactions, comments), comment: null, error: 'forbidden' };
+      }
+
+      const clipComments = Array.isArray(comments[safeClipId]) ? comments[safeClipId].map(commentRecord) : [];
+      const hasTargetComment = clipComments.some((comment) => comment.id === safeCommentId);
+      if (!hasTargetComment) {
+        return {
+          clip: decorateClip(targetClip, interactions, comments),
+          comment: null,
+          error: 'comment-not-found',
+        };
+      }
+
+      comments[safeClipId] = clipComments
+        .map((comment) => ({
+          ...comment,
+          pinned: comment.id === safeCommentId,
+        }))
+        .sort(commentSort);
+      await writeObjectStorageComments(comments);
+
+      const updatedClip = decorateClip(targetClip, interactions, comments);
+      const pinnedComment = updatedClip.comments.find((comment) => comment.id === safeCommentId) || null;
+      return {
+        clip: updatedClip,
+        comment: pinnedComment,
+        error: '',
+      };
+    }
+
+    if (!pool) {
+      const clips = readLocalClips();
+      const interactions = readLocalInteractions();
+      const comments = readLocalComments();
+      const targetClip = clips.find((clip) => clip.id === safeClipId && clip.status === 'active');
+      if (!targetClip) {
+        return { clip: null, comment: null, error: 'clip-not-found' };
+      }
+      if (targetClip.deleteToken !== safeDeleteToken) {
+        return { clip: decorateClip(targetClip, interactions, comments), comment: null, error: 'forbidden' };
+      }
+
+      const clipComments = Array.isArray(comments[safeClipId]) ? comments[safeClipId].map(commentRecord) : [];
+      const hasTargetComment = clipComments.some((comment) => comment.id === safeCommentId);
+      if (!hasTargetComment) {
+        return {
+          clip: decorateClip(targetClip, interactions, comments),
+          comment: null,
+          error: 'comment-not-found',
+        };
+      }
+
+      comments[safeClipId] = clipComments
+        .map((comment) => ({
+          ...comment,
+          pinned: comment.id === safeCommentId,
+        }))
+        .sort(commentSort);
+      writeLocalComments(comments);
+
+      const updatedClip = decorateClip(targetClip, interactions, comments);
+      const pinnedComment = updatedClip.comments.find((comment) => comment.id === safeCommentId) || null;
+      return {
+        clip: updatedClip,
+        comment: pinnedComment,
+        error: '',
+      };
+    }
+
+    const clip = await findClipById(safeClipId);
+    if (!clip || clip.status !== 'active') {
+      return { clip: null, comment: null, error: 'clip-not-found' };
+    }
+    if (clip.deleteToken !== safeDeleteToken) {
+      return { clip, comment: null, error: 'forbidden' };
+    }
+
+    const commentResult = await pool.query(
+      `SELECT id
+      FROM clip_comments
+      WHERE clip_id = $1 AND id = $2
+      LIMIT 1`,
+      [safeClipId, safeCommentId],
+    );
+    if (!commentResult.rows[0]) {
+      return { clip, comment: null, error: 'comment-not-found' };
+    }
+
+    await pool.query(
+      `UPDATE clip_comments
+      SET pinned = CASE WHEN id = $2 THEN TRUE ELSE FALSE END
+      WHERE clip_id = $1`,
+      [safeClipId, safeCommentId],
+    );
+
+    const updatedClip = await findClipById(safeClipId);
+    const pinnedComment = updatedClip && Array.isArray(updatedClip.comments)
+      ? updatedClip.comments.find((comment) => comment.id === safeCommentId) || null
+      : null;
+    return {
+      clip: updatedClip,
+      comment: pinnedComment,
+      error: '',
     };
   }
 
@@ -1544,6 +1833,8 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
     registerView,
     registerReaction,
     addComment,
+    deleteComment,
+    pinComment,
     close,
     usesObjectStorage,
     usesPostgres,
