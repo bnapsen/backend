@@ -17,6 +17,7 @@
   const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
 
   const ui = {
+    shell: document.getElementById('gameShell'),
     canvas: document.getElementById('gameCanvas'),
     nameInput: document.getElementById('nameInput'),
     roomInput: document.getElementById('roomInput'),
@@ -72,6 +73,7 @@
       setupHidden: false,
       infoHidden: false,
     },
+    panelFocusAuto: false,
     keys: {
       up: false,
       down: false,
@@ -270,11 +272,43 @@
     scheduleTone(480, 960, 0.26, 0.04, 'sine', 0.04);
   }
 
-  function setPanelHidden(key, hidden) {
+  function storedPanelHidden(key) {
+    return localStorage.getItem(STORAGE_KEYS[key]) === '1';
+  }
+
+  function syncPanelVisibility(persist = true) {
+    ui.setupPanel.classList.toggle('panel-hidden', state.panels.setupHidden);
+    ui.infoPanel.classList.toggle('panel-hidden', state.panels.infoHidden);
+    if (persist) {
+      localStorage.setItem(STORAGE_KEYS.setupHidden, state.panels.setupHidden ? '1' : '0');
+      localStorage.setItem(STORAGE_KEYS.infoHidden, state.panels.infoHidden ? '1' : '0');
+    }
+  }
+
+  function setPanelHidden(key, hidden, persist = true) {
     state.panels[key] = hidden;
-    ui[`${key === 'setupHidden' ? 'setupPanel' : 'infoPanel'}`].classList.toggle('panel-hidden', hidden);
-    localStorage.setItem(STORAGE_KEYS[key], hidden ? '1' : '0');
+    if (persist) {
+      state.panelFocusAuto = false;
+    }
+    syncPanelVisibility(persist);
     renderPanels();
+  }
+
+  function focusArenaPanels() {
+    state.panelFocusAuto = true;
+    state.panels.setupHidden = true;
+    state.panels.infoHidden = true;
+    syncPanelVisibility(false);
+  }
+
+  function restoreFocusedPanels() {
+    if (!state.panelFocusAuto) {
+      return;
+    }
+    state.panelFocusAuto = false;
+    state.panels.setupHidden = storedPanelHidden('setupHidden');
+    state.panels.infoHidden = storedPanelHidden('infoHidden');
+    syncPanelVisibility(false);
   }
 
   function persistPreferences() {
@@ -544,6 +578,9 @@
     const player = localPlayer(game);
     const scoreBlue = game?.score?.blue || 0;
     const scoreOrange = game?.score?.orange || 0;
+    const matchActive = Boolean(game) || state.mode === 'connecting';
+
+    ui.shell.classList.toggle('match-live', matchActive);
 
     ui.leftTeamLabel.textContent = 'Blue';
     ui.rightTeamLabel.textContent = 'Orange';
@@ -624,6 +661,7 @@
     state.roomCode = 'SOLO';
     state.statusMessage = '';
     state.lastInputSentAt = 0;
+    focusArenaPanels();
     renderPanels();
     showToast('Solo arena launched.');
   }
@@ -639,6 +677,7 @@
     state.localGame = null;
     state.yourPlayerId = '';
     state.statusMessage = 'Arena connection closed. You can host, join, or launch solo again.';
+    restoreFocusedPanels();
     renderPanels();
     showToast('Arena connection closed.');
   }
@@ -661,6 +700,7 @@
     state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
     state.statusMessage = '';
     persistPreferences();
+    focusArenaPanels();
     renderPanels();
 
     const socket = new WebSocket(state.serverUrl);
@@ -710,6 +750,7 @@
         state.snapshot = null;
         state.yourPlayerId = '';
         state.statusMessage = payload.message || 'Arena connection error.';
+        restoreFocusedPanels();
         renderPanels();
       }
     });
@@ -921,11 +962,12 @@
     game.players.forEach((player) => {
       activeIds.add(player.id);
       const cached = state.renderCache.players.get(player.id) || { ...player };
+      const previousBoost = cached.boost ?? player.boost;
       if (smoothing < 1) {
         cached.x = lerp(cached.x ?? player.x, player.x, smoothing);
         cached.y = lerp(cached.y ?? player.y, player.y, smoothing);
         cached.angle = lerpAngle(cached.angle ?? player.angle, player.angle, smoothing);
-        cached.boost = lerp(cached.boost ?? player.boost, player.boost, 0.35);
+        cached.boost = lerp(previousBoost, player.boost, 0.35);
       } else {
         cached.x = player.x;
         cached.y = player.y;
@@ -945,6 +987,18 @@
       cached.demolished = player.demolished;
       cached.respawnTimer = player.respawnTimer;
       cached.boostPickups = player.boostPickups;
+      const speed = Math.hypot(player.vx || 0, player.vy || 0);
+      const travelAngle = speed > 1 ? Math.atan2(player.vy || 0, player.vx || 0) : player.angle;
+      const alignment = speed > 1 ? Math.cos(wrapAngle(travelAngle - player.angle)) : 1;
+      const boostDelta = Math.max(0, previousBoost - player.boost);
+      const boostHeld = state.mode === 'solo'
+        ? Boolean(player.input?.boost)
+        : player.id === state.yourPlayerId && state.keys.boost;
+      const boostDetected = !player.demolished
+        && player.boost > 0
+        && (boostHeld || (boostDelta > 0.45 && speed > 220 && alignment > 0.82));
+      cached.boostGlow = lerp(cached.boostGlow ?? 0, boostDetected ? 1 : 0, boostDetected ? 0.34 : 0.2);
+      cached.boosting = cached.boostGlow > 0.05;
       state.renderCache.players.set(player.id, cached);
       nextPlayers.push({ ...player, ...cached });
     });
@@ -1188,6 +1242,37 @@
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     roundedRectPath(tailX + 5, -bodyHeight * 0.5 + 6, bodyWidth, bodyHeight, bodyHeight * 0.24);
     ctx.fill();
+
+    const boostGlow = clamp(player.boostGlow ?? 0, 0, 1);
+    if (boostGlow > 0.04) {
+      const pulse = 0.82 + Math.sin(performance.now() * 0.02 + player.seat * 0.8) * 0.18;
+      const flameLength = bodyWidth * (0.18 + boostGlow * 0.34 * pulse);
+      const flameSpread = bodyHeight * (0.14 + boostGlow * 0.12);
+      const exhaustX = tailX - bodyWidth * 0.06;
+      const exhaustOffsets = [-bodyHeight * 0.18, bodyHeight * 0.18];
+      const glowColor = player.team === 'blue' ? 'rgba(78, 201, 255, 0.62)' : 'rgba(255, 146, 92, 0.62)';
+      const coreColor = player.team === 'blue' ? 'rgba(237, 250, 255, 0.96)' : 'rgba(255, 247, 233, 0.96)';
+
+      exhaustOffsets.forEach((offsetY, index) => {
+        const length = flameLength * (index === 0 ? 0.94 : 1);
+        const gradient = ctx.createLinearGradient(exhaustX, offsetY, exhaustX - length, offsetY);
+        gradient.addColorStop(0, coreColor);
+        gradient.addColorStop(0.38, glowColor);
+        gradient.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.moveTo(exhaustX, offsetY - flameSpread * 0.42);
+        ctx.quadraticCurveTo(exhaustX - length * 0.28, offsetY - flameSpread * 1.2, exhaustX - length, offsetY);
+        ctx.quadraticCurveTo(exhaustX - length * 0.28, offsetY + flameSpread * 1.2, exhaustX, offsetY + flameSpread * 0.42);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = player.team === 'blue' ? 'rgba(136, 232, 255, 0.26)' : 'rgba(255, 194, 120, 0.24)';
+        ctx.beginPath();
+        ctx.ellipse(exhaustX - length * 0.28, offsetY, flameSpread * 1.15, flameSpread * 0.62, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
 
     ctx.fillStyle = '#15181f';
     const wheelWidth = bodyWidth * 0.14;
@@ -1517,14 +1602,13 @@
     ui.nameInput.value = localStorage.getItem(STORAGE_KEYS.name) || '';
     state.serverUrl = sanitizeServerUrl(localStorage.getItem(STORAGE_KEYS.serverUrl) || defaultServerUrl());
     ui.serverUrlInput.value = state.serverUrl;
-    state.panels.setupHidden = localStorage.getItem(STORAGE_KEYS.setupHidden) === '1';
-    state.panels.infoHidden = localStorage.getItem(STORAGE_KEYS.infoHidden) === '1';
+    state.panels.setupHidden = storedPanelHidden('setupHidden');
+    state.panels.infoHidden = storedPanelHidden('infoHidden');
     state.highGraphics = localStorage.getItem(STORAGE_KEYS.highGraphics) !== '0';
     state.soundOn = localStorage.getItem(STORAGE_KEYS.soundOn) !== '0';
     state.volume = clamp(parseFloat(localStorage.getItem(STORAGE_KEYS.volume) || '0.3') || 0.3, 0, 1);
     ui.volumeSlider.value = String(state.volume);
-    ui.setupPanel.classList.toggle('panel-hidden', state.panels.setupHidden);
-    ui.infoPanel.classList.toggle('panel-hidden', state.panels.infoHidden);
+    syncPanelVisibility(false);
 
     const room = sanitizeRoomCode(query.get('room'));
     if (room) {
