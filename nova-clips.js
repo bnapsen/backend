@@ -19,10 +19,17 @@ const clipsStatus = document.getElementById("clips-status");
 const clipsEmpty = document.getElementById("clips-empty");
 const clipsFeed = document.getElementById("clips-feed");
 const clipCountBadge = document.getElementById("clip-count-badge");
+const clipAdminPanel = document.getElementById("clip-admin-panel");
+const clipAdminStoredCount = document.getElementById("clip-admin-stored-count");
+const clipAdminFeedCount = document.getElementById("clip-admin-feed-count");
+const clipAdminStorageUsed = document.getElementById("clip-admin-storage-used");
+const clipAdminFreeTierUsage = document.getElementById("clip-admin-free-tier-usage");
+const clipAdminNote = document.getElementById("clip-admin-note");
 const uploaderNameInput = document.getElementById("clip-uploader-name");
 const titleInput = document.getElementById("clip-title");
 const captionInput = document.getElementById("clip-caption");
 const submitButton = document.getElementById("clip-submit-button");
+const adminMode = new URLSearchParams(window.location.search).get("admin") === "1";
 
 const state = {
     activePreviewUrl: "",
@@ -30,6 +37,7 @@ const state = {
     observer: null,
     selectedFile: null,
     audioUnlocked: false,
+    storageStats: null,
 };
 
 function updateMuteButtonState(video, muteButton) {
@@ -117,6 +125,10 @@ function clipDeleteEndpoint() {
 
 function clipReportEndpoint() {
     return `${clipsApiBase()}/api/clips/report`;
+}
+
+function clipStorageAdminEndpoint() {
+    return `${clipsApiBase()}/api/clips/admin/storage`;
 }
 
 function readOwnedUploads() {
@@ -227,8 +239,11 @@ function formatDate(isoDate) {
 
 function formatBytes(bytes) {
     const value = Number(bytes || 0);
-    if (!Number.isFinite(value) || value <= 0) {
+    if (!Number.isFinite(value) || value < 0) {
         return "Unknown size";
+    }
+    if (value === 0) {
+        return "0 B";
     }
 
     const units = ["B", "KB", "MB", "GB"];
@@ -241,6 +256,16 @@ function formatBytes(bytes) {
 
     const digits = amount >= 100 || unitIndex === 0 ? 0 : 1;
     return `${amount.toFixed(digits)} ${units[unitIndex]}`;
+}
+
+function formatPercent(numerator, denominator) {
+    const safeNumerator = Number(numerator || 0);
+    const safeDenominator = Number(denominator || 0);
+    if (!Number.isFinite(safeNumerator) || !Number.isFinite(safeDenominator) || safeDenominator <= 0) {
+        return "N/A";
+    }
+
+    return `${((safeNumerator / safeDenominator) * 100).toFixed(1)}%`;
 }
 
 function formatDuration(seconds) {
@@ -396,6 +421,7 @@ async function removeClip(clipId, deleteButton) {
 
         forgetOwnedUpload(clipId);
         renderClips(payload.clips || []);
+        await fetchClipAdminStats();
         setClipsStatus("Clip removed from the feed.");
     } catch (error) {
         setClipsStatus(error.message, true);
@@ -580,11 +606,26 @@ function createClipCard(clip) {
     return article;
 }
 
+function updateClipCountBadge(visibleCount) {
+    const safeVisibleCount = Number(visibleCount || 0);
+    if (adminMode && state.storageStats) {
+        const storedClipCount = Number(state.storageStats.storedClipCount || 0);
+        if (storedClipCount > safeVisibleCount) {
+            clipCountBadge.textContent = `${safeVisibleCount} newest shown of ${storedClipCount} stored`;
+            return;
+        }
+        clipCountBadge.textContent = storedClipCount ? `${storedClipCount} clips stored` : "No clips yet";
+        return;
+    }
+
+    clipCountBadge.textContent = safeVisibleCount ? `${safeVisibleCount} clips live` : "No clips yet";
+}
+
 function renderClips(clips) {
     clipsFeed.innerHTML = "";
 
     const safeClips = Array.isArray(clips) ? clips : [];
-    clipCountBadge.textContent = safeClips.length ? `${safeClips.length} clips live` : "No clips yet";
+    updateClipCountBadge(safeClips.length);
     clipsEmpty.classList.toggle("hidden", safeClips.length !== 0);
     setClipsStatus(safeClips.length ? "Scroll the live feed." : "No clips are live yet.");
 
@@ -593,6 +634,73 @@ function renderClips(clips) {
     });
 
     attachFeedObserver();
+}
+
+function renderClipAdminStats(stats) {
+    if (!adminMode || !clipAdminPanel) {
+        return;
+    }
+
+    clipAdminPanel.classList.remove("hidden");
+    state.storageStats = stats && typeof stats === "object" ? stats : null;
+
+    if (!state.storageStats) {
+        clipAdminStoredCount.textContent = "-";
+        clipAdminFeedCount.textContent = "-";
+        clipAdminStorageUsed.textContent = "-";
+        clipAdminFreeTierUsage.textContent = "-";
+        clipAdminNote.textContent = "Storage stats are not available right now.";
+        clipAdminNote.style.color = "#ff9c8f";
+        return;
+    }
+
+    const storedClipCount = Number(state.storageStats.storedClipCount || 0);
+    const visibleClipCount = Number(state.storageStats.visibleClipCount || 0);
+    const totalVideoBytes = Number(state.storageStats.totalVideoBytes || 0);
+    const freeTierStorageBytes = Number(state.storageStats.freeTierStorageBytes || 0);
+    const visibleFeedCap = Number(state.storageStats.visibleFeedCap || 0);
+
+    clipAdminStoredCount.textContent = storedClipCount.toLocaleString();
+    clipAdminFeedCount.textContent = visibleFeedCap
+        ? `${visibleClipCount.toLocaleString()} / ${visibleFeedCap.toLocaleString()}`
+        : visibleClipCount.toLocaleString();
+    clipAdminStorageUsed.textContent = formatBytes(totalVideoBytes);
+    clipAdminFreeTierUsage.textContent = formatPercent(totalVideoBytes, freeTierStorageBytes);
+    clipAdminNote.style.color = "";
+    clipAdminNote.textContent = [
+        state.storageStats.storedClipCap
+            ? `Stored clip cap is ${Number(state.storageStats.storedClipCap).toLocaleString()}.`
+            : "Stored clip cap removed.",
+        visibleFeedCap
+            ? `The public feed still shows the newest ${visibleFeedCap.toLocaleString()} clips.`
+            : "The public feed is not capped.",
+        "This readout tracks transcoded video bytes; poster images and metadata are small and not counted here."
+    ].join(" ");
+}
+
+async function fetchClipAdminStats() {
+    if (!adminMode || !clipAdminPanel) {
+        return;
+    }
+
+    clipAdminPanel.classList.remove("hidden");
+    clipAdminNote.textContent = "Checking current library usage...";
+    clipAdminNote.style.color = "";
+
+    try {
+        const response = await fetch(clipStorageAdminEndpoint());
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+            throw new Error(payload.error || "Unable to load clip storage stats.");
+        }
+
+        renderClipAdminStats(payload.stats || null);
+        updateClipCountBadge(clipsFeed.childElementCount);
+    } catch (error) {
+        renderClipAdminStats(null);
+        clipAdminNote.textContent = error.message;
+        clipAdminNote.style.color = "#ff9c8f";
+    }
 }
 
 async function fetchClips() {
@@ -606,6 +714,7 @@ async function fetchClips() {
         }
 
         renderClips(payload.clips || []);
+        await fetchClipAdminStats();
     } catch (error) {
         setClipsStatus(error.message, true);
         clipCountBadge.textContent = "Feed unavailable";
@@ -700,6 +809,7 @@ async function uploadClip(file) {
         rememberOwnedUpload(payload.clip.id, payload.deleteToken);
         showUploadedPreview(payload.clip, file);
         renderClips(payload.clips || []);
+        await fetchClipAdminStats();
         setUploadStatus("Clip uploaded and added to the live feed.");
         uploadForm.reset();
         state.selectedFile = null;
@@ -773,5 +883,9 @@ uploadForm?.addEventListener("keydown", async (event) => {
 
 window.addEventListener("pointerdown", unlockFeedAudio, { once: true, capture: true });
 window.addEventListener("keydown", unlockFeedAudio, { once: true, capture: true });
+
+if (adminMode && clipAdminPanel) {
+    clipAdminPanel.classList.remove("hidden");
+}
 
 fetchClips();

@@ -131,6 +131,62 @@
     color: #b7c9df;
 }
 
+.clip-admin-panel {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(113, 216, 255, 0.24);
+    border-radius: 22px;
+    background:
+        linear-gradient(180deg, rgba(9, 22, 38, 0.94), rgba(6, 16, 28, 0.92));
+}
+
+.clip-admin-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 0.9rem;
+}
+
+.clip-admin-head h3 {
+    margin: 0.25rem 0 0;
+    font-family: "Oxanium", "Segoe UI", sans-serif;
+}
+
+.clip-admin-head p:last-child,
+.clip-admin-note {
+    color: #aabbd3;
+}
+
+.clip-admin-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.clip-admin-stat {
+    padding: 0.85rem 0.95rem;
+    border: 1px solid rgba(125, 162, 214, 0.16);
+    border-radius: 18px;
+    background: rgba(4, 12, 22, 0.7);
+}
+
+.clip-admin-stat strong {
+    display: block;
+    font-family: "Oxanium", "Segoe UI", sans-serif;
+    font-size: 1.1rem;
+}
+
+.clip-admin-stat span {
+    color: #aabbd3;
+    font-size: 0.9rem;
+}
+
+.clip-admin-note {
+    margin: 0.9rem 0 0;
+    font-size: 0.95rem;
+}
+
 .clip-upload-form,
 .clips-feed {
     display: flex;
@@ -257,6 +313,12 @@
 .clips-feed::-webkit-scrollbar-thumb {
     border-radius: 999px;
     background: rgba(117, 160, 214, 0.22);
+}
+
+@media (max-width: 920px) {
+    .clip-admin-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 .clip-card {

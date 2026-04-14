@@ -37,12 +37,21 @@ function clipRecord(record) {
   };
 }
 
-function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibleClips = 80 }) {
+function normalizeLimit(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0
+    ? Math.floor(numericValue)
+    : 0;
+}
+
+function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleClips = 80 }) {
   const clipsFile = path.join(dataDir, 'clips.json');
   const reportsFile = path.join(dataDir, 'clip-reports.json');
   const metadataStore = createS3JsonStore();
   const usesObjectStorage = metadataStore.enabled;
   const usesPostgres = !usesObjectStorage && Boolean(String(databaseUrl || '').trim());
+  const storedClipLimit = normalizeLimit(maxClips);
+  const visibleClipLimit = normalizeLimit(maxVisibleClips);
   const pool = usesPostgres
     ? new Pool({
       connectionString: databaseUrl,
@@ -56,6 +65,23 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
     ensureDirectory(dataDir);
   }
 
+  function applyStoredClipLimit(clips) {
+    const sortedClips = clips
+      .map(clipRecord)
+      .sort(clipSort);
+
+    return storedClipLimit
+      ? sortedClips.slice(0, storedClipLimit)
+      : sortedClips;
+  }
+
+  function applyVisibleClipLimit(clips, limit = visibleClipLimit) {
+    const normalizedLimit = normalizeLimit(limit);
+    return normalizedLimit
+      ? clips.slice(0, normalizedLimit)
+      : clips;
+  }
+
   function readLocalClips() {
     if (!fs.existsSync(clipsFile)) {
       return [];
@@ -66,7 +92,7 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
       if (!Array.isArray(parsed)) {
         return [];
       }
-      return parsed.map(clipRecord).sort(clipSort).slice(0, maxClips);
+      return applyStoredClipLimit(parsed);
     } catch (error) {
       console.error('Failed to read clips metadata:', error.message);
       return [];
@@ -78,15 +104,12 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
     if (!Array.isArray(parsed)) {
       return [];
     }
-    return parsed.map(clipRecord).sort(clipSort).slice(0, maxClips);
+    return applyStoredClipLimit(parsed);
   }
 
   function writeLocalClips(clips) {
     ensureLocalDataDir();
-    const nextClips = clips
-      .map(clipRecord)
-      .sort(clipSort)
-      .slice(0, maxClips);
+    const nextClips = applyStoredClipLimit(clips);
     const tempFile = `${clipsFile}.tmp`;
     fs.writeFileSync(tempFile, JSON.stringify(nextClips, null, 2));
     fs.renameSync(tempFile, clipsFile);
@@ -94,10 +117,7 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
   }
 
   async function writeObjectStorageClips(clips) {
-    const nextClips = clips
-      .map(clipRecord)
-      .sort(clipSort)
-      .slice(0, maxClips);
+    const nextClips = applyStoredClipLimit(clips);
     await metadataStore.writeJson('clips/metadata/clips.json', nextClips);
     return nextClips;
   }
@@ -266,18 +286,24 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
     await importLocalClipsToPostgres();
   }
 
-  async function listVisibleClips(limit = maxVisibleClips) {
+  async function listVisibleClips(limit = visibleClipLimit) {
     if (usesObjectStorage) {
-      return (await readObjectStorageClips())
-        .filter((clip) => clip.status === 'active')
-        .slice(0, limit);
+      return applyVisibleClipLimit(
+        (await readObjectStorageClips()).filter((clip) => clip.status === 'active'),
+        limit,
+      );
     }
 
     if (!pool) {
-      return readLocalClips()
-        .filter((clip) => clip.status === 'active')
-        .slice(0, limit);
+      return applyVisibleClipLimit(
+        readLocalClips().filter((clip) => clip.status === 'active'),
+        limit,
+      );
     }
+
+    const normalizedLimit = normalizeLimit(limit);
+    const limitClause = normalizedLimit ? '\n      LIMIT $1' : '';
+    const queryArgs = normalizedLimit ? [normalizedLimit] : [];
 
     const result = await pool.query(
       `SELECT
@@ -299,9 +325,8 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
         status
       FROM clips
       WHERE status = 'active'
-      ORDER BY created_at DESC
-      LIMIT $1`,
-      [limit],
+      ORDER BY created_at DESC${limitClause}`,
+      queryArgs,
     );
 
     return result.rows.map((row) => clipRecord({
@@ -322,6 +347,53 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
       reportCount: row.report_count,
       status: row.status,
     }));
+  }
+
+  async function getStorageStats() {
+    if (usesObjectStorage) {
+      const activeClips = (await readObjectStorageClips()).filter((clip) => clip.status === 'active');
+      return {
+        storedClipCount: activeClips.length,
+        visibleClipCount: applyVisibleClipLimit(activeClips).length,
+        totalVideoBytes: activeClips.reduce((total, clip) => total + Number(clip.sizeBytes || 0), 0),
+        storedClipLimit: storedClipLimit || null,
+        visibleClipLimit: visibleClipLimit || null,
+        storageMode: 'object-storage',
+      };
+    }
+
+    if (!pool) {
+      const activeClips = readLocalClips().filter((clip) => clip.status === 'active');
+      return {
+        storedClipCount: activeClips.length,
+        visibleClipCount: applyVisibleClipLimit(activeClips).length,
+        totalVideoBytes: activeClips.reduce((total, clip) => total + Number(clip.sizeBytes || 0), 0),
+        storedClipLimit: storedClipLimit || null,
+        visibleClipLimit: visibleClipLimit || null,
+        storageMode: 'local',
+      };
+    }
+
+    const result = await pool.query(
+      `SELECT
+        COUNT(*)::INT AS stored_clip_count,
+        COALESCE(SUM(size_bytes), 0)::BIGINT AS total_video_bytes
+      FROM clips
+      WHERE status = 'active'`,
+    );
+
+    const row = result.rows[0] || {};
+    const storedClipCount = Number(row.stored_clip_count || 0);
+    return {
+      storedClipCount,
+      visibleClipCount: visibleClipLimit
+        ? Math.min(storedClipCount, visibleClipLimit)
+        : storedClipCount,
+      totalVideoBytes: Number(row.total_video_bytes || 0),
+      storedClipLimit: storedClipLimit || null,
+      visibleClipLimit: visibleClipLimit || null,
+      storageMode: 'postgres',
+    };
   }
 
   async function insertClip(clip) {
@@ -679,6 +751,7 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 300, maxVisibl
   return {
     init,
     listVisibleClips,
+    getStorageStats,
     insertClip,
     findClipById,
     deleteClip,

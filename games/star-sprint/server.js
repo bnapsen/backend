@@ -63,9 +63,10 @@ const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 const MAX_SONGS = 80;
 const MAX_VISIBLE_SONGS = 40;
 const MAX_SONG_UPLOAD_BYTES = 24 * 1024 * 1024;
-const MAX_CLIPS = 300;
+const MAX_CLIPS = 0;
 const MAX_VISIBLE_CLIPS = 60;
 const MAX_CLIP_UPLOAD_BYTES = 24 * 1024 * 1024;
+const GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES = 5 * 1024 * 1024 * 1024;
 const MAX_CITY_RAID_LOBBIES = 120;
 const CITY_RAID_ROOM_CODE_LENGTH = 5;
 const CITY_RAID_DEFAULT_PORT = 7777;
@@ -1165,6 +1166,44 @@ function readClipUpload(req) {
 async function visibleClips() {
   const clips = await clipsStore.listVisibleClips();
   return clips.map(publicClipEntry);
+}
+
+async function handleClipStorageStatsRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  try {
+    const stats = await clipsStore.getStorageStats();
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      stats: {
+        ...stats,
+        storedClipCap: MAX_CLIPS > 0 ? MAX_CLIPS : null,
+        visibleFeedCap: MAX_VISIBLE_CLIPS > 0 ? MAX_VISIBLE_CLIPS : null,
+        uploadLimitBytes: MAX_CLIP_UPLOAD_BYTES,
+        freeTierStorageBytes: GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to load clip storage stats:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to load clip storage stats right now.',
+    });
+  }
 }
 
 async function handleClipsRequest(req, res) {
@@ -3079,6 +3118,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/clips') {
     await handleClipsRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/clips/admin/storage') {
+    await handleClipStorageStatsRequest(req, res);
     return;
   }
 
