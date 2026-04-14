@@ -88,16 +88,12 @@ function createClipModerationService({ clipMediaManager, dataDir }) {
   async function googleJsonFetch(url, body, { method = 'POST' } = {}) {
     const client = await googleAuth.getClient();
     const accessToken = await client.getAccessToken();
-    const headers = {
-      Authorization: `Bearer ${accessToken.token || accessToken}`,
-      'Content-Type': 'application/json',
-    };
-    if (googleProjectId) {
-      headers['x-goog-user-project'] = googleProjectId;
-    }
     const response = await fetch(url, {
       method,
-      headers,
+      headers: {
+        Authorization: `Bearer ${accessToken.token || accessToken}`,
+        'Content-Type': 'application/json',
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
     const text = await response.text();
