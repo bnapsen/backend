@@ -67,6 +67,18 @@ gcloud run deploy nova-arcade-backend `
 The repo root `Dockerfile` builds the backend and includes the City Raid
 download assets served by the backend routes.
 
+## Automatic deploys from GitHub
+
+Pushes to `main` now trigger two GitHub Actions flows:
+
+- `.github/workflows/main.yml` publishes the static frontend to GitHub Pages
+- `.github/workflows/deploy-google-backend.yml` rebuilds and redeploys the
+  Cloud Run backend
+
+The backend deploy authenticates with Google Cloud through GitHub OIDC instead
+of a long-lived JSON key, so normal GitHub pushes keep the frontend and backend
+moving together without storing a deploy key in the repo.
+
 ## Verification
 
 After deploy, verify:
