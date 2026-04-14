@@ -45,7 +45,9 @@ jobs:
         shell: bash
         run: |
           IMAGE="us-central1-docker.pkg.dev/${GCP_PROJECT_ID}/cloud-run-source-deploy/${CLOUD_RUN_SERVICE}:github-${GITHUB_SHA}"
-          gcloud builds submit . --tag "${IMAGE}"
+          gcloud builds submit . \
+            --project "${GCP_PROJECT_ID}" \
+            --tag "${IMAGE}"
           echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
 
       - name: Deploy backend to Cloud Run
