@@ -1,4 +1,4 @@
-const PROD_REVIEWS_API_BASE = "https://backend-ujaa.onrender.com";
+const PROD_REVIEWS_API_BASE = "https://nova-arcade-backend-1000121513328.us-central1.run.app";
 
 const reviewForm = document.getElementById("review-form");
 const reviewerName = document.getElementById("reviewer-name");
@@ -35,7 +35,7 @@ function reviewsApiBase() {
         return "http://127.0.0.1:8081";
     }
 
-    if (host === "backend-ujaa.onrender.com") {
+    if (host === "nova-arcade-backend-1000121513328.us-central1.run.app") {
         return window.location.origin;
     }
 

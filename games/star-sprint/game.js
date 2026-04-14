@@ -14,7 +14,7 @@
     soundEnabled: 'neonCrownChess.soundEnabled',
     soundProfile: 'neonCrownChess.soundProfile',
   };
-  const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
+  const PROD_SERVER_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.app';
   const ENGINE_WORKER_VERSION = '20260325f';
   const PIECE_ASSET_VERSION = '20260329f';
   const ENGINE_INIT_TIMEOUT_MS = 12000;

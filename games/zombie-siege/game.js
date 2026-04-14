@@ -13,7 +13,7 @@
     serverUrl: 'zombieSiege.serverUrl',
     sound: 'zombieSiege.sound',
   };
-  const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
+  const PROD_SERVER_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.app';
   const INPUT_SEND_MS = 50;
   const PLAYER_HEIGHT = 1.72;
   const CAMERA_DEFAULT_YAW = 0;

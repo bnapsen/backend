@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
+  const PROD_SERVER_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.app';
   const STORAGE_KEYS = {
     name: 'royalBlackjackLive.name',
     serverUrl: 'royalBlackjackLive.serverUrl',

@@ -1,46 +1,21 @@
-# Nova Arcade cheap durable storage
+# Nova Arcade Google Cloud storage
 
-This project now supports the lowest-cost durable setup:
+This project now uses Google Cloud for durable backend storage:
 
-- free Render web service for the backend
-- Cloudflare R2 for uploaded media
-- Cloudflare R2 JSON files for song and clip metadata
+- Cloud Run for the live Node backend
+- Google Cloud Storage for uploaded songs, clips, and review metadata
+- Firestore for Arcade Lounge room persistence
 
-No Render Postgres is required for this setup.
+The public site can stay on GitHub Pages at `bnapsen.com` while the API and
+WebSocket backend run on Cloud Run.
 
-## What changed
+## Live backend
 
-- `games/star-sprint/song-media.js`
-- `games/star-sprint/clip-media.js`
-- `games/star-sprint/songs-store.js`
-- `games/star-sprint/clips-store.js`
-- `games/star-sprint/s3-json-store.js`
-- `games/star-sprint/migrate-live-uploads-to-object-storage.js`
+- Service: `nova-arcade-backend`
+- Region: `us-central1`
+- Base URL: `https://nova-arcade-backend-1000121513328.us-central1.run.app`
 
-When the standard `S3_*` variables are present:
-
-- songs and clips store media in the bucket
-- songs and clips store metadata in JSON files in the same bucket
-- the backend no longer needs a Render disk or Postgres to keep uploads
-
-## Required environment variables
-
-Set these on the Render `backend` service:
-
-- `S3_BUCKET`
-- `S3_REGION`
-- `S3_ENDPOINT`
-- `S3_FORCE_PATH_STYLE`
-- `S3_ACCESS_KEY_ID`
-- `S3_SECRET_ACCESS_KEY`
-
-For Cloudflare R2, the common values are:
-
-- `S3_REGION=auto`
-- `S3_FORCE_PATH_STYLE=true`
-- `S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com`
-
-## Bucket layout
+## Storage layout
 
 - `songs/audio/*`
 - `songs/metadata/songs.json`
@@ -48,32 +23,60 @@ For Cloudflare R2, the common values are:
 - `clips/posters/*`
 - `clips/metadata/clips.json`
 - `clips/metadata/reports.json`
+- `reviews/metadata/reviews.json`
 
-## Before redeploying the backend
+Arcade Lounge room state is stored in Firestore collection:
 
-If the live Render service still has uploads stored locally, migrate them first:
+- `arcadeChatRooms`
+
+## Required environment variables
+
+The backend currently uses Google Cloud Storage through the existing
+S3-compatible path:
+
+- `GOOGLE_CLOUD_PROJECT`
+- `S3_BUCKET`
+- `S3_REGION`
+- `S3_ENDPOINT`
+- `S3_FORCE_PATH_STYLE`
+- `S3_ACCESS_KEY_ID`
+- `S3_SECRET_ACCESS_KEY`
+- `ARCADE_CHAT_FIRESTORE_COLLECTION`
+
+For the current `bnapsen` project the important values are:
+
+- `GOOGLE_CLOUD_PROJECT=bnapsen`
+- `S3_BUCKET=bnapsen-media-1000121513328`
+- `S3_REGION=auto`
+- `S3_ENDPOINT=https://storage.googleapis.com`
+- `S3_FORCE_PATH_STYLE=true`
+- `ARCADE_CHAT_FIRESTORE_COLLECTION=arcadeChatRooms`
+
+## Deploy
+
+From the repo root:
 
 ```powershell
-$env:S3_BUCKET='your-bucket'
-$env:S3_REGION='auto'
-$env:S3_ENDPOINT='https://<account-id>.r2.cloudflarestorage.com'
-$env:S3_FORCE_PATH_STYLE='true'
-$env:S3_ACCESS_KEY_ID='...'
-$env:S3_SECRET_ACCESS_KEY='...'
-node .\games\star-sprint\migrate-live-uploads-to-object-storage.js
+gcloud run deploy nova-arcade-backend `
+  --source . `
+  --project bnapsen `
+  --region us-central1 `
+  --allow-unauthenticated
 ```
 
-That script reads current live uploads from `https://backend-ujaa.onrender.com`, writes them into object storage, and writes the metadata JSON files there too.
+The repo root `Dockerfile` builds the backend and includes the City Raid
+download assets served by the backend routes.
 
-## After redeploy
+## Verification
 
-Verify that:
+After deploy, verify:
 
-- songs return `/media/songs/s3/...`
-- clips return `/media/clips/s3/videos/...`
-- uploads still exist after restarting the Render backend
+- `GET /api/songs` returns uploaded community songs plus the seeded track
+- `GET /api/clips` returns uploaded clips
+- uploaded media paths use `/media/songs/s3/...` and `/media/clips/s3/...`
+- Arcade Lounge messages survive a backend restart
 
-## Cost notes
+## Important Cloud Run note
 
-- Render can stay on the free web tier for this path
-- Cloudflare R2 includes a free tier, so small hobby usage can stay near zero cost
+Cloud Run has a hard request-body limit, so the site now treats song and clip
+uploads as `24 MB` max to avoid raw `413 Request Entity Too Large` failures.

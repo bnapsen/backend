@@ -11,7 +11,7 @@
     soundOn: 'turboArenaLive.soundOn',
     volume: 'turboArenaLive.volume',
   };
-  const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
+  const PROD_SERVER_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.app';
   const INPUT_SEND_MS = 50;
   const query = new URLSearchParams(window.location.search);
   const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;

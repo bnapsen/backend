@@ -16,6 +16,8 @@ const MiniPool = require('./mini-pool-core.js');
 const ArcadeChat = require('./arcade-chat-core.js');
 const CarSoccer = require('./car-soccer-core.js');
 const ZombieSiege = require('./zombie-siege-core.js');
+const { createArcadeChatStore } = require('./arcade-chat-store.js');
+const { createReviewsStore } = require('./reviews-store.js');
 const { createSongsStore } = require('./songs-store.js');
 const {
   createSongMediaManager,
@@ -44,12 +46,13 @@ const ALLOWED_HTTP_ORIGIN_HOSTS = new Set([
   'www.classiccarcollectorshub.com',
   'bnapsen.github.io',
   'backend-ujaa.onrender.com',
+  'nova-arcade-backend-1000121513328.us-central1.run.app',
+  'nova-arcade-backend-2rpkpv7fpq-uc.a.run.app',
   'localhost',
   '127.0.0.1',
 ]);
 const DEFAULT_DATA_DIR = path.join(__dirname, 'data');
 const DATA_DIR = path.resolve(process.env.DATA_DIR || DEFAULT_DATA_DIR);
-const REVIEWS_FILE = path.join(DATA_DIR, 'reviews.json');
 const SONGS_FILE = path.join(DATA_DIR, 'songs.json');
 const SONG_UPLOAD_DIR = path.join(DATA_DIR, 'songs');
 const CITY_RAID_DOWNLOAD_DIR = path.resolve(__dirname, '..', '..', 'assets', 'downloads', 'city-raid');
@@ -59,10 +62,10 @@ const MAX_VISIBLE_REVIEWS = 30;
 const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 const MAX_SONGS = 80;
 const MAX_VISIBLE_SONGS = 40;
-const MAX_SONG_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_SONG_UPLOAD_BYTES = 24 * 1024 * 1024;
 const MAX_CLIPS = 300;
 const MAX_VISIBLE_CLIPS = 60;
-const MAX_CLIP_UPLOAD_BYTES = 80 * 1024 * 1024;
+const MAX_CLIP_UPLOAD_BYTES = 24 * 1024 * 1024;
 const MAX_CITY_RAID_LOBBIES = 120;
 const CITY_RAID_ROOM_CODE_LENGTH = 5;
 const CITY_RAID_DEFAULT_PORT = 7777;
@@ -87,6 +90,12 @@ const RETIRED_SONG_IDS = new Set([
 ]);
 const rooms = new Map();
 const cityRaidLobbies = new Map();
+const arcadeChatStore = createArcadeChatStore();
+const reviewsStore = createReviewsStore({
+  dataDir: DATA_DIR,
+  maxReviews: MAX_REVIEWS,
+  maxVisibleReviews: MAX_VISIBLE_REVIEWS,
+});
 const songMediaManager = createSongMediaManager({
   dataDir: DATA_DIR,
 });
@@ -290,15 +299,10 @@ function bootstrapPersistentDataDir() {
 
   ensureDataDir();
 
-  const legacyReviewsFile = path.join(DEFAULT_DATA_DIR, 'reviews.json');
   const legacySongsFile = path.join(DEFAULT_DATA_DIR, 'songs.json');
   const legacySongUploadDir = path.join(DEFAULT_DATA_DIR, 'songs');
 
   try {
-    if (!fs.existsSync(REVIEWS_FILE) && fs.existsSync(legacyReviewsFile)) {
-      fs.copyFileSync(legacyReviewsFile, REVIEWS_FILE);
-    }
-
     if (!fs.existsSync(SONGS_FILE) && fs.existsSync(legacySongsFile)) {
       fs.copyFileSync(legacySongsFile, SONGS_FILE);
     }
@@ -716,38 +720,8 @@ async function handleCityRaidLobbyResolveRequest(req, res, requestUrl) {
   });
 }
 
-function readStoredReviews() {
-  if (!fs.existsSync(REVIEWS_FILE)) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(fs.readFileSync(REVIEWS_FILE, 'utf8'));
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed
-      .filter((entry) => entry && typeof entry === 'object')
-      .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
-      .slice(0, MAX_REVIEWS);
-  } catch (error) {
-    console.error('Failed to read stored reviews:', error.message);
-    return [];
-  }
-}
-
-function writeStoredReviews(reviews) {
-  ensureDataDir();
-  const nextReviews = reviews.slice(0, MAX_REVIEWS);
-  const tempFile = `${REVIEWS_FILE}.tmp`;
-  fs.writeFileSync(tempFile, JSON.stringify(nextReviews, null, 2));
-  fs.renameSync(tempFile, REVIEWS_FILE);
-  return nextReviews;
-}
-
-function visibleReviews() {
-  return readStoredReviews().slice(0, MAX_VISIBLE_REVIEWS);
+async function visibleReviews() {
+  return reviewsStore.listVisibleReviews(MAX_VISIBLE_REVIEWS);
 }
 
 async function cleanupRetiredSongs() {
@@ -861,7 +835,7 @@ async function handleReviewsRequest(req, res) {
   if (req.method === 'GET') {
     sendJsonResponse(req, res, 200, {
       ok: true,
-      reviews: visibleReviews(),
+      reviews: await visibleReviews(),
     });
     return;
   }
@@ -917,11 +891,11 @@ async function handleReviewsRequest(req, res) {
   };
 
   try {
-    const nextReviews = writeStoredReviews([review, ...readStoredReviews()]);
+    const { visibleReviews: nextReviews } = await reviewsStore.insertReview(review);
     sendJsonResponse(req, res, 201, {
       ok: true,
       review,
-      reviews: nextReviews.slice(0, MAX_VISIBLE_REVIEWS),
+      reviews: nextReviews,
     });
   } catch (error) {
     console.error('Failed to persist review:', error.message);
@@ -1031,7 +1005,7 @@ function readSongUpload(req) {
       }
 
       if (fileTooLarge) {
-        fail(new Error('Song uploads must be 50 MB or smaller.'));
+        fail(new Error('Song uploads must be 24 MB or smaller.'));
         return;
       }
 
@@ -1159,7 +1133,7 @@ function readClipUpload(req) {
       }
 
       if (fileTooLarge) {
-        fail(new Error('Videos must be 80 MB or smaller.'));
+        fail(new Error('Videos must be 24 MB or smaller.'));
         return;
       }
 
@@ -2008,6 +1982,9 @@ function generateRoomCode() {
 
 function createRoom(code, gameType, options = {}) {
   const gameDef = GAME_DEFS[gameType] || GAME_DEFS.chess;
+  const arcadeChatState = gameDef.id === 'arcade-chat'
+    ? arcadeChatStore.getRoom(code)
+    : null;
   const room = {
     code,
     gameType: gameDef.id,
@@ -2015,7 +1992,7 @@ function createRoom(code, gameType, options = {}) {
     options: { ...options },
     maxPlayers: gameDef.maxPlayers || DEFAULT_MAX_PLAYERS,
     players: new Map(),
-    game: gameDef.createGameState(options),
+    game: arcadeChatState || gameDef.createGameState(options),
     nextBotActionAt: 0,
     botActorId: '',
     backgammonUndo: gameDef.id === 'backgammon'
@@ -2032,6 +2009,16 @@ function createRoom(code, gameType, options = {}) {
   room.game.roomCode = code;
   rooms.set(code, room);
   return room;
+}
+
+function persistArcadeChatRoom(room) {
+  if (!room || room.gameType !== 'arcade-chat' || !arcadeChatStore.enabled) {
+    return;
+  }
+
+  arcadeChatStore.saveRoom(room.code, room.game).catch((error) => {
+    console.error(`Failed to persist arcade chat room ${room.code}:`, error.message);
+  });
 }
 
 function clearBackgammonUndo(room) {
@@ -2312,6 +2299,7 @@ function handleJoin(socket, payload) {
           : `${player.name} opened lounge ${room.code}.`
         : `${player.name} joined lounge ${room.code}.`
     );
+    persistArcadeChatRoom(room);
     broadcastState(room);
     return;
   }
@@ -2605,6 +2593,7 @@ function handleChatMessage(socket, payload) {
     return;
   }
 
+  persistArcadeChatRoom(room);
   broadcastState(room);
 }
 
@@ -2633,6 +2622,7 @@ function handleShareInvite(socket, payload) {
     return;
   }
 
+  persistArcadeChatRoom(room);
   broadcastState(room);
 }
 
@@ -2955,6 +2945,7 @@ function handleDisconnect(socket) {
     if (player) {
       ArcadeChat.addSystemMessage(room.game, `${player.name} left lounge ${room.code}.`);
     }
+    persistArcadeChatRoom(room);
   } else if (room.gameType === 'backgammon') {
     clearBackgammonUndo(room);
   } else if (room.gameType === 'chess') {
@@ -3239,6 +3230,8 @@ clipMediaManager.ensureClipDirs();
 clipMediaManager.logConfiguration();
 
 Promise.all([
+  reviewsStore.init(),
+  arcadeChatStore.init(),
   songsStore.init(),
   clipsStore.init(),
 ])
@@ -3257,6 +3250,12 @@ Promise.all([
       `Clip metadata store: ${
         clipsStore.usesObjectStorage ? 's3-compatible object storage' : clipsStore.usesPostgres ? 'postgres' : 'local json'
       }`,
+    );
+    console.log(
+      `Review metadata store: ${reviewsStore.usesObjectStorage ? 's3-compatible object storage' : 'local json'}`,
+    );
+    console.log(
+      `Arcade chat persistence: ${arcadeChatStore.enabled ? 'firestore' : 'in-memory only'}`,
     );
     server.listen(PORT, HOST, () => {
       console.log(`Nova Arcade realtime server running at ws://${HOST}:${PORT}`);

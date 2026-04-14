@@ -1,5 +1,6 @@
-const PROD_SONGS_API_BASE = "https://backend-ujaa.onrender.com";
+const PROD_SONGS_API_BASE = "https://nova-arcade-backend-1000121513328.us-central1.run.app";
 const SONG_OWNERSHIP_STORAGE_KEY = "nova-jukebox:owned-uploads";
+const MAX_SONG_UPLOAD_BYTES = 24 * 1024 * 1024;
 const ALLOWED_SONG_EXTENSIONS = new Set([".aac", ".flac", ".m4a", ".mp3", ".ogg", ".wav"]);
 const FALLBACK_SONGS = [
     {
@@ -49,7 +50,7 @@ function songsApiBase() {
         return "http://127.0.0.1:8081";
     }
 
-    if (host === "backend-ujaa.onrender.com") {
+    if (host === "nova-arcade-backend-1000121513328.us-central1.run.app") {
         return window.location.origin;
     }
 
@@ -408,6 +409,11 @@ async function uploadSelectedFile(file) {
 
     if (!isSupportedSongFile(file)) {
         setUploadStatus("Choose an audio file in WAV, MP3, OGG, M4A, AAC, or FLAC format.", true);
+        return;
+    }
+
+    if (file.size > MAX_SONG_UPLOAD_BYTES) {
+        setUploadStatus("Keep song uploads at or under 24 MB.", true);
         return;
     }
 

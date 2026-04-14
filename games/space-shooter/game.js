@@ -6,7 +6,7 @@
     name: 'starlineDefense.name',
     serverUrl: 'starlineDefense.serverUrl',
   };
-  const PROD_SERVER_URL = 'wss://backend-ujaa.onrender.com';
+  const PROD_SERVER_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.app';
   const ARENA = Core.ARENA;
   const PLAYER_SPEED = 360;
   const PLAYER_BOOST_SPEED = 520;
