@@ -45,7 +45,7 @@
           <p class="lede">Drop into a jungle island with roaming dragons, push into the city after extraction, then break into Neon City and the mushroom forest finale in the latest downloadable build with fresh health packs, cleaner HUD flow, steadier weapon feel, and a one-click Windows installer helper.</p>
 
           <div class="cta-row">
-            <a class="btn btn-primary" href="https://media.githubusercontent.com/media/bnapsen/backend/55ef8119a7a38a1f39eaebc0d66928f1d1816e02/assets/downloads/dragonfall-jungle-siege/Dragonfall-Jungle-Siege-Win64.zip?v=20260402a">Download for Windows</a>
+            <a class="btn btn-primary" href="https://storage.googleapis.com/bnapsen-downloads-1000121513328/games/dragonfall-jungle-siege/Dragonfall-Jungle-Siege-Win64.zip">Download for Windows</a>
             <a class="btn btn-secondary" href="#screens">See screenshots</a>
           </div>
 
@@ -111,7 +111,7 @@
           </article>
           <article class="feature-card">
             <h3>Direct Windows package</h3>
-            <p>The page is also clearer about platform intent: this is a Windows zip with an installer helper, shortcut setup, and a direct launch option for people who prefer portable builds.</p>
+            <p>The page is also clearer about platform intent: this is a Windows zip with installer and uninstall helpers, shortcut setup, and a direct launch option for people who prefer portable builds.</p>
           </article>
           <article class="feature-card">
             <h3>Related pages on the site</h3>
@@ -146,12 +146,14 @@
           <li>Download the Windows zip package.</li>
           <li>Extract it somewhere on your PC.</li>
           <li>Open the <code>Dragonfall-Jungle-Siege</code> folder.</li>
-          <li>Run <code>INSTALL-DRAGONFALL.bat</code> if you want the game copied into a local install folder with desktop and Start Menu shortcuts.</li>
+          <li>Run <code>INSTALL-DRAGONFALL.bat</code> if you want the game copied into a local install folder with shortcuts and a Windows uninstall entry.</li>
+          <li>You can later use <code>UNINSTALL-DRAGONFALL.bat</code> or Windows Settings &gt; Apps to remove it cleanly.</li>
           <li>You can also launch <code>PLAY-DRAGONFALL.bat</code> or <code>MyProject9.exe</code> directly from the extracted folder.</li>
         </ol>
-        <p class="fine-print">Portable build size: about 938 MB. This button uses GitHub's direct media file host so the site serves the full packaged game instead of a placeholder.</p>
-        <p class="fine-print">Current build: added installer helper with shortcut creation, more visible health packs across all levels, minimized HUD by default, and steadier first-person weapon handling.</p>
-        <p class="fine-print">SHA-256: <code>75EDF84983317F7864AB477DDB1E7768B6664548492D8BE05FA4F7D28713D085</code></p>
+        <p class="fine-print">Portable build size: about 938 MB. The download is now hosted from the project's Google Cloud downloads bucket instead of an old pinned GitHub media link.</p>
+        <p class="fine-print">Current build: installer and uninstall helpers, Start Menu shortcuts, Windows app-list uninstall registration, more visible health packs across all levels, minimized HUD by default, and steadier first-person weapon handling.</p>
+        <p class="fine-print">Windows may still show an initial SmartScreen warning until the build is code-signed. The packaging is friendlier now, but the real reputation fix is Authenticode signing.</p>
+        <p class="fine-print">SHA-256: <code>EF746C61420F6852824C0EE0E247DF203F8455D2DDA921F9C3731A92CD3A4BF4</code></p>
       </section>
     </main>
   </div>

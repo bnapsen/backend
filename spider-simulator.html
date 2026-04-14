@@ -49,7 +49,7 @@
           </p>
 
           <div class="cta-row">
-            <a class="btn btn-primary" href="https://nova-arcade-backend-1000121513328.us-central1.run.app/downloads/city-raid/City-Raid-Win64.zip">Download ZIP</a>
+            <a class="btn btn-primary" href="https://storage.googleapis.com/bnapsen-downloads-1000121513328/games/spider-simulator/Spider-Simulator-Win64.zip">Download ZIP</a>
             <a class="btn btn-secondary" href="#screens">See Screenshots</a>
             <a class="btn btn-secondary" href="index.html#games">Back to Lineup</a>
           </div>
@@ -184,7 +184,7 @@
           </article>
           <article class="status-card">
             <h3>What to expect</h3>
-            <p>This build is focused on the standalone single-player game with no room-code or multiplayer launcher extras bundled in.</p>
+            <p>This build is focused on the standalone single-player game with no room-code or multiplayer launcher extras bundled in, plus branded install and uninstall helpers for Windows.</p>
           </article>
           <article class="status-card">
             <h3>Current highlight</h3>
@@ -193,17 +193,19 @@
         </div>
 
         <ol class="steps">
-          <li>Download <code>City-Raid-Win64.zip</code>.</li>
+          <li>Download <code>Spider-Simulator-Win64.zip</code>.</li>
           <li>Extract the archive fully before launching the game.</li>
           <li>Open the packaged folder after extraction.</li>
-          <li>Run <code>FIRSTPERSON.exe</code> from the extracted folder.</li>
+          <li>Run <code>INSTALL-SPIDER-SIMULATOR.bat</code> if you want shortcuts plus a proper uninstall entry in Windows.</li>
+          <li>You can also run <code>PLAY-SPIDER-SIMULATOR.bat</code> or <code>FIRSTPERSON.exe</code> directly for a portable launch.</li>
+          <li>If you installed it, use <code>UNINSTALL-SPIDER-SIMULATOR.bat</code> or Windows Settings &gt; Apps to remove it cleanly later.</li>
         </ol>
 
-        <p class="fine-print">Zip size: about 383 MB. Extracted size is about 436 MB.</p>
-        <p class="fine-print">Packaged from the latest CityRaidTPS Unreal project on April 13, 2026.</p>
-        <p class="fine-print">The zip now includes <code>README_START_HERE.txt</code> with launch notes and a full control list.</p>
-        <p class="fine-print">The published zip still uses the existing City Raid filename for backend compatibility, but the game page is now branded as Spider Simulator.</p>
-        <p class="fine-print">SHA-256: <code>BD3467EB08E0C90E77CE39CE350F5A0923045EA0B8DF29581227DADCA4CF153C</code></p>
+        <p class="fine-print">Zip size: about 402 MB. Extracted size is about 436 MB.</p>
+        <p class="fine-print">Packaged from the latest CityRaidTPS Unreal project on April 14, 2026.</p>
+        <p class="fine-print">The zip now includes <code>README_START_HERE.txt</code>, <code>INSTALL-SPIDER-SIMULATOR.bat</code>, and <code>UNINSTALL-SPIDER-SIMULATOR.bat</code>.</p>
+        <p class="fine-print">Windows may still show an initial SmartScreen warning until the build is code-signed. The installer and branding are cleaned up, but the real trust fix is Authenticode signing.</p>
+        <p class="fine-print">SHA-256: <code>5C16DA202ED6069C6CD6425BAA741809DB921E0D9D38036036A6C8F6B413E807</code></p>
       </section>
     </main>
   </div>
