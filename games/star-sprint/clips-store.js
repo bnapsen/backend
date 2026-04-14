@@ -8,6 +8,7 @@ const { createS3JsonStore } = require('./s3-json-store.js');
 
 const MAX_PUBLIC_CLIP_COMMENTS = 10;
 const MAX_STORED_CLIP_COMMENTS = 200;
+const MAX_MODERATION_REASON_COUNT = 12;
 
 function ensureDirectory(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -50,6 +51,23 @@ function normalizeEmojiCounts(raw) {
   return nextCounts;
 }
 
+function normalizeModerationReasons(raw) {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .slice(0, MAX_MODERATION_REASON_COUNT);
+}
+
+function normalizeModerationDetails(raw) {
+  return raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? raw
+    : {};
+}
+
 function commentSort(left, right) {
   const leftPinned = Boolean(left && left.pinned);
   const rightPinned = Boolean(right && right.pinned);
@@ -88,7 +106,15 @@ function clipRecord(record) {
     videoStorageKey: String(record.videoStorageKey || ''),
     posterStorageKey: String(record.posterStorageKey || ''),
     reportCount: Number(record.reportCount || 0),
-    status: String(record.status || 'active'),
+    status: String(record.status || 'pending'),
+    moderationState: String(record.moderationState || 'queued'),
+    moderationSummary: String(record.moderationSummary || ''),
+    moderationReasons: normalizeModerationReasons(record.moderationReasons),
+    moderationDetails: normalizeModerationDetails(record.moderationDetails),
+    moderationUpdatedAt: String(record.moderationUpdatedAt || ''),
+    appealStatus: String(record.appealStatus || 'none'),
+    appealMessage: String(record.appealMessage || ''),
+    appealRequestedAt: String(record.appealRequestedAt || ''),
     viewCount: Number(record.viewCount || 0),
     likeCount: Number(record.likeCount || 0),
     dislikeCount: Number(record.dislikeCount || 0),
@@ -281,6 +307,14 @@ function mapPostgresClipRow(row) {
     posterStorageKey: row.poster_storage_key,
     reportCount: row.report_count,
     status: row.status,
+    moderationState: row.moderation_state,
+    moderationSummary: row.moderation_summary,
+    moderationReasons: row.moderation_reasons,
+    moderationDetails: row.moderation_details,
+    moderationUpdatedAt: row.moderation_updated_at instanceof Date ? row.moderation_updated_at.toISOString() : row.moderation_updated_at,
+    appealStatus: row.appeal_status,
+    appealMessage: row.appeal_message,
+    appealRequestedAt: row.appeal_requested_at instanceof Date ? row.appeal_requested_at.toISOString() : row.appeal_requested_at,
   });
 }
 
@@ -553,9 +587,17 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
           video_storage_key,
           poster_storage_key,
           report_count,
-          status
+          status,
+          moderation_state,
+          moderation_summary,
+          moderation_reasons,
+          moderation_details,
+          moderation_updated_at,
+          appeal_status,
+          appeal_message,
+          appeal_requested_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22, $23, $24
         )
         ON CONFLICT (id) DO NOTHING`,
         [
@@ -575,6 +617,14 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
           clip.posterStorageKey,
           clip.reportCount,
           clip.status,
+          clip.moderationState,
+          clip.moderationSummary,
+          JSON.stringify(clip.moderationReasons || []),
+          JSON.stringify(clip.moderationDetails || {}),
+          clip.moderationUpdatedAt || null,
+          clip.appealStatus,
+          clip.appealMessage,
+          clip.appealRequestedAt || null,
         ],
       );
     }
@@ -609,9 +659,26 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         video_storage_key TEXT NOT NULL,
         poster_storage_key TEXT NOT NULL,
         report_count INTEGER NOT NULL DEFAULT 0,
-        status TEXT NOT NULL DEFAULT 'active'
+        status TEXT NOT NULL DEFAULT 'pending',
+        moderation_state TEXT NOT NULL DEFAULT 'queued',
+        moderation_summary TEXT NOT NULL DEFAULT '',
+        moderation_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+        moderation_details JSONB NOT NULL DEFAULT '{}'::jsonb,
+        moderation_updated_at TIMESTAMPTZ,
+        appeal_status TEXT NOT NULL DEFAULT 'none',
+        appeal_message TEXT NOT NULL DEFAULT '',
+        appeal_requested_at TIMESTAMPTZ
       );
     `);
+
+    await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS moderation_state TEXT NOT NULL DEFAULT 'queued';`);
+    await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS moderation_summary TEXT NOT NULL DEFAULT '';`);
+    await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS moderation_reasons JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+    await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS moderation_details JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+    await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS moderation_updated_at TIMESTAMPTZ;`);
+    await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS appeal_status TEXT NOT NULL DEFAULT 'none';`);
+    await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS appeal_message TEXT NOT NULL DEFAULT '';`);
+    await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS appeal_requested_at TIMESTAMPTZ;`);
 
     await pool.query(`
       CREATE INDEX IF NOT EXISTS clips_active_created_at_idx
@@ -835,7 +902,15 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         video_storage_key,
         poster_storage_key,
         report_count,
-        status
+        status,
+        moderation_state,
+        moderation_summary,
+        moderation_reasons,
+        moderation_details,
+        moderation_updated_at,
+        appeal_status,
+        appeal_message,
+        appeal_requested_at
       FROM clips
       WHERE status = 'active'
       ORDER BY created_at DESC${limitClause}`,
@@ -929,9 +1004,17 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         video_storage_key,
         poster_storage_key,
         report_count,
-        status
+        status,
+        moderation_state,
+        moderation_summary,
+        moderation_reasons,
+        moderation_details,
+        moderation_updated_at,
+        appeal_status,
+        appeal_message,
+        appeal_requested_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22, $23, $24
       )`,
       [
         nextClip.id,
@@ -950,6 +1033,14 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         nextClip.posterStorageKey,
         nextClip.reportCount,
         nextClip.status,
+        nextClip.moderationState,
+        nextClip.moderationSummary,
+        JSON.stringify(nextClip.moderationReasons || []),
+        JSON.stringify(nextClip.moderationDetails || {}),
+        nextClip.moderationUpdatedAt || null,
+        nextClip.appealStatus,
+        nextClip.appealMessage,
+        nextClip.appealRequestedAt || null,
       ],
     );
 
@@ -995,7 +1086,15 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         video_storage_key,
         poster_storage_key,
         report_count,
-        status
+        status,
+        moderation_state,
+        moderation_summary,
+        moderation_reasons,
+        moderation_details,
+        moderation_updated_at,
+        appeal_status,
+        appeal_message,
+        appeal_requested_at
       FROM clips
       WHERE id = $1
       LIMIT 1`,
@@ -1009,6 +1108,391 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
 
     const [decoratedClip] = await decoratePostgresClips([clip]);
     return decoratedClip || null;
+  }
+
+  async function findClipByVideoStorageKey(videoStorageKey) {
+    const safeVideoStorageKey = String(videoStorageKey || '').trim();
+    if (!safeVideoStorageKey) {
+      return null;
+    }
+
+    if (usesObjectStorage) {
+      const [clips, interactions, comments] = await Promise.all([
+        readObjectStorageClips(),
+        readObjectStorageInteractions(),
+        readObjectStorageComments(),
+      ]);
+      const clip = clips.find((entry) => entry.videoStorageKey === safeVideoStorageKey) || null;
+      return clip ? decorateClip(clip, interactions, comments) : null;
+    }
+
+    if (!pool) {
+      const clips = readLocalClips();
+      const clip = clips.find((entry) => entry.videoStorageKey === safeVideoStorageKey) || null;
+      return clip ? decorateClip(clip, readLocalInteractions(), readLocalComments()) : null;
+    }
+
+    const result = await pool.query(
+      `SELECT
+        id,
+        delete_token,
+        title,
+        caption,
+        uploader_name,
+        created_at,
+        duration_seconds,
+        size_bytes,
+        mime_type,
+        width,
+        height,
+        storage_provider,
+        video_storage_key,
+        poster_storage_key,
+        report_count,
+        status,
+        moderation_state,
+        moderation_summary,
+        moderation_reasons,
+        moderation_details,
+        moderation_updated_at,
+        appeal_status,
+        appeal_message,
+        appeal_requested_at
+      FROM clips
+      WHERE video_storage_key = $1
+      LIMIT 1`,
+      [safeVideoStorageKey],
+    );
+
+    const clip = mapPostgresClipRow(result.rows[0]);
+    if (!clip) {
+      return null;
+    }
+
+    const [decoratedClip] = await decoratePostgresClips([clip]);
+    return decoratedClip || null;
+  }
+
+  async function listOwnedClips(ownedEntries = []) {
+    const safeEntries = Array.isArray(ownedEntries)
+      ? ownedEntries
+        .map((entry) => ({
+          clipId: String(entry && entry.clipId || '').trim(),
+          deleteToken: String(entry && entry.deleteToken || '').trim(),
+        }))
+        .filter((entry) => entry.clipId && entry.deleteToken)
+      : [];
+
+    if (!safeEntries.length) {
+      return [];
+    }
+
+    if (usesObjectStorage) {
+      const [clips, interactions, comments] = await Promise.all([
+        readObjectStorageClips(),
+        readObjectStorageInteractions(),
+        readObjectStorageComments(),
+      ]);
+      const tokenMap = new Map(safeEntries.map((entry) => [entry.clipId, entry.deleteToken]));
+      return clips
+        .filter((clip) => tokenMap.get(clip.id) === clip.deleteToken)
+        .map((clip) => decorateClip(clip, interactions, comments))
+        .sort(clipSort);
+    }
+
+    if (!pool) {
+      const clips = readLocalClips();
+      const interactions = readLocalInteractions();
+      const comments = readLocalComments();
+      const tokenMap = new Map(safeEntries.map((entry) => [entry.clipId, entry.deleteToken]));
+      return clips
+        .filter((clip) => tokenMap.get(clip.id) === clip.deleteToken)
+        .map((clip) => decorateClip(clip, interactions, comments))
+        .sort(clipSort);
+    }
+
+    const clipIds = safeEntries.map((entry) => entry.clipId);
+    const result = await pool.query(
+      `SELECT
+        id,
+        delete_token,
+        title,
+        caption,
+        uploader_name,
+        created_at,
+        duration_seconds,
+        size_bytes,
+        mime_type,
+        width,
+        height,
+        storage_provider,
+        video_storage_key,
+        poster_storage_key,
+        report_count,
+        status,
+        moderation_state,
+        moderation_summary,
+        moderation_reasons,
+        moderation_details,
+        moderation_updated_at,
+        appeal_status,
+        appeal_message,
+        appeal_requested_at
+      FROM clips
+      WHERE id = ANY($1::text[])`,
+      [clipIds],
+    );
+
+    const tokenMap = new Map(safeEntries.map((entry) => [entry.clipId, entry.deleteToken]));
+    const decoratedClips = await decoratePostgresClips(
+      result.rows
+        .map(mapPostgresClipRow)
+        .filter((clip) => tokenMap.get(clip.id) === clip.deleteToken),
+    );
+    return decoratedClips.sort(clipSort);
+  }
+
+  async function updateClipModeration(clipId, patch = {}) {
+    const safeClipId = String(clipId || '').trim();
+    if (!safeClipId) {
+      return null;
+    }
+
+    const nextPatch = {
+      status: patch.status,
+      moderationState: patch.moderationState,
+      moderationSummary: patch.moderationSummary,
+      moderationReasons: patch.moderationReasons,
+      moderationDetails: patch.moderationDetails,
+      moderationUpdatedAt: patch.moderationUpdatedAt,
+      appealStatus: patch.appealStatus,
+      appealMessage: patch.appealMessage,
+      appealRequestedAt: patch.appealRequestedAt,
+      reportCount: patch.reportCount,
+    };
+
+    if (usesObjectStorage) {
+      const [clips, interactions, comments] = await Promise.all([
+        readObjectStorageClips(),
+        readObjectStorageInteractions(),
+        readObjectStorageComments(),
+      ]);
+      const clipIndex = clips.findIndex((entry) => entry.id === safeClipId);
+      if (clipIndex < 0) {
+        return null;
+      }
+
+      clips[clipIndex] = clipRecord({
+        ...clips[clipIndex],
+        ...nextPatch,
+      });
+      await writeObjectStorageClips(clips);
+      return decorateClip(clips[clipIndex], interactions, comments);
+    }
+
+    if (!pool) {
+      const clips = readLocalClips();
+      const interactions = readLocalInteractions();
+      const comments = readLocalComments();
+      const clipIndex = clips.findIndex((entry) => entry.id === safeClipId);
+      if (clipIndex < 0) {
+        return null;
+      }
+
+      clips[clipIndex] = clipRecord({
+        ...clips[clipIndex],
+        ...nextPatch,
+      });
+      writeLocalClips(clips);
+      return decorateClip(clips[clipIndex], interactions, comments);
+    }
+
+    const existingClip = await findClipById(safeClipId);
+    if (!existingClip) {
+      return null;
+    }
+
+    await pool.query(
+      `UPDATE clips
+      SET
+        status = $2,
+        moderation_state = $3,
+        moderation_summary = $4,
+        moderation_reasons = $5::jsonb,
+        moderation_details = $6::jsonb,
+        moderation_updated_at = $7,
+        appeal_status = $8,
+        appeal_message = $9,
+        appeal_requested_at = $10,
+        report_count = $11
+      WHERE id = $1`,
+      [
+        safeClipId,
+        String(nextPatch.status || existingClip.status || 'pending'),
+        String(nextPatch.moderationState || existingClip.moderationState || 'queued'),
+        String(nextPatch.moderationSummary || existingClip.moderationSummary || ''),
+        JSON.stringify(
+          nextPatch.moderationReasons !== undefined
+            ? normalizeModerationReasons(nextPatch.moderationReasons)
+            : normalizeModerationReasons(existingClip.moderationReasons),
+        ),
+        JSON.stringify(
+          nextPatch.moderationDetails !== undefined
+            ? normalizeModerationDetails(nextPatch.moderationDetails)
+            : normalizeModerationDetails(existingClip.moderationDetails),
+        ),
+        nextPatch.moderationUpdatedAt !== undefined
+          ? (nextPatch.moderationUpdatedAt || null)
+          : (existingClip.moderationUpdatedAt || null),
+        String(nextPatch.appealStatus || existingClip.appealStatus || 'none'),
+        nextPatch.appealMessage !== undefined
+          ? String(nextPatch.appealMessage || '')
+          : String(existingClip.appealMessage || ''),
+        nextPatch.appealRequestedAt !== undefined
+          ? (nextPatch.appealRequestedAt || null)
+          : (existingClip.appealRequestedAt || null),
+        Number.isFinite(Number(nextPatch.reportCount))
+          ? Number(nextPatch.reportCount)
+          : Number(existingClip.reportCount || 0),
+      ],
+    );
+
+    return findClipById(safeClipId);
+  }
+
+  async function requestAppeal(clipId, deleteToken, message = '') {
+    const safeClipId = String(clipId || '').trim();
+    const safeDeleteToken = String(deleteToken || '').trim();
+    const safeMessage = String(message || '').trim().slice(0, 280);
+    if (!safeClipId || !safeDeleteToken || !safeMessage) {
+      return { clip: null, error: 'missing-fields' };
+    }
+
+    const clip = await findClipById(safeClipId);
+    if (!clip) {
+      return { clip: null, error: 'clip-not-found' };
+    }
+    if (clip.deleteToken !== safeDeleteToken) {
+      return { clip, error: 'forbidden' };
+    }
+
+    const nextStatus = clip.status === 'active' ? 'review' : clip.status;
+    return {
+      clip: await updateClipModeration(safeClipId, {
+        status: nextStatus,
+        moderationState: clip.moderationState === 'approved' ? 'reported' : clip.moderationState,
+        appealStatus: 'pending',
+        appealMessage: safeMessage,
+        appealRequestedAt: new Date().toISOString(),
+        moderationUpdatedAt: new Date().toISOString(),
+      }),
+      error: '',
+    };
+  }
+
+  async function applyModerationDecision(clipId, action, moderationPatch = {}) {
+    const safeAction = String(action || '').trim().toLowerCase();
+    const safeClipId = String(clipId || '').trim();
+    if (!safeClipId || !safeAction) {
+      return { clip: null, error: 'missing-fields' };
+    }
+
+    const clip = await findClipById(safeClipId);
+    if (!clip) {
+      return { clip: null, error: 'clip-not-found' };
+    }
+
+    let status = clip.status;
+    let moderationState = clip.moderationState;
+    if (safeAction === 'approve') {
+      status = 'active';
+      moderationState = 'approved';
+    } else if (safeAction === 'reject') {
+      status = 'rejected';
+      moderationState = 'rejected';
+    } else if (safeAction === 'review') {
+      status = 'review';
+      moderationState = 'flagged';
+    } else {
+      return { clip, error: 'invalid-action' };
+    }
+
+    return {
+      clip: await updateClipModeration(safeClipId, {
+        status,
+        moderationState,
+        moderationSummary: moderationPatch.moderationSummary !== undefined ? moderationPatch.moderationSummary : clip.moderationSummary,
+        moderationReasons: moderationPatch.moderationReasons !== undefined ? moderationPatch.moderationReasons : clip.moderationReasons,
+        moderationDetails: moderationPatch.moderationDetails !== undefined ? moderationPatch.moderationDetails : clip.moderationDetails,
+        moderationUpdatedAt: moderationPatch.moderationUpdatedAt || new Date().toISOString(),
+        appealStatus: safeAction === 'approve' ? 'resolved' : (clip.appealStatus === 'pending' ? 'resolved' : clip.appealStatus),
+        reportCount: safeAction === 'approve' ? 0 : clip.reportCount,
+      }),
+      error: '',
+    };
+  }
+
+  async function listModerationQueue(limit = 40) {
+    const normalizedLimit = normalizeLimit(limit) || 40;
+
+    if (usesObjectStorage) {
+      const [clips, interactions, comments] = await Promise.all([
+        readObjectStorageClips(),
+        readObjectStorageInteractions(),
+        readObjectStorageComments(),
+      ]);
+      return clips
+        .filter((clip) => clip.status !== 'active' || Number(clip.reportCount || 0) > 0 || clip.appealStatus === 'pending')
+        .map((clip) => decorateClip(clip, interactions, comments))
+        .sort(clipSort)
+        .slice(0, normalizedLimit);
+    }
+
+    if (!pool) {
+      const clips = readLocalClips();
+      const interactions = readLocalInteractions();
+      const comments = readLocalComments();
+      return clips
+        .filter((clip) => clip.status !== 'active' || Number(clip.reportCount || 0) > 0 || clip.appealStatus === 'pending')
+        .map((clip) => decorateClip(clip, interactions, comments))
+        .sort(clipSort)
+        .slice(0, normalizedLimit);
+    }
+
+    const result = await pool.query(
+      `SELECT
+        id,
+        delete_token,
+        title,
+        caption,
+        uploader_name,
+        created_at,
+        duration_seconds,
+        size_bytes,
+        mime_type,
+        width,
+        height,
+        storage_provider,
+        video_storage_key,
+        poster_storage_key,
+        report_count,
+        status,
+        moderation_state,
+        moderation_summary,
+        moderation_reasons,
+        moderation_details,
+        moderation_updated_at,
+        appeal_status,
+        appeal_message,
+        appeal_requested_at
+      FROM clips
+      WHERE status != 'active' OR report_count > 0 OR appeal_status = 'pending'
+      ORDER BY created_at DESC
+      LIMIT $1`,
+      [normalizedLimit],
+    );
+
+    return decoratePostgresClips(result.rows.map(mapPostgresClipRow));
   }
 
   async function deleteClip(clipId) {
@@ -1074,7 +1558,15 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         video_storage_key,
         poster_storage_key,
         report_count,
-        status`,
+        status,
+        moderation_state,
+        moderation_summary,
+        moderation_reasons,
+        moderation_details,
+        moderation_updated_at,
+        appeal_status,
+        appeal_message,
+        appeal_requested_at`,
       [safeClipId],
     );
 
@@ -1165,7 +1657,15 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
           video_storage_key,
           poster_storage_key,
           report_count,
-          status
+          status,
+          moderation_state,
+          moderation_summary,
+          moderation_reasons,
+          moderation_details,
+          moderation_updated_at,
+          appeal_status,
+          appeal_message,
+          appeal_requested_at
         FROM clips
         WHERE id = $1 AND status = 'active'
         LIMIT 1`,
@@ -1208,7 +1708,15 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
             video_storage_key,
             poster_storage_key,
             report_count,
-            status`,
+            status,
+            moderation_state,
+            moderation_summary,
+            moderation_reasons,
+            moderation_details,
+            moderation_updated_at,
+            appeal_status,
+            appeal_message,
+            appeal_requested_at`,
           [safeClipId],
         );
         updatedRow = updatedClip.rows[0];
@@ -1828,6 +2336,12 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
     getStorageStats,
     insertClip,
     findClipById,
+    findClipByVideoStorageKey,
+    listOwnedClips,
+    listModerationQueue,
+    updateClipModeration,
+    requestAppeal,
+    applyModerationDecision,
     deleteClip,
     registerReport,
     registerView,

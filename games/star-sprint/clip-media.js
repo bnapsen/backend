@@ -235,7 +235,7 @@ function createClipMediaManager({ dataDir }) {
     ]);
   }
 
-  async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
+async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     const safeKeyName = safeMediaKey(key);
     if (!safeKeyName) {
       throw new Error('Invalid media key.');
@@ -258,6 +258,54 @@ function createClipMediaManager({ dataDir }) {
     const targetDir = assetType === 'video' ? videosDir : postersDir;
     ensureDirectory(targetDir);
     await fs.promises.rename(tempPath, path.join(targetDir, safeKeyName));
+  }
+
+  async function writeAssetToTemp(assetType, rawProvider, rawKey, outputPath) {
+    const provider = storageProviderForEntry(rawProvider);
+    const safeKeyName = safeMediaKey(rawKey);
+    if (!safeKeyName) {
+      const error = new Error('Clip media not found.');
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
+
+    if (provider !== 's3') {
+      const targetDir = assetType === 'video' ? videosDir : postersDir;
+      await fs.promises.copyFile(path.join(targetDir, safeKeyName), outputPath);
+      return outputPath;
+    }
+
+    await ensureBucket();
+    const prefix = assetType === 'video' ? 'clips/videos' : 'clips/posters';
+    const response = await s3Client.send(new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET,
+      Key: `${prefix}/${safeKeyName}`,
+    }));
+    const body = await response.Body.transformToByteArray();
+    await fs.promises.writeFile(outputPath, Buffer.from(body));
+    return outputPath;
+  }
+
+  function storageUriForClipAsset(assetType, clip) {
+    const provider = storageProviderForEntry(clip && clip.storageProvider);
+    const safeKeyName = assetType === 'video'
+      ? safeMediaKey(clip && clip.videoStorageKey)
+      : safeMediaKey(clip && clip.posterStorageKey);
+    if (!safeKeyName) {
+      return '';
+    }
+
+    if (provider === 's3' && process.env.S3_BUCKET) {
+      const prefix = assetType === 'video' ? 'clips/videos' : 'clips/posters';
+      return `gs://${process.env.S3_BUCKET}/${prefix}/${safeKeyName}`;
+    }
+
+    if (provider !== 's3') {
+      const targetDir = assetType === 'video' ? videosDir : postersDir;
+      return path.join(targetDir, safeKeyName);
+    }
+
+    return '';
   }
 
   async function processUpload(uploadedFile) {
@@ -403,6 +451,8 @@ function createClipMediaManager({ dataDir }) {
     publicClipMedia,
     deleteClipAssets,
     streamAsset,
+    writeAssetToTemp,
+    storageUriForClipAsset,
     ensureClipDirs,
     ensureBucket,
     logConfiguration,

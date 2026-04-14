@@ -5,6 +5,7 @@ const CLIP_REPORTER_STORAGE_KEY = "nova-clips:reporter-id";
 const CLIP_VIEWER_STORAGE_KEY = "nova-clips:viewer-id";
 const CLIP_COMMENTER_NAME_STORAGE_KEY = "nova-clips:commenter-name";
 const CLIP_COMMENT_OWNERSHIP_STORAGE_KEY = "nova-clips:owned-comments";
+const CLIP_ADMIN_TOKEN_STORAGE_KEY = "nova-clips:admin-token";
 const CLIP_REACTION_STORAGE_KEY = "nova-clips:reactions";
 const CLIP_VIEWED_STORAGE_KEY = "nova-clips:viewed";
 const ALLOWED_CLIP_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".3gp", ".3gpp"]);
@@ -31,6 +32,14 @@ const clipAdminFeedCount = document.getElementById("clip-admin-feed-count");
 const clipAdminStorageUsed = document.getElementById("clip-admin-storage-used");
 const clipAdminFreeTierUsage = document.getElementById("clip-admin-free-tier-usage");
 const clipAdminNote = document.getElementById("clip-admin-note");
+const clipOwnedPanel = document.getElementById("clip-owned-panel");
+const clipOwnedStatus = document.getElementById("clip-owned-status");
+const clipOwnedList = document.getElementById("clip-owned-list");
+const clipModerationPanel = document.getElementById("clip-moderation-panel");
+const clipModerationTokenInput = document.getElementById("clip-admin-token");
+const clipModerationLoadButton = document.getElementById("clip-admin-load-button");
+const clipModerationStatus = document.getElementById("clip-moderation-status");
+const clipModerationList = document.getElementById("clip-moderation-list");
 const uploaderNameInput = document.getElementById("clip-uploader-name");
 const titleInput = document.getElementById("clip-title");
 const captionInput = document.getElementById("clip-caption");
@@ -47,6 +56,8 @@ const state = {
     renderedClips: [],
     viewTimers: new Map(),
     viewedClipIds: new Set(),
+    ownedClips: [],
+    moderationQueue: [],
 };
 
 state.viewedClipIds = new Set(readViewedClipIds());
@@ -162,6 +173,22 @@ function clipStorageAdminEndpoint() {
     return `${clipsApiBase()}/api/clips/admin/storage`;
 }
 
+function clipOwnedEndpoint() {
+    return `${clipsApiBase()}/api/clips/owned`;
+}
+
+function clipAppealEndpoint() {
+    return `${clipsApiBase()}/api/clips/appeal`;
+}
+
+function clipModerationQueueEndpoint() {
+    return `${clipsApiBase()}/api/clips/admin/moderation-queue`;
+}
+
+function clipModerationActionEndpoint() {
+    return `${clipsApiBase()}/api/clips/admin/moderation-action`;
+}
+
 function readOwnedUploads() {
     try {
         const raw = window.localStorage.getItem(CLIP_OWNERSHIP_STORAGE_KEY);
@@ -270,6 +297,26 @@ function forgetOwnedCommentsForClip(clipId) {
 
 function ownsComment(commentId) {
     return Boolean(readOwnedComments()[commentId]);
+}
+
+function readAdminToken() {
+    try {
+        return window.localStorage.getItem(CLIP_ADMIN_TOKEN_STORAGE_KEY) || "";
+    } catch {
+        return "";
+    }
+}
+
+function writeAdminToken(token) {
+    try {
+        if (!token) {
+            window.localStorage.removeItem(CLIP_ADMIN_TOKEN_STORAGE_KEY);
+            return;
+        }
+        window.localStorage.setItem(CLIP_ADMIN_TOKEN_STORAGE_KEY, token);
+    } catch {
+        // Ignore storage failures.
+    }
 }
 
 function reporterKey() {
@@ -484,6 +531,35 @@ function formatCount(value, label) {
     return `${safeValue.toLocaleString()} ${label}`;
 }
 
+function clipStatusLabel(clip) {
+    const moderationState = String(clip?.moderationState || "").toLowerCase();
+    const status = String(clip?.status || "").toLowerCase();
+    if (moderationState === "processing") {
+        return "Processing";
+    }
+    if (status === "active") {
+        return "Approved";
+    }
+    if (status === "pending") {
+        return "Pending";
+    }
+    if (status === "review") {
+        return "In Review";
+    }
+    if (status === "rejected") {
+        return "Rejected";
+    }
+    return status || "Unknown";
+}
+
+function moderationBadgeKey(clip) {
+    const moderationState = String(clip?.moderationState || "").toLowerCase();
+    if (moderationState === "processing") {
+        return "processing";
+    }
+    return String(clip?.status || moderationState || "pending").toLowerCase();
+}
+
 function currentCommenterName() {
     return readCommenterName() || uploaderNameInput?.value?.trim() || "";
 }
@@ -638,8 +714,8 @@ function showUploadedPreview(clip, fallbackFile) {
     previewPanel.classList.remove("hidden");
     previewTitle.textContent = clip.title || inferTitleFromFileName(fallbackFile?.name || "");
     previewFileName.textContent = fallbackFile?.name || clip.title || "Uploaded clip";
-    previewMeta.textContent = `${formatDuration(clip.durationSeconds)} - ${formatBytes(clip.sizeBytes)} - Live on Nova Clips`;
-    setPreviewStatus("Uploaded live");
+    previewMeta.textContent = `${formatDuration(clip.durationSeconds)} - ${formatBytes(clip.sizeBytes)} - ${clipStatusLabel(clip)}`;
+    setPreviewStatus(clip.status === "active" ? "Uploaded live" : "Uploaded and queued for moderation");
     releasePreviewUrl();
     setPreviewVideoSource(resolveClipUrl(clip.videoPath));
     previewVideo.poster = resolveClipUrl(clip.posterPath);
@@ -1343,6 +1419,168 @@ function renderClipAdminStats(stats) {
     ].join(" ");
 }
 
+function renderOwnedClips(clips) {
+    if (!clipOwnedPanel || !clipOwnedList || !clipOwnedStatus) {
+        return;
+    }
+
+    const safeClips = Array.isArray(clips) ? clips : [];
+    state.ownedClips = safeClips;
+    clipOwnedPanel.classList.toggle("hidden", safeClips.length === 0);
+    clipOwnedList.innerHTML = "";
+    clipOwnedStatus.style.color = "";
+    clipOwnedStatus.textContent = safeClips.length
+        ? "Your uploaded clips stay here even while they wait for moderation."
+        : "Upload a clip to see its moderation status here.";
+
+    safeClips.forEach((clip) => {
+        const article = document.createElement("article");
+        article.className = "clip-owned-card";
+
+        const top = document.createElement("div");
+        top.className = "clip-owned-top";
+
+        const title = document.createElement("h4");
+        title.className = "clip-owned-title";
+        title.textContent = clip.title || "Untitled Clip";
+
+        const badge = document.createElement("span");
+        badge.className = "clip-status-badge";
+        badge.dataset.status = moderationBadgeKey(clip);
+        badge.textContent = clipStatusLabel(clip);
+
+        top.appendChild(title);
+        top.appendChild(badge);
+        article.appendChild(top);
+
+        const summary = document.createElement("p");
+        summary.className = "clip-owned-summary";
+        summary.textContent = clip.moderationSummary || "Queued for moderation.";
+        article.appendChild(summary);
+
+        if (Array.isArray(clip.moderationReasons) && clip.moderationReasons.length) {
+            const reasons = document.createElement("p");
+            reasons.className = "clip-owned-reasons";
+            reasons.textContent = clip.moderationReasons.join(" ");
+            article.appendChild(reasons);
+        }
+
+        const meta = document.createElement("p");
+        meta.className = "clip-moderation-meta";
+        meta.textContent = `${formatDate(clip.createdAt)} • ${clip.reportCount || 0} reports`;
+        article.appendChild(meta);
+
+        if (clip.appealStatus === "pending") {
+            const appealNote = document.createElement("p");
+            appealNote.className = "clip-moderation-appeal";
+            appealNote.textContent = clip.appealMessage
+                ? `Appeal pending: ${clip.appealMessage}`
+                : "Appeal pending.";
+            article.appendChild(appealNote);
+        }
+
+        if ((clip.status === "review" || clip.status === "rejected") && clip.appealStatus !== "pending") {
+            const actions = document.createElement("div");
+            actions.className = "clip-owned-actions";
+            const appealButton = document.createElement("button");
+            appealButton.type = "button";
+            appealButton.className = "clip-owned-appeal-button";
+            appealButton.textContent = "Appeal decision";
+            appealButton.addEventListener("click", async () => {
+                const message = window.prompt("Tell the reviewer why this clip should be restored.", "");
+                if (!message) {
+                    return;
+                }
+                await submitClipAppeal(clip.id, message, appealButton);
+            });
+            actions.appendChild(appealButton);
+            article.appendChild(actions);
+        }
+
+        clipOwnedList.appendChild(article);
+    });
+}
+
+function renderModerationQueue(clips) {
+    if (!clipModerationPanel || !clipModerationList || !clipModerationStatus) {
+        return;
+    }
+
+    const safeClips = Array.isArray(clips) ? clips : [];
+    state.moderationQueue = safeClips;
+    clipModerationPanel.classList.toggle("hidden", !adminMode);
+    clipModerationList.innerHTML = "";
+    clipModerationStatus.style.color = "";
+    clipModerationStatus.textContent = safeClips.length
+        ? `${safeClips.length} clips need moderation attention.`
+        : "No clips are waiting in the moderation queue right now.";
+
+    safeClips.forEach((clip) => {
+        const article = document.createElement("article");
+        article.className = "clip-moderation-card";
+
+        const top = document.createElement("div");
+        top.className = "clip-moderation-top";
+
+        const title = document.createElement("h4");
+        title.className = "clip-moderation-title";
+        title.textContent = clip.title || "Untitled Clip";
+
+        const badge = document.createElement("span");
+        badge.className = "clip-status-badge";
+        badge.dataset.status = moderationBadgeKey(clip);
+        badge.textContent = `${clipStatusLabel(clip)} • ${clip.moderationState || "queued"}`;
+
+        top.appendChild(title);
+        top.appendChild(badge);
+        article.appendChild(top);
+
+        const summary = document.createElement("p");
+        summary.className = "clip-moderation-summary";
+        summary.textContent = clip.moderationSummary || "Queued for moderation.";
+        article.appendChild(summary);
+
+        if (Array.isArray(clip.moderationReasons) && clip.moderationReasons.length) {
+            const reasons = document.createElement("p");
+            reasons.className = "clip-moderation-reasons";
+            reasons.textContent = clip.moderationReasons.join(" ");
+            article.appendChild(reasons);
+        }
+
+        if (clip.appealStatus === "pending" && clip.appealMessage) {
+            const appeal = document.createElement("p");
+            appeal.className = "clip-moderation-appeal";
+            appeal.textContent = `Appeal: ${clip.appealMessage}`;
+            article.appendChild(appeal);
+        }
+
+        const meta = document.createElement("p");
+        meta.className = "clip-moderation-meta";
+        meta.textContent = `${clip.uploaderName || "Guest uploader"} • ${formatDate(clip.createdAt)} • ${clip.reportCount || 0} reports`;
+        article.appendChild(meta);
+
+        const actions = document.createElement("div");
+        actions.className = "clip-moderation-actions";
+        [
+            { action: "approve", label: "Approve" },
+            { action: "review", label: "Keep in review" },
+            { action: "reject", label: "Reject", danger: true },
+        ].forEach((entry) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = `clip-moderation-button${entry.danger ? " clip-moderation-button--danger" : ""}`;
+            button.textContent = entry.label;
+            button.addEventListener("click", async () => {
+                await submitModerationAction(clip.id, entry.action, button);
+            });
+            actions.appendChild(button);
+        });
+
+        article.appendChild(actions);
+        clipModerationList.appendChild(article);
+    });
+}
+
 async function fetchClipAdminStats() {
     if (!adminMode || !clipAdminPanel) {
         return;
@@ -1368,6 +1606,166 @@ async function fetchClipAdminStats() {
     }
 }
 
+async function fetchOwnedClips() {
+    if (!clipOwnedPanel || !clipOwnedList) {
+        return;
+    }
+
+    const ownedUploads = Object.entries(readOwnedUploads()).map(([clipId, deleteToken]) => ({
+        clipId,
+        deleteToken,
+    }));
+
+    if (!ownedUploads.length) {
+        renderOwnedClips([]);
+        return;
+    }
+
+    clipOwnedPanel.classList.remove("hidden");
+    clipOwnedStatus.textContent = "Checking your uploaded clips...";
+
+    try {
+        const response = await fetch(clipOwnedEndpoint(), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                ownedClips: ownedUploads,
+            }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+            throw new Error(payload.error || "Unable to load your uploaded clips.");
+        }
+
+        renderOwnedClips(payload.clips || []);
+    } catch (error) {
+        renderOwnedClips([]);
+        if (clipOwnedPanel && clipOwnedStatus) {
+            clipOwnedPanel.classList.remove("hidden");
+            clipOwnedStatus.textContent = error.message;
+            clipOwnedStatus.style.color = "#ff9c8f";
+        }
+    }
+}
+
+async function submitClipAppeal(clipId, appealMessage, button) {
+    const deleteToken = deleteTokenForClip(clipId);
+    if (!deleteToken) {
+        setUploadStatus("This browser does not have appeal access for that clip.", true);
+        return;
+    }
+
+    button.disabled = true;
+
+    try {
+        const response = await fetch(clipAppealEndpoint(), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                clipId,
+                deleteToken,
+                appealMessage,
+            }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok || !payload.clip) {
+            throw new Error(payload.error || "Unable to send that appeal.");
+        }
+
+        await fetchOwnedClips();
+        setUploadStatus("Appeal sent for review.");
+    } catch (error) {
+        setUploadStatus(error.message, true);
+        button.disabled = false;
+    }
+}
+
+async function fetchModerationQueue() {
+    if (!adminMode || !clipModerationPanel || !clipModerationStatus) {
+        return;
+    }
+
+    const adminToken = String(clipModerationTokenInput?.value || readAdminToken()).trim();
+    if (!adminToken) {
+        clipModerationPanel.classList.remove("hidden");
+        clipModerationStatus.textContent = "Enter the admin moderation token to load the queue.";
+        clipModerationList.innerHTML = "";
+        return;
+    }
+
+    clipModerationStatus.textContent = "Loading moderation queue...";
+    clipModerationStatus.style.color = "";
+
+    try {
+        const response = await fetch(clipModerationQueueEndpoint(), {
+            headers: {
+                "x-admin-token": adminToken,
+            },
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+            throw new Error(payload.error || "Unable to load the moderation queue.");
+        }
+
+        writeAdminToken(adminToken);
+        renderModerationQueue(payload.clips || []);
+    } catch (error) {
+        clipModerationStatus.textContent = error.message;
+        clipModerationStatus.style.color = "#ff9c8f";
+        clipModerationList.innerHTML = "";
+    }
+}
+
+async function submitModerationAction(clipId, action, button) {
+    const adminToken = String(clipModerationTokenInput?.value || readAdminToken()).trim();
+    if (!adminToken) {
+        clipModerationStatus.textContent = "Enter the admin moderation token first.";
+        clipModerationStatus.style.color = "#ff9c8f";
+        return;
+    }
+
+    let summary = "";
+    if (action === "reject" || action === "review") {
+        summary = window.prompt("Add a moderation note for this action.", "") || "";
+    }
+
+    button.disabled = true;
+
+    try {
+        const response = await fetch(clipModerationActionEndpoint(), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-admin-token": adminToken,
+            },
+            body: JSON.stringify({
+                clipId,
+                action,
+                summary,
+            }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+            throw new Error(payload.error || "Unable to update moderation.");
+        }
+
+        renderModerationQueue(payload.queue || []);
+        await Promise.all([
+            fetchClips(),
+            fetchOwnedClips(),
+            fetchClipAdminStats(),
+        ]);
+    } catch (error) {
+        clipModerationStatus.textContent = error.message;
+        clipModerationStatus.style.color = "#ff9c8f";
+        button.disabled = false;
+    }
+}
+
 async function fetchClips() {
     setClipsStatus("Loading the feed...");
 
@@ -1379,7 +1777,11 @@ async function fetchClips() {
         }
 
         renderClips(payload.clips || []);
-        await fetchClipAdminStats();
+        await Promise.all([
+            fetchClipAdminStats(),
+            fetchOwnedClips(),
+            fetchModerationQueue(),
+        ]);
     } catch (error) {
         setClipsStatus(error.message, true);
         clipCountBadge.textContent = "Feed unavailable";
@@ -1474,8 +1876,14 @@ async function uploadClip(file) {
         rememberOwnedUpload(payload.clip.id, payload.deleteToken);
         showUploadedPreview(payload.clip, file);
         renderClips(payload.clips || []);
-        await fetchClipAdminStats();
-        setUploadStatus("Clip uploaded and added to the live feed.");
+        await Promise.all([
+            fetchClipAdminStats(),
+            fetchOwnedClips(),
+            fetchModerationQueue(),
+        ]);
+        setUploadStatus(payload.clip.status === "active"
+            ? "Clip uploaded and added to the live feed."
+            : "Clip uploaded and sent to moderation.");
         uploadForm.reset();
         state.selectedFile = null;
     } catch (error) {
@@ -1552,5 +1960,16 @@ window.addEventListener("keydown", unlockFeedAudio, { once: true, capture: true 
 if (adminMode && clipAdminPanel) {
     clipAdminPanel.classList.remove("hidden");
 }
+
+if (adminMode && clipModerationPanel) {
+    clipModerationPanel.classList.remove("hidden");
+    if (clipModerationTokenInput && !clipModerationTokenInput.value) {
+        clipModerationTokenInput.value = readAdminToken();
+    }
+}
+
+clipModerationLoadButton?.addEventListener("click", async () => {
+    await fetchModerationQueue();
+});
 
 fetchClips();

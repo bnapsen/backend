@@ -187,6 +187,147 @@
     font-size: 0.95rem;
 }
 
+.clip-owned-panel,
+.clip-moderation-panel {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(125, 162, 214, 0.16);
+    border-radius: 22px;
+    background: rgba(7, 15, 26, 0.84);
+}
+
+.clip-owned-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.8rem;
+}
+
+.clip-owned-head h3,
+.clip-moderation-panel h3 {
+    margin: 0.2rem 0 0;
+    font-family: "Oxanium", "Segoe UI", sans-serif;
+}
+
+.clip-owned-head p:last-child,
+.clip-owned-status {
+    color: #aabbd3;
+}
+
+.clip-owned-list,
+.clip-moderation-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    margin-top: 0.85rem;
+}
+
+.clip-owned-card,
+.clip-moderation-card {
+    padding: 0.9rem;
+    border: 1px solid rgba(123, 156, 199, 0.16);
+    border-radius: 18px;
+    background: rgba(4, 10, 18, 0.72);
+}
+
+.clip-owned-top,
+.clip-moderation-top,
+.clip-moderation-auth,
+.clip-moderation-actions,
+.clip-moderation-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    align-items: center;
+}
+
+.clip-owned-top,
+.clip-moderation-top {
+    justify-content: space-between;
+}
+
+.clip-status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.22rem 0.58rem;
+    border-radius: 999px;
+    border: 1px solid rgba(123, 156, 199, 0.18);
+    background: rgba(8, 18, 30, 0.9);
+    color: #dcecff;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.clip-status-badge[data-status="active"] {
+    color: #8ef0b3;
+    border-color: rgba(108, 229, 155, 0.3);
+}
+
+.clip-status-badge[data-status="pending"],
+.clip-status-badge[data-status="processing"] {
+    color: #ffd48d;
+    border-color: rgba(255, 198, 109, 0.3);
+}
+
+.clip-status-badge[data-status="review"],
+.clip-status-badge[data-status="flagged"] {
+    color: #ffca8c;
+    border-color: rgba(255, 170, 92, 0.3);
+}
+
+.clip-status-badge[data-status="rejected"] {
+    color: #ffb0a7;
+    border-color: rgba(255, 137, 122, 0.35);
+}
+
+.clip-owned-title,
+.clip-moderation-title {
+    margin: 0;
+    font-family: "Oxanium", "Segoe UI", sans-serif;
+}
+
+.clip-owned-summary,
+.clip-owned-reasons,
+.clip-moderation-summary,
+.clip-moderation-reasons,
+.clip-moderation-appeal,
+.clip-moderation-meta,
+.clip-moderation-status {
+    color: #b9cbe0;
+}
+
+.clip-owned-actions,
+.clip-moderation-actions {
+    margin-top: 0.8rem;
+}
+
+.clip-owned-appeal-button,
+.clip-moderation-button {
+    border: 1px solid rgba(113, 216, 255, 0.24);
+    border-radius: 999px;
+    padding: 0.6rem 0.92rem;
+    color: #eef8ff;
+    background: rgba(10, 20, 34, 0.96);
+    cursor: pointer;
+}
+
+.clip-moderation-button--danger {
+    border-color: rgba(255, 137, 122, 0.28);
+    color: #ffd3cb;
+}
+
+.clip-admin-token {
+    flex: 1 1 260px;
+    min-width: 0;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid rgba(123, 156, 199, 0.18);
+    border-radius: 16px;
+    color: #f7fbff;
+    background: rgba(5, 11, 20, 0.9);
+}
+
 .clip-upload-form,
 .clips-feed {
     display: flex;

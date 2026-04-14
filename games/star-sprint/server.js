@@ -32,6 +32,7 @@ const {
   inferClipTitle,
   normalizeClipUploadType,
 } = require('./clip-media.js');
+const { createClipModerationService } = require('./clip-moderation.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
@@ -67,6 +68,8 @@ const MAX_CLIPS = 0;
 const MAX_VISIBLE_CLIPS = 60;
 const MAX_CLIP_UPLOAD_BYTES = 24 * 1024 * 1024;
 const GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES = 5 * 1024 * 1024 * 1024;
+const CLIP_ADMIN_TOKEN = String(process.env.CLIP_ADMIN_TOKEN || '').trim();
+const MAX_MODERATION_QUEUE_ITEMS = 60;
 const MAX_CITY_RAID_LOBBIES = 120;
 const CITY_RAID_ROOM_CODE_LENGTH = 5;
 const CITY_RAID_DEFAULT_PORT = 7777;
@@ -107,6 +110,10 @@ const songsStore = createSongsStore({
   maxVisibleSongs: MAX_VISIBLE_SONGS,
 });
 const clipMediaManager = createClipMediaManager({
+  dataDir: DATA_DIR,
+});
+const clipModerationService = createClipModerationService({
+  clipMediaManager,
   dataDir: DATA_DIR,
 });
 const clipsStore = createClipsStore({
@@ -375,6 +382,22 @@ function normalizeClipReactionType(raw) {
 
 function normalizeDeleteToken(raw) {
   return String(raw || '').trim().slice(0, 160);
+}
+
+function normalizeAdminToken(raw) {
+  return String(raw || '').trim().slice(0, 240);
+}
+
+function requestAdminToken(req, body = null) {
+  const headerToken = normalizeAdminToken(req && req.headers ? req.headers['x-admin-token'] : '');
+  if (headerToken) {
+    return headerToken;
+  }
+  return normalizeAdminToken(body && body.adminToken);
+}
+
+function hasClipAdminAccess(req, body = null) {
+  return Boolean(CLIP_ADMIN_TOKEN) && requestAdminToken(req, body) === CLIP_ADMIN_TOKEN;
 }
 
 function sanitizeCityRaidField(raw, maxLength) {
@@ -818,6 +841,15 @@ function publicClipEntry(clip) {
       : [],
     videoPath: media.videoPath,
     posterPath: media.posterPath,
+    status: String(clip.status || 'pending'),
+    moderationState: String(clip.moderationState || ''),
+    moderationSummary: String(clip.moderationSummary || ''),
+    moderationReasons: Array.isArray(clip.moderationReasons) ? clip.moderationReasons.map((value) => String(value || '')) : [],
+    moderationUpdatedAt: String(clip.moderationUpdatedAt || ''),
+    reportCount: Number(clip.reportCount || 0),
+    appealStatus: String(clip.appealStatus || 'none'),
+    appealRequestedAt: String(clip.appealRequestedAt || ''),
+    appealMessage: String(clip.appealMessage || ''),
     source: 'community',
   };
 }
@@ -1197,6 +1229,80 @@ async function visibleClips() {
   return clips.map(publicClipEntry);
 }
 
+async function runClipModeration(clipId) {
+  const clip = await clipsStore.findClipById(clipId);
+  if (!clip) {
+    return null;
+  }
+
+  if (clip.status === 'active' && clip.moderationState === 'approved') {
+    return clip;
+  }
+
+  if (clip.moderationState === 'processing') {
+    return clip;
+  }
+
+  await clipsStore.updateClipModeration(clipId, {
+    moderationState: 'processing',
+    moderationSummary: 'Automated moderation is processing this clip now.',
+    moderationUpdatedAt: new Date().toISOString(),
+  });
+
+  try {
+    const moderationResult = await clipModerationService.moderateClip(clip);
+    return await clipsStore.updateClipModeration(clipId, {
+      status: moderationResult.status,
+      moderationState: moderationResult.moderationState,
+      moderationSummary: moderationResult.moderationSummary,
+      moderationReasons: moderationResult.moderationReasons,
+      moderationDetails: moderationResult.moderationDetails,
+      moderationUpdatedAt: moderationResult.moderationUpdatedAt,
+      appealStatus: moderationResult.status === 'active' ? 'none' : clip.appealStatus,
+      appealMessage: moderationResult.status === 'active' ? '' : clip.appealMessage,
+      appealRequestedAt: moderationResult.status === 'active' ? '' : clip.appealRequestedAt,
+    });
+  } catch (error) {
+    console.error('Clip moderation failed:', error.message);
+    return clipsStore.updateClipModeration(clipId, {
+      status: 'review',
+      moderationState: 'flagged',
+      moderationSummary: 'Automated moderation could not finish. This clip needs review.',
+      moderationReasons: [`Automated moderation failed: ${error.message}`],
+      moderationDetails: {
+        scanErrors: [error.message],
+      },
+      moderationUpdatedAt: new Date().toISOString(),
+    });
+  }
+}
+
+function queueClipModeration(clipId) {
+  if (!clipId) {
+    return;
+  }
+
+  setTimeout(() => {
+    runClipModeration(clipId).catch((error) => {
+      console.error('Queued clip moderation failed:', error.message);
+    });
+  }, 50);
+}
+
+function parseStorageFinalizeEvent(req, body = null) {
+  const eventType = String(req && req.headers ? req.headers['ce-type'] || '' : '').trim();
+  if (eventType !== 'google.cloud.storage.object.v1.finalized') {
+    return null;
+  }
+
+  const eventData = body && typeof body === 'object' ? body : {};
+  const bucket = String(eventData.bucket || '').trim();
+  const objectName = String(eventData.name || '').trim();
+  return bucket && objectName
+    ? { bucket, objectName }
+    : null;
+}
+
 async function handleClipStorageStatsRequest(req, res) {
   if (!isAllowedHttpOrigin(req)) {
     sendJsonResponse(req, res, 403, {
@@ -1231,6 +1337,303 @@ async function handleClipStorageStatsRequest(req, res) {
     sendJsonResponse(req, res, 500, {
       ok: false,
       error: 'Unable to load clip storage stats right now.',
+    });
+  }
+}
+
+async function handleOwnedClipsRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const ownedEntries = Array.isArray(body.ownedClips)
+    ? body.ownedClips.map((entry) => ({
+      clipId: sanitizeClipField(entry && entry.clipId, 80),
+      deleteToken: normalizeDeleteToken(entry && entry.deleteToken),
+    }))
+    : [];
+
+  try {
+    const clips = await clipsStore.listOwnedClips(ownedEntries);
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      clips: clips.map(publicClipEntry),
+    });
+  } catch (error) {
+    console.error('Failed to load owned clips:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to load your uploaded clips right now.',
+    });
+  }
+}
+
+async function handleClipAppealRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const clipId = sanitizeClipField(body.clipId, 80);
+  const deleteToken = normalizeDeleteToken(body.deleteToken);
+  const appealMessage = sanitizeClipField(body.appealMessage, 280);
+  if (!clipId || !deleteToken || !appealMessage) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Clip id, delete token, and appeal message are required.',
+    });
+    return;
+  }
+
+  try {
+    const result = await clipsStore.requestAppeal(clipId, deleteToken, appealMessage);
+    if (result.error === 'clip-not-found') {
+      sendJsonResponse(req, res, 404, {
+        ok: false,
+        error: 'Clip not found.',
+      });
+      return;
+    }
+    if (result.error === 'forbidden') {
+      sendJsonResponse(req, res, 403, {
+        ok: false,
+        error: 'Appeal permission not found for that clip.',
+      });
+      return;
+    }
+    if (!result.clip) {
+      sendJsonResponse(req, res, 500, {
+        ok: false,
+        error: 'Unable to send that appeal right now.',
+      });
+      return;
+    }
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      clip: publicClipEntry(result.clip),
+    });
+  } catch (error) {
+    console.error('Failed to request clip appeal:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to send that appeal right now.',
+    });
+  }
+}
+
+async function handleClipModerationQueueRequest(req, res) {
+  if (!hasClipAdminAccess(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Admin access required.',
+    });
+    return;
+  }
+
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  try {
+    const clips = await clipsStore.listModerationQueue(MAX_MODERATION_QUEUE_ITEMS);
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      clips: clips.map(publicClipEntry),
+    });
+  } catch (error) {
+    console.error('Failed to load moderation queue:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to load the moderation queue right now.',
+    });
+  }
+}
+
+async function handleClipModerationActionRequest(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  if (!hasClipAdminAccess(req, body)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Admin access required.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  const clipId = sanitizeClipField(body.clipId, 80);
+  const action = sanitizeClipField(body.action, 24).toLowerCase();
+  const summary = sanitizeClipField(body.summary, 180);
+  const reasons = Array.isArray(body.reasons)
+    ? body.reasons.map((value) => sanitizeClipField(value, 180)).filter(Boolean)
+    : [];
+
+  if (!clipId || !action) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Clip id and action are required.',
+    });
+    return;
+  }
+
+  try {
+    const result = await clipsStore.applyModerationDecision(clipId, action, {
+      moderationSummary: summary,
+      moderationReasons: reasons,
+      moderationUpdatedAt: new Date().toISOString(),
+    });
+    if (result.error === 'clip-not-found') {
+      sendJsonResponse(req, res, 404, {
+        ok: false,
+        error: 'Clip not found.',
+      });
+      return;
+    }
+    if (result.error === 'invalid-action') {
+      sendJsonResponse(req, res, 400, {
+        ok: false,
+        error: 'Choose approve, reject, or review.',
+      });
+      return;
+    }
+    if (!result.clip) {
+      sendJsonResponse(req, res, 500, {
+        ok: false,
+        error: 'Unable to update moderation right now.',
+      });
+      return;
+    }
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      clip: publicClipEntry(result.clip),
+      queue: (await clipsStore.listModerationQueue(MAX_MODERATION_QUEUE_ITEMS)).map(publicClipEntry),
+    });
+  } catch (error) {
+    console.error('Failed to update moderation decision:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to update moderation right now.',
+    });
+  }
+}
+
+async function handleClipModerationStorageEvent(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const event = parseStorageFinalizeEvent(req, body);
+  if (!event) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Storage finalize event required.',
+    });
+    return;
+  }
+
+  if (event.bucket !== process.env.S3_BUCKET || !event.objectName.startsWith('clips/videos/')) {
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      ignored: true,
+    });
+    return;
+  }
+
+  const videoStorageKey = event.objectName.slice('clips/videos/'.length);
+  try {
+    const clip = await clipsStore.findClipByVideoStorageKey(videoStorageKey);
+    if (!clip) {
+      sendJsonResponse(req, res, 200, {
+        ok: true,
+        ignored: true,
+      });
+      return;
+    }
+
+    const updatedClip = await runClipModeration(clip.id);
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      clip: updatedClip ? publicClipEntry(updatedClip) : null,
+    });
+  } catch (error) {
+    console.error('Failed to process clip moderation storage event:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to process the moderation event right now.',
     });
   }
 }
@@ -1296,8 +1699,18 @@ async function handleClipsRequest(req, res) {
       videoStorageKey: processedClip.videoStorageKey,
       posterStorageKey: processedClip.posterStorageKey,
       reportCount: 0,
-      status: 'active',
+      status: 'pending',
+      moderationState: 'queued',
+      moderationSummary: 'Queued for automated moderation.',
+      moderationReasons: [],
+      moderationDetails: {},
+      moderationUpdatedAt: new Date().toISOString(),
+      appealStatus: 'none',
+      appealMessage: '',
+      appealRequestedAt: '',
     });
+
+    queueClipModeration(storedClip.id);
 
     sendJsonResponse(req, res, 201, {
       ok: true,
@@ -3538,6 +3951,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/clips/admin/moderation-queue') {
+    await handleClipModerationQueueRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/clips/owned') {
+    await handleOwnedClipsRequest(req, res);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/songs/delete') {
     await handleSongDeleteRequest(req, res);
     return;
@@ -3568,6 +3991,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/clips/appeal') {
+    await handleClipAppealRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/clips/admin/moderation-action') {
+    await handleClipModerationActionRequest(req, res);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/clips/comment/delete') {
     await handleClipCommentDeleteRequest(req, res);
     return;
@@ -3575,6 +4008,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/clips/comment/pin') {
     await handleClipCommentPinRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/internal/moderate-storage-event') {
+    await handleClipModerationStorageEvent(req, res);
     return;
   }
 
