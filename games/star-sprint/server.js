@@ -813,6 +813,15 @@ function publicSongsFromStored(storedSongs) {
 
 function publicClipEntry(clip) {
   const media = clipMediaManager.publicClipMedia(clip);
+  const status = String(clip.status || 'pending');
+  const rawModerationState = String(clip.moderationState || '');
+  const normalizedModerationState = status === 'active' && (!rawModerationState || rawModerationState === 'queued')
+    ? 'approved'
+    : rawModerationState;
+  const normalizedModerationSummary = String(clip.moderationSummary || '')
+    || (status === 'active' && normalizedModerationState === 'approved'
+      ? 'This live clip predates the automated moderation metadata rollout.'
+      : '');
   return {
     id: String(clip.id || ''),
     title: String(clip.title || ''),
@@ -841,9 +850,9 @@ function publicClipEntry(clip) {
       : [],
     videoPath: media.videoPath,
     posterPath: media.posterPath,
-    status: String(clip.status || 'pending'),
-    moderationState: String(clip.moderationState || ''),
-    moderationSummary: String(clip.moderationSummary || ''),
+    status,
+    moderationState: normalizedModerationState,
+    moderationSummary: normalizedModerationSummary,
     moderationReasons: Array.isArray(clip.moderationReasons) ? clip.moderationReasons.map((value) => String(value || '')) : [],
     moderationUpdatedAt: String(clip.moderationUpdatedAt || ''),
     reportCount: Number(clip.reportCount || 0),
