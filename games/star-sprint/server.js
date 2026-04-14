@@ -70,6 +70,10 @@ const MAX_CLIP_UPLOAD_BYTES = 24 * 1024 * 1024;
 const GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES = 5 * 1024 * 1024 * 1024;
 const CLIP_ADMIN_TOKEN = String(process.env.CLIP_ADMIN_TOKEN || '').trim();
 const MAX_MODERATION_QUEUE_ITEMS = 60;
+const CLIP_MODERATION_PROCESSING_STALE_MS = Math.max(
+  60 * 1000,
+  Number(process.env.CLIP_MODERATION_PROCESSING_STALE_MS || 10 * 60 * 1000),
+);
 const MAX_CITY_RAID_LOBBIES = 120;
 const CITY_RAID_ROOM_CODE_LENGTH = 5;
 const CITY_RAID_DEFAULT_PORT = 7777;
@@ -1248,13 +1252,19 @@ async function runClipModeration(clipId) {
     return clip;
   }
 
-  if (clip.moderationState === 'processing') {
+  const processingUpdatedAt = Date.parse(String(clip.moderationUpdatedAt || ''));
+  const processingIsFresh = Number.isFinite(processingUpdatedAt)
+    && (Date.now() - processingUpdatedAt) < CLIP_MODERATION_PROCESSING_STALE_MS;
+
+  if (clip.moderationState === 'processing' && processingIsFresh) {
     return clip;
   }
 
   await clipsStore.updateClipModeration(clipId, {
     moderationState: 'processing',
-    moderationSummary: 'Automated moderation is processing this clip now.',
+    moderationSummary: clip.moderationState === 'processing'
+      ? 'Retrying a stalled moderation job now.'
+      : 'Automated moderation is processing this clip now.',
     moderationUpdatedAt: new Date().toISOString(),
   });
 
