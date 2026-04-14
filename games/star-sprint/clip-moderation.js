@@ -294,16 +294,16 @@ function createClipModerationService({ clipMediaManager, dataDir }) {
       summary.medical = Math.max(summary.medical, likelihoodValue(safeSearch.medical));
     });
 
-    return {
-      maxAdult: likelihoodName(summary.adult),
+  return {
+    maxAdult: likelihoodName(summary.adult),
       maxViolence: likelihoodName(summary.violence),
       maxRacy: likelihoodName(summary.racy),
       maxMedical: likelihoodName(summary.medical),
       maxAdultScore: summary.adult,
       maxViolenceScore: summary.violence,
       maxRacyScore: summary.racy,
-      maxMedicalScore: summary.medical,
-    };
+    maxMedicalScore: summary.medical,
+  };
   }
 
 function buildDecision({
@@ -311,67 +311,74 @@ function buildDecision({
   explicitContent,
   transcriptResult,
   scanErrors,
-  frameScanAvailable,
 }) {
   const rejectReasons = [];
   const reviewReasons = [];
-  const visualScanAvailable = Boolean(frameScanAvailable) || Boolean(explicitContent.available);
+  const strongReviewTerms = new Set(['nazi', 'terrorist', 'suicide']);
 
-  if (explicitContent.available && explicitContent.maxLikelihoodScore >= 4) {
+  if (explicitContent.available && explicitContent.maxLikelihoodScore >= 5) {
     rejectReasons.push(`Video explicit-content score was ${explicitContent.maxLikelihood}.`);
+  } else if (explicitContent.available && explicitContent.maxLikelihoodScore >= 4) {
+    reviewReasons.push(`Video explicit-content score was ${explicitContent.maxLikelihood}.`);
   }
 
-    if (frameSafety.maxAdultScore >= 4) {
-      rejectReasons.push(`Frame safety flagged adult content as ${frameSafety.maxAdult}.`);
-    } else if (frameSafety.maxAdultScore >= 3) {
-      reviewReasons.push(`Frame safety flagged adult content as ${frameSafety.maxAdult}.`);
-    }
+  if (frameSafety.maxAdultScore >= 5) {
+    rejectReasons.push(`Frame safety flagged adult content as ${frameSafety.maxAdult}.`);
+  } else if (frameSafety.maxAdultScore >= 4) {
+    reviewReasons.push(`Frame safety flagged adult content as ${frameSafety.maxAdult}.`);
+  }
 
-    if (frameSafety.maxRacyScore >= 5) {
-      rejectReasons.push(`Frame safety flagged racy content as ${frameSafety.maxRacy}.`);
-    } else if (frameSafety.maxRacyScore >= 4) {
-      reviewReasons.push(`Frame safety flagged racy content as ${frameSafety.maxRacy}.`);
-    }
+  if (frameSafety.maxRacyScore >= 5) {
+    reviewReasons.push(`Frame safety flagged racy content as ${frameSafety.maxRacy}.`);
+  }
 
-    if (frameSafety.maxViolenceScore >= 4) {
-      reviewReasons.push(`Frame safety flagged violence as ${frameSafety.maxViolence}.`);
-    }
+  if (frameSafety.maxViolenceScore >= 5) {
+    reviewReasons.push(`Frame safety flagged violence as ${frameSafety.maxViolence}.`);
+  }
 
-    transcriptResult.flaggedTerms.forEach((entry) => {
-      if (entry.severity === 'reject') {
-        rejectReasons.push(`Transcript matched restricted phrase "${entry.term}".`);
-      } else {
-        reviewReasons.push(`Transcript matched review phrase "${entry.term}".`);
-      }
-    });
+  const transcriptRejectTerms = transcriptResult.flaggedTerms.filter((entry) => entry.severity === 'reject');
+  const transcriptReviewTerms = transcriptResult.flaggedTerms.filter((entry) => entry.severity === 'review');
 
-  if (!visualScanAvailable) {
-    reviewReasons.push('Automated visual moderation was unavailable, so this clip needs review.');
+  transcriptRejectTerms.forEach((entry) => {
+    rejectReasons.push(`Transcript matched restricted phrase "${entry.term}".`);
+  });
+
+  const strongTranscriptReviewTerms = transcriptReviewTerms.filter((entry) => strongReviewTerms.has(entry.term));
+  const softTranscriptReviewTerms = transcriptReviewTerms.filter((entry) => !strongReviewTerms.has(entry.term));
+
+  strongTranscriptReviewTerms.forEach((entry) => {
+    reviewReasons.push(`Transcript matched review phrase "${entry.term}".`);
+  });
+
+  if (softTranscriptReviewTerms.length >= 2) {
+    reviewReasons.push(
+      `Transcript matched multiple review phrases (${softTranscriptReviewTerms.map((entry) => `"${entry.term}"`).join(', ')}).`,
+    );
   }
 
   if (rejectReasons.length) {
     return {
       status: 'rejected',
       moderationState: 'rejected',
-        moderationSummary: 'The automated moderation scan rejected this upload.',
-        moderationReasons: rejectReasons,
-      };
-    }
+      moderationSummary: 'The automated moderation scan rejected this upload.',
+      moderationReasons: rejectReasons,
+    };
+  }
 
   if (reviewReasons.length) {
     return {
       status: 'review',
       moderationState: 'flagged',
       moderationSummary: 'The automated moderation scan sent this clip to review.',
-        moderationReasons: reviewReasons,
-      };
-    }
+      moderationReasons: reviewReasons,
+    };
+  }
 
   return {
     status: 'active',
     moderationState: 'approved',
     moderationSummary: scanErrors.length
-      ? 'Automated moderation checks passed. One or more supplemental scans were unavailable.'
+      ? 'Automated moderation checks passed. Some supplemental scans were unavailable, but nothing severe was detected.'
       : 'Automated moderation checks passed.',
     moderationReasons: [],
   };
@@ -440,7 +447,6 @@ function buildDecision({
         explicitContent,
         transcriptResult,
         scanErrors,
-        frameScanAvailable: frameAnnotations.length > 0,
       });
 
       return {
