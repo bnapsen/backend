@@ -79,10 +79,10 @@ body::before {
 
 .topbar {
   position: absolute;
-  inset: 10px 16px auto;
+  inset: 8px 12px auto;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   z-index: 5;
 }
 
@@ -102,15 +102,15 @@ body::before {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
-  padding: 0 13px;
+  min-height: 32px;
+  padding: 0 11px;
   border-radius: 999px;
   background: rgba(7, 14, 24, 0.74);
   color: var(--text);
   text-decoration: none;
   font-weight: 700;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
 }
 
 .brand-block {
@@ -150,25 +150,25 @@ body::before {
 
 .brand-block strong {
   display: block;
-  font-size: 1rem;
+  font-size: 0.92rem;
 }
 
 .topbar-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
 }
 
 .status-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
-  padding: 0 13px;
+  min-height: 32px;
+  padding: 0 11px;
   border-radius: 999px;
   background: rgba(7, 14, 24, 0.82);
   font-weight: 700;
-  font-size: 0.88rem;
+  font-size: 0.8rem;
 }
 
 .status-pill[data-tone='online'] {
@@ -197,12 +197,12 @@ body::before {
 .hud-band {
   position: absolute;
   left: 50%;
-  top: 58px;
+  top: 42px;
   transform: translateX(-50%);
-  width: min(560px, calc(100vw - 420px));
-  min-width: min(450px, calc(100vw - 440px));
-  padding: 10px 14px 9px;
-  border-radius: 18px;
+  width: min(460px, calc(100vw - 420px));
+  min-width: min(360px, calc(100vw - 440px));
+  padding: 8px 11px 7px;
+  border-radius: 16px;
   z-index: 4;
 }
 
@@ -210,18 +210,18 @@ body::before {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 10px;
-  font-size: clamp(1.05rem, 1.55vw, 1.42rem);
+  gap: 8px;
+  font-size: clamp(0.92rem, 1.35vw, 1.18rem);
   font-weight: 800;
 }
 
 .team {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.74rem;
+  gap: 4px;
+  font-size: 0.62rem;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
 }
 
 .team.blue {
@@ -235,17 +235,17 @@ body::before {
 }
 
 .hud-strip {
-  margin-top: 6px;
+  margin-top: 4px;
   flex-wrap: wrap;
-  gap: 8px 14px;
-  font-size: 0.78rem;
+  gap: 5px 10px;
+  font-size: 0.68rem;
   justify-content: center;
 }
 
 .status-copy {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   line-height: 1.35;
-  font-size: 0.77rem;
+  font-size: 0.7rem;
 }
 
 .panel {
@@ -261,14 +261,36 @@ body::before {
 }
 
 .game-shell.match-live .hud-band {
-  top: 50px;
-  width: min(470px, calc(100vw - 32px));
+  top: 38px;
+  width: min(380px, calc(100vw - 24px));
   min-width: 0;
-  padding: 8px 12px;
+  padding: 6px 10px;
 }
 
 .game-shell.match-live .status-copy {
   display: none;
+}
+
+.game-shell.match-live .brand-block,
+.game-shell.match-live #modePill {
+  display: none;
+}
+
+.game-shell.match-live .topbar {
+  inset: 6px 10px auto;
+  gap: 8px;
+}
+
+.game-shell.match-live .topbar-actions {
+  gap: 5px;
+}
+
+.game-shell.match-live .back-link,
+.game-shell.match-live .ghost-btn,
+.game-shell.match-live .status-pill {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 0.76rem;
 }
 
 .setup-panel {
@@ -586,7 +608,7 @@ button:hover {
 
 @media (max-width: 1200px) {
   .hud-band {
-    width: min(560px, calc(100vw - 40px));
+    width: min(460px, calc(100vw - 40px));
     min-width: 0;
   }
 
@@ -603,13 +625,13 @@ button:hover {
   }
 
   .hud-band {
-    top: 108px;
+    top: 92px;
     width: calc(100vw - 24px);
   }
 
   .game-shell.match-live .hud-band {
-    top: 100px;
-    width: min(440px, calc(100vw - 24px));
+    top: 84px;
+    width: min(360px, calc(100vw - 20px));
   }
 
   .panel {
@@ -648,7 +670,7 @@ button:hover {
     grid-template-columns: 1fr;
     justify-items: center;
     text-align: center;
-    gap: 8px;
+    gap: 5px;
   }
 
   .team.blue,
@@ -657,7 +679,7 @@ button:hover {
   }
 
   .hud-strip {
-    font-size: 0.74rem;
+    font-size: 0.64rem;
   }
 
   .settings-grid {

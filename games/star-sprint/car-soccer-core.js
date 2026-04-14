@@ -22,8 +22,8 @@
   const TEAM_KEYS = ['blue', 'orange'];
   const BOOST_PAD_COOLDOWN = 7;
   const BOOST_PAD_RADIUS = 34;
-  const CAR_TURN_POWER = 2.45;
-  const CAR_MAX_ANGULAR_SPEED = 0.095;
+  const CAR_TURN_POWER = 1.92;
+  const CAR_MAX_ANGULAR_SPEED = 0.074;
   const CAR_ACCELERATION = 720;
   const BOOST_FORCE = 1200;
   const BOOST_DRAIN_PER_SEC = 33;
