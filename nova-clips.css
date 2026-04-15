@@ -564,6 +564,7 @@
     background:
         linear-gradient(180deg, rgba(7, 16, 27, 0.97), rgba(6, 13, 23, 0.94));
     min-height: calc(100dvh - 9.6rem);
+    align-items: start;
     scroll-snap-align: start;
     scroll-snap-stop: always;
 }
@@ -572,9 +573,10 @@
     position: relative;
     display: grid;
     place-items: center;
-    aspect-ratio: var(--clip-shell-aspect-ratio, 9 / 16);
     width: 100%;
-    min-height: clamp(640px, calc(100dvh - 18rem), 1120px);
+    height: min(78vh, calc(100dvh - 11.25rem));
+    min-height: min(60vh, 620px);
+    max-height: calc(100dvh - 11.25rem);
     margin: 0;
     border-radius: 24px;
     overflow: hidden;
@@ -612,13 +614,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.25rem;
+    padding: 0.45rem;
 }
 
 .clip-card video,
 .clip-feed-video {
-    width: 100%;
-    height: 100%;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
     background: #02050a;
     border-radius: 20px;
@@ -839,20 +843,6 @@
     border-color: rgba(118, 255, 188, 0.24);
 }
 
-.clip-mute-toggle {
-    position: absolute;
-    z-index: 3;
-    right: 0.9rem;
-    bottom: 0.9rem;
-    padding: 0.65rem 0.9rem;
-    border: 0;
-    border-radius: 999px;
-    color: #f5fbff;
-    background: rgba(3, 7, 13, 0.72);
-    backdrop-filter: blur(12px);
-    cursor: pointer;
-}
-
 .hidden {
     display: none !important;
 }
@@ -871,6 +861,12 @@
     .clip-card {
         grid-template-columns: 1fr;
         min-height: calc(100dvh - 8.5rem);
+    }
+
+    .clip-card-video-shell {
+        height: min(72vh, calc(100dvh - 12rem));
+        min-height: min(56vh, 560px);
+        max-height: calc(100dvh - 12rem);
     }
 
     .clip-card-meta {
@@ -905,7 +901,9 @@
 
     .clip-card-video-shell {
         width: 100%;
-        min-height: calc(100dvh - 16rem);
+        height: min(66vh, calc(100dvh - 13rem));
+        min-height: min(52vh, 480px);
+        max-height: calc(100dvh - 13rem);
     }
 
     .clips-feed {

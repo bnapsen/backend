@@ -1199,28 +1199,6 @@ function createClipCard(clip) {
     mediaFrame.appendChild(video);
     mediaShell.appendChild(mediaFrame);
 
-    const muteButton = document.createElement("button");
-    muteButton.type = "button";
-    muteButton.className = "clip-mute-toggle";
-    updateMuteButtonState(video, muteButton);
-    muteButton.addEventListener("click", async () => {
-        const nextMuted = !video.muted;
-        video.dataset.userMuted = nextMuted ? "true" : "false";
-        if (!nextMuted) {
-            state.audioUnlocked = true;
-            video.muted = false;
-            video.defaultMuted = false;
-            updateMuteButtonState(video, muteButton);
-            await video.play().catch(() => {});
-            return;
-        }
-
-        video.muted = true;
-        video.defaultMuted = true;
-        updateMuteButtonState(video, muteButton);
-    });
-    mediaShell.appendChild(muteButton);
-
     const meta = document.createElement("div");
     meta.className = "clip-card-meta";
 
