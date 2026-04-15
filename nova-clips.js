@@ -1,6 +1,6 @@
 const PROD_CLIPS_API_BASE = "https://nova-arcade-backend-1000121513328.us-central1.run.app";
 const CLIP_OWNERSHIP_STORAGE_KEY = "nova-clips:owned-uploads";
-const MAX_CLIP_UPLOAD_BYTES = 24 * 1024 * 1024;
+  const MAX_CLIP_UPLOAD_BYTES = 30 * 1024 * 1024;
 const CLIP_REPORTER_STORAGE_KEY = "nova-clips:reporter-id";
 const CLIP_VIEWER_STORAGE_KEY = "nova-clips:viewer-id";
 const CLIP_COMMENTER_NAME_STORAGE_KEY = "nova-clips:commenter-name";
@@ -1802,7 +1802,7 @@ async function handleClipSelection(file) {
 
     if (file.size > MAX_CLIP_UPLOAD_BYTES) {
         state.selectedFile = null;
-        setUploadStatus("Keep uploads at or under 24 MB before processing.", true);
+        setUploadStatus("Keep uploads at or under 30 MB before processing.", true);
         return;
     }
 
