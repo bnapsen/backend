@@ -1815,13 +1815,13 @@ async function handleClipSelection(file) {
             throw new Error("That video could not be measured.");
         }
 
-        if (metadata.duration > 30.2) {
-            throw new Error("Videos must be 30 seconds or shorter.");
+        if (metadata.duration > 60.2) {
+            throw new Error("Videos must be 60 seconds or shorter.");
         }
 
         showLocalPreview(file, metadata, "Looks good");
     } catch (error) {
-        if (String(error && error.message || "").includes("30 seconds")) {
+        if (String(error && error.message || "").includes("60 seconds")) {
             state.selectedFile = null;
             releasePreviewUrl();
             previewPanel.classList.add("hidden");

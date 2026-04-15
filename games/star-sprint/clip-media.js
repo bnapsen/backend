@@ -220,7 +220,7 @@ function createClipMediaManager({ dataDir }) {
       '-b:a', '128k',
       '-ac', '2',
       '-ar', '48000',
-      '-t', '30',
+        '-t', '60',
       outputPath,
     ]);
   }
@@ -323,9 +323,9 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     let measured = null;
     try {
       measured = await probeVideoFile(tempInputPath);
-      if (measured.durationSeconds > 30.4) {
-        throw new Error('Videos must be 30 seconds or shorter.');
-      }
+        if (measured.durationSeconds > 60.4) {
+          throw new Error('Videos must be 60 seconds or shorter.');
+        }
 
       await transcodeVideoToMp4(tempInputPath, tempVideoOutputPath);
       const transcodedMeasure = await probeVideoFile(tempVideoOutputPath);
