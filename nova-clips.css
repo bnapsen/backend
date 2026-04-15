@@ -938,69 +938,124 @@
         border-radius: 16px;
     }
 
-    .clip-card-video-shell {
-        width: 100%;
-        height: clamp(240px, 42dvh, 380px);
-        min-height: 0;
-        max-height: 42dvh;
-    }
-
-    .clip-card--vertical .clip-card-video-shell {
-        height: clamp(280px, 48dvh, 460px);
-        min-height: 0;
-        max-height: 48dvh;
-    }
-
-    .clip-card--horizontal .clip-card-video-shell {
-        height: clamp(220px, 34dvh, 320px);
-        min-height: 0;
-        max-height: 34dvh;
-    }
-
     .clips-feed {
         height: calc(100dvh - 5.8rem);
     }
 
     .clip-card {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr) 142px;
+        grid-template-rows: 1fr;
         height: calc(100dvh - 7.2rem);
         min-height: calc(100dvh - 7.2rem);
         overflow: hidden;
+        gap: 0.55rem;
+        padding: 0.55rem;
+        align-items: stretch;
+    }
+
+    .clip-card-video-shell,
+    .clip-card--vertical .clip-card-video-shell,
+    .clip-card--horizontal .clip-card-video-shell {
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        max-height: none;
+    }
+
+    .clip-card-video-frame {
+        padding: 0.4rem 0.4rem 0.72rem;
+    }
+
+    .clip-card--vertical .clip-card-video-frame,
+    .clip-card-video-frame {
+        max-width: 100%;
     }
 
     .clip-card-meta {
+        display: flex;
+        flex-direction: column;
         min-height: 0;
-        max-height: none;
+        max-height: 100%;
         overflow: auto;
         padding-right: 0.1rem;
         padding-bottom: 0.2rem;
+        gap: 0.5rem;
+    }
+
+    .clip-pill-row,
+    .clip-card-note,
+    .clip-card-byline,
+    .clip-card-date {
+        display: none;
     }
 
     .clip-card-title {
-        font-size: 1.15rem;
+        order: 3;
+        font-size: 0.98rem;
+        line-height: 1.15;
     }
 
-    .clip-card-caption,
-    .clip-card-byline,
-    .clip-card-date,
-    .clip-card-note {
-        font-size: 0.88rem;
+    .clip-card-caption {
+        order: 4;
+        font-size: 0.78rem;
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
     }
 
-    .clip-card-metrics,
-    .clip-reaction-row {
+    .clip-card-metrics {
+        order: 1;
         gap: 0.4rem;
+    }
+
+    .clip-reaction-row {
+        order: 2;
+        gap: 0.35rem;
+    }
+
+    .clip-comments {
+        order: 5;
+        padding: 0.65rem;
+    }
+
+    .clip-card-actions {
+        order: 6;
+        margin-top: 0;
+        gap: 0.45rem;
     }
 
     .clip-metric,
     .clip-reaction-button,
     .clip-action,
-    .clip-comment-tool {
+    .clip-comment-tool,
+    .clip-comment-badge {
         font-size: 0.76rem;
+        padding-left: 0.58rem;
+        padding-right: 0.58rem;
+    }
+
+    .clip-comments-heading,
+    .clip-comment-empty,
+    .clip-comment-body,
+    .clip-comment-author {
+        font-size: 0.78rem;
+    }
+
+    .clip-comment {
+        padding: 0.45rem 0.5rem;
     }
 
     .clip-comment-form {
         grid-template-columns: 1fr;
+        gap: 0.4rem;
+        margin-top: 0.55rem;
+    }
+
+    .clip-comment-name,
+    .clip-comment-input {
+        padding: 0.58rem 0.65rem;
+        font-size: 0.78rem;
     }
 }
