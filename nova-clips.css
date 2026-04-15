@@ -30,8 +30,8 @@
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 1.2rem;
-    padding: 0.8rem 1rem;
+    gap: 0.7rem;
+    padding: 0.55rem 0.8rem;
     border: 1px solid rgba(127, 162, 205, 0.16);
     border-radius: 22px;
     background:
@@ -46,14 +46,14 @@
 
 .clips-copy h1 {
     margin: 0;
-    font-size: clamp(1.6rem, 2.2vw, 2.5rem);
+    font-size: clamp(1.25rem, 1.7vw, 1.9rem);
 }
 
 .clips-lede {
-    max-width: 54ch;
+    max-width: 44ch;
     color: #dbe9fb;
     margin: 0;
-    font-size: 0.98rem;
+    font-size: 0.88rem;
 }
 
 .clips-highlights {
@@ -121,16 +121,14 @@
 }
 
 .upload-panel {
-    position: sticky;
-    top: 0.65rem;
-    z-index: 6;
-    max-height: none;
-    overflow: visible;
-    padding: 0.75rem 0.9rem;
+    position: static;
+    padding: 0.65rem 0.8rem;
+    order: 2;
 }
 
 .feed-panel {
     padding: 0.85rem;
+    order: 1;
 }
 
 .clips-panel-head {
@@ -161,6 +159,10 @@
 
 .upload-panel .clips-panel-head h2 {
     font-size: 1.05rem;
+}
+
+.upload-panel .section-kicker {
+    display: none;
 }
 
 .clip-admin-panel {
@@ -369,13 +371,13 @@
 
 .clip-upload-form {
     display: grid;
-    grid-template-columns: minmax(220px, 300px) minmax(160px, 200px) minmax(170px, 220px) minmax(240px, 1fr) auto;
-    gap: 0.7rem;
+    grid-template-columns: minmax(180px, 230px) minmax(140px, 180px) minmax(160px, 200px) minmax(180px, 1fr) auto;
+    gap: 0.55rem;
     align-items: end;
 }
 
 .clip-drop-zone {
-    padding: 0.9rem 1rem;
+    padding: 0.7rem 0.85rem;
     border: 1px dashed rgba(113, 216, 255, 0.4);
     border-radius: 18px;
     background:
@@ -418,9 +420,13 @@
     font-family: "Oxanium", "Segoe UI", sans-serif;
 }
 
+.clip-drop-zone h3 {
+    font-size: 1rem;
+}
+
 .clip-pick-button,
 .clip-submit-button {
-    margin-top: 0.55rem;
+    margin-top: 0.4rem;
 }
 
 .clip-preview-panel {
@@ -486,7 +492,7 @@
 .clips-upload-note {
     grid-column: 1 / -2;
     margin: 0;
-    font-size: 0.84rem;
+    font-size: 0.78rem;
 }
 
 #clip-upload-status {
@@ -504,7 +510,7 @@
 }
 
 .clips-feed {
-    height: calc(100dvh - 8.6rem);
+    height: calc(100dvh - 6.6rem);
     max-height: none;
     overflow-y: auto;
     overflow-x: hidden;
@@ -533,7 +539,7 @@
 
 @media (max-width: 1320px) {
     .clip-upload-form {
-        grid-template-columns: minmax(220px, 1.2fr) repeat(2, minmax(170px, 0.8fr)) minmax(220px, 1fr);
+        grid-template-columns: minmax(180px, 1.1fr) repeat(2, minmax(150px, 0.8fr)) minmax(180px, 1fr);
     }
 
     .clip-submit-button {
@@ -851,12 +857,6 @@
 }
 
 @media (max-width: 1120px) {
-    .upload-panel {
-        position: static;
-        max-height: none;
-        overflow: visible;
-    }
-
     .clip-upload-form {
         grid-template-columns: 1fr;
     }
@@ -890,7 +890,7 @@
     }
 
     .clips-lede {
-        max-width: 100%;
+        display: none;
     }
 
     .clips-highlights {
@@ -908,7 +908,7 @@
     }
 
     .clips-feed {
-        height: calc(100dvh - 6.4rem);
+        height: calc(100dvh - 5.8rem);
     }
 
     .clip-card {
