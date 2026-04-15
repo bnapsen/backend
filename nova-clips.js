@@ -579,6 +579,22 @@ function moderationBadgeKey(clip) {
     return String(clip?.status || moderationState || "pending").toLowerCase();
 }
 
+function clipNeedsOwnerAttention(clip) {
+    const status = String(clip?.status || "").toLowerCase();
+    const moderationState = String(clip?.moderationState || "").toLowerCase();
+    const appealStatus = String(clip?.appealStatus || "").toLowerCase();
+
+    if (appealStatus === "pending") {
+        return true;
+    }
+
+    if (moderationState === "processing") {
+        return true;
+    }
+
+    return ["pending", "review", "rejected", "flagged"].includes(status);
+}
+
 function currentCommenterName() {
     return readCommenterName() || uploaderNameInput?.value?.trim() || "";
 }
@@ -1554,15 +1570,18 @@ function renderOwnedClips(clips) {
     }
 
     const safeClips = Array.isArray(clips) ? clips : [];
-    state.ownedClips = safeClips;
-    clipOwnedPanel.classList.toggle("hidden", safeClips.length === 0);
+    const actionableClips = safeClips.filter((clip) => clipNeedsOwnerAttention(clip));
+    state.ownedClips = actionableClips;
+    clipOwnedPanel.classList.toggle("hidden", actionableClips.length === 0);
     clipOwnedList.innerHTML = "";
     clipOwnedStatus.style.color = "";
-    clipOwnedStatus.textContent = safeClips.length
-        ? "Your uploaded clips stay here even while they wait for moderation."
-        : "Upload a clip to see its moderation status here.";
+    clipOwnedStatus.textContent = actionableClips.length
+        ? "Only uploads that still need attention stay here."
+        : safeClips.length
+            ? "All of your recent uploads are live."
+            : "Upload a clip to see its moderation status here.";
 
-    safeClips.forEach((clip) => {
+    actionableClips.forEach((clip) => {
         const article = document.createElement("article");
         article.className = "clip-owned-card";
 

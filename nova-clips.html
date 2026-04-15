@@ -25,7 +25,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="nova-clips.css?v=20260414n">
+    <link rel="stylesheet" href="nova-clips.css?v=20260414o">
 </head>
 <body class="clips-body">
     <div class="clips-shell">
@@ -36,10 +36,7 @@
                 <p class="eyebrow">Short video app</p>
                 <h1>Nova Clips</h1>
                 <p class="clips-lede">
-                    Upload a clip, keep it live on the site, and scroll a vertical feed of community videos.
-                    This is the arcade's short-form app: 60 seconds max, persistent storage, playable feed,
-                    plus views, likes, dislikes, emoji reactions, comments, top-comment pinning on your own clips,
-                    delete controls where you own the content, and report controls for the rest.
+                    Upload up to 60 seconds, keep it live on the site, and scroll the community feed.
                 </p>
 
                 <div class="clips-highlights" aria-label="Nova Clips highlights">
@@ -57,29 +54,16 @@
                     </article>
                 </div>
             </div>
-
-            <aside class="clips-feature">
-                <p class="section-kicker">How it works</p>
-                <h2>Upload. Scroll. Keep it live.</h2>
-                <p>Videos are checked for duration, normalized into a web-ready mp4, given a poster image, and added to the live feed.</p>
-                <ul class="clips-feature-list">
-                    <li>Up to 60 seconds per clip</li>
-                    <li>Views, likes, emojis, comments, and a pinned top comment live with each clip</li>
-                    <li>Delete your own uploads and manage comments you own</li>
-                    <li>Report other clips if needed</li>
-                    <li>Phone-friendly full-height feed cards</li>
-                </ul>
-            </aside>
         </section>
 
         <main class="clips-layout">
             <section class="clips-panel upload-panel">
                 <div class="clips-panel-head">
                     <div>
-                        <p class="section-kicker">Upload a clip</p>
-                        <h2>Post something that stays up</h2>
+                        <p class="section-kicker">Post a clip</p>
+                        <h2>Upload</h2>
                     </div>
-                    <p>We turn uploads into a feed-ready clip and keep it on the live shelf until it gets deleted.</p>
+                    <p>Quick composer for new posts.</p>
                 </div>
 
                 <form id="clip-upload-form" class="clip-upload-form">
@@ -133,9 +117,9 @@
                     <div class="clip-owned-head">
                         <div>
                             <p class="section-kicker">Your uploads</p>
-                            <h3>Moderation status</h3>
+                            <h3>Needs attention</h3>
                         </div>
-                        <p>Your own clips stay here so you can see whether they are pending, approved, under review, or rejected.</p>
+                        <p>Only uploads that are still pending, under review, rejected, or under appeal show here.</p>
                     </div>
                     <p id="clip-owned-status" class="clip-owned-status">Checking your uploaded clips...</p>
                     <div id="clip-owned-list" class="clip-owned-list"></div>
@@ -203,6 +187,6 @@
         </main>
     </div>
 
-    <script src="nova-clips.js?v=20260414n" defer></script>
+    <script src="nova-clips.js?v=20260414o" defer></script>
 </body>
 </html>
