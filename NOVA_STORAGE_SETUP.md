@@ -67,6 +67,10 @@ gcloud run deploy nova-arcade-backend `
 The repo root `Dockerfile` builds the backend and includes the City Raid
 download assets served by the backend routes.
 
+Cloud Run should be kept at at least `1 GiB` of memory for Nova Clips, since
+clip finalize/transcode work can exceed the default `512 MiB` on larger phone
+uploads.
+
 ## Automatic deploys from GitHub
 
 Pushes to `main` now trigger two GitHub Actions flows:

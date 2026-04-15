@@ -4,6 +4,7 @@ const childProcess = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const stream = require('stream');
 const { promisify } = require('util');
 const ffmpegStatic = require('ffmpeg-static');
 const ffprobeStatic = require('ffprobe-static');
@@ -19,6 +20,7 @@ const {
 const { Storage } = require('@google-cloud/storage');
 
 const execFile = promisify(childProcess.execFile);
+const pipeline = promisify(stream.pipeline);
 
 const VIDEO_EXTENSION_TO_MIME = new Map([
   ['.mp4', 'video/mp4'],
@@ -283,11 +285,10 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     if (s3Enabled) {
       const bucketName = bucketNameForAsset(assetType);
       await ensureBucket(bucketName);
-      const body = await fs.promises.readFile(tempPath);
       await s3Client.send(new PutObjectCommand({
         Bucket: bucketName,
         Key: prefixedKey(assetType, safeKeyName),
-        Body: body,
+        Body: fs.createReadStream(tempPath),
         ContentType: contentType,
         CacheControl: 'public, max-age=31536000, immutable',
       }));
@@ -320,8 +321,7 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
       Bucket: bucketName,
       Key: prefixedKey(assetType, safeKeyName),
     }));
-    const body = await response.Body.transformToByteArray();
-    await fs.promises.writeFile(outputPath, Buffer.from(body));
+    await pipeline(response.Body, fs.createWriteStream(outputPath));
     return outputPath;
   }
 
@@ -483,8 +483,7 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
         Bucket: process.env.S3_BUCKET,
         Key: prefixedKey('raw', safeKeyName),
       }));
-      const body = await response.Body.transformToByteArray();
-      await fs.promises.writeFile(tempInputPath, Buffer.from(body));
+      await pipeline(response.Body, fs.createWriteStream(tempInputPath));
     }
 
     try {

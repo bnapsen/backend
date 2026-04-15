@@ -62,6 +62,7 @@ jobs:
             --region "${GCP_REGION}" \
             --image "${IMAGE}" \
             --service-account "${CLOUD_RUN_RUNTIME_SA}" \
+            --memory "1Gi" \
             --allow-unauthenticated \
             --quiet
 
