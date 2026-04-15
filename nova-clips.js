@@ -1165,6 +1165,11 @@ function createClipCard(clip) {
     const article = document.createElement("article");
     article.className = "clip-card";
     article.dataset.clipId = clip.id;
+    const clipWidth = Number(clip?.width || 0);
+    const clipHeight = Number(clip?.height || 0);
+    article.classList.add(
+        clipHeight > clipWidth && clipWidth > 0 ? "clip-card--vertical" : "clip-card--horizontal"
+    );
 
     const mediaShell = document.createElement("div");
     mediaShell.className = "clip-card-video-shell";
