@@ -1,6 +1,6 @@
 const PROD_CLIPS_API_BASE = "https://nova-arcade-backend-1000121513328.us-central1.run.app";
 const CLIP_OWNERSHIP_STORAGE_KEY = "nova-clips:owned-uploads";
-  const MAX_CLIP_UPLOAD_BYTES = 30 * 1024 * 1024;
+  const MAX_CLIP_UPLOAD_BYTES = 200 * 1024 * 1024;
 const CLIP_REPORTER_STORAGE_KEY = "nova-clips:reporter-id";
 const CLIP_VIEWER_STORAGE_KEY = "nova-clips:viewer-id";
 const CLIP_COMMENTER_NAME_STORAGE_KEY = "nova-clips:commenter-name";
@@ -139,6 +139,14 @@ function clipsApiBase() {
 
 function clipsEndpoint() {
     return `${clipsApiBase()}/api/clips`;
+}
+
+function clipUploadSessionEndpoint() {
+    return `${clipsApiBase()}/api/clips/upload-session`;
+}
+
+function clipFinalizeUploadEndpoint() {
+    return `${clipsApiBase()}/api/clips/finalize-upload`;
 }
 
 function clipDeleteEndpoint() {
@@ -1802,7 +1810,7 @@ async function handleClipSelection(file) {
 
     if (file.size > MAX_CLIP_UPLOAD_BYTES) {
         state.selectedFile = null;
-        setUploadStatus("Keep uploads at or under 30 MB before processing.", true);
+        setUploadStatus("Keep uploads at or under 200 MB before processing.", true);
         return;
     }
 
@@ -1834,18 +1842,71 @@ async function handleClipSelection(file) {
     }
 }
 
-async function uploadClip(file) {
-    if (!file || state.uploadInFlight) {
-        if (!file) {
-            setUploadStatus("Choose a clip first.");
-        }
-        return;
+async function requestDirectClipUploadSession(file) {
+    const response = await fetch(clipUploadSessionEndpoint(), {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            fileName: file.name,
+            mimeType: file.type || "",
+            sizeBytes: file.size,
+            uploaderName: uploaderNameInput.value.trim(),
+            title: titleInput.value.trim(),
+            caption: captionInput.value.trim(),
+        }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Unable to start a direct upload.");
     }
+    return payload;
+}
 
-    state.uploadInFlight = true;
-    setDropZoneState({ busy: true });
-    setUploadStatus("Uploading clip...");
+function uploadFileToCloudSession(uploadUrl, file, onProgress) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl, true);
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.upload.onprogress = (event) => {
+            if (!event.lengthComputable || typeof onProgress !== "function") {
+                return;
+            }
+            onProgress(event.loaded, event.total);
+        };
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                resolve();
+                return;
+            }
+            reject(new Error(xhr.responseText || "Direct upload failed."));
+        };
+        xhr.onerror = () => reject(new Error("Direct upload failed."));
+        xhr.onabort = () => reject(new Error("Direct upload was canceled."));
+        xhr.send(file);
+    });
+}
 
+async function finalizeDirectClipUpload(rawUploadKey, uploadToken) {
+    const response = await fetch(clipFinalizeUploadEndpoint(), {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            rawUploadKey,
+            uploadToken,
+        }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Unable to finish processing that clip.");
+    }
+    return payload;
+}
+
+async function uploadClipLegacy(file) {
     const formData = new FormData();
     formData.append("clipFile", file);
     if (uploaderNameInput.value.trim()) {
@@ -1858,19 +1919,46 @@ async function uploadClip(file) {
         formData.append("caption", captionInput.value.trim());
     }
 
-    try {
-        const response = await fetch(clipsEndpoint(), {
-            method: "POST",
-            body: formData,
-        });
-        let payload = null;
-        try {
-            payload = await response.json();
-        } catch {
-            throw new Error("The upload service returned an unreadable response.");
+    const response = await fetch(clipsEndpoint(), {
+        method: "POST",
+        body: formData,
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Unable to save that clip right now.");
+    }
+    return payload;
+}
+
+async function uploadClip(file) {
+    if (!file || state.uploadInFlight) {
+        if (!file) {
+            setUploadStatus("Choose a clip first.");
         }
-        if (!response.ok || !payload.ok) {
-            throw new Error(payload.error || "Unable to save that clip right now.");
+        return;
+    }
+
+    state.uploadInFlight = true;
+    setDropZoneState({ busy: true });
+    setUploadStatus("Preparing upload...");
+
+    try {
+        let payload;
+        try {
+            const session = await requestDirectClipUploadSession(file);
+            setUploadStatus("Uploading clip directly to cloud storage...");
+            await uploadFileToCloudSession(session.uploadUrl, file, (loaded, total) => {
+                const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((loaded / total) * 100))) : 0;
+                setUploadStatus(`Uploading clip directly to cloud storage... ${percent}%`);
+            });
+            setUploadStatus("Processing clip for the live feed...");
+            payload = await finalizeDirectClipUpload(session.rawUploadKey, session.uploadToken);
+        } catch (error) {
+            if (file.size > 30 * 1024 * 1024) {
+                throw error;
+            }
+            setUploadStatus("Direct upload hit a snag. Falling back to legacy upload...");
+            payload = await uploadClipLegacy(file);
         }
 
         rememberOwnedUpload(payload.clip.id, payload.deleteToken);

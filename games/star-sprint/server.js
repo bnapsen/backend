@@ -67,8 +67,16 @@ const MAX_SONG_UPLOAD_BYTES = 24 * 1024 * 1024;
 const MAX_CLIPS = 0;
 const MAX_VISIBLE_CLIPS = 60;
 const MAX_CLIP_UPLOAD_BYTES = 30 * 1024 * 1024;
+const MAX_DIRECT_CLIP_UPLOAD_BYTES = 200 * 1024 * 1024;
+const CLIP_DIRECT_UPLOAD_TTL_MS = 2 * 60 * 60 * 1000;
 const GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES = 5 * 1024 * 1024 * 1024;
 const CLIP_ADMIN_TOKEN = String(process.env.CLIP_ADMIN_TOKEN || '').trim();
+const CLIP_UPLOAD_SIGNING_SECRET = String(
+  process.env.CLIP_UPLOAD_SIGNING_SECRET
+  || process.env.S3_SECRET_ACCESS_KEY
+  || process.env.CLIP_ADMIN_TOKEN
+  || 'nova-clips-upload-secret',
+).trim();
 const MAX_MODERATION_QUEUE_ITEMS = 60;
 const CLIP_MODERATION_PROCESSING_STALE_MS = Math.max(
   60 * 1000,
@@ -280,7 +288,7 @@ function corsHeaders(req) {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token',
     Vary: 'Origin',
   };
 }
@@ -398,6 +406,63 @@ function requestAdminToken(req, body = null) {
     return headerToken;
   }
   return normalizeAdminToken(body && body.adminToken);
+}
+
+function base64UrlEncode(value) {
+  return Buffer.from(String(value || ''), 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function base64UrlDecode(value) {
+  const normalized = String(value || '')
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const padded = normalized + '==='.slice((normalized.length + 3) % 4);
+  return Buffer.from(padded, 'base64').toString('utf8');
+}
+
+function createClipUploadToken(payload) {
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  const signature = crypto
+    .createHmac('sha256', CLIP_UPLOAD_SIGNING_SECRET)
+    .update(encodedPayload)
+    .digest('hex');
+  return `${encodedPayload}.${signature}`;
+}
+
+function verifyClipUploadToken(token) {
+  const safeToken = String(token || '').trim();
+  if (!safeToken || !safeToken.includes('.')) {
+    return null;
+  }
+
+  const [encodedPayload, signature] = safeToken.split('.', 2);
+  const expectedSignature = crypto
+    .createHmac('sha256', CLIP_UPLOAD_SIGNING_SECRET)
+    .update(encodedPayload)
+    .digest('hex');
+
+  if (
+    !signature ||
+    signature.length !== expectedSignature.length ||
+    !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))
+  ) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(base64UrlDecode(encodedPayload));
+    const expiresAt = Number(payload && payload.expiresAt || 0);
+    if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) {
+      return null;
+    }
+    return payload && typeof payload === 'object' ? payload : null;
+  } catch {
+    return null;
+  }
 }
 
 function hasClipAdminAccess(req, body = null) {
@@ -1208,7 +1273,7 @@ function readClipUpload(req) {
       }
 
       if (fileTooLarge) {
-        fail(new Error('Videos must be 24 MB or smaller.'));
+        fail(new Error('Videos must be 30 MB or smaller through the legacy upload path.'));
         return;
       }
 
@@ -1235,6 +1300,202 @@ function readClipUpload(req) {
 
     req.pipe(busboy);
   });
+}
+
+async function handleClipUploadSessionRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const originalFileName = sanitizeClipFileName(body.fileName || body.originalFileName);
+  const normalizedUpload = normalizeClipUploadType(originalFileName, body.mimeType);
+  const sizeBytes = Number(body.sizeBytes || 0);
+  const uploaderName = sanitizeClipField(body.uploaderName, 48) || 'Guest uploader';
+  const title = sanitizeClipField(body.title, 80) || inferClipTitle(originalFileName);
+  const caption = sanitizeClipField(body.caption, 240);
+
+  if (!originalFileName || !normalizedUpload) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Choose a supported video file: mp4, webm, mov, m4v, or 3gp.',
+    });
+    return;
+  }
+
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Clip file size is required.',
+    });
+    return;
+  }
+
+  if (sizeBytes > MAX_DIRECT_CLIP_UPLOAD_BYTES) {
+    sendJsonResponse(req, res, 413, {
+      ok: false,
+      error: 'Videos must be 200 MB or smaller.',
+    });
+    return;
+  }
+
+  const rawUploadKey = `${Date.now()}-${crypto.randomUUID()}${normalizedUpload.extension || '.mp4'}`;
+  const uploadTokenPayload = {
+    rawUploadKey,
+    originalFileName,
+    mimeType: normalizedUpload.mimeType,
+    sizeBytes,
+    uploaderName,
+    title,
+    caption,
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + CLIP_DIRECT_UPLOAD_TTL_MS,
+  };
+
+  try {
+    const session = await clipMediaManager.createDirectUploadSession({
+      rawUploadKey,
+      mimeType: normalizedUpload.mimeType,
+      sizeBytes,
+      originalFileName,
+    });
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      uploadUrl: session.uploadUrl,
+      uploadMethod: 'PUT',
+      rawUploadKey,
+      uploadToken: createClipUploadToken(uploadTokenPayload),
+      uploadLimitBytes: MAX_DIRECT_CLIP_UPLOAD_BYTES,
+      maxDurationSeconds: 60,
+    });
+  } catch (error) {
+    console.error('Failed to create direct clip upload session:', error.message);
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to start a direct upload right now.',
+    });
+  }
+}
+
+async function handleClipUploadFinalizeRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const rawUploadKey = sanitizeClipField(body.rawUploadKey, 180);
+  const uploadToken = String(body.uploadToken || '').trim().slice(0, 4096);
+  const uploadPayload = verifyClipUploadToken(uploadToken);
+
+  if (!rawUploadKey || !uploadPayload || uploadPayload.rawUploadKey !== rawUploadKey) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Upload session expired or could not be verified.',
+    });
+    return;
+  }
+
+  let storedClip = null;
+  try {
+    const uploadedAsset = await clipMediaManager.inspectRawUpload(rawUploadKey);
+    if (!uploadedAsset.sizeBytes || uploadedAsset.sizeBytes > MAX_DIRECT_CLIP_UPLOAD_BYTES) {
+      throw new Error('Videos must be 200 MB or smaller.');
+    }
+
+    const processedClip = await clipMediaManager.processRawUpload(rawUploadKey, uploadPayload.originalFileName);
+    storedClip = await clipsStore.insertClip({
+      id: crypto.randomUUID(),
+      deleteToken: crypto.randomBytes(24).toString('hex'),
+      title: sanitizeClipField(uploadPayload.title, 80) || inferClipTitle(uploadPayload.originalFileName),
+      caption: sanitizeClipField(uploadPayload.caption, 240),
+      uploaderName: sanitizeClipField(uploadPayload.uploaderName, 48) || 'Guest uploader',
+      createdAt: new Date().toISOString(),
+      durationSeconds: processedClip.durationSeconds,
+      sizeBytes: processedClip.sizeBytes,
+      mimeType: processedClip.mimeType,
+      width: processedClip.width,
+      height: processedClip.height,
+      storageProvider: processedClip.storageProvider,
+      videoStorageKey: processedClip.videoStorageKey,
+      posterStorageKey: processedClip.posterStorageKey,
+      reportCount: 0,
+      status: 'pending',
+      moderationState: 'queued',
+      moderationSummary: 'Queued for automated moderation.',
+      moderationReasons: [],
+      moderationDetails: {},
+      moderationUpdatedAt: new Date().toISOString(),
+      appealStatus: 'none',
+      appealMessage: '',
+      appealRequestedAt: '',
+    });
+
+    await clipMediaManager.deleteRawUpload(rawUploadKey).catch(() => {});
+    queueClipModeration(storedClip.id);
+
+    sendJsonResponse(req, res, 201, {
+      ok: true,
+      clip: publicClipEntry(storedClip),
+      deleteToken: storedClip.deleteToken,
+      clips: await visibleClips(),
+    });
+  } catch (error) {
+    console.error('Failed to finalize direct clip upload:', error.message);
+    const statusCode = /60 seconds|200 MB|supported video file|could not be measured|readable video stream/i.test(String(error.message || ''))
+      ? 400
+      : 500;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message || 'Unable to finalize that clip right now.',
+    });
+  }
 }
 
 async function visibleClips() {
@@ -1347,7 +1608,7 @@ async function handleClipStorageStatsRequest(req, res) {
         ...stats,
         storedClipCap: MAX_CLIPS > 0 ? MAX_CLIPS : null,
         visibleFeedCap: MAX_VISIBLE_CLIPS > 0 ? MAX_VISIBLE_CLIPS : null,
-        uploadLimitBytes: MAX_CLIP_UPLOAD_BYTES,
+        uploadLimitBytes: MAX_DIRECT_CLIP_UPLOAD_BYTES,
         freeTierStorageBytes: GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES,
       },
     });
@@ -1686,7 +1947,7 @@ async function handleClipsRequest(req, res) {
   try {
     upload = await readClipUpload(req);
   } catch (error) {
-    const statusCode = error.message.includes('80 MB') ? 413 : 400;
+    const statusCode = /MB or smaller/i.test(String(error.message || '')) ? 413 : 400;
     sendJsonResponse(req, res, statusCode, {
       ok: false,
       error: error.message,
@@ -2341,7 +2602,7 @@ async function handleSongsRequest(req, res) {
   try {
     upload = await readSongUpload(req);
   } catch (error) {
-    const statusCode = error.message.includes('50 MB') ? 413 : 400;
+    const statusCode = /MB or smaller/i.test(String(error.message || '')) ? 413 : 400;
     sendJsonResponse(req, res, statusCode, {
       ok: false,
       error: error.message,
@@ -3962,6 +4223,16 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/clips') {
     await handleClipsRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/clips/upload-session') {
+    await handleClipUploadSessionRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/clips/finalize-upload') {
+    await handleClipUploadFinalizeRequest(req, res);
     return;
   }
 

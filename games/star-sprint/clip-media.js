@@ -12,11 +12,14 @@ const {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  HeadObjectCommand,
   HeadBucketCommand,
   CreateBucketCommand,
 } = require('@aws-sdk/client-s3');
+const { GoogleAuth } = require('google-auth-library');
 
 const execFile = promisify(childProcess.execFile);
+const GOOGLE_STORAGE_SCOPE = 'https://www.googleapis.com/auth/devstorage.full_control';
 
 const VIDEO_EXTENSION_TO_MIME = new Map([
   ['.mp4', 'video/mp4'],
@@ -107,6 +110,11 @@ function createClipMediaManager({ dataDir }) {
     process.env.S3_ACCESS_KEY_ID &&
     process.env.S3_SECRET_ACCESS_KEY,
   );
+  const directUploadsEnabled = s3Enabled
+    && /storage\.googleapis\.com/i.test(String(process.env.S3_ENDPOINT || 'https://storage.googleapis.com'));
+  const googleAuth = directUploadsEnabled
+    ? new GoogleAuth({ scopes: [GOOGLE_STORAGE_SCOPE] })
+    : null;
 
   const s3Client = s3Enabled
     ? new S3Client({
@@ -158,6 +166,38 @@ function createClipMediaManager({ dataDir }) {
       });
     }
     await bucketReadyPromise;
+  }
+
+  function prefixedKey(assetType, safeKeyName) {
+    if (assetType === 'video') {
+      return `clips/videos/${safeKeyName}`;
+    }
+    if (assetType === 'poster') {
+      return `clips/posters/${safeKeyName}`;
+    }
+    if (assetType === 'raw') {
+      return `clips/raw/${safeKeyName}`;
+    }
+    throw new Error(`Unsupported clip asset type: ${assetType}`);
+  }
+
+  async function googleStorageFetch(url, { method = 'POST', headers = {}, body = null } = {}) {
+    if (!googleAuth) {
+      throw new Error('Direct cloud uploads are not configured for this backend.');
+    }
+
+    const client = await googleAuth.getClient();
+    const accessToken = await client.getAccessToken();
+    const response = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken.token || accessToken}`,
+        ...headers,
+      },
+      body,
+    });
+
+    return response;
   }
 
   async function runMediaTool(binaryPath, args) {
@@ -245,11 +285,10 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
 
     if (s3Enabled) {
       await ensureBucket();
-      const prefix = assetType === 'video' ? 'clips/videos' : 'clips/posters';
       const body = await fs.promises.readFile(tempPath);
       await s3Client.send(new PutObjectCommand({
         Bucket: process.env.S3_BUCKET,
-        Key: `${prefix}/${safeKeyName}`,
+        Key: prefixedKey(assetType, safeKeyName),
         Body: body,
         ContentType: contentType,
         CacheControl: 'public, max-age=31536000, immutable',
@@ -278,10 +317,9 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     }
 
     await ensureBucket();
-    const prefix = assetType === 'video' ? 'clips/videos' : 'clips/posters';
     const response = await s3Client.send(new GetObjectCommand({
       Bucket: process.env.S3_BUCKET,
-      Key: `${prefix}/${safeKeyName}`,
+      Key: prefixedKey(assetType, safeKeyName),
     }));
     const body = await response.Body.transformToByteArray();
     await fs.promises.writeFile(outputPath, Buffer.from(body));
@@ -298,8 +336,7 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     }
 
     if (provider === 's3' && process.env.S3_BUCKET) {
-      const prefix = assetType === 'video' ? 'clips/videos' : 'clips/posters';
-      return `gs://${process.env.S3_BUCKET}/${prefix}/${safeKeyName}`;
+      return `gs://${process.env.S3_BUCKET}/${prefixedKey(assetType, safeKeyName)}`;
     }
 
     if (provider !== 's3') {
@@ -310,22 +347,18 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     return '';
   }
 
-  async function processUpload(uploadedFile) {
+  async function processTempUpload(tempInputPath) {
     ensureClipDirs();
 
-    const inputExtension = path.extname(String(uploadedFile.originalFileName || '')).toLowerCase() || '.mp4';
-    const tempInputPath = path.join(tempDir, `${crypto.randomUUID()}${inputExtension}`);
     const tempVideoOutputPath = path.join(tempDir, `${crypto.randomUUID()}.mp4`);
     const tempPosterOutputPath = path.join(tempDir, `${crypto.randomUUID()}.jpg`);
-
-    await fs.promises.writeFile(tempInputPath, uploadedFile.buffer);
 
     let measured = null;
     try {
       measured = await probeVideoFile(tempInputPath);
-        if (measured.durationSeconds > 60.4) {
-          throw new Error('Videos must be 60 seconds or shorter.');
-        }
+      if (measured.durationSeconds > 60.4) {
+        throw new Error('Videos must be 60 seconds or shorter.');
+      }
 
       await transcodeVideoToMp4(tempInputPath, tempVideoOutputPath);
       const transcodedMeasure = await probeVideoFile(tempVideoOutputPath);
@@ -351,11 +384,146 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
       };
     } finally {
       await Promise.allSettled([
-        fs.promises.rm(tempInputPath, { force: true }),
         fs.promises.rm(tempVideoOutputPath, { force: true }),
         fs.promises.rm(tempPosterOutputPath, { force: true }),
       ]);
     }
+  }
+
+  async function processUpload(uploadedFile) {
+    const inputExtension = path.extname(String(uploadedFile.originalFileName || '')).toLowerCase() || '.mp4';
+    const tempInputPath = path.join(tempDir, `${crypto.randomUUID()}${inputExtension}`);
+    await fs.promises.writeFile(tempInputPath, uploadedFile.buffer);
+    try {
+      return await processTempUpload(tempInputPath);
+    } finally {
+      await fs.promises.rm(tempInputPath, { force: true });
+    }
+  }
+
+  async function createDirectUploadSession({
+    rawUploadKey,
+    mimeType,
+    sizeBytes,
+    originalFileName,
+  }) {
+    const safeKeyName = safeMediaKey(rawUploadKey);
+    if (!safeKeyName) {
+      throw new Error('Invalid upload key.');
+    }
+    if (!directUploadsEnabled) {
+      throw new Error('Direct cloud uploads are not available on this backend.');
+    }
+
+    const response = await googleStorageFetch(
+      `https://storage.googleapis.com/upload/storage/v1/b/${encodeURIComponent(process.env.S3_BUCKET)}/o?uploadType=resumable&name=${encodeURIComponent(prefixedKey('raw', safeKeyName))}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Upload-Content-Type': String(mimeType || 'application/octet-stream'),
+          'X-Upload-Content-Length': String(Number(sizeBytes || 0)),
+        },
+        body: JSON.stringify({
+          name: prefixedKey('raw', safeKeyName),
+          contentType: String(mimeType || 'application/octet-stream'),
+          metadata: {
+            originalFileName: String(originalFileName || ''),
+            source: 'nova-clips-direct-upload',
+          },
+        }),
+      },
+    );
+
+    const uploadUrl = response.headers.get('location') || '';
+    if (!response.ok || !uploadUrl) {
+      const text = await response.text();
+      throw new Error(text || 'Unable to create a cloud upload session.');
+    }
+
+    return {
+      uploadUrl,
+    };
+  }
+
+  async function inspectRawUpload(rawUploadKey) {
+    const safeKeyName = safeMediaKey(rawUploadKey);
+    if (!safeKeyName) {
+      const error = new Error('Uploaded clip file was not found.');
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
+
+    if (!s3Enabled) {
+      const filePath = path.join(tempDir, safeKeyName);
+      const stats = await fs.promises.stat(filePath);
+      return {
+        sizeBytes: stats.size,
+        mimeType: contentTypeForClipFile(safeKeyName),
+      };
+    }
+
+    await ensureBucket();
+    const response = await s3Client.send(new HeadObjectCommand({
+      Bucket: process.env.S3_BUCKET,
+      Key: prefixedKey('raw', safeKeyName),
+    }));
+
+    return {
+      sizeBytes: Number(response.ContentLength || 0),
+      mimeType: String(response.ContentType || contentTypeForClipFile(safeKeyName)),
+    };
+  }
+
+  async function processRawUpload(rawUploadKey, originalFileName = '') {
+    const safeKeyName = safeMediaKey(rawUploadKey);
+    if (!safeKeyName) {
+      const error = new Error('Uploaded clip file was not found.');
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
+
+    ensureClipDirs();
+    const inputExtension = path.extname(String(originalFileName || '')).toLowerCase()
+      || path.extname(safeKeyName).toLowerCase()
+      || '.mp4';
+    const tempInputPath = path.join(tempDir, `${crypto.randomUUID()}${inputExtension}`);
+
+    if (!s3Enabled) {
+      await fs.promises.copyFile(path.join(tempDir, safeKeyName), tempInputPath);
+    } else {
+      await ensureBucket();
+      const response = await s3Client.send(new GetObjectCommand({
+        Bucket: process.env.S3_BUCKET,
+        Key: prefixedKey('raw', safeKeyName),
+      }));
+      const body = await response.Body.transformToByteArray();
+      await fs.promises.writeFile(tempInputPath, Buffer.from(body));
+    }
+
+    try {
+      return await processTempUpload(tempInputPath);
+    } finally {
+      await fs.promises.rm(tempInputPath, { force: true });
+    }
+  }
+
+  async function deleteRawUpload(rawUploadKey) {
+    const safeKeyName = safeMediaKey(rawUploadKey);
+    if (!safeKeyName) {
+      return;
+    }
+
+    if (!s3Enabled) {
+      await fs.promises.rm(path.join(tempDir, safeKeyName), { force: true });
+      return;
+    }
+
+    await ensureBucket();
+    await s3Client.send(new DeleteObjectCommand({
+      Bucket: process.env.S3_BUCKET,
+      Key: prefixedKey('raw', safeKeyName),
+    }));
   }
 
   function publicClipMedia(clip) {
@@ -370,22 +538,22 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     const provider = storageProviderForEntry(clip.storageProvider);
     const safeVideoKey = safeMediaKey(clip.videoStorageKey);
     const safePosterKey = safeMediaKey(clip.posterStorageKey);
-    if (provider === 's3') {
-      await ensureBucket();
-      const commands = [];
-      if (safeVideoKey) {
-        commands.push(s3Client.send(new DeleteObjectCommand({
-          Bucket: process.env.S3_BUCKET,
-          Key: `clips/videos/${safeVideoKey}`,
-        })));
-      }
-      if (safePosterKey) {
-        commands.push(s3Client.send(new DeleteObjectCommand({
-          Bucket: process.env.S3_BUCKET,
-          Key: `clips/posters/${safePosterKey}`,
-        })));
-      }
-      await Promise.allSettled(commands);
+      if (provider === 's3') {
+        await ensureBucket();
+        const commands = [];
+        if (safeVideoKey) {
+          commands.push(s3Client.send(new DeleteObjectCommand({
+            Bucket: process.env.S3_BUCKET,
+            Key: prefixedKey('video', safeVideoKey),
+          })));
+        }
+        if (safePosterKey) {
+          commands.push(s3Client.send(new DeleteObjectCommand({
+            Bucket: process.env.S3_BUCKET,
+            Key: prefixedKey('poster', safePosterKey),
+          })));
+        }
+        await Promise.allSettled(commands);
       return;
     }
 
@@ -411,14 +579,13 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
       return;
     }
 
-    await ensureBucket();
-    const prefix = assetType === 'video' ? 'clips/videos' : 'clips/posters';
-    const range = assetType === 'video' ? String(req.headers.range || '').trim() : '';
-    const response = await s3Client.send(new GetObjectCommand({
-      Bucket: process.env.S3_BUCKET,
-      Key: `${prefix}/${safeKeyName}`,
-      Range: range || undefined,
-    }));
+      await ensureBucket();
+      const range = assetType === 'video' ? String(req.headers.range || '').trim() : '';
+      const response = await s3Client.send(new GetObjectCommand({
+        Bucket: process.env.S3_BUCKET,
+        Key: prefixedKey(assetType, safeKeyName),
+        Range: range || undefined,
+      }));
 
     const headers = {
       'Content-Type': assetType === 'video' ? 'video/mp4' : 'image/jpeg',
@@ -448,9 +615,13 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     console.log(`Clip media storage: ${s3Enabled ? 's3-compatible object storage' : 'local persistent disk'}`);
   }
 
-  return {
-    processUpload,
-    publicClipMedia,
+    return {
+      createDirectUploadSession,
+      inspectRawUpload,
+      processRawUpload,
+      deleteRawUpload,
+      processUpload,
+      publicClipMedia,
     deleteClipAssets,
     streamAsset,
     writeAssetToTemp,
