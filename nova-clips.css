@@ -574,9 +574,9 @@
     display: grid;
     place-items: center;
     width: 100%;
-    height: min(80vh, calc(100dvh - 10.75rem));
-    min-height: min(62vh, 660px);
-    max-height: calc(100dvh - 10.75rem);
+    height: min(72dvh, calc(100dvh - 11.5rem));
+    min-height: 0;
+    max-height: calc(100dvh - 11.5rem);
     margin: 0;
     border-radius: 24px;
     overflow: hidden;
@@ -586,15 +586,15 @@
 }
 
 .clip-card--vertical .clip-card-video-shell {
-    height: min(82vh, calc(100dvh - 10.5rem));
-    min-height: min(64vh, 700px);
-    max-height: calc(100dvh - 10.5rem);
+    height: min(74dvh, calc(100dvh - 11rem));
+    min-height: 0;
+    max-height: calc(100dvh - 11rem);
 }
 
 .clip-card--horizontal .clip-card-video-shell {
-    height: min(72vh, calc(100dvh - 12rem));
-    min-height: min(48vh, 520px);
-    max-height: calc(100dvh - 12rem);
+    height: min(62dvh, calc(100dvh - 12.75rem));
+    min-height: 0;
+    max-height: calc(100dvh - 12.75rem);
 }
 
 .clip-card-video-backdrop {
@@ -632,7 +632,7 @@
 }
 
 .clip-card--vertical .clip-card-video-frame {
-    max-width: min(100%, 680px);
+    max-width: min(100%, 560px);
 }
 
 .clip-card video,
@@ -884,16 +884,16 @@
     }
 
     .clip-card-video-shell {
-        height: min(74vh, calc(100dvh - 11.75rem));
-        min-height: min(56vh, 580px);
-        max-height: calc(100dvh - 11.75rem);
+        height: min(68dvh, calc(100dvh - 12rem));
+        min-height: 0;
+        max-height: calc(100dvh - 12rem);
     }
 
     .clip-card--vertical .clip-card-video-shell,
     .clip-card--horizontal .clip-card-video-shell {
-        height: min(72vh, calc(100dvh - 12.1rem));
-        min-height: min(54vh, 520px);
-        max-height: calc(100dvh - 12.1rem);
+        height: min(66dvh, calc(100dvh - 12.25rem));
+        min-height: 0;
+        max-height: calc(100dvh - 12.25rem);
     }
 
     .clip-card-meta {
@@ -928,15 +928,15 @@
 
     .clip-card-video-shell {
         width: 100%;
-        height: min(68vh, calc(100dvh - 12.4rem));
-        min-height: min(52vh, 500px);
-        max-height: calc(100dvh - 12.4rem);
+        height: min(60dvh, calc(100dvh - 12.75rem));
+        min-height: 0;
+        max-height: calc(100dvh - 12.75rem);
     }
 
     .clip-card--vertical .clip-card-video-shell,
     .clip-card--horizontal .clip-card-video-shell {
-        height: min(66vh, calc(100dvh - 12.9rem));
-        min-height: min(48vh, 440px);
+        height: min(60dvh, calc(100dvh - 12.9rem));
+        min-height: 0;
         max-height: calc(100dvh - 12.9rem);
     }
 
