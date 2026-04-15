@@ -474,13 +474,7 @@ function clipShellAspectRatio(clip) {
     if (!(width > 0 && height > 0)) {
         return "9 / 16";
     }
-
-    const ratio = width / height;
-    if (ratio <= 1.05) {
-        return `${width} / ${height}`;
-    }
-
-    return "4 / 5";
+    return `${width} / ${height}`;
 }
 
 function setUploadStatus(message, isError = false) {

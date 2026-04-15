@@ -11,9 +11,9 @@
 .clips-shell {
     position: relative;
     z-index: 1;
-    max-width: 1520px;
+    max-width: 1760px;
     margin: 0 auto;
-    padding: 1.6rem 1.25rem 2.8rem;
+    padding: 1rem 1rem 2rem;
 }
 
 .clips-back-link {
@@ -98,9 +98,9 @@
 
 .clips-layout {
     display: grid;
-    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
-    gap: 1.2rem;
-    margin-top: 1.3rem;
+    grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
+    gap: 0.95rem;
+    margin-top: 1rem;
     align-items: start;
 }
 
@@ -110,7 +110,13 @@
 
 .upload-panel {
     position: sticky;
-    top: 1.25rem;
+    top: 1rem;
+    max-height: calc(100dvh - 2rem);
+    overflow: auto;
+}
+
+.feed-panel {
+    padding: 0.85rem;
 }
 
 .clips-panel-head {
@@ -441,10 +447,16 @@
 }
 
 .clips-feed {
-    max-height: min(86vh, 1120px);
-    overflow: auto;
-    padding-right: 0.15rem;
-    scroll-snap-type: y proximity;
+    height: calc(100dvh - 8.6rem);
+    max-height: none;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.05rem;
+    scroll-snap-type: y mandatory;
+    scroll-padding-block: 0.35rem;
+    scroll-behavior: smooth;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
 .clips-feed::-webkit-scrollbar {
@@ -464,14 +476,16 @@
 
 .clip-card {
     display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(250px, 320px);
-    gap: 1.1rem;
-    padding: 1rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.9rem;
+    padding: 0.7rem;
     border: 1px solid rgba(127, 162, 205, 0.14);
     border-radius: 28px;
     background:
         linear-gradient(180deg, rgba(7, 16, 27, 0.97), rgba(6, 13, 23, 0.94));
+    min-height: calc(100dvh - 9.6rem);
     scroll-snap-align: start;
+    scroll-snap-stop: always;
 }
 
 .clip-card-video-shell {
@@ -479,7 +493,9 @@
     display: grid;
     place-items: center;
     aspect-ratio: var(--clip-shell-aspect-ratio, 9 / 16);
-    min-height: clamp(540px, 80vh, 940px);
+    width: min(100%, 1220px);
+    min-height: clamp(640px, calc(100dvh - 18rem), 1120px);
+    margin: 0 auto;
     border-radius: 24px;
     overflow: hidden;
     background: #02050a;
@@ -516,7 +532,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.7rem;
+    padding: 0.25rem;
 }
 
 .clip-card video,
@@ -534,6 +550,8 @@
     flex-direction: column;
     gap: 0.85rem;
     min-width: 0;
+    width: min(100%, 1220px);
+    margin: 0 auto;
 }
 
 .clip-pill-row {
@@ -762,20 +780,18 @@
 
     .upload-panel {
         position: static;
+        max-height: none;
+        overflow: visible;
     }
 
     .clip-card {
-        grid-template-columns: 1fr;
-    }
-
-    .clip-card-meta {
-        order: -1;
+        min-height: calc(100dvh - 8.5rem);
     }
 }
 
 @media (max-width: 780px) {
     .clips-shell {
-        padding: 1rem 0.85rem 2rem;
+        padding: 0.8rem 0.65rem 1.35rem;
     }
 
     .clips-hero {
@@ -787,12 +803,17 @@
         grid-template-columns: 1fr;
     }
 
-    .clip-card {
-        padding: 0.8rem;
+    .clip-card-video-shell {
+        width: 100%;
+        min-height: calc(100dvh - 16rem);
     }
 
-    .clip-card-video-shell {
-        min-height: 74vh;
+    .clips-feed {
+        height: calc(100dvh - 6.4rem);
+    }
+
+    .clip-card {
+        min-height: calc(100dvh - 7.2rem);
     }
 
     .clip-comment-form {
