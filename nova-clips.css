@@ -940,16 +940,21 @@
 
     .clip-card-video-shell {
         width: 100%;
-        height: min(60dvh, calc(100dvh - 12.75rem));
+        height: clamp(240px, 42dvh, 380px);
         min-height: 0;
-        max-height: calc(100dvh - 12.75rem);
+        max-height: 42dvh;
     }
 
-    .clip-card--vertical .clip-card-video-shell,
-    .clip-card--horizontal .clip-card-video-shell {
-        height: min(60dvh, calc(100dvh - 12.9rem));
+    .clip-card--vertical .clip-card-video-shell {
+        height: clamp(280px, 48dvh, 460px);
         min-height: 0;
-        max-height: calc(100dvh - 12.9rem);
+        max-height: 48dvh;
+    }
+
+    .clip-card--horizontal .clip-card-video-shell {
+        height: clamp(220px, 34dvh, 320px);
+        min-height: 0;
+        max-height: 34dvh;
     }
 
     .clips-feed {
@@ -957,7 +962,42 @@
     }
 
     .clip-card {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
+        height: calc(100dvh - 7.2rem);
         min-height: calc(100dvh - 7.2rem);
+        overflow: hidden;
+    }
+
+    .clip-card-meta {
+        min-height: 0;
+        max-height: none;
+        overflow: auto;
+        padding-right: 0.1rem;
+        padding-bottom: 0.2rem;
+    }
+
+    .clip-card-title {
+        font-size: 1.15rem;
+    }
+
+    .clip-card-caption,
+    .clip-card-byline,
+    .clip-card-date,
+    .clip-card-note {
+        font-size: 0.88rem;
+    }
+
+    .clip-card-metrics,
+    .clip-reaction-row {
+        gap: 0.4rem;
+    }
+
+    .clip-metric,
+    .clip-reaction-button,
+    .clip-action,
+    .clip-comment-tool {
+        font-size: 0.76rem;
     }
 
     .clip-comment-form {
