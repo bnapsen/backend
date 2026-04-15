@@ -629,6 +629,7 @@
     padding: 0.55rem 0.55rem 0.95rem;
     box-sizing: border-box;
     margin: 0 auto;
+    max-width: min(100%, 1280px);
 }
 
 .clip-card--vertical .clip-card-video-frame {
@@ -867,6 +868,28 @@
     display: none !important;
 }
 
+@media (max-width: 1500px), (max-height: 920px) {
+    .clip-card {
+        grid-template-columns: 1fr;
+        min-height: calc(100dvh - 8.8rem);
+    }
+
+    .clip-card-video-shell,
+    .clip-card--vertical .clip-card-video-shell,
+    .clip-card--horizontal .clip-card-video-shell {
+        height: min(60dvh, calc(100dvh - 12rem));
+        min-height: 0;
+        max-height: calc(100dvh - 12rem);
+    }
+
+    .clip-card-meta {
+        position: static;
+        max-height: none;
+        overflow: visible;
+        padding-right: 0;
+    }
+}
+
 @media (max-width: 1120px) {
     .clip-upload-form {
         grid-template-columns: 1fr;
@@ -876,11 +899,6 @@
     #clip-upload-status,
     .clip-submit-button {
         grid-column: auto;
-    }
-
-    .clip-card {
-        grid-template-columns: 1fr;
-        min-height: calc(100dvh - 8.5rem);
     }
 
     .clip-card-video-shell {
@@ -896,12 +914,6 @@
         max-height: calc(100dvh - 12.25rem);
     }
 
-    .clip-card-meta {
-        position: static;
-        max-height: none;
-        overflow: visible;
-        padding-right: 0;
-    }
 }
 
 @media (max-width: 780px) {
