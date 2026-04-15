@@ -20,33 +20,47 @@
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0.65rem;
     color: #c6d9f2;
     text-decoration: none;
 }
 
 .clips-hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.85fr);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
     gap: 1.2rem;
-    padding: 1.4rem;
+    padding: 0.8rem 1rem;
     border: 1px solid rgba(127, 162, 205, 0.16);
-    border-radius: 32px;
+    border-radius: 22px;
     background:
-        linear-gradient(135deg, rgba(9, 18, 32, 0.96) 0%, rgba(13, 28, 48, 0.82) 58%, rgba(255, 115, 72, 0.12) 100%);
-    box-shadow: 0 30px 90px rgba(2, 7, 14, 0.48);
+        linear-gradient(135deg, rgba(9, 18, 32, 0.96) 0%, rgba(13, 28, 48, 0.82) 78%, rgba(255, 115, 72, 0.08) 100%);
+    box-shadow: 0 18px 48px rgba(2, 7, 14, 0.34);
+}
+
+.clips-copy {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.clips-copy h1 {
+    margin: 0;
+    font-size: clamp(1.6rem, 2.2vw, 2.5rem);
 }
 
 .clips-lede {
-    max-width: 60ch;
+    max-width: 54ch;
     color: #dbe9fb;
+    margin: 0;
+    font-size: 0.98rem;
 }
 
 .clips-highlights {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.8rem;
-    margin-top: 1.1rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin-top: 0.2rem;
 }
 
 .clips-stat,
@@ -59,28 +73,26 @@
 }
 
 .clips-stat {
-    padding: 0.95rem 1rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: 999px;
+    background: rgba(10, 22, 38, 0.82);
+    box-shadow: none;
 }
 
 .clips-stat strong {
-    display: block;
+    display: inline;
     font-family: "Oxanium", "Segoe UI", sans-serif;
-    font-size: 1.25rem;
+    font-size: 0.96rem;
 }
 
 .clips-stat span {
     color: #aabbd3;
-    font-size: 0.95rem;
+    font-size: 0.86rem;
+    margin-left: 0.35rem;
 }
 
 .clips-feature {
-    padding: 1.15rem;
-    background:
-        linear-gradient(180deg, rgba(11, 21, 37, 0.98), rgba(12, 18, 30, 0.94));
-}
-
-.clips-feature h2 {
-    margin: 0.35rem 0 0.65rem;
+    display: none;
 }
 
 .clips-feature p,
@@ -98,9 +110,9 @@
 
 .clips-layout {
     display: grid;
-    grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
-    gap: 0.95rem;
-    margin-top: 1rem;
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
+    margin-top: 0.8rem;
     align-items: start;
 }
 
@@ -110,9 +122,11 @@
 
 .upload-panel {
     position: sticky;
-    top: 1rem;
-    max-height: calc(100dvh - 2rem);
-    overflow: auto;
+    top: 0.65rem;
+    z-index: 6;
+    max-height: none;
+    overflow: visible;
+    padding: 0.75rem 0.9rem;
 }
 
 .feed-panel {
@@ -124,7 +138,7 @@
     justify-content: space-between;
     gap: 1rem;
     align-items: flex-start;
-    margin-bottom: 1rem;
+    margin-bottom: 0.7rem;
 }
 
 .clips-panel-head h2 {
@@ -135,6 +149,18 @@
 .clip-count-badge {
     max-width: 28ch;
     color: #b7c9df;
+}
+
+.upload-panel .clips-panel-head {
+    margin-bottom: 0.45rem;
+}
+
+.upload-panel .clips-panel-head p:last-child {
+    display: none;
+}
+
+.upload-panel .clips-panel-head h2 {
+    font-size: 1.05rem;
 }
 
 .clip-admin-panel {
@@ -341,14 +367,26 @@
     gap: 0.95rem;
 }
 
+.clip-upload-form {
+    display: grid;
+    grid-template-columns: minmax(220px, 300px) minmax(160px, 200px) minmax(170px, 220px) minmax(240px, 1fr) auto;
+    gap: 0.7rem;
+    align-items: end;
+}
+
 .clip-drop-zone {
-    padding: 1.3rem;
+    padding: 0.9rem 1rem;
     border: 1px dashed rgba(113, 216, 255, 0.4);
-    border-radius: 24px;
+    border-radius: 18px;
     background:
         linear-gradient(180deg, rgba(10, 22, 38, 0.92), rgba(8, 16, 27, 0.92));
     cursor: pointer;
     transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+#clip-drop-help {
+    margin: 0.2rem 0 0;
+    font-size: 0.82rem;
 }
 
 .clip-drop-zone:hover,
@@ -382,10 +420,11 @@
 
 .clip-pick-button,
 .clip-submit-button {
-    margin-top: 1rem;
+    margin-top: 0.55rem;
 }
 
 .clip-preview-panel {
+    grid-column: 1 / -1;
     padding: 1rem;
     border: 1px solid rgba(125, 162, 214, 0.16);
     border-radius: 24px;
@@ -415,9 +454,7 @@
 }
 
 .clip-fields {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.85rem;
+    display: contents;
 }
 
 .clip-field {
@@ -427,7 +464,7 @@
 }
 
 .clip-field--full {
-    grid-column: 1 / -1;
+    grid-column: auto;
 }
 
 .clip-field span {
@@ -444,6 +481,26 @@
     color: #f7fbff;
     background: rgba(5, 11, 20, 0.9);
     resize: vertical;
+}
+
+.clips-upload-note {
+    grid-column: 1 / -2;
+    margin: 0;
+    font-size: 0.84rem;
+}
+
+#clip-upload-status {
+    grid-column: 1 / -2;
+    margin: 0;
+}
+
+.clip-submit-button {
+    align-self: stretch;
+    min-height: 52px;
+}
+
+.clip-owned-panel {
+    grid-column: 1 / -1;
 }
 
 .clips-feed {
@@ -471,6 +528,22 @@
 @media (max-width: 920px) {
     .clip-admin-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1320px) {
+    .clip-upload-form {
+        grid-template-columns: minmax(220px, 1.2fr) repeat(2, minmax(170px, 0.8fr)) minmax(220px, 1fr);
+    }
+
+    .clip-submit-button {
+        grid-column: 1 / -1;
+        min-height: 0;
+    }
+
+    .clips-upload-note,
+    #clip-upload-status {
+        grid-column: 1 / -1;
     }
 }
 
@@ -778,14 +851,20 @@
 }
 
 @media (max-width: 1120px) {
-    .clips-layout {
-        grid-template-columns: 1fr;
-    }
-
     .upload-panel {
         position: static;
         max-height: none;
         overflow: visible;
+    }
+
+    .clip-upload-form {
+        grid-template-columns: 1fr;
+    }
+
+    .clips-upload-note,
+    #clip-upload-status,
+    .clip-submit-button {
+        grid-column: auto;
     }
 
     .clip-card {
@@ -807,12 +886,20 @@
     }
 
     .clips-hero {
-        grid-template-columns: 1fr;
+        gap: 0.85rem;
     }
 
-    .clips-highlights,
-    .clip-fields {
-        grid-template-columns: 1fr;
+    .clips-lede {
+        max-width: 100%;
+    }
+
+    .clips-highlights {
+        width: 100%;
+    }
+
+    .clips-stat {
+        width: 100%;
+        border-radius: 16px;
     }
 
     .clip-card-video-shell {
