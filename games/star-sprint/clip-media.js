@@ -16,10 +16,9 @@ const {
   HeadBucketCommand,
   CreateBucketCommand,
 } = require('@aws-sdk/client-s3');
-const { GoogleAuth } = require('google-auth-library');
+const { Storage } = require('@google-cloud/storage');
 
 const execFile = promisify(childProcess.execFile);
-const GOOGLE_STORAGE_SCOPE = 'https://www.googleapis.com/auth/devstorage.full_control';
 
 const VIDEO_EXTENSION_TO_MIME = new Map([
   ['.mp4', 'video/mp4'],
@@ -116,11 +115,12 @@ function createClipMediaManager({ dataDir }) {
     process.env.CLIP_PUBLIC_BASE_URL
       || (publicClipBucket ? `https://storage.googleapis.com/${publicClipBucket}` : ''),
   ).trim().replace(/\/$/, '');
-  const directUploadsEnabled = s3Enabled
+  const usesGoogleStorage = s3Enabled
     && /storage\.googleapis\.com/i.test(String(process.env.S3_ENDPOINT || 'https://storage.googleapis.com'));
-  const googleAuth = directUploadsEnabled
-    ? new GoogleAuth({ scopes: [GOOGLE_STORAGE_SCOPE] })
+  const storageClient = usesGoogleStorage
+    ? new Storage({ projectId: process.env.GOOGLE_CLOUD_PROJECT || undefined })
     : null;
+  const directUploadsEnabled = Boolean(storageClient && rawClipBucket);
 
   const s3Client = s3Enabled
     ? new S3Client({
@@ -195,25 +195,6 @@ function createClipMediaManager({ dataDir }) {
       return `clips/raw/${safeKeyName}`;
     }
     throw new Error(`Unsupported clip asset type: ${assetType}`);
-  }
-
-  async function googleStorageFetch(url, { method = 'POST', headers = {}, body = null } = {}) {
-    if (!googleAuth) {
-      throw new Error('Direct cloud uploads are not configured for this backend.');
-    }
-
-    const client = await googleAuth.getClient();
-    const accessToken = await client.getAccessToken();
-    const response = await fetch(url, {
-      method,
-      headers: {
-        Authorization: `Bearer ${accessToken.token || accessToken}`,
-        ...headers,
-      },
-      body,
-    });
-
-    return response;
   }
 
   async function runMediaTool(binaryPath, args) {
@@ -432,35 +413,22 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     if (!directUploadsEnabled) {
       throw new Error('Direct cloud uploads are not available on this backend.');
     }
-
-    const response = await googleStorageFetch(
-      `https://storage.googleapis.com/upload/storage/v1/b/${encodeURIComponent(process.env.S3_BUCKET)}/o?uploadType=resumable&name=${encodeURIComponent(prefixedKey('raw', safeKeyName))}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json; charset=UTF-8',
-          'X-Upload-Content-Type': String(mimeType || 'application/octet-stream'),
-          'X-Upload-Content-Length': String(Number(sizeBytes || 0)),
-        },
-        body: JSON.stringify({
-          name: prefixedKey('raw', safeKeyName),
-          contentType: String(mimeType || 'application/octet-stream'),
-          metadata: {
-            originalFileName: String(originalFileName || ''),
-            source: 'nova-clips-direct-upload',
-          },
-        }),
-      },
-    );
-
-    const uploadUrl = response.headers.get('location') || '';
-    if (!response.ok || !uploadUrl) {
-      const text = await response.text();
-      throw new Error(text || 'Unable to create a cloud upload session.');
+    const objectName = prefixedKey('raw', safeKeyName);
+    const fileHandle = storageClient.bucket(rawClipBucket).file(objectName);
+    const expiresAt = Date.now() + (15 * 60 * 1000);
+    const [uploadUrl] = await fileHandle.getSignedUrl({
+      version: 'v4',
+      action: 'write',
+      expires: expiresAt,
+      contentType: String(mimeType || 'application/octet-stream'),
+    });
+    if (!uploadUrl) {
+      throw new Error('Unable to create a cloud upload session.');
     }
 
     return {
       uploadUrl,
+      expiresAt,
     };
   }
 
