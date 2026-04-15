@@ -468,6 +468,21 @@ function resolveClipUrl(resourcePath) {
     return pathValue;
 }
 
+function clipShellAspectRatio(clip) {
+    const width = Number(clip?.width || 0);
+    const height = Number(clip?.height || 0);
+    if (!(width > 0 && height > 0)) {
+        return "9 / 16";
+    }
+
+    const ratio = width / height;
+    if (ratio <= 1.05) {
+        return `${width} / ${height}`;
+    }
+
+    return "4 / 5";
+}
+
 function setUploadStatus(message, isError = false) {
     uploadStatus.textContent = message;
     uploadStatus.style.color = isError ? "#ff9c8f" : "";
@@ -1047,8 +1062,23 @@ function createClipCard(clip) {
 
     const mediaShell = document.createElement("div");
     mediaShell.className = "clip-card-video-shell";
+    mediaShell.style.setProperty("--clip-shell-aspect-ratio", clipShellAspectRatio(clip));
+
+    const posterUrl = resolveClipUrl(clip.posterPath);
+    const videoUrl = resolveClipUrl(clip.videoPath);
+
+    const mediaBackdrop = document.createElement("div");
+    mediaBackdrop.className = "clip-card-video-backdrop";
+    if (posterUrl) {
+        mediaBackdrop.style.backgroundImage = `url("${posterUrl.replace(/"/g, '\\"')}")`;
+    }
+    mediaShell.appendChild(mediaBackdrop);
+
+    const mediaFrame = document.createElement("div");
+    mediaFrame.className = "clip-card-video-frame";
 
     const video = document.createElement("video");
+    video.className = "clip-feed-video";
     video.setAttribute("playsinline", "");
     video.setAttribute("loop", "");
     video.setAttribute("preload", "metadata");
@@ -1058,9 +1088,10 @@ function createClipCard(clip) {
     video.dataset.inView = "false";
     video.defaultMuted = false;
     video.muted = false;
-    video.poster = resolveClipUrl(clip.posterPath);
-    video.src = resolveClipUrl(clip.videoPath);
-    mediaShell.appendChild(video);
+    video.poster = posterUrl;
+    video.src = videoUrl;
+    mediaFrame.appendChild(video);
+    mediaShell.appendChild(mediaFrame);
 
     const muteButton = document.createElement("button");
     muteButton.type = "button";

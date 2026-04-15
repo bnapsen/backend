@@ -110,6 +110,12 @@ function createClipMediaManager({ dataDir }) {
     process.env.S3_ACCESS_KEY_ID &&
     process.env.S3_SECRET_ACCESS_KEY,
   );
+  const rawClipBucket = String(process.env.S3_BUCKET || '').trim();
+  const publicClipBucket = String(process.env.CLIP_PUBLIC_BUCKET || '').trim();
+  const directPlaybackBaseUrl = String(
+    process.env.CLIP_PUBLIC_BASE_URL
+      || (publicClipBucket ? `https://storage.googleapis.com/${publicClipBucket}` : ''),
+  ).trim().replace(/\/$/, '');
   const directUploadsEnabled = s3Enabled
     && /storage\.googleapis\.com/i.test(String(process.env.S3_ENDPOINT || 'https://storage.googleapis.com'));
   const googleAuth = directUploadsEnabled
@@ -129,7 +135,7 @@ function createClipMediaManager({ dataDir }) {
       },
     })
     : null;
-  let bucketReadyPromise = null;
+  const bucketReadyPromises = new Map();
 
   function ensureClipDirs() {
     ensureDirectory(clipsRootDir);
@@ -140,15 +146,25 @@ function createClipMediaManager({ dataDir }) {
     }
   }
 
-  async function ensureBucket() {
+  function bucketNameForAsset(assetType) {
+    if ((assetType === 'video' || assetType === 'poster') && publicClipBucket) {
+      return publicClipBucket;
+    }
+    return rawClipBucket;
+  }
+
+  async function ensureBucket(bucketName = rawClipBucket) {
     if (!s3Enabled) {
       return;
     }
-    if (!bucketReadyPromise) {
-      bucketReadyPromise = (async () => {
+    if (!bucketName) {
+      throw new Error('Object storage bucket is not configured.');
+    }
+    if (!bucketReadyPromises.has(bucketName)) {
+      bucketReadyPromises.set(bucketName, (async () => {
         try {
           await s3Client.send(new HeadBucketCommand({
-            Bucket: process.env.S3_BUCKET,
+            Bucket: bucketName,
           }));
         } catch (error) {
           const statusCode = Number(error && error.$metadata && error.$metadata.httpStatusCode);
@@ -157,15 +173,15 @@ function createClipMediaManager({ dataDir }) {
             throw error;
           }
           await s3Client.send(new CreateBucketCommand({
-            Bucket: process.env.S3_BUCKET,
+            Bucket: bucketName,
           }));
         }
       })().catch((error) => {
-        bucketReadyPromise = null;
+        bucketReadyPromises.delete(bucketName);
         throw error;
-      });
+      }));
     }
-    await bucketReadyPromise;
+    await bucketReadyPromises.get(bucketName);
   }
 
   function prefixedKey(assetType, safeKeyName) {
@@ -284,10 +300,11 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     }
 
     if (s3Enabled) {
-      await ensureBucket();
+      const bucketName = bucketNameForAsset(assetType);
+      await ensureBucket(bucketName);
       const body = await fs.promises.readFile(tempPath);
       await s3Client.send(new PutObjectCommand({
-        Bucket: process.env.S3_BUCKET,
+        Bucket: bucketName,
         Key: prefixedKey(assetType, safeKeyName),
         Body: body,
         ContentType: contentType,
@@ -316,9 +333,10 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
       return outputPath;
     }
 
-    await ensureBucket();
+    const bucketName = bucketNameForAsset(assetType);
+    await ensureBucket(bucketName);
     const response = await s3Client.send(new GetObjectCommand({
-      Bucket: process.env.S3_BUCKET,
+      Bucket: bucketName,
       Key: prefixedKey(assetType, safeKeyName),
     }));
     const body = await response.Body.transformToByteArray();
@@ -335,8 +353,8 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
       return '';
     }
 
-    if (provider === 's3' && process.env.S3_BUCKET) {
-      return `gs://${process.env.S3_BUCKET}/${prefixedKey(assetType, safeKeyName)}`;
+    if (provider === 's3' && bucketNameForAsset(assetType)) {
+      return `gs://${bucketNameForAsset(assetType)}/${prefixedKey(assetType, safeKeyName)}`;
     }
 
     if (provider !== 's3') {
@@ -528,6 +546,14 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
 
   function publicClipMedia(clip) {
     const provider = storageProviderForEntry(clip.storageProvider);
+    const safeVideoKey = safeMediaKey(clip && clip.videoStorageKey);
+    const safePosterKey = safeMediaKey(clip && clip.posterStorageKey);
+    if (provider === 's3' && directPlaybackBaseUrl) {
+      return {
+        videoPath: safeVideoKey ? `${directPlaybackBaseUrl}/${prefixedKey('video', safeVideoKey)}` : '',
+        posterPath: safePosterKey ? `${directPlaybackBaseUrl}/${prefixedKey('poster', safePosterKey)}` : '',
+      };
+    }
     return {
       videoPath: `/media/clips/${provider}/videos/${encodeURIComponent(String(clip.videoStorageKey || ''))}`,
       posterPath: `/media/clips/${provider}/posters/${encodeURIComponent(String(clip.posterStorageKey || ''))}`,
@@ -539,17 +565,22 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     const safeVideoKey = safeMediaKey(clip.videoStorageKey);
     const safePosterKey = safeMediaKey(clip.posterStorageKey);
       if (provider === 's3') {
-        await ensureBucket();
+        const videoBucket = bucketNameForAsset('video');
+        const posterBucket = bucketNameForAsset('poster');
+        await Promise.all([
+          ensureBucket(videoBucket),
+          ensureBucket(posterBucket),
+        ]);
         const commands = [];
         if (safeVideoKey) {
           commands.push(s3Client.send(new DeleteObjectCommand({
-            Bucket: process.env.S3_BUCKET,
+            Bucket: videoBucket,
             Key: prefixedKey('video', safeVideoKey),
           })));
         }
         if (safePosterKey) {
           commands.push(s3Client.send(new DeleteObjectCommand({
-            Bucket: process.env.S3_BUCKET,
+            Bucket: posterBucket,
             Key: prefixedKey('poster', safePosterKey),
           })));
         }
@@ -579,10 +610,11 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
       return;
     }
 
-      await ensureBucket();
+      const bucketName = bucketNameForAsset(assetType);
+      await ensureBucket(bucketName);
       const range = assetType === 'video' ? String(req.headers.range || '').trim() : '';
       const response = await s3Client.send(new GetObjectCommand({
-        Bucket: process.env.S3_BUCKET,
+        Bucket: bucketName,
         Key: prefixedKey(assetType, safeKeyName),
         Range: range || undefined,
       }));
