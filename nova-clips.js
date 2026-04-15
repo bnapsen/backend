@@ -58,6 +58,8 @@ const state = {
     viewedClipIds: new Set(),
     ownedClips: [],
     moderationQueue: [],
+    feedSyncFrame: 0,
+    feedListenersBound: false,
 };
 
 state.viewedClipIds = new Set(readViewedClipIds());
@@ -853,6 +855,110 @@ async function registerClipView(clipId) {
     }
 }
 
+function clearClipViewTimer(clipId) {
+    if (!clipId) {
+        return;
+    }
+
+    const timerId = state.viewTimers.get(clipId);
+    if (timerId) {
+        window.clearTimeout(timerId);
+        state.viewTimers.delete(clipId);
+    }
+}
+
+function markFeedVideoInactive(video) {
+    if (!(video instanceof HTMLVideoElement)) {
+        return;
+    }
+
+    video.dataset.inView = "false";
+    const clipId = video.closest(".clip-card")?.dataset.clipId || "";
+    clearClipViewTimer(clipId);
+    video.pause();
+}
+
+function scheduleClipView(video, clipId) {
+    if (!clipId || state.viewedClipIds.has(clipId) || state.viewTimers.has(clipId)) {
+        return;
+    }
+
+    const timerId = window.setTimeout(() => {
+        state.viewTimers.delete(clipId);
+        if (video.dataset.inView === "true") {
+            registerClipView(clipId);
+        }
+    }, 1800);
+    state.viewTimers.set(clipId, timerId);
+}
+
+function syncActiveFeedVideo() {
+    if (!clipsFeed) {
+        return;
+    }
+
+    const videos = [...clipsFeed.querySelectorAll("video[data-feed-video='true']")];
+    if (!videos.length) {
+        return;
+    }
+
+    const rootRect = clipsFeed.getBoundingClientRect();
+    const viewportCenter = rootRect.top + (rootRect.height / 2);
+    let bestVideo = null;
+    let bestScore = -Infinity;
+
+    videos.forEach((video) => {
+        const card = video.closest(".clip-card");
+        if (!(card instanceof HTMLElement)) {
+            markFeedVideoInactive(video);
+            return;
+        }
+
+        const rect = card.getBoundingClientRect();
+        const visibleHeight = Math.max(0, Math.min(rect.bottom, rootRect.bottom) - Math.max(rect.top, rootRect.top));
+        const visibleRatio = visibleHeight / Math.max(1, Math.min(rect.height, rootRect.height));
+
+        if (visibleRatio <= 0.08) {
+            markFeedVideoInactive(video);
+            return;
+        }
+
+        const centerDistance = Math.abs(((rect.top + rect.bottom) / 2) - viewportCenter);
+        const score = (visibleRatio * 1000) - centerDistance;
+        if (score > bestScore) {
+            bestScore = score;
+            bestVideo = video;
+        }
+    });
+
+    videos.forEach((video) => {
+        const clipId = video.closest(".clip-card")?.dataset.clipId || "";
+        if (video === bestVideo) {
+            if (video.dataset.inView !== "true") {
+                video.dataset.inView = "true";
+                scheduleClipView(video, clipId);
+            }
+            if (video.paused) {
+                playFeedVideo(video);
+            }
+            return;
+        }
+
+        markFeedVideoInactive(video);
+    });
+}
+
+function queueFeedPlaybackSync() {
+    if (state.feedSyncFrame) {
+        window.cancelAnimationFrame(state.feedSyncFrame);
+    }
+
+    state.feedSyncFrame = window.requestAnimationFrame(() => {
+        state.feedSyncFrame = 0;
+        syncActiveFeedVideo();
+    });
+}
+
 async function submitClipReaction(clipId, reactionType, emoji, button) {
     button.disabled = true;
 
@@ -1016,27 +1122,9 @@ function attachFeedObserver() {
             }
 
             if (entry.isIntersecting && entry.intersectionRatio >= 0.65) {
-                video.dataset.inView = "true";
-                playFeedVideo(video);
-                const clipId = video.closest(".clip-card")?.dataset.clipId || "";
-                if (clipId && !state.viewedClipIds.has(clipId) && !state.viewTimers.has(clipId)) {
-                    const timerId = window.setTimeout(() => {
-                        state.viewTimers.delete(clipId);
-                        if (video.dataset.inView === "true") {
-                            registerClipView(clipId);
-                        }
-                    }, 1800);
-                    state.viewTimers.set(clipId, timerId);
-                }
+                queueFeedPlaybackSync();
             } else {
-                video.dataset.inView = "false";
-                const clipId = video.closest(".clip-card")?.dataset.clipId || "";
-                const timerId = clipId ? state.viewTimers.get(clipId) : 0;
-                if (timerId) {
-                    window.clearTimeout(timerId);
-                    state.viewTimers.delete(clipId);
-                }
-                video.pause();
+                markFeedVideoInactive(video);
             }
         });
     }, {
@@ -1047,6 +1135,14 @@ function attachFeedObserver() {
     clipsFeed.querySelectorAll("video[data-feed-video='true']").forEach((video) => {
         state.observer.observe(video);
     });
+
+    if (!state.feedListenersBound) {
+        clipsFeed.addEventListener("scroll", queueFeedPlaybackSync, { passive: true });
+        window.addEventListener("resize", queueFeedPlaybackSync);
+        state.feedListenersBound = true;
+    }
+
+    queueFeedPlaybackSync();
 }
 
 function createClipCard(clip) {
