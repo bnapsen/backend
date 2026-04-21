@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Turbo Trail Rush cover art</title>
+  <desc id="desc">Excitebike-style dirt racing cover with rider, ramps, and a glowing desert sky.</desc>
+  <defs>
+    <linearGradient id="sky" x1="800" y1="0" x2="800" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#122847"/>
+      <stop offset=".46" stop-color="#3a2957"/>
+      <stop offset="1" stop-color="#0c1018"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#ffe7a8"/>
+      <stop offset="1" stop-color="#ff8d3a"/>
+    </linearGradient>
+    <linearGradient id="dirt" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#7a3d1d"/>
+      <stop offset="1" stop-color="#d27434"/>
+    </linearGradient>
+    <linearGradient id="bike" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#9dfff1"/>
+      <stop offset="1" stop-color="#2edecf"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <circle cx="1240" cy="180" r="132" fill="url(#sun)" opacity=".95"/>
+  <g fill="#fff" opacity=".7">
+    <circle cx="110" cy="110" r="2"/>
+    <circle cx="240" cy="190" r="1.6"/>
+    <circle cx="430" cy="120" r="1.9"/>
+    <circle cx="640" cy="88" r="1.7"/>
+    <circle cx="910" cy="132" r="1.6"/>
+    <circle cx="1340" cy="92" r="1.8"/>
+    <circle cx="1480" cy="180" r="1.5"/>
+    <circle cx="1320" cy="340" r="1.4"/>
+  </g>
+
+  <path d="M0 520C160 500 240 470 350 500C460 530 560 590 700 560C860 525 960 420 1130 430C1310 440 1450 530 1600 520V900H0Z" fill="#1b2031"/>
+  <path d="M0 620C120 600 210 560 320 590C470 632 610 760 820 710C1000 668 1130 510 1310 520C1450 528 1540 590 1600 610V900H0Z" fill="#2a2434"/>
+  <path d="M0 642C120 635 200 610 280 628C380 651 452 706 540 715C650 728 782 650 872 600C962 550 1040 528 1142 540C1248 553 1348 626 1450 642C1516 652 1568 656 1600 654V900H0Z" fill="url(#dirt)"/>
+
+  <g opacity=".36" stroke="#ffd89e" stroke-width="10" stroke-linecap="round">
+    <path d="M120 655H540"/>
+    <path d="M680 613H1090"/>
+    <path d="M1220 640H1510"/>
+  </g>
+
+  <g transform="translate(520 560)">
+    <path d="M0 88L188 34L238 82L18 132Z" fill="#f1b56e" opacity=".95"/>
+    <path d="M178 38L188 34L238 82L220 86Z" fill="#ffecb4" opacity=".85"/>
+  </g>
+
+  <g transform="translate(858 506)">
+    <path d="M0 92L176 42L226 92L16 140Z" fill="#f1b56e" opacity=".95"/>
+    <path d="M166 46L176 42L226 92L210 94Z" fill="#ffecb4" opacity=".85"/>
+  </g>
+
+  <g transform="translate(730 470) rotate(-8)">
+    <circle cx="-92" cy="94" r="54" fill="#1f2432" stroke="#a6d5ff" stroke-width="12"/>
+    <circle cx="78" cy="110" r="56" fill="#1f2432" stroke="#a6d5ff" stroke-width="12"/>
+    <path d="M-52 32L20 42L78 108" fill="none" stroke="url(#bike)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M-12 16L58 12L104 70" fill="none" stroke="#ff8d3a" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M-16 16L-62 88" fill="none" stroke="url(#bike)" stroke-width="18" stroke-linecap="round"/>
+    <path d="M20 42L-20 112" fill="none" stroke="url(#bike)" stroke-width="16" stroke-linecap="round"/>
+    <path d="M18 40L88 40" fill="none" stroke="#ffe8bd" stroke-width="14" stroke-linecap="round"/>
+    <path d="M30 -34C66 -42 104 -20 108 10L84 42L56 20L36 46L8 28C8 2 10 -22 30 -34Z" fill="#ff643d"/>
+    <circle cx="64" cy="-6" r="16" fill="#0d1420"/>
+    <path d="M30 -20L12 6" fill="none" stroke="#0d1420" stroke-width="10" stroke-linecap="round"/>
+    <path d="M62 18L88 52" fill="none" stroke="#0d1420" stroke-width="10" stroke-linecap="round"/>
+    <path d="M24 -4L64 10" fill="none" stroke="#ffd4a4" stroke-width="10" stroke-linecap="round"/>
+    <path d="M110 58L148 44" fill="none" stroke="#fff4cd" stroke-width="12" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(1080 584) scale(.7)">
+    <circle cx="-92" cy="94" r="54" fill="#1f2432" stroke="#d9e4ff" stroke-width="10"/>
+    <circle cx="78" cy="110" r="56" fill="#1f2432" stroke="#d9e4ff" stroke-width="10"/>
+    <path d="M-52 32L20 42L78 108" fill="none" stroke="#9cf8f4" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M-12 16L58 12L104 70" fill="none" stroke="#ffd774" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M28 -34C66 -44 104 -22 110 12L82 40L58 20L36 44L6 24C8 0 10 -22 28 -34Z" fill="#6078ff"/>
+  </g>
+
+  <path d="M508 714C550 720 592 714 628 692" fill="none" stroke="#ffe2ad" stroke-width="12" stroke-linecap="round" opacity=".8"/>
+
+  <text x="86" y="176" fill="#ffe7bc" font-family="Oxanium, Trebuchet MS, Segoe UI, sans-serif" font-size="62" font-weight="700" letter-spacing="8">NOVA ARCADE</text>
+  <text x="84" y="742" fill="#f8fbff" font-family="Oxanium, Trebuchet MS, Segoe UI, sans-serif" font-size="130" font-weight="800">TURBO</text>
+  <text x="84" y="846" fill="#8efef2" font-family="Oxanium, Trebuchet MS, Segoe UI, sans-serif" font-size="126" font-weight="800">TRAIL RUSH</text>
+  <text x="92" y="892" fill="#f9c682" font-family="Space Grotesk, Trebuchet MS, Segoe UI, sans-serif" font-size="34" letter-spacing="8">DIRT RAMPS / HEAT MANAGEMENT / RIVAL TRAFFIC</text>
+</svg>
