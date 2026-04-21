@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="800" y1="0" x2="800" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#091126"/>
+      <stop offset="1" stop-color="#02040b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1240 120) rotate(90) scale(260 360)">
+      <stop stop-color="#FF8C3A" stop-opacity=".4"/>
+      <stop offset="1" stop-color="#FF8C3A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="teal" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(360 180) rotate(90) scale(220 320)">
+      <stop stop-color="#7DF9FF" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#7DF9FF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#glow)"/>
+  <rect width="1600" height="900" fill="url(#teal)"/>
+
+  <g opacity=".7" fill="#DCE7FF">
+    <circle cx="140" cy="120" r="2"/>
+    <circle cx="280" cy="180" r="1.4"/>
+    <circle cx="420" cy="88" r="1.8"/>
+    <circle cx="580" cy="150" r="1.2"/>
+    <circle cx="760" cy="94" r="1.8"/>
+    <circle cx="900" cy="166" r="1.2"/>
+    <circle cx="1080" cy="112" r="2"/>
+    <circle cx="1320" cy="178" r="1.5"/>
+    <circle cx="1470" cy="100" r="1.2"/>
+    <circle cx="220" cy="330" r="1.4"/>
+    <circle cx="1040" cy="320" r="1.2"/>
+    <circle cx="1360" cy="380" r="1.7"/>
+  </g>
+
+  <g stroke="#7DF9FF" stroke-opacity=".1">
+    <path d="M0 260H1600"/>
+    <path d="M0 350H1600"/>
+    <path d="M0 440H1600"/>
+    <path d="M0 530H1600"/>
+    <path d="M0 620H1600"/>
+  </g>
+
+  <g transform="translate(380 170)">
+    <g transform="translate(0 0)">
+      <path d="M40 8C58 4 74 14 78 32L62 54L48 38L32 54L18 32C22 14 38 4 56 8H40Z" fill="#FFB35F" stroke="#FF5370" stroke-width="8"/>
+      <path d="M0 28L28 22L14 52Z" fill="#FF5370"/>
+      <path d="M110 28L82 22L96 52Z" fill="#FF5370"/>
+      <circle cx="42" cy="27" r="5" fill="#101828"/>
+      <circle cx="64" cy="27" r="5" fill="#101828"/>
+    </g>
+    <g transform="translate(170 20)">
+      <path d="M40 8C58 4 74 14 78 32L62 54L48 38L32 54L18 32C22 14 38 4 56 8H40Z" fill="#7DF9FF" stroke="#6E5DFF" stroke-width="8"/>
+      <path d="M0 28L28 22L14 52Z" fill="#6E5DFF"/>
+      <path d="M110 28L82 22L96 52Z" fill="#6E5DFF"/>
+      <circle cx="42" cy="27" r="5" fill="#101828"/>
+      <circle cx="64" cy="27" r="5" fill="#101828"/>
+    </g>
+    <g transform="translate(340 0)">
+      <path d="M40 8C58 4 74 14 78 32L62 54L48 38L32 54L18 32C22 14 38 4 56 8H40Z" fill="#FFB35F" stroke="#FF5370" stroke-width="8"/>
+      <path d="M0 28L28 22L14 52Z" fill="#FF5370"/>
+      <path d="M110 28L82 22L96 52Z" fill="#FF5370"/>
+      <circle cx="42" cy="27" r="5" fill="#101828"/>
+      <circle cx="64" cy="27" r="5" fill="#101828"/>
+    </g>
+    <g transform="translate(510 20)">
+      <path d="M40 8C58 4 74 14 78 32L62 54L48 38L32 54L18 32C22 14 38 4 56 8H40Z" fill="#7DF9FF" stroke="#6E5DFF" stroke-width="8"/>
+      <path d="M0 28L28 22L14 52Z" fill="#6E5DFF"/>
+      <path d="M110 28L82 22L96 52Z" fill="#6E5DFF"/>
+      <circle cx="42" cy="27" r="5" fill="#101828"/>
+      <circle cx="64" cy="27" r="5" fill="#101828"/>
+    </g>
+  </g>
+
+  <g transform="translate(1110 420) rotate(15)">
+    <path d="M0 0C30 -18 72 -20 94 14L78 60L50 36L22 60L6 14C20 -4 44 -8 70 -4L0 0Z" fill="#7DF9FF" stroke="#6E5DFF" stroke-width="10"/>
+  </g>
+
+  <g transform="translate(800 620)">
+    <path d="M0 -26L-34 28L-12 16L0 2L12 16L34 28L0 -26Z" fill="#8CF4FF"/>
+    <path d="M-16 26L-5 48L0 18L5 48L16 26Z" fill="#FF8C3A"/>
+  </g>
+
+  <rect x="790" y="420" width="10" height="120" rx="5" fill="#7DF9FF"/>
+  <rect x="1080" y="520" width="10" height="88" rx="5" fill="#7DF9FF"/>
+
+  <text x="100" y="742" fill="#F3F7FF" font-family="Trebuchet MS, Segoe UI, sans-serif" font-size="136" font-weight="800">GALAGA</text>
+  <text x="108" y="804" fill="#9FB0D3" font-family="Trebuchet MS, Segoe UI, sans-serif" font-size="34" letter-spacing="8">FORMATION PRESSURE / DIVE BOMBERS / ONE SHIP</text>
+</svg>
