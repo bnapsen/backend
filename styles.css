@@ -1,18 +1,18 @@
 :root {
-    --bg: #06101c;
-    --bg-strong: #040b14;
-    --surface: rgba(11, 20, 36, 0.76);
-    --surface-strong: rgba(8, 16, 29, 0.92);
-    --surface-soft: rgba(15, 27, 46, 0.78);
-    --line: rgba(137, 175, 213, 0.16);
-    --line-strong: rgba(114, 236, 255, 0.28);
-    --text: #f7fbff;
-    --muted: #9db0ca;
-    --accent: #72ecff;
-    --accent-strong: #26cfff;
-    --accent-warm: #ff9a4a;
-    --accent-warm-strong: #ff6a3d;
-    --shadow: 0 28px 80px rgba(2, 7, 14, 0.48);
+    --bg: #10203b;
+    --bg-strong: #091425;
+    --surface: rgba(20, 34, 60, 0.72);
+    --surface-strong: rgba(18, 30, 52, 0.9);
+    --surface-soft: rgba(28, 46, 80, 0.74);
+    --line: rgba(173, 209, 255, 0.24);
+    --line-strong: rgba(124, 244, 255, 0.38);
+    --text: #fdfefe;
+    --muted: #c8d5e8;
+    --accent: #7cf4ff;
+    --accent-strong: #34dfff;
+    --accent-warm: #ffb563;
+    --accent-warm-strong: #ff8256;
+    --shadow: 0 28px 70px rgba(3, 8, 18, 0.32);
     --display: "Oxanium", "Segoe UI", sans-serif;
     --body: "Space Grotesk", "Segoe UI", sans-serif;
 }
@@ -32,10 +32,10 @@ body {
     color: var(--text);
     line-height: 1.5;
     background:
-        radial-gradient(circle at 10% 14%, rgba(255, 154, 74, 0.18), transparent 25%),
-        radial-gradient(circle at 88% 8%, rgba(114, 236, 255, 0.18), transparent 28%),
-        radial-gradient(circle at 50% 110%, rgba(56, 122, 255, 0.12), transparent 35%),
-        linear-gradient(180deg, #081321 0%, var(--bg-strong) 100%);
+        radial-gradient(circle at 12% 12%, rgba(255, 181, 99, 0.28), transparent 28%),
+        radial-gradient(circle at 86% 10%, rgba(124, 244, 255, 0.22), transparent 30%),
+        radial-gradient(circle at 50% 112%, rgba(136, 150, 255, 0.16), transparent 38%),
+        linear-gradient(180deg, #16345d 0%, #10203b 48%, var(--bg-strong) 100%);
 }
 
 body::before {
@@ -48,9 +48,9 @@ body::before {
         repeating-linear-gradient(
             90deg,
             transparent 0,
-            transparent 95px,
-            rgba(114, 236, 255, 0.025) 95px,
-            rgba(114, 236, 255, 0.025) 96px
+            transparent 112px,
+            rgba(124, 244, 255, 0.03) 112px,
+            rgba(124, 244, 255, 0.03) 113px
         );
 }
 
@@ -84,17 +84,17 @@ textarea:focus-visible {
     z-index: 1;
     max-width: 1380px;
     margin: 0 auto;
-    padding: 2.35rem 1.8rem 4rem;
+    padding: 2.35rem 1.8rem 4.6rem;
 }
 
 .hero {
     position: relative;
     overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: 36px;
-    padding: 1.95rem;
+    border-radius: 34px;
+    padding: 1.45rem 1.55rem;
     background:
-        linear-gradient(125deg, rgba(7, 15, 28, 0.92) 8%, rgba(12, 25, 44, 0.7) 55%, rgba(255, 106, 61, 0.12) 100%),
+        linear-gradient(125deg, rgba(20, 40, 72, 0.82) 8%, rgba(39, 82, 128, 0.5) 56%, rgba(255, 130, 86, 0.18) 100%),
         url("15.JPG") center/cover;
     box-shadow: var(--shadow);
 }
@@ -107,7 +107,7 @@ textarea:focus-visible {
     width: 420px;
     height: 420px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(255, 154, 74, 0.24) 0%, rgba(255, 154, 74, 0) 70%);
+    background: radial-gradient(circle, rgba(255, 181, 99, 0.3) 0%, rgba(255, 181, 99, 0) 70%);
     filter: blur(14px);
 }
 
@@ -132,15 +132,15 @@ textarea:focus-visible {
     position: relative;
     z-index: 1;
     display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.92fr);
-    gap: 1.75rem;
+    grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.86fr);
+    gap: 1.25rem;
     align-items: stretch;
 }
 
 .hero-content {
     align-self: end;
-    max-width: 760px;
-    padding: 0.3rem 0.2rem;
+    max-width: 660px;
+    padding: 0.1rem 0.1rem;
 }
 
 .eyebrow,
@@ -167,9 +167,9 @@ textarea:focus-visible {
 }
 
 .neon-title {
-    margin: 1rem 0 0.85rem;
+    margin: 0.72rem 0 0.7rem;
     font-family: var(--display);
-    font-size: clamp(3.4rem, 9vw, 7rem);
+    font-size: clamp(2.9rem, 7.4vw, 5.6rem);
     line-height: 0.92;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -182,25 +182,25 @@ textarea:focus-visible {
 }
 
 .hero-text {
-    max-width: 700px;
+    max-width: 600px;
     margin: 0;
     color: var(--muted);
-    font-size: 1.06rem;
+    font-size: 1rem;
 }
 
 .hero-stats {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.9rem;
-    margin-top: 1.5rem;
+    gap: 0.75rem;
+    margin-top: 1rem;
 }
 
 .stat-pill {
-    min-width: 170px;
-    padding: 0.9rem 1rem;
+    min-width: 132px;
+    padding: 0.72rem 0.88rem;
     border-radius: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(6, 12, 24, 0.58);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(15, 26, 47, 0.54);
     backdrop-filter: blur(14px);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
@@ -209,13 +209,13 @@ textarea:focus-visible {
     display: block;
     margin-bottom: 0.25rem;
     font-family: var(--display);
-    font-size: 1.45rem;
+    font-size: 1.2rem;
     letter-spacing: 0.05em;
 }
 
 .stat-pill span {
     color: var(--muted);
-    font-size: 0.94rem;
+    font-size: 0.82rem;
 }
 
 .cta-row,
@@ -227,7 +227,7 @@ textarea:focus-visible {
 }
 
 .cta-row {
-    margin-top: 1.7rem;
+    margin-top: 1.15rem;
 }
 
 .btn {
@@ -283,16 +283,16 @@ textarea:focus-visible {
 .lane-card,
 .game-card,
 .review-panel {
-    background: linear-gradient(165deg, rgba(12, 21, 38, 0.92), rgba(7, 14, 27, 0.88));
+    background: linear-gradient(165deg, rgba(22, 37, 65, 0.9), rgba(12, 21, 39, 0.82));
     border: 1px solid var(--line);
     box-shadow: 0 18px 46px rgba(1, 6, 14, 0.34);
 }
 
 .hero-panel {
     display: grid;
-    gap: 1.2rem;
-    padding: 1.35rem;
-    border-radius: 26px;
+    gap: 0.9rem;
+    padding: 1rem;
+    border-radius: 24px;
     backdrop-filter: blur(18px);
 }
 
@@ -302,12 +302,31 @@ textarea:focus-visible {
 }
 
 .hero-spotlight {
-    padding: 1.3rem;
-    border-radius: 22px;
+    display: grid;
+    gap: 0.5rem;
+    padding: 1rem 1.05rem;
+    border-radius: 20px;
     background:
-        linear-gradient(145deg, rgba(255, 154, 74, 0.08), transparent 45%),
-        rgba(5, 11, 21, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+        linear-gradient(145deg, rgba(255, 181, 99, 0.12), transparent 45%),
+        rgba(11, 18, 33, 0.58);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.hero-spotlight--link {
+    text-decoration: none;
+    transition:
+        transform 180ms ease,
+        border-color 180ms ease,
+        background 180ms ease;
+}
+
+.hero-spotlight--link:hover,
+.hero-spotlight--link:focus-visible {
+    transform: translateY(-2px);
+    border-color: rgba(255, 181, 99, 0.34);
+    background:
+        linear-gradient(145deg, rgba(255, 181, 99, 0.18), transparent 45%),
+        rgba(14, 22, 39, 0.72);
 }
 
 .hero-spotlight h2,
@@ -321,8 +340,8 @@ textarea:focus-visible {
 }
 
 .hero-spotlight h2 {
-    margin-top: 0.65rem;
-    font-size: clamp(1.65rem, 4vw, 2.2rem);
+    margin-top: 0.2rem;
+    font-size: clamp(1.3rem, 3vw, 1.85rem);
 }
 
 .hero-spotlight p,
@@ -337,22 +356,19 @@ textarea:focus-visible {
 }
 
 .hero-spotlight p {
-    margin: 0.7rem 0 0;
-}
-
-.spotlight-actions {
-    margin-top: 1rem;
+    margin: 0;
 }
 
 .hero-mini-grid {
     display: grid;
-    gap: 1rem;
+    gap: 0.75rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .hero-mini-card {
     display: grid;
     gap: 0.25rem;
-    padding: 1rem 1.05rem;
+    padding: 0.82rem 0.9rem;
     border-radius: 18px;
     text-decoration: none;
     background: rgba(255, 255, 255, 0.03);
@@ -371,12 +387,12 @@ textarea:focus-visible {
 }
 
 .hero-mini-card strong {
-    font-size: 1.05rem;
+    font-size: 0.98rem;
 }
 
 .hero-mini-card small {
     color: var(--muted);
-    font-size: 0.92rem;
+    font-size: 0.85rem;
 }
 
 .mini-card-label {
@@ -387,10 +403,19 @@ textarea:focus-visible {
     margin-top: 3.15rem;
 }
 
+.launch-section {
+    margin-top: 1.75rem;
+}
+
 .section-heading {
     display: grid;
     gap: 0.5rem;
     margin-bottom: 1.85rem;
+}
+
+.section-heading--compact {
+    gap: 0.2rem;
+    margin-bottom: 1.15rem;
 }
 
 .section-heading--split {
@@ -414,10 +439,80 @@ textarea:focus-visible {
     gap: 0.7rem;
     padding: 0.75rem 1rem;
     border-radius: 999px;
-    border: 1px solid rgba(114, 236, 255, 0.2);
-    background: rgba(114, 236, 255, 0.08);
+    border: 1px solid rgba(124, 244, 255, 0.22);
+    background: rgba(124, 244, 255, 0.08);
     color: var(--accent);
     font-weight: 700;
+}
+
+.launch-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.95rem;
+}
+
+.launch-card {
+    display: grid;
+    gap: 0.18rem;
+    min-height: 128px;
+    padding: 1rem 1.05rem;
+    border-radius: 22px;
+    text-decoration: none;
+    color: var(--text);
+    border: 1px solid var(--line);
+    background: linear-gradient(165deg, rgba(27, 45, 77, 0.86), rgba(13, 22, 40, 0.78));
+    box-shadow: 0 16px 34px rgba(2, 8, 18, 0.2);
+    transition:
+        transform 180ms ease,
+        border-color 180ms ease,
+        background 180ms ease,
+        box-shadow 180ms ease;
+}
+
+.launch-card:hover,
+.launch-card:focus-visible {
+    transform: translateY(-3px);
+    border-color: var(--line-strong);
+    box-shadow: 0 18px 40px rgba(3, 10, 22, 0.26);
+}
+
+.launch-card strong {
+    font-family: var(--display);
+    font-size: 1.18rem;
+    letter-spacing: 0.03em;
+}
+
+.launch-card small {
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.launch-label {
+    display: inline-flex;
+    width: fit-content;
+    padding: 0.22rem 0.56rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #eef9ff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.launch-card--live .launch-label {
+    background: rgba(124, 244, 255, 0.14);
+    color: var(--accent);
+}
+
+.launch-card--arcade .launch-label {
+    background: rgba(255, 181, 99, 0.14);
+    color: #ffd094;
+}
+
+.launch-card--explore .launch-label {
+    background: rgba(154, 174, 255, 0.16);
+    color: #ccd5ff;
 }
 
 .lane-grid {
@@ -451,7 +546,7 @@ textarea:focus-visible {
 }
 
 .lane-card--explore::before {
-    background: linear-gradient(90deg, #7ea7ff, transparent);
+    background: linear-gradient(90deg, #9aaeff, transparent);
 }
 
 .lane-card h3 {
@@ -464,6 +559,9 @@ textarea:focus-visible {
 }
 
 .lane-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
     margin-top: 1.3rem;
 }
 
@@ -475,8 +573,8 @@ textarea:focus-visible {
     border-radius: 999px;
     text-decoration: none;
     color: var(--text);
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     transition:
         transform 180ms ease,
         border-color 180ms ease,
@@ -486,8 +584,8 @@ textarea:focus-visible {
 .lane-links a:hover,
 .lane-links a:focus-visible {
     transform: translateY(-1px);
-    border-color: rgba(114, 236, 255, 0.24);
-    background: rgba(114, 236, 255, 0.08);
+    border-color: rgba(124, 244, 255, 0.26);
+    background: rgba(124, 244, 255, 0.1);
 }
 
 .games-grid {
@@ -533,8 +631,8 @@ textarea:focus-visible {
     display: block;
     padding: 1.15rem;
     background:
-        radial-gradient(circle at top, rgba(114, 236, 255, 0.09), transparent 45%),
-        linear-gradient(180deg, rgba(15, 27, 46, 0.92), rgba(7, 14, 27, 0.98));
+        radial-gradient(circle at top, rgba(124, 244, 255, 0.13), transparent 45%),
+        linear-gradient(180deg, rgba(28, 47, 77, 0.9), rgba(12, 21, 39, 0.94));
 }
 
 .game-card--feature img {
@@ -713,13 +811,9 @@ textarea:focus-visible {
         grid-template-columns: 1fr;
     }
 
-    .hero-panel {
-        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-        align-items: start;
-    }
-
-    .hero-mini-grid {
-        height: 100%;
+    .hero-mini-grid,
+    .launch-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 
@@ -735,6 +829,10 @@ textarea:focus-visible {
 
     .game-card--feature {
         grid-column: span 1;
+    }
+
+    .launch-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -757,11 +855,12 @@ textarea:focus-visible {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .hero-panel {
+    .games-grid {
         grid-template-columns: 1fr;
     }
 
-    .games-grid {
+    .hero-mini-grid,
+    .launch-grid {
         grid-template-columns: 1fr;
     }
 }
