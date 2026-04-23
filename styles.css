@@ -601,10 +601,36 @@ textarea:focus-visible {
     border-radius: 28px;
     overflow: hidden;
     cursor: pointer;
+    isolation: isolate;
     transition:
         transform 180ms ease,
         border-color 180ms ease,
         box-shadow 180ms ease;
+}
+
+.game-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    background:
+        radial-gradient(
+            circle at var(--glow-x, 50%) var(--glow-y, 50%),
+            rgba(124, 244, 255, 0.24) 0%,
+            rgba(255, 181, 99, 0.16) 18%,
+            rgba(124, 244, 255, 0.08) 34%,
+            rgba(124, 244, 255, 0) 58%
+        );
+    transition: opacity 180ms ease;
+}
+
+.game-card.is-hovering::before,
+.game-card:hover::before,
+.game-card:focus-within::before,
+.game-card:focus-visible::before {
+    opacity: 1;
 }
 
 .game-card:hover,
@@ -629,6 +655,8 @@ textarea:focus-visible {
     aspect-ratio: 4 / 3;
     object-fit: contain;
     display: block;
+    position: relative;
+    z-index: 1;
     padding: 1.15rem;
     background:
         radial-gradient(circle at top, rgba(124, 244, 255, 0.13), transparent 45%),
@@ -644,6 +672,8 @@ textarea:focus-visible {
     flex: 1;
     flex-direction: column;
     gap: 0.95rem;
+    position: relative;
+    z-index: 1;
     padding: 1.35rem 1.3rem 1.45rem;
 }
 
