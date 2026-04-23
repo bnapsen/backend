@@ -626,10 +626,51 @@ textarea:focus-visible {
     transition: opacity 180ms ease;
 }
 
+.game-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    padding: 14px;
+    border-radius: inherit;
+    background:
+        radial-gradient(
+            circle at var(--glow-x, 50%) var(--glow-y, 50%),
+            rgba(7, 12, 24, 0.64) 0%,
+            rgba(7, 12, 24, 0.38) 14%,
+            rgba(7, 12, 24, 0.18) 28%,
+            rgba(7, 12, 24, 0) 48%
+        ),
+        radial-gradient(
+            circle at var(--glow-x, 50%) var(--glow-y, 50%),
+            rgba(255, 255, 255, 0.12) 0%,
+            rgba(255, 255, 255, 0.06) 10%,
+            rgba(255, 255, 255, 0) 24%
+        );
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    transition: opacity 180ms ease;
+}
+
 .game-card.is-hovering::before,
 .game-card:hover::before,
 .game-card:focus-within::before,
 .game-card:focus-visible::before {
+    opacity: 1;
+}
+
+.game-card.is-hovering::after,
+.game-card:hover::after,
+.game-card:focus-within::after,
+.game-card:focus-visible::after {
     opacity: 1;
 }
 
