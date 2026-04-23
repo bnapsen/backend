@@ -82,17 +82,17 @@ textarea:focus-visible {
 .page-shell {
     position: relative;
     z-index: 1;
-    max-width: 1320px;
+    max-width: 1380px;
     margin: 0 auto;
-    padding: 1.6rem 1.35rem 2.4rem;
+    padding: 2.35rem 1.8rem 4rem;
 }
 
 .hero {
     position: relative;
     overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: 34px;
-    padding: 1.5rem;
+    border-radius: 36px;
+    padding: 1.95rem;
     background:
         linear-gradient(125deg, rgba(7, 15, 28, 0.92) 8%, rgba(12, 25, 44, 0.7) 55%, rgba(255, 106, 61, 0.12) 100%),
         url("15.JPG") center/cover;
@@ -133,7 +133,7 @@ textarea:focus-visible {
     z-index: 1;
     display: grid;
     grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.92fr);
-    gap: 1.3rem;
+    gap: 1.75rem;
     align-items: stretch;
 }
 
@@ -290,8 +290,8 @@ textarea:focus-visible {
 
 .hero-panel {
     display: grid;
-    gap: 1rem;
-    padding: 1.1rem;
+    gap: 1.2rem;
+    padding: 1.35rem;
     border-radius: 26px;
     backdrop-filter: blur(18px);
 }
@@ -302,7 +302,7 @@ textarea:focus-visible {
 }
 
 .hero-spotlight {
-    padding: 1.1rem;
+    padding: 1.3rem;
     border-radius: 22px;
     background:
         linear-gradient(145deg, rgba(255, 154, 74, 0.08), transparent 45%),
@@ -346,13 +346,13 @@ textarea:focus-visible {
 
 .hero-mini-grid {
     display: grid;
-    gap: 0.8rem;
+    gap: 1rem;
 }
 
 .hero-mini-card {
     display: grid;
     gap: 0.25rem;
-    padding: 0.9rem 1rem;
+    padding: 1rem 1.05rem;
     border-radius: 18px;
     text-decoration: none;
     background: rgba(255, 255, 255, 0.03);
@@ -384,13 +384,13 @@ textarea:focus-visible {
 }
 
 .games-section {
-    margin-top: 2.15rem;
+    margin-top: 3.15rem;
 }
 
 .section-heading {
     display: grid;
-    gap: 0.35rem;
-    margin-bottom: 1.3rem;
+    gap: 0.5rem;
+    margin-bottom: 1.85rem;
 }
 
 .section-heading--split {
@@ -423,13 +423,13 @@ textarea:focus-visible {
 .lane-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1rem;
+    gap: 1.35rem;
 }
 
 .lane-card {
     position: relative;
     overflow: hidden;
-    padding: 1.2rem;
+    padding: 1.45rem;
     border-radius: 24px;
 }
 
@@ -464,7 +464,7 @@ textarea:focus-visible {
 }
 
 .lane-links {
-    margin-top: 1.1rem;
+    margin-top: 1.3rem;
 }
 
 .lane-links a {
@@ -492,15 +492,17 @@ textarea:focus-visible {
 
 .games-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.55rem;
 }
 
 .game-card {
+    position: relative;
     display: flex;
     flex-direction: column;
-    border-radius: 24px;
+    border-radius: 28px;
     overflow: hidden;
+    cursor: pointer;
     transition:
         transform 180ms ease,
         border-color 180ms ease,
@@ -508,10 +510,16 @@ textarea:focus-visible {
 }
 
 .game-card:hover,
-.game-card:focus-within {
+.game-card:focus-within,
+.game-card:focus-visible {
     transform: translateY(-4px);
     border-color: var(--line-strong);
     box-shadow: 0 24px 60px rgba(2, 7, 14, 0.42);
+}
+
+.game-card:focus-visible {
+    outline: 2px solid rgba(114, 236, 255, 0.82);
+    outline-offset: 4px;
 }
 
 .game-card--feature {
@@ -523,7 +531,7 @@ textarea:focus-visible {
     aspect-ratio: 4 / 3;
     object-fit: contain;
     display: block;
-    padding: 0.9rem;
+    padding: 1.15rem;
     background:
         radial-gradient(circle at top, rgba(114, 236, 255, 0.09), transparent 45%),
         linear-gradient(180deg, rgba(15, 27, 46, 0.92), rgba(7, 14, 27, 0.98));
@@ -537,8 +545,8 @@ textarea:focus-visible {
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 1.15rem;
+    gap: 0.95rem;
+    padding: 1.35rem 1.3rem 1.45rem;
 }
 
 .game-info h3 {
@@ -572,18 +580,18 @@ textarea:focus-visible {
 }
 
 .reviews-section {
-    margin-top: 2.35rem;
+    margin-top: 3.25rem;
 }
 
 .reviews-layout {
     display: grid;
     grid-template-columns: minmax(290px, 360px) minmax(0, 1fr);
-    gap: 1rem;
+    gap: 1.35rem;
 }
 
 .review-panel {
     border-radius: 24px;
-    padding: 1.1rem;
+    padding: 1.35rem;
 }
 
 .review-form {
@@ -693,7 +701,7 @@ textarea:focus-visible {
 }
 
 .footer {
-    margin-top: 2rem;
+    margin-top: 3rem;
     text-align: center;
     color: var(--muted);
     font-size: 0.92rem;
@@ -736,11 +744,11 @@ textarea:focus-visible {
     }
 
     .page-shell {
-        padding: 1rem 0.9rem 1.8rem;
+        padding: 1.15rem 1rem 2.25rem;
     }
 
     .hero {
-        padding: 1.1rem 1rem 1rem;
+        padding: 1.25rem 1.15rem 1.1rem;
         border-radius: 28px;
     }
 
