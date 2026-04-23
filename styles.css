@@ -1,18 +1,20 @@
 :root {
-    --bg: #18284d;
-    --bg-strong: #0d1630;
-    --surface: rgba(28, 40, 72, 0.7);
-    --surface-strong: rgba(21, 32, 59, 0.9);
-    --surface-soft: rgba(38, 56, 98, 0.74);
-    --line: rgba(188, 214, 255, 0.28);
-    --line-strong: rgba(132, 249, 255, 0.46);
+    --bg: #142333;
+    --bg-strong: #10131c;
+    --surface: rgba(24, 36, 49, 0.72);
+    --surface-strong: rgba(14, 21, 31, 0.9);
+    --surface-soft: rgba(36, 54, 66, 0.72);
+    --line: rgba(203, 246, 235, 0.24);
+    --line-strong: rgba(126, 255, 224, 0.52);
     --text: #ffffff;
-    --muted: #d4dff1;
-    --accent: #84f9ff;
-    --accent-strong: #3be4ff;
-    --accent-warm: #ffca72;
-    --accent-warm-strong: #ff8e61;
-    --shadow: 0 26px 62px rgba(4, 10, 24, 0.28);
+    --muted: #d7e7e4;
+    --accent: #7dffe2;
+    --accent-strong: #42ddff;
+    --accent-warm: #ffdc78;
+    --accent-warm-strong: #ff7d68;
+    --accent-lime: #a7ff69;
+    --accent-pink: #ff74a8;
+    --shadow: 0 24px 56px rgba(2, 7, 13, 0.34);
     --display: "Oxanium", "Segoe UI", sans-serif;
     --body: "Space Grotesk", "Segoe UI", sans-serif;
 }
@@ -32,8 +34,8 @@ body {
     color: var(--text);
     line-height: 1.5;
     background:
-        linear-gradient(180deg, rgba(11, 18, 41, 0.14), rgba(11, 18, 41, 0.56)),
-        linear-gradient(180deg, #224071 0%, #192c53 34%, var(--bg-strong) 100%);
+        linear-gradient(180deg, rgba(255, 220, 120, 0.08), rgba(16, 19, 28, 0.66)),
+        linear-gradient(180deg, #246174 0%, #173141 42%, var(--bg-strong) 100%);
 }
 
 body::before {
@@ -42,16 +44,9 @@ body::before {
     inset: 0;
     pointer-events: none;
     background:
-        linear-gradient(transparent, rgba(255, 255, 255, 0.018)),
-        url("nova-arcade-background.svg") center top / cover no-repeat,
-        repeating-linear-gradient(
-            90deg,
-            transparent 0,
-            transparent 112px,
-            rgba(132, 249, 255, 0.03) 112px,
-            rgba(132, 249, 255, 0.03) 113px
-        );
-    opacity: 0.94;
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(16, 19, 28, 0.1)),
+        url("nova-arcade-background.svg") center top / cover no-repeat;
+    opacity: 0.98;
 }
 
 body::after {
@@ -60,10 +55,9 @@ body::after {
     inset: 0;
     pointer-events: none;
     background:
-        radial-gradient(circle at 18% 14%, rgba(255, 202, 114, 0.16), transparent 26%),
-        radial-gradient(circle at 82% 12%, rgba(132, 249, 255, 0.14), transparent 28%),
-        radial-gradient(circle at 50% 72%, rgba(255, 142, 97, 0.1), transparent 32%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(12, 18, 36, 0.08) 38%, rgba(8, 12, 22, 0.3));
+        linear-gradient(112deg, rgba(255, 220, 120, 0.17) 0%, transparent 28%),
+        linear-gradient(248deg, rgba(125, 255, 226, 0.16) 0%, transparent 32%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(15, 25, 33, 0.12) 38%, rgba(8, 10, 16, 0.38));
 }
 
 img {
@@ -94,19 +88,19 @@ textarea:focus-visible {
 .page-shell {
     position: relative;
     z-index: 1;
-    max-width: 1380px;
+    max-width: 1420px;
     margin: 0 auto;
-    padding: 2.35rem 1.8rem 4.6rem;
+    padding: 2rem 1.8rem 4.8rem;
 }
 
 .hero {
     position: relative;
     overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: 34px;
-    padding: 1.45rem 1.55rem;
+    border: 1px solid rgba(210, 255, 244, 0.28);
+    border-radius: 26px;
+    padding: 1.65rem;
     background:
-        linear-gradient(125deg, rgba(33, 62, 108, 0.8) 8%, rgba(55, 105, 156, 0.48) 58%, rgba(255, 142, 97, 0.22) 100%),
+        linear-gradient(128deg, rgba(10, 20, 27, 0.68) 6%, rgba(18, 53, 63, 0.5) 52%, rgba(255, 125, 104, 0.2) 100%),
         url("15.JPG") center/cover;
     box-shadow: var(--shadow);
 }
@@ -118,9 +112,9 @@ textarea:focus-visible {
     top: -18%;
     width: 420px;
     height: 420px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(255, 181, 99, 0.3) 0%, rgba(255, 181, 99, 0) 70%);
-    filter: blur(14px);
+    border-radius: 80px;
+    background: linear-gradient(135deg, rgba(255, 220, 120, 0.24), rgba(125, 255, 226, 0));
+    filter: blur(18px);
 }
 
 .hero::after {
@@ -129,15 +123,15 @@ textarea:focus-visible {
     inset: 0;
     pointer-events: none;
     background:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.06), transparent 28%, transparent 72%, rgba(114, 236, 255, 0.08)),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 28%, transparent 72%, rgba(125, 255, 226, 0.1)),
         repeating-linear-gradient(
             135deg,
             transparent 0,
             transparent 18px,
-            rgba(255, 255, 255, 0.024) 18px,
-            rgba(255, 255, 255, 0.024) 19px
+            rgba(255, 255, 255, 0.035) 18px,
+            rgba(255, 255, 255, 0.035) 19px
         );
-    opacity: 0.5;
+    opacity: 0.58;
 }
 
 .hero-grid {
@@ -162,7 +156,7 @@ textarea:focus-visible {
 .mini-card-label {
     margin: 0;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
+    letter-spacing: 0;
     font-size: 0.76rem;
     font-weight: 700;
 }
@@ -173,19 +167,19 @@ textarea:focus-visible {
     gap: 0.55rem;
     padding: 0.42rem 0.82rem;
     border-radius: 999px;
-    background: rgba(114, 236, 255, 0.1);
-    border: 1px solid rgba(114, 236, 255, 0.22);
+    background: rgba(125, 255, 226, 0.12);
+    border: 1px solid rgba(125, 255, 226, 0.28);
     color: var(--accent);
 }
 
 .neon-title {
     margin: 0.72rem 0 0.7rem;
     font-family: var(--display);
-    font-size: clamp(2.9rem, 7.4vw, 5.6rem);
+    font-size: 5rem;
     line-height: 0.92;
-    letter-spacing: 0.08em;
+    letter-spacing: 0;
     text-transform: uppercase;
-    background: linear-gradient(90deg, #fff7d8 0%, #ffb270 38%, #72ecff 100%);
+    background: linear-gradient(90deg, #fff7d8 0%, #ffdc78 28%, #ff74a8 58%, #7dffe2 100%);
     -webkit-background-clip: text;
     color: transparent;
     text-shadow:
@@ -210,9 +204,9 @@ textarea:focus-visible {
 .stat-pill {
     min-width: 132px;
     padding: 0.72rem 0.88rem;
-    border-radius: 18px;
+    border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(15, 26, 47, 0.54);
+    background: rgba(9, 17, 24, 0.58);
     backdrop-filter: blur(14px);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
@@ -222,7 +216,7 @@ textarea:focus-visible {
     margin-bottom: 0.25rem;
     font-family: var(--display);
     font-size: 1.2rem;
-    letter-spacing: 0.05em;
+    letter-spacing: 0;
 }
 
 .stat-pill span {
@@ -265,16 +259,16 @@ textarea:focus-visible {
 }
 
 .btn-primary {
-    background: linear-gradient(120deg, var(--accent-warm) 0%, var(--accent) 100%);
+    background: linear-gradient(120deg, var(--accent-warm) 0%, var(--accent-lime) 45%, var(--accent) 100%);
     color: #07111d;
-    box-shadow: 0 12px 30px rgba(34, 199, 255, 0.22);
+    box-shadow: 0 12px 30px rgba(66, 221, 255, 0.2);
 }
 
 .btn-secondary,
 .btn-card,
 .review-submit {
-    border-color: rgba(114, 236, 255, 0.2);
-    background: rgba(114, 236, 255, 0.09);
+    border-color: rgba(125, 255, 226, 0.22);
+    background: rgba(125, 255, 226, 0.09);
     color: var(--text);
 }
 
@@ -295,16 +289,18 @@ textarea:focus-visible {
 .lane-card,
 .game-card,
 .review-panel {
-    background: linear-gradient(165deg, rgba(22, 37, 65, 0.9), rgba(12, 21, 39, 0.82));
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 38%),
+        linear-gradient(165deg, rgba(18, 34, 43, 0.9), rgba(10, 17, 25, 0.84));
     border: 1px solid var(--line);
-    box-shadow: 0 18px 46px rgba(1, 6, 14, 0.34);
+    box-shadow: 0 20px 48px rgba(1, 6, 14, 0.32);
 }
 
 .hero-panel {
     display: grid;
     gap: 0.9rem;
     padding: 1rem;
-    border-radius: 24px;
+    border-radius: 18px;
     backdrop-filter: blur(18px);
 }
 
@@ -317,11 +313,12 @@ textarea:focus-visible {
     display: grid;
     gap: 0.5rem;
     padding: 1rem 1.05rem;
-    border-radius: 20px;
+    border-radius: 16px;
     background:
-        linear-gradient(145deg, rgba(255, 181, 99, 0.12), transparent 45%),
-        rgba(11, 18, 33, 0.58);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+        linear-gradient(145deg, rgba(255, 220, 120, 0.18), transparent 45%),
+        linear-gradient(225deg, rgba(125, 255, 226, 0.1), transparent 46%),
+        rgba(10, 17, 25, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .hero-spotlight--link {
@@ -337,8 +334,9 @@ textarea:focus-visible {
     transform: translateY(-2px);
     border-color: rgba(255, 181, 99, 0.34);
     background:
-        linear-gradient(145deg, rgba(255, 181, 99, 0.18), transparent 45%),
-        rgba(14, 22, 39, 0.72);
+        linear-gradient(145deg, rgba(255, 220, 120, 0.24), transparent 45%),
+        linear-gradient(225deg, rgba(125, 255, 226, 0.15), transparent 46%),
+        rgba(12, 20, 28, 0.76);
 }
 
 .hero-spotlight h2,
@@ -348,12 +346,12 @@ textarea:focus-visible {
 .reviews-heading h3 {
     margin: 0;
     font-family: var(--display);
-    letter-spacing: 0.03em;
+    letter-spacing: 0;
 }
 
 .hero-spotlight h2 {
     margin-top: 0.2rem;
-    font-size: clamp(1.3rem, 3vw, 1.85rem);
+    font-size: 1.7rem;
 }
 
 .hero-spotlight p,
@@ -381,10 +379,10 @@ textarea:focus-visible {
     display: grid;
     gap: 0.25rem;
     padding: 0.82rem 0.9rem;
-    border-radius: 18px;
+    border-radius: 12px;
     text-decoration: none;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     transition:
         transform 180ms ease,
         border-color 180ms ease,
@@ -394,8 +392,8 @@ textarea:focus-visible {
 .hero-mini-card:hover,
 .hero-mini-card:focus-visible {
     transform: translateY(-2px);
-    border-color: rgba(114, 236, 255, 0.24);
-    background: rgba(114, 236, 255, 0.08);
+    border-color: rgba(125, 255, 226, 0.32);
+    background: rgba(125, 255, 226, 0.1);
 }
 
 .hero-mini-card strong {
@@ -412,7 +410,7 @@ textarea:focus-visible {
 }
 
 .games-section {
-    margin-top: 3.15rem;
+    margin-top: 3.45rem;
 }
 
 .section-heading {
@@ -433,7 +431,7 @@ textarea:focus-visible {
 }
 
 .section-heading h2 {
-    font-size: clamp(1.85rem, 3.6vw, 2.7rem);
+    font-size: 2.35rem;
 }
 
 .section-heading p {
@@ -537,7 +535,7 @@ textarea:focus-visible {
     position: relative;
     display: flex;
     flex-direction: column;
-    border-radius: 28px;
+    border-radius: 16px;
     overflow: hidden;
     cursor: pointer;
     isolation: isolate;
@@ -557,10 +555,10 @@ textarea:focus-visible {
     background:
         radial-gradient(
             circle at var(--glow-x, 50%) var(--glow-y, 50%),
-            rgba(124, 244, 255, 0.24) 0%,
-            rgba(255, 181, 99, 0.16) 18%,
-            rgba(124, 244, 255, 0.08) 34%,
-            rgba(124, 244, 255, 0) 58%
+            rgba(125, 255, 226, 0.26) 0%,
+            rgba(255, 116, 168, 0.16) 16%,
+            rgba(255, 220, 120, 0.1) 34%,
+            rgba(125, 255, 226, 0) 58%
         );
     transition: opacity 180ms ease;
 }
@@ -577,15 +575,15 @@ textarea:focus-visible {
     background:
         radial-gradient(
             circle at var(--glow-x, 50%) var(--glow-y, 50%),
-            rgba(7, 12, 24, 0.64) 0%,
-            rgba(7, 12, 24, 0.38) 14%,
-            rgba(7, 12, 24, 0.18) 28%,
-            rgba(7, 12, 24, 0) 48%
+            rgba(3, 8, 12, 0.7) 0%,
+            rgba(3, 8, 12, 0.4) 14%,
+            rgba(3, 8, 12, 0.16) 28%,
+            rgba(3, 8, 12, 0) 48%
         ),
         radial-gradient(
             circle at var(--glow-x, 50%) var(--glow-y, 50%),
-            rgba(255, 255, 255, 0.12) 0%,
-            rgba(255, 255, 255, 0.06) 10%,
+            rgba(255, 255, 255, 0.14) 0%,
+            rgba(255, 255, 255, 0.07) 10%,
             rgba(255, 255, 255, 0) 24%
         );
     -webkit-mask:
@@ -618,7 +616,9 @@ textarea:focus-visible {
 .game-card:focus-visible {
     transform: translateY(-4px);
     border-color: var(--line-strong);
-    box-shadow: 0 24px 60px rgba(2, 7, 14, 0.42);
+    box-shadow:
+        0 28px 68px rgba(2, 7, 14, 0.46),
+        0 0 0 1px rgba(125, 255, 226, 0.08) inset;
 }
 
 .game-card:focus-visible {
@@ -639,8 +639,9 @@ textarea:focus-visible {
     z-index: 1;
     padding: 1.15rem;
     background:
-        radial-gradient(circle at top, rgba(124, 244, 255, 0.13), transparent 45%),
-        linear-gradient(180deg, rgba(28, 47, 77, 0.9), rgba(12, 21, 39, 0.94));
+        linear-gradient(135deg, rgba(255, 220, 120, 0.16), transparent 36%),
+        linear-gradient(225deg, rgba(125, 255, 226, 0.14), transparent 42%),
+        linear-gradient(180deg, rgba(25, 49, 60, 0.9), rgba(10, 17, 25, 0.95));
 }
 
 .game-card--feature img {
@@ -672,19 +673,19 @@ textarea:focus-visible {
     width: fit-content;
     padding: 0.28rem 0.65rem;
     border-radius: 999px;
-    border: 1px solid rgba(114, 236, 255, 0.28);
-    background: rgba(114, 236, 255, 0.1);
+    border: 1px solid rgba(125, 255, 226, 0.28);
+    background: rgba(125, 255, 226, 0.1);
     color: var(--accent);
     font-size: 0.76rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0;
     text-transform: uppercase;
 }
 
 .level-tag--warm {
-    border-color: rgba(255, 154, 74, 0.28);
-    background: rgba(255, 154, 74, 0.1);
-    color: #ffc58f;
+    border-color: rgba(255, 125, 104, 0.34);
+    background: rgba(255, 125, 104, 0.12);
+    color: #ffd69e;
 }
 
 .reviews-section {
@@ -698,7 +699,7 @@ textarea:focus-visible {
 }
 
 .review-panel {
-    border-radius: 24px;
+    border-radius: 16px;
     padding: 1.35rem;
 }
 
@@ -853,7 +854,15 @@ textarea:focus-visible {
 
     .hero {
         padding: 1.25rem 1.15rem 1.1rem;
-        border-radius: 28px;
+        border-radius: 20px;
+    }
+
+    .neon-title {
+        font-size: 3.25rem;
+    }
+
+    .section-heading h2 {
+        font-size: 2rem;
     }
 
     .hero-stats {
@@ -878,6 +887,10 @@ textarea:focus-visible {
     .btn,
     .lane-links a {
         width: 100%;
+    }
+
+    .neon-title {
+        font-size: 2.65rem;
     }
 }
 
