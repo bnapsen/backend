@@ -35,6 +35,7 @@ const {
 const { createClipModerationService } = require('./clip-moderation.js');
 const {
   WEATHER_LAB_LOCATIONS,
+  resolveWeatherMarkets,
   scanWeatherMarkets,
 } = require('./kalshi-weather-lab.js');
 
@@ -358,6 +359,36 @@ async function handleKalshiWeatherScanRequest(req, res, requestUrl) {
     sendJsonResponse(req, res, 200, scan);
   } catch (error) {
     const payload = { error: 'Unable to scan Kalshi weather markets right now.' };
+    if (process.env.DEBUG_ERRORS === 'true') {
+      payload.detail = error.stack || error.message;
+    }
+    sendJsonResponse(req, res, 502, payload);
+  }
+}
+
+async function handleKalshiWeatherResolveRequest(req, res, requestUrl) {
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, { error: 'Method not allowed.' });
+    return;
+  }
+  if (!hasKalshiWeatherLabAccess(req, requestUrl)) {
+    sendJsonResponse(req, res, 403, { error: 'A valid Kalshi Weather Lab token is required.' });
+    return;
+  }
+
+  const tickers = String(requestUrl.searchParams.get('tickers') || '')
+    .split(',')
+    .map((ticker) => ticker.trim())
+    .filter(Boolean);
+  if (!tickers.length) {
+    sendJsonResponse(req, res, 400, { error: 'At least one ticker is required.' });
+    return;
+  }
+
+  try {
+    sendJsonResponse(req, res, 200, await resolveWeatherMarkets(tickers));
+  } catch (error) {
+    const payload = { error: 'Unable to resolve Kalshi weather markets right now.' };
     if (process.env.DEBUG_ERRORS === 'true') {
       payload.detail = error.stack || error.message;
     }
@@ -4296,6 +4327,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/kalshi/weather/scan') {
     await handleKalshiWeatherScanRequest(req, res, requestUrl);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/kalshi/weather/resolve') {
+    await handleKalshiWeatherResolveRequest(req, res, requestUrl);
     return;
   }
 

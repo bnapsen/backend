@@ -3,7 +3,7 @@
   const state = {
     scan: null,
     candidates: [],
-    ledger: JSON.parse(localStorage.getItem("kalshiWeatherLedger") || "[]"),
+    ledger: loadAuditLedger(),
   };
 
   const form = document.querySelector("#scan-form");
@@ -17,6 +17,7 @@
   const countEl = document.querySelector("#count");
   const candidatesEl = document.querySelector("#candidates");
   const contextsEl = document.querySelector("#contexts");
+  const auditSummaryEl = document.querySelector("#audit-summary");
   const ledgerEl = document.querySelector("#ledger");
   const detailDialog = document.querySelector("#detail-dialog");
   const detailTitle = document.querySelector("#detail-title");
@@ -32,10 +33,18 @@
   });
 
   document.querySelector("#clear-ledger").addEventListener("click", function () {
-    if (!confirm("Clear the local ledger on this browser?")) return;
+    if (!confirm("Clear the local edge audit on this browser?")) return;
     state.ledger = [];
     saveLedger();
     renderLedger();
+  });
+
+  document.querySelector("#audit-add-visible").addEventListener("click", function () {
+    addVisibleBuysToAudit();
+  });
+
+  document.querySelector("#resolve-audit").addEventListener("click", function () {
+    resolveAudit();
   });
 
   document.querySelector("#detail-close").addEventListener("click", function () {
@@ -74,18 +83,20 @@
 
   function renderSummary() {
     const top = state.candidates[0];
-    const buyCount = state.candidates.filter(function (item) {
-      return item.recommendation === "research-buy" || item.recommendation === "small-buy";
-    }).length;
+    const buyCount = buyCandidates().length;
     const avgEdge = state.candidates.length
       ? state.candidates.reduce(function (sum, item) { return sum + item.adjustedEdge; }, 0) / state.candidates.length
       : 0;
     const errors = state.scan && state.scan.errors ? state.scan.errors.length : 0;
     const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
+    const buys = buyCandidates();
+    const modelEv = buys.reduce(function (sum, item) { return sum + modelEvDollars(item); }, 0);
+    const modelCost = buys.reduce(function (sum, item) { return sum + Number(item.suggested.maxCost || 0); }, 0);
     summaryEl.innerHTML = [
       metric("Weather date", relativeDateLabel(scanDate), formatCalendarDate(scanDate)),
       metric("Top edge", top ? pct(top.adjustedEdge) : "n/a", top ? top.location + " " + top.subtitle + " " + top.side.toUpperCase() : "No candidate"),
-      metric("Buy flags", String(buyCount), "Research-buy or small-buy"),
+      metric("Model EV", signedDollars(modelEv), buys.length + " flags, $" + modelCost.toFixed(2) + " model stake"),
+      metric("Buy flags", String(buyCount), "Research, small, or tiny"),
       metric("Scan health", errors ? errors + " issue" + (errors === 1 ? "" : "s") : "OK", "Avg edge " + pct(avgEdge) + ", after fees"),
     ].join("");
   }
@@ -93,7 +104,7 @@
   function renderCandidates() {
     countEl.textContent = state.candidates.length + " candidates";
     if (!state.candidates.length) {
-      candidatesEl.innerHTML = '<tr><td colspan="11" class="subtext">No markets cleared the current filters.</td></tr>';
+      candidatesEl.innerHTML = '<tr><td colspan="12" class="subtext">No markets cleared the current filters.</td></tr>';
       return;
     }
 
@@ -109,9 +120,10 @@
         "<td>" + pct(item.rawProbability) + '<br><span class="subtext">tight ' + pct(item.tightProbability) + "</span></td>",
         "<td>" + pct(item.breakEven) + "</td>",
         '<td class="' + (item.adjustedEdge >= 0 ? "pos" : "neg") + '">' + pct(item.adjustedEdge) + "</td>",
+        '<td class="' + (modelEvDollars(item) >= 0 ? "pos" : "neg") + '">' + signedDollars(modelEvDollars(item)) + "</td>",
         '<td><span class="confidence">' + escapeHtml(item.confidence) + "</span></td>",
         "<td>" + item.suggested.contracts + " @ " + item.suggested.maxPriceCents + 'c<br><span class="subtext">$' + Number(item.suggested.maxCost).toFixed(2) + "</span></td>",
-        '<td><div class="actions"><button type="button" data-detail="' + index + '">View</button><button type="button" data-open="' + index + '">Kalshi</button><button type="button" data-log="' + index + '">Log</button></div></td>',
+        '<td><div class="actions"><button type="button" data-detail="' + index + '">View</button><button type="button" data-open="' + index + '">Kalshi</button><button type="button" data-log="' + index + '">Audit</button></div></td>',
         "</tr>",
       ].join("");
     }).join("");
@@ -153,20 +165,26 @@
   }
 
   function renderLedger() {
+    renderAuditSummary();
     if (!state.ledger.length) {
-      ledgerEl.innerHTML = '<div class="ledger-item"><span class="subtext">No local ledger entries yet.</span></div>';
+      ledgerEl.innerHTML = '<div class="ledger-item"><span class="subtext">No edge audit entries yet.</span></div>';
       return;
     }
 
     ledgerEl.innerHTML = state.ledger.slice(0, 50).map(function (entry) {
+      const resolved = entry.status === "resolved";
+      const profitClass = Number(entry.profitDollars || 0) >= 0 ? "pos" : "neg";
       return [
         '<div class="ledger-item">',
         "<h3>" + escapeHtml(entry.ticker) + ' <span class="' + (entry.side === "yes" ? "yes" : "no") + '">' + entry.side.toUpperCase() + "</span></h3>",
+        renderDateBadge(entry.marketDate),
         '<div class="context-row">',
         "<span>" + entry.contracts + " contracts</span>",
         "<span>" + entry.priceCents + "c</span>",
         "<span>p " + pct(entry.modelProbability) + "</span>",
         "<span>edge " + pct(entry.adjustedEdge) + "</span>",
+        "<span>EV " + signedDollars(entry.expectedProfitDollars || 0) + "</span>",
+        resolved ? '<span class="' + profitClass + '">result ' + escapeHtml(entry.outcome || "") + " / " + signedDollars(entry.profitDollars || 0) + "</span>" : "<span>open</span>",
         "<span>" + formatTime(entry.createdAt) + "</span>",
         "</div>",
         entry.notes ? '<p class="subtext">' + escapeHtml(entry.notes) + "</p>" : "",
@@ -179,8 +197,9 @@
     const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
     detailTitle.textContent = item.location + " " + item.subtitle + " " + item.side.toUpperCase() + " - " + formatDateWithRelative(scanDate);
     detailBody.innerHTML = [
-      '<div class="detail-block"><h3>Decision</h3><p>Weather date: <strong>' + escapeHtml(formatDateWithRelative(scanDate)) + "</strong>. " + escapeHtml(item.recommendation) + " at " + item.price.askCents + "c ask. Adjusted edge " + pct(item.adjustedEdge) + ". Confidence " + escapeHtml(item.confidence) + '.</p><div class="actions"><button type="button" id="detail-open">Open Kalshi</button><button type="button" id="detail-log">Log</button></div></div>',
+      '<div class="detail-block"><h3>Decision</h3><p>Weather date: <strong>' + escapeHtml(formatDateWithRelative(scanDate)) + "</strong>. " + escapeHtml(item.recommendation) + " at " + item.price.askCents + "c ask. Adjusted edge " + pct(item.adjustedEdge) + ". Confidence " + escapeHtml(item.confidence) + '.</p><div class="actions"><button type="button" id="detail-open">Open Kalshi</button><button type="button" id="detail-log">Audit</button></div></div>',
       '<div class="detail-block"><h3>Probability Stack</h3><p>Adjusted ' + pct(item.probability) + ". Raw sigma=3 " + pct(item.rawProbability) + ". Tight sigma=2 " + pct(item.tightProbability) + ". Wide sigma=4 " + pct(item.wideProbability) + ". Break-even " + pct(item.breakEven) + ".</p></div>",
+      '<div class="detail-block"><h3>Model EV</h3><p>Suggested size ' + item.suggested.contracts + " contracts at " + item.suggested.maxPriceCents + "c. Model expected profit " + signedDollars(modelEvDollars(item)) + " before any later price movement.</p></div>",
       '<div class="detail-block"><h3>Forecast</h3><p>Mean ' + formatNumber(item.context.meanHigh, 1) + "F, hourly max " + valueOrNa(item.context.hourlyMax) + "F, daily high " + valueOrNa(item.context.dailyHigh) + "F. " + escapeHtml(item.context.detailedForecast || item.context.shortForecast || "") + "</p></div>",
       '<div class="detail-block"><h3>Rationale</h3><ul>' + (item.rationale || []).map(function (line) { return "<li>" + escapeHtml(line) + "</li>"; }).join("") + "</ul></div>",
       '<div class="detail-block"><h3>Risk Flags</h3><p>' + escapeHtml(item.riskFlags && item.riskFlags.length ? item.riskFlags.join(", ") : "None raised by this pass.") + "</p></div>",
@@ -196,23 +215,147 @@
     const priceCents = Number(prompt("Price in cents", String(item.suggested.maxPriceCents)));
     if (!Number.isFinite(priceCents) || priceCents <= 0) return;
     const notes = prompt("Notes", item.recommendation + "; " + item.location + " " + item.subtitle) || "";
-    state.ledger.unshift({
-      createdAt: new Date().toISOString(),
-      ticker: item.ticker,
-      marketDate: state.scan && state.scan.date ? state.scan.date : dateInput.value,
-      side: item.side,
-      contracts: contracts,
-      priceCents: priceCents,
-      modelProbability: item.probability,
-      adjustedEdge: item.adjustedEdge,
-      notes: notes,
-    });
+    state.ledger.unshift(buildAuditEntry(item, contracts, priceCents, notes));
     saveLedger();
     renderLedger();
   }
 
+  function buildAuditEntry(item, contracts, priceCents, notes) {
+    const price = priceCents / 100;
+    const fee = kalshiFeeDollars(contracts, price);
+    const cost = contracts * price + fee;
+    const probability = Number(item.probability || 0);
+    return {
+      id: item.ticker + "-" + item.side + "-" + Date.now(),
+      createdAt: new Date().toISOString(),
+      ticker: item.ticker,
+      eventTicker: item.eventTicker,
+      marketDate: state.scan && state.scan.date ? state.scan.date : dateInput.value,
+      location: item.location,
+      subtitle: item.subtitle,
+      side: item.side,
+      contracts: contracts,
+      priceCents: priceCents,
+      feeDollars: roundMoney(fee),
+      costDollars: roundMoney(cost),
+      modelProbability: item.probability,
+      breakEven: round(cost / contracts, 4),
+      adjustedEdge: item.adjustedEdge,
+      expectedProfitDollars: roundMoney(contracts * probability - cost),
+      recommendation: item.recommendation,
+      confidence: item.confidence,
+      url: item.url,
+      status: "open",
+      notes: notes,
+    };
+  }
+
+  function addVisibleBuysToAudit() {
+    const candidates = buyCandidates();
+    if (!candidates.length) {
+      setStatus("No buy-flag candidates to add.", true);
+      return;
+    }
+
+    let added = 0;
+    candidates.forEach(function (item) {
+      const exists = state.ledger.some(function (entry) {
+        return entry.ticker === item.ticker && entry.side === item.side && entry.marketDate === (state.scan && state.scan.date);
+      });
+      if (exists) return;
+      state.ledger.unshift(buildAuditEntry(
+        item,
+        Number(item.suggested.contracts || 1),
+        Number(item.suggested.maxPriceCents || item.price.askCents || 1),
+        "Auto-audit " + item.recommendation + "; " + item.location + " " + item.subtitle
+      ));
+      added += 1;
+    });
+    saveLedger();
+    renderLedger();
+    setStatus("Added " + added + " candidates to the edge audit.");
+  }
+
+  async function resolveAudit() {
+    const openEntries = state.ledger.filter(function (entry) {
+      return entry.status !== "resolved";
+    });
+    if (!openEntries.length) {
+      setStatus("No open audit entries to resolve.");
+      return;
+    }
+
+    setStatus("Checking Kalshi settlements...");
+    try {
+      const tickers = openEntries.map(function (entry) { return entry.ticker; }).join(",");
+      const data = await fetchJson(kalshiWeatherEndpoint("/api/kalshi/weather/resolve?tickers=" + encodeURIComponent(tickers)));
+      const byTicker = {};
+      (data.markets || []).forEach(function (market) {
+        byTicker[market.ticker] = market;
+      });
+      let resolvedCount = 0;
+      state.ledger = state.ledger.map(function (entry) {
+        if (entry.status === "resolved") return entry;
+        const market = byTicker[entry.ticker];
+        if (!market) return entry;
+        const result = normalizeMarketResult(market.result);
+        const next = Object.assign({}, entry, {
+          latestStatus: market.status || "",
+          latestCheckedAt: data.asOf || new Date().toISOString(),
+          latestPrice: sideMarkPrice(market, entry.side),
+        });
+        if (!result) return next;
+
+        const won = result === entry.side;
+        resolvedCount += 1;
+        return Object.assign(next, {
+          status: "resolved",
+          outcome: result,
+          won: won,
+          payoutDollars: won ? Number(entry.contracts || 0) : 0,
+          profitDollars: roundMoney((won ? Number(entry.contracts || 0) : 0) - Number(entry.costDollars || 0)),
+          resolvedAt: data.asOf || new Date().toISOString(),
+        });
+      });
+      saveLedger();
+      renderLedger();
+      setStatus("Resolved " + resolvedCount + " audit entries.");
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }
+
+  function renderAuditSummary() {
+    if (!state.ledger.length) {
+      auditSummaryEl.innerHTML = "";
+      return;
+    }
+
+    const resolved = state.ledger.filter(function (entry) { return entry.status === "resolved"; });
+    const open = state.ledger.length - resolved.length;
+    const expectedProfit = state.ledger.reduce(function (sum, entry) { return sum + Number(entry.expectedProfitDollars || 0); }, 0);
+    const totalCost = state.ledger.reduce(function (sum, entry) { return sum + Number(entry.costDollars || 0); }, 0);
+    const realizedProfit = resolved.reduce(function (sum, entry) { return sum + Number(entry.profitDollars || 0); }, 0);
+    const avgModelP = resolved.length ? resolved.reduce(function (sum, entry) { return sum + Number(entry.modelProbability || 0); }, 0) / resolved.length : null;
+    const hitRate = resolved.length ? resolved.filter(function (entry) { return entry.won; }).length / resolved.length : null;
+    auditSummaryEl.innerHTML = [
+      auditMetric("Entries", state.ledger.length, open + " open"),
+      auditMetric("Expected", signedDollars(expectedProfit), "$" + totalCost.toFixed(2) + " tracked"),
+      auditMetric("Realized", signedDollars(realizedProfit), resolved.length + " resolved"),
+      auditMetric("Calibration", resolved.length ? pct(hitRate) : "n/a", resolved.length ? "avg p " + pct(avgModelP) : "need settlements"),
+    ].join("");
+  }
+
   function saveLedger() {
-    localStorage.setItem("kalshiWeatherLedger", JSON.stringify(state.ledger));
+    localStorage.setItem("kalshiWeatherEdgeAudit", JSON.stringify(state.ledger));
+  }
+
+  function loadAuditLedger() {
+    try {
+      return JSON.parse(localStorage.getItem("kalshiWeatherEdgeAudit") || "[]");
+    } catch (error) {
+      return [];
+    }
   }
 
   function fetchJson(url) {
@@ -244,6 +387,51 @@
 
   function metric(label, value, subtext) {
     return '<div class="metric"><span>' + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong><small>" + escapeHtml(subtext) + "</small></div>";
+  }
+
+  function auditMetric(label, value, subtext) {
+    return '<div class="audit-metric"><span>' + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong><small>" + escapeHtml(subtext) + "</small></div>";
+  }
+
+  function buyCandidates() {
+    return state.candidates.filter(function (item) {
+      return item.recommendation === "research-buy" || item.recommendation === "small-buy" || item.recommendation === "tiny-only";
+    });
+  }
+
+  function modelEvDollars(item) {
+    return Number(item.suggested && item.suggested.modelEv != null ? item.suggested.modelEv : Number(item.suggested.contracts || 0) * Number(item.adjustedEdge || 0));
+  }
+
+  function kalshiFeeDollars(contracts, priceDollars) {
+    return Math.ceil(0.07 * contracts * priceDollars * (1 - priceDollars) * 100) / 100;
+  }
+
+  function round(value, places) {
+    const factor = Math.pow(10, places);
+    return Math.round(Number(value || 0) * factor) / factor;
+  }
+
+  function roundMoney(value) {
+    return round(value, 2);
+  }
+
+  function signedDollars(value) {
+    const number = Number(value || 0);
+    const sign = number > 0 ? "+" : number < 0 ? "-" : "";
+    return sign + "$" + Math.abs(number).toFixed(2);
+  }
+
+  function normalizeMarketResult(result) {
+    const text = String(result || "").toLowerCase();
+    if (text === "yes" || text === "y" || text === "true" || text === "1") return "yes";
+    if (text === "no" || text === "n" || text === "false" || text === "0") return "no";
+    return "";
+  }
+
+  function sideMarkPrice(market, side) {
+    if (side === "yes") return Number(market.yesBid || market.lastPrice || 0);
+    return Number(market.noBid || 0);
   }
 
   function renderDateBadge(dateText) {

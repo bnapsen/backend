@@ -58,6 +58,7 @@
               <th>Raw</th>
               <th>BE</th>
               <th>Edge</th>
+              <th>EV</th>
               <th>Confidence</th>
               <th>Max</th>
               <th></th>
@@ -77,9 +78,14 @@
       </section>
       <section class="panel">
         <div class="section-head">
-          <h2>Manual Ledger</h2>
-          <button id="clear-ledger" type="button" class="ghost">Clear</button>
+          <h2>Edge Audit</h2>
+          <div class="panel-actions">
+            <button id="audit-add-visible" type="button" class="ghost">Add buys</button>
+            <button id="resolve-audit" type="button" class="ghost">Resolve</button>
+            <button id="clear-ledger" type="button" class="ghost">Clear</button>
+          </div>
         </div>
+        <div id="audit-summary" class="audit-summary"></div>
         <div id="ledger" class="ledger-list"></div>
       </section>
     </section>

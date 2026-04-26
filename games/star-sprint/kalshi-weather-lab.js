@@ -91,6 +91,47 @@ async function getKalshiMarkets(series, limit = 200) {
   return Array.isArray(data.markets) ? data.markets : [];
 }
 
+async function getKalshiMarket(ticker) {
+  const data = await fetchJsonWithRetry(`${KALSHI_API_BASE_URL}/markets/${encodeURIComponent(ticker)}`);
+  return data.market || data;
+}
+
+async function resolveWeatherMarkets(tickers) {
+  const uniqueTickers = [...new Set((tickers || []).map((ticker) => String(ticker || '').trim()).filter(Boolean))].slice(0, 80);
+  const markets = await Promise.all(uniqueTickers.map(async (ticker) => {
+    try {
+      const market = await getKalshiMarket(ticker);
+      return {
+        ticker,
+        ok: true,
+        status: market.status || '',
+        result: String(market.result || market.expiration_value || '').toLowerCase(),
+        title: market.title || '',
+        subtitle: market.yes_sub_title || market.subtitle || '',
+        closeTime: market.close_time || null,
+        expectedExpirationTime: market.expected_expiration_time || null,
+        updatedTime: market.updated_time || null,
+        lastPrice: marketPrice(market, 'last_price_dollars', 'last_price'),
+        yesBid: marketPrice(market, 'yes_bid_dollars', 'yes_bid'),
+        yesAsk: marketPrice(market, 'yes_ask_dollars', 'yes_ask'),
+        noBid: marketPrice(market, 'no_bid_dollars', 'no_bid'),
+        noAsk: marketPrice(market, 'no_ask_dollars', 'no_ask'),
+      };
+    } catch (error) {
+      return {
+        ticker,
+        ok: false,
+        error: error.message,
+      };
+    }
+  }));
+
+  return {
+    asOf: new Date().toISOString(),
+    markets,
+  };
+}
+
 function marketPrice(market, dollarField, centsField) {
   if (market[dollarField] !== undefined && market[dollarField] !== null && market[dollarField] !== '') {
     return parseNumber(market[dollarField], 0);
@@ -415,6 +456,7 @@ function scoreWeatherCandidate(market, location, context, range, side, maxCost) 
       maxCost: round(cost, 2),
       fee: round(fee, 2),
       maxPriceCents: Math.round(ask * 100),
+      modelEv: round(contracts * edge, 2),
     },
     context: {
       meanHigh: context.forecast.meanHigh,
@@ -501,5 +543,6 @@ async function scanWeatherMarkets(options = {}) {
 
 module.exports = {
   WEATHER_LAB_LOCATIONS,
+  resolveWeatherMarkets,
   scanWeatherMarkets,
 };
