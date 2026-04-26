@@ -319,7 +319,8 @@ function weatherRecommendation(edge, confidence, ask, probability) {
 
 function kalshiMarketUrl(market, location) {
   const series = String(market.series_ticker || market.event_ticker || location.series || '').split('-')[0];
-  const ticker = String(market.ticker || '').toLowerCase();
+  const ticker = String(market.ticker || '');
+  const eventTicker = String(market.event_ticker || '');
   const baseBySeries = {
     kxhighny: 'https://kalshi.com/markets/kxhighny/new-york-city-high-temperature',
     kxhighmia: 'https://kalshi.com/markets/kxhighmia/miami-high-temperature',
@@ -333,7 +334,9 @@ function kalshiMarketUrl(market, location) {
     kxhightmin: 'https://kalshi.com/markets/kxhightmin/minneapolis-daily-high-temperature',
   };
   const base = baseBySeries[series.toLowerCase()] || `https://kalshi.com/markets/${series.toLowerCase()}`;
-  return ticker ? `${base}#${ticker}` : base;
+  const eventPath = eventTicker ? `/${eventTicker.toLowerCase()}` : '';
+  const marketHash = ticker ? `#market=${encodeURIComponent(ticker)}` : '';
+  return `${base}${eventPath}${marketHash}`;
 }
 
 function scoreWeatherCandidate(market, location, context, range, side, maxCost) {

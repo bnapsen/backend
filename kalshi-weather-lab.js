@@ -58,7 +58,7 @@
       state.scan = scan;
       state.candidates = scan.candidates || [];
       renderScan();
-      setStatus("Updated " + formatTime(scan.asOf) + ". " + state.candidates.length + " markets shown.");
+      setStatus("Updated " + formatTime(scan.asOf) + ". " + state.candidates.length + " markets shown for " + formatDateWithRelative(scan.date) + ".");
     } catch (error) {
       setStatus(error.message, true);
     } finally {
@@ -81,11 +81,12 @@
       ? state.candidates.reduce(function (sum, item) { return sum + item.adjustedEdge; }, 0) / state.candidates.length
       : 0;
     const errors = state.scan && state.scan.errors ? state.scan.errors.length : 0;
+    const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
     summaryEl.innerHTML = [
+      metric("Weather date", relativeDateLabel(scanDate), formatCalendarDate(scanDate)),
       metric("Top edge", top ? pct(top.adjustedEdge) : "n/a", top ? top.location + " " + top.subtitle + " " + top.side.toUpperCase() : "No candidate"),
       metric("Buy flags", String(buyCount), "Research-buy or small-buy"),
-      metric("Shown avg edge", pct(avgEdge), "Adjusted, after fees"),
-      metric("Scan health", errors ? errors + " issue" + (errors === 1 ? "" : "s") : "OK", state.scan ? state.scan.date : ""),
+      metric("Scan health", errors ? errors + " issue" + (errors === 1 ? "" : "s") : "OK", "Avg edge " + pct(avgEdge) + ", after fees"),
     ].join("");
   }
 
@@ -96,11 +97,12 @@
       return;
     }
 
+    const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
     candidatesEl.innerHTML = state.candidates.map(function (item, index) {
       return [
         "<tr>",
         '<td><span class="pill ' + actionClass(item.recommendation) + '">' + escapeHtml(actionLabel(item.recommendation)) + "</span></td>",
-        '<td><div class="market-name"><strong>' + escapeHtml(item.location) + " " + escapeHtml(item.subtitle) + "</strong><span>" + escapeHtml(item.ticker) + "</span>" + renderRiskFlags(item) + "</div></td>",
+        '<td><div class="market-name"><strong>' + escapeHtml(item.location) + " " + escapeHtml(item.subtitle) + "</strong>" + renderDateBadge(scanDate) + "<span>" + escapeHtml(item.ticker) + "</span>" + renderRiskFlags(item) + "</div></td>",
         '<td><span class="side ' + (item.side === "yes" ? "yes" : "no") + '">' + item.side.toUpperCase() + "</span></td>",
         "<td>" + item.price.askCents + 'c<br><span class="subtext">bid ' + item.price.bidCents + "c</span></td>",
         "<td>" + pct(item.probability) + "</td>",
@@ -127,6 +129,7 @@
 
   function renderContexts() {
     const contexts = state.scan && state.scan.contexts ? state.scan.contexts : [];
+    const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
     if (!contexts.length) {
       contextsEl.innerHTML = '<div class="context-item"><span class="subtext">No forecast context loaded.</span></div>';
       return;
@@ -135,7 +138,7 @@
     contextsEl.innerHTML = contexts.map(function (context) {
       return [
         '<div class="context-item">',
-        "<h3>" + escapeHtml(context.location.label) + "</h3>",
+        "<h3>" + escapeHtml(context.location.label) + " " + renderDateBadge(scanDate) + "</h3>",
         '<div class="context-row">',
         "<span>mean " + formatNumber(context.forecast.meanHigh, 1) + "F</span>",
         "<span>hourly " + valueOrNa(context.forecast.hourlyMax) + "F</span>",
@@ -173,9 +176,10 @@
   }
 
   function showDetail(item) {
-    detailTitle.textContent = item.location + " " + item.subtitle + " " + item.side.toUpperCase();
+    const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
+    detailTitle.textContent = item.location + " " + item.subtitle + " " + item.side.toUpperCase() + " - " + formatDateWithRelative(scanDate);
     detailBody.innerHTML = [
-      '<div class="detail-block"><h3>Decision</h3><p>' + escapeHtml(item.recommendation) + " at " + item.price.askCents + "c ask. Adjusted edge " + pct(item.adjustedEdge) + ". Confidence " + escapeHtml(item.confidence) + '.</p><div class="actions"><button type="button" id="detail-open">Open Kalshi</button><button type="button" id="detail-log">Log</button></div></div>',
+      '<div class="detail-block"><h3>Decision</h3><p>Weather date: <strong>' + escapeHtml(formatDateWithRelative(scanDate)) + "</strong>. " + escapeHtml(item.recommendation) + " at " + item.price.askCents + "c ask. Adjusted edge " + pct(item.adjustedEdge) + ". Confidence " + escapeHtml(item.confidence) + '.</p><div class="actions"><button type="button" id="detail-open">Open Kalshi</button><button type="button" id="detail-log">Log</button></div></div>',
       '<div class="detail-block"><h3>Probability Stack</h3><p>Adjusted ' + pct(item.probability) + ". Raw sigma=3 " + pct(item.rawProbability) + ". Tight sigma=2 " + pct(item.tightProbability) + ". Wide sigma=4 " + pct(item.wideProbability) + ". Break-even " + pct(item.breakEven) + ".</p></div>",
       '<div class="detail-block"><h3>Forecast</h3><p>Mean ' + formatNumber(item.context.meanHigh, 1) + "F, hourly max " + valueOrNa(item.context.hourlyMax) + "F, daily high " + valueOrNa(item.context.dailyHigh) + "F. " + escapeHtml(item.context.detailedForecast || item.context.shortForecast || "") + "</p></div>",
       '<div class="detail-block"><h3>Rationale</h3><ul>' + (item.rationale || []).map(function (line) { return "<li>" + escapeHtml(line) + "</li>"; }).join("") + "</ul></div>",
@@ -195,6 +199,7 @@
     state.ledger.unshift({
       createdAt: new Date().toISOString(),
       ticker: item.ticker,
+      marketDate: state.scan && state.scan.date ? state.scan.date : dateInput.value,
       side: item.side,
       contracts: contracts,
       priceCents: priceCents,
@@ -239,6 +244,10 @@
 
   function metric(label, value, subtext) {
     return '<div class="metric"><span>' + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong><small>" + escapeHtml(subtext) + "</small></div>";
+  }
+
+  function renderDateBadge(dateText) {
+    return '<span class="date-badge ' + dateClass(dateText) + '"><strong>' + escapeHtml(relativeDateLabel(dateText)) + '</strong><small>' + escapeHtml(formatCalendarDate(dateText)) + "</small></span>";
   }
 
   function renderRiskFlags(item) {
@@ -296,6 +305,50 @@
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
     return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+
+  function parseLocalDate(value) {
+    const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
+
+  function dayOffset(dateText) {
+    const target = parseLocalDate(dateText);
+    if (!target) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    target.setHours(0, 0, 0, 0);
+    return Math.round((target.getTime() - today.getTime()) / 86400000);
+  }
+
+  function relativeDateLabel(dateText) {
+    const offset = dayOffset(dateText);
+    if (offset === null) return "Date unknown";
+    if (offset === 0) return "Today";
+    if (offset === 1) return "Tomorrow";
+    if (offset === -1) return "Yesterday";
+    if (offset > 1 && offset <= 7) return "In " + offset + " days";
+    if (offset < -1) return Math.abs(offset) + " days ago";
+    return "Future date";
+  }
+
+  function dateClass(dateText) {
+    const offset = dayOffset(dateText);
+    if (offset === 1) return "tomorrow";
+    if (offset === 0) return "today";
+    if (offset !== null && offset < 0) return "past";
+    return "future";
+  }
+
+  function formatCalendarDate(dateText) {
+    const date = parseLocalDate(dateText);
+    if (!date) return String(dateText || "n/a");
+    return date.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function formatDateWithRelative(dateText) {
+    return formatCalendarDate(dateText) + " (" + relativeDateLabel(dateText) + ")";
   }
 
   function tomorrowIsoDate() {
