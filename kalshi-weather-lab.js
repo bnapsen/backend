@@ -1,9 +1,13 @@
 (function () {
   const PROD_KALSHI_WEATHER_API_BASE = "https://nova-arcade-backend-1000121513328.us-central1.run.app";
+  const AUTO_AUDIT_ENABLED_KEY = "kalshiWeatherAutoAuditEnabled";
+  const AUTO_AUDIT_LIMIT_KEY = "kalshiWeatherAutoAuditLimit";
+  const AUTO_AUDIT_MINUTES_KEY = "kalshiWeatherAutoAuditMinutes";
   const state = {
     scan: null,
     candidates: [],
     ledger: loadAuditLedger(),
+    autoAuditTimer: null,
   };
 
   const form = document.querySelector("#scan-form");
@@ -19,12 +23,18 @@
   const contextsEl = document.querySelector("#contexts");
   const auditSummaryEl = document.querySelector("#audit-summary");
   const ledgerEl = document.querySelector("#ledger");
+  const autoAuditEnabledInput = document.querySelector("#auto-audit-enabled");
+  const autoAuditLimitInput = document.querySelector("#auto-audit-limit");
+  const autoAuditMinutesInput = document.querySelector("#auto-audit-minutes");
   const detailDialog = document.querySelector("#detail-dialog");
   const detailTitle = document.querySelector("#detail-title");
   const detailBody = document.querySelector("#detail-body");
 
   dateInput.value = tomorrowIsoDate();
   tokenInput.value = localStorage.getItem("kalshiLabToken") || "";
+  autoAuditEnabledInput.checked = localStorage.getItem(AUTO_AUDIT_ENABLED_KEY) === "1";
+  autoAuditLimitInput.value = localStorage.getItem(AUTO_AUDIT_LIMIT_KEY) || "10";
+  autoAuditMinutesInput.value = localStorage.getItem(AUTO_AUDIT_MINUTES_KEY) || "15";
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();
@@ -47,12 +57,38 @@
     resolveAudit();
   });
 
+  autoAuditEnabledInput.addEventListener("change", function () {
+    localStorage.setItem(AUTO_AUDIT_ENABLED_KEY, autoAuditEnabledInput.checked ? "1" : "0");
+    scheduleAutoAudit();
+    if (!autoAuditEnabledInput.checked) {
+      renderLedger();
+      setStatus("Auto audit off.");
+      return;
+    }
+    const added = autoAuditTopCandidates();
+    renderLedger();
+    resolveAudit({ silent: true });
+    setStatus("Auto audit on. Tracking top " + autoAuditLimit() + " buy flags every " + autoAuditMinutes() + " minutes." + (added ? " Added " + added + "." : ""));
+  });
+
+  autoAuditLimitInput.addEventListener("change", function () {
+    localStorage.setItem(AUTO_AUDIT_LIMIT_KEY, String(autoAuditLimit()));
+    renderLedger();
+  });
+
+  autoAuditMinutesInput.addEventListener("change", function () {
+    localStorage.setItem(AUTO_AUDIT_MINUTES_KEY, String(autoAuditMinutes()));
+    scheduleAutoAudit();
+    renderLedger();
+  });
+
   document.querySelector("#detail-close").addEventListener("click", function () {
     detailDialog.close();
   });
 
   renderLedger();
   runScan();
+  scheduleAutoAudit();
 
   async function runScan() {
     setLoading(true, "Scanning Kalshi and NWS...");
@@ -67,7 +103,16 @@
       state.scan = scan;
       state.candidates = scan.candidates || [];
       renderScan();
-      setStatus("Updated " + formatTime(scan.asOf) + ". " + state.candidates.length + " markets shown for " + formatDateWithRelative(scan.date) + ".");
+      let autoMessage = "";
+      if (autoAuditEnabledInput.checked) {
+        const added = autoAuditTopCandidates();
+        const resolution = await resolveAudit({ silent: true });
+        renderLedger();
+        autoMessage = " Auto audit top " + autoAuditLimit() + " on.";
+        if (added) autoMessage += " Added " + added + ".";
+        if (resolution && resolution.resolvedCount) autoMessage += " Resolved " + resolution.resolvedCount + ".";
+      }
+      setStatus("Updated " + formatTime(scan.asOf) + ". " + state.candidates.length + " markets shown for " + formatDateWithRelative(scan.date) + "." + autoMessage);
     } catch (error) {
       setStatus(error.message, true);
     } finally {
@@ -184,8 +229,9 @@
         "<span>p " + pct(entry.modelProbability) + "</span>",
         "<span>edge " + pct(entry.adjustedEdge) + "</span>",
         "<span>EV " + signedDollars(entry.expectedProfitDollars || 0) + "</span>",
+        entry.latestPrice != null ? "<span>mark " + escapeHtml(entry.latestPrice) + "c</span>" : "",
         resolved ? '<span class="' + profitClass + '">result ' + escapeHtml(entry.outcome || "") + " / " + signedDollars(entry.profitDollars || 0) + "</span>" : "<span>open</span>",
-        "<span>" + formatTime(entry.createdAt) + "</span>",
+        entry.latestCheckedAt ? "<span>checked " + formatTime(entry.latestCheckedAt) + "</span>" : "<span>logged " + formatTime(entry.createdAt) + "</span>",
         "</div>",
         entry.notes ? '<p class="subtext">' + escapeHtml(entry.notes) + "</p>" : "",
         "</div>",
@@ -228,9 +274,10 @@
     return {
       id: item.ticker + "-" + item.side + "-" + Date.now(),
       createdAt: new Date().toISOString(),
+      autoAudit: String(notes || "").indexOf("Auto-audit") === 0,
       ticker: item.ticker,
       eventTicker: item.eventTicker,
-      marketDate: state.scan && state.scan.date ? state.scan.date : dateInput.value,
+      marketDate: auditMarketDate(),
       location: item.location,
       subtitle: item.subtitle,
       side: item.side,
@@ -257,35 +304,48 @@
       return;
     }
 
+    const added = addCandidatesToAudit(candidates, "Manual audit");
+    setStatus(added ? "Added " + added + " candidates to the edge audit." : "Those buy flags are already in the edge audit.");
+  }
+
+  function autoAuditTopCandidates() {
+    if (!state.candidates.length) return 0;
+    return addCandidatesToAudit(buyCandidates().slice(0, autoAuditLimit()), "Auto-audit");
+  }
+
+  function addCandidatesToAudit(candidates, notePrefix) {
     let added = 0;
     candidates.forEach(function (item) {
       const exists = state.ledger.some(function (entry) {
-        return entry.ticker === item.ticker && entry.side === item.side && entry.marketDate === (state.scan && state.scan.date);
+        return entry.ticker === item.ticker && entry.side === item.side && entry.marketDate === auditMarketDate();
       });
       if (exists) return;
       state.ledger.unshift(buildAuditEntry(
         item,
         Number(item.suggested.contracts || 1),
         Number(item.suggested.maxPriceCents || item.price.askCents || 1),
-        "Auto-audit " + item.recommendation + "; " + item.location + " " + item.subtitle
+        notePrefix + " " + item.recommendation + "; " + item.location + " " + item.subtitle
       ));
       added += 1;
     });
-    saveLedger();
-    renderLedger();
-    setStatus("Added " + added + " candidates to the edge audit.");
+    if (added) {
+      saveLedger();
+      renderLedger();
+    }
+    return added;
   }
 
-  async function resolveAudit() {
+  async function resolveAudit(options) {
+    const silent = Boolean(options && options.silent);
     const openEntries = state.ledger.filter(function (entry) {
       return entry.status !== "resolved";
     });
     if (!openEntries.length) {
-      setStatus("No open audit entries to resolve.");
-      return;
+      if (!silent) setStatus("No open audit entries to resolve.");
+      return { resolvedCount: 0, checkedCount: 0 };
     }
 
-    setStatus("Checking Kalshi settlements...");
+    if (!silent) setStatus("Checking Kalshi settlements...");
     try {
       const tickers = openEntries.map(function (entry) { return entry.ticker; }).join(",");
       const data = await fetchJson(kalshiWeatherEndpoint("/api/kalshi/weather/resolve?tickers=" + encodeURIComponent(tickers)));
@@ -319,9 +379,11 @@
       });
       saveLedger();
       renderLedger();
-      setStatus("Resolved " + resolvedCount + " audit entries.");
+      if (!silent || resolvedCount) setStatus("Resolved " + resolvedCount + " audit entries.");
+      return { resolvedCount: resolvedCount, checkedCount: openEntries.length };
     } catch (error) {
-      setStatus(error.message, true);
+      if (!silent) setStatus(error.message, true);
+      return { resolvedCount: 0, checkedCount: openEntries.length, error: error.message };
     }
   }
 
@@ -338,12 +400,54 @@
     const realizedProfit = resolved.reduce(function (sum, entry) { return sum + Number(entry.profitDollars || 0); }, 0);
     const avgModelP = resolved.length ? resolved.reduce(function (sum, entry) { return sum + Number(entry.modelProbability || 0); }, 0) / resolved.length : null;
     const hitRate = resolved.length ? resolved.filter(function (entry) { return entry.won; }).length / resolved.length : null;
+    const autoCount = state.ledger.filter(function (entry) { return entry.autoAudit; }).length;
+    const latestCheck = latestAuditCheckTime();
     auditSummaryEl.innerHTML = [
-      auditMetric("Entries", state.ledger.length, open + " open"),
+      auditMetric("Entries", state.ledger.length, open + " open, " + autoCount + " auto"),
       auditMetric("Expected", signedDollars(expectedProfit), "$" + totalCost.toFixed(2) + " tracked"),
       auditMetric("Realized", signedDollars(realizedProfit), resolved.length + " resolved"),
       auditMetric("Calibration", resolved.length ? pct(hitRate) : "n/a", resolved.length ? "avg p " + pct(avgModelP) : "need settlements"),
+      auditMetric("Checked", latestCheck ? formatTime(latestCheck) : "not yet", autoAuditEnabledInput.checked ? "auto on: top " + autoAuditLimit() + " / " + autoAuditMinutes() + "m" : "auto off"),
     ].join("");
+  }
+
+  function latestAuditCheckTime() {
+    let latest = 0;
+    state.ledger.forEach(function (entry) {
+      const value = entry.latestCheckedAt || entry.resolvedAt || entry.createdAt;
+      const time = new Date(value).getTime();
+      if (Number.isFinite(time) && time > latest) latest = time;
+    });
+    return latest ? new Date(latest).toISOString() : "";
+  }
+
+  function scheduleAutoAudit() {
+    if (state.autoAuditTimer) {
+      clearInterval(state.autoAuditTimer);
+      state.autoAuditTimer = null;
+    }
+    if (!autoAuditEnabledInput.checked) return;
+    state.autoAuditTimer = setInterval(function () {
+      runScan();
+    }, autoAuditMinutes() * 60 * 1000);
+  }
+
+  function autoAuditLimit() {
+    const limit = clampInteger(autoAuditLimitInput.value, 1, 50, 10);
+    autoAuditLimitInput.value = String(limit);
+    localStorage.setItem(AUTO_AUDIT_LIMIT_KEY, String(limit));
+    return limit;
+  }
+
+  function autoAuditMinutes() {
+    const minutes = clampInteger(autoAuditMinutesInput.value, 3, 120, 15);
+    autoAuditMinutesInput.value = String(minutes);
+    localStorage.setItem(AUTO_AUDIT_MINUTES_KEY, String(minutes));
+    return minutes;
+  }
+
+  function auditMarketDate() {
+    return state.scan && state.scan.date ? state.scan.date : dateInput.value;
   }
 
   function saveLedger() {
@@ -414,6 +518,12 @@
 
   function roundMoney(value) {
     return round(value, 2);
+  }
+
+  function clampInteger(value, min, max, fallback) {
+    const number = Math.round(Number(value));
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(min, Math.min(max, number));
   }
 
   function signedDollars(value) {

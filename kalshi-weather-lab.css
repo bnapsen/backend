@@ -206,7 +206,28 @@ button:disabled {
 .panel-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+}
+
+.panel-actions .audit-toggle {
+  height: 36px;
+}
+
+.compact-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: none;
+}
+
+.compact-input {
+  width: 58px;
+  height: 32px;
+  padding: 0 8px;
 }
 
 .table-wrap {
@@ -384,7 +405,7 @@ tr:last-child td {
 
 .audit-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
   border-bottom: 1px solid var(--line);
 }
 
@@ -512,7 +533,13 @@ dialog::backdrop {
 
   input,
   #access-token,
-  button {
+  button,
+  .compact-input {
     width: 100%;
+  }
+
+  .compact-label {
+    width: 100%;
+    justify-content: space-between;
   }
 }

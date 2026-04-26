@@ -80,6 +80,19 @@
         <div class="section-head">
           <h2>Edge Audit</h2>
           <div class="panel-actions">
+            <label class="check audit-toggle">
+              <input id="auto-audit-enabled" type="checkbox">
+              Auto audit top
+            </label>
+            <label class="compact-label">
+              Top
+              <input id="auto-audit-limit" class="compact-input" type="number" min="1" max="50" step="1" value="10">
+            </label>
+            <label class="compact-label">
+              Every
+              <input id="auto-audit-minutes" class="compact-input" type="number" min="3" max="120" step="1" value="15">
+              min
+            </label>
             <button id="audit-add-visible" type="button" class="ghost">Add buys</button>
             <button id="resolve-audit" type="button" class="ghost">Resolve</button>
             <button id="clear-ledger" type="button" class="ghost">Clear</button>
