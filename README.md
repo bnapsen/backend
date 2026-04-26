@@ -9,6 +9,7 @@ Star Sprint is a lightweight multiplayer browser game with a PowerShell backend.
 - Shared game board with score tracking
 - Zero external dependencies
 - Docker deployment support for cloud hosting
+- A read-only Kalshi Weather Lab research dashboard
 
 ## Run locally
 
@@ -27,6 +28,33 @@ If you want the easiest option on Windows, double-click `start-game.bat` or run:
 ```
 
 That opens a dedicated server window and then opens the game in your browser.
+
+## Security defaults
+
+The server now ships with safer defaults for public hosting:
+
+- CORS is limited to `localhost`, `bnapsen.com`, `www.bnapsen.com`, and `*.github.io`
+- Request bodies are capped at `65536` bytes unless you raise `MAX_REQUEST_BODY_BYTES`
+- Internal exception details stay server-side unless `DEBUG_ERRORS=true`
+- The `/etrade-api` proxy is **localhost-only by default**
+- The Kalshi Weather Lab API can be protected with `KALSHI_LAB_TOKEN`
+
+Environment variables you can use:
+
+- `ALLOWED_ORIGINS`
+  Comma-separated origin allowlist for browser clients.
+- `MAX_REQUEST_BODY_BYTES`
+  Maximum accepted request size in bytes. Defaults to `65536`.
+- `DEBUG_ERRORS`
+  Set to `true` only when you intentionally want detailed server errors in responses.
+- `ETRADE_BRIDGE_URL`
+  Base URL for the local bridge service. Defaults to `http://127.0.0.1:8765`.
+- `ENABLE_PUBLIC_ETRADE_PROXY`
+  Set to `true` only if you intentionally want remote access to `/etrade-api`.
+- `ETRADE_PROXY_TOKEN`
+  Optional extra protection for the E*TRADE proxy. When set, clients must send it in the `X-ETrade-Proxy-Token` header.
+- `KALSHI_LAB_TOKEN`
+  Optional protection for `/api/kalshi/weather/*`. When set, the Weather Lab page must send it in the access field.
 
 ## Publish to GitHub
 
@@ -49,7 +77,9 @@ This repo includes a `Dockerfile` and `render.yaml`, so you can deploy it as a D
 1. Push the repo to GitHub.
 2. In Render, create a new Blueprint or Web Service from that GitHub repo.
 3. Render should detect `render.yaml` and deploy the app.
-4. After deploy, open your public `onrender.com` URL and share it.
+4. After deploy, set any production env vars you need, especially `ALLOWED_ORIGINS`.
+5. Keep `ENABLE_PUBLIC_ETRADE_PROXY` unset unless you are intentionally exposing the trading bridge.
+6. After deploy, open your public `onrender.com` URL and share it.
 
 ## Serve the Frontend from GitHub Pages
 

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Kalshi Weather Lab thumbnail</title>
+  <desc id="desc">A dark trading dashboard with weather bands, probability markers, and a temperature curve.</desc>
+  <rect width="1280" height="720" fill="#0a0f12"/>
+  <rect x="56" y="54" width="1168" height="612" rx="28" fill="#101820" stroke="#2a3947" stroke-width="3"/>
+  <text x="96" y="122" fill="#34d399" font-family="Segoe UI, Arial, sans-serif" font-size="44" font-weight="800">Weather Lab</text>
+  <text x="96" y="166" fill="#9fb0ae" font-family="Segoe UI, Arial, sans-serif" font-size="24">Forecast-adjusted market edge</text>
+  <g transform="translate(94 214)">
+    <rect width="304" height="122" rx="14" fill="#16222c"/>
+    <text x="24" y="42" fill="#9fb0ae" font-family="Segoe UI, Arial, sans-serif" font-size="22">Adjusted probability</text>
+    <text x="24" y="94" fill="#34d399" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="800">24.8%</text>
+  </g>
+  <g transform="translate(426 214)">
+    <rect width="304" height="122" rx="14" fill="#16222c"/>
+    <text x="24" y="42" fill="#9fb0ae" font-family="Segoe UI, Arial, sans-serif" font-size="22">Break-even</text>
+    <text x="24" y="94" fill="#fbbf24" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="800">8.7%</text>
+  </g>
+  <g transform="translate(758 214)">
+    <rect width="372" height="122" rx="14" fill="#16222c"/>
+    <text x="24" y="42" fill="#9fb0ae" font-family="Segoe UI, Arial, sans-serif" font-size="22">Risk flags</text>
+    <text x="24" y="90" fill="#fb7185" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="800">Upslope rain regime</text>
+  </g>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M112 560 C 210 390, 298 456, 394 382 S 584 322, 676 426 S 850 542, 1002 344 S 1120 292, 1184 330" stroke="#60a5fa" stroke-width="12"/>
+    <path d="M112 590 L1184 590" stroke="#2a3947" stroke-width="4"/>
+    <path d="M112 500 L1184 500" stroke="#1c2a35" stroke-width="3"/>
+    <path d="M112 410 L1184 410" stroke="#1c2a35" stroke-width="3"/>
+  </g>
+  <g fill="#34d399">
+    <circle cx="394" cy="382" r="15"/>
+    <circle cx="1002" cy="344" r="15"/>
+  </g>
+  <g fill="#fbbf24">
+    <circle cx="676" cy="426" r="15"/>
+  </g>
+  <g fill="#fb7185">
+    <circle cx="1184" cy="330" r="15"/>
+  </g>
+</svg>

@@ -1,0 +1,380 @@
+:root {
+  --paper: #ece6dc;
+  --paper-shadow: #d8cec0;
+  --ink: #161616;
+  --muted: #655d53;
+  --panel: rgba(20, 20, 20, 0.88);
+  --panel-soft: rgba(31, 29, 26, 0.78);
+  --line: rgba(22, 22, 22, 0.12);
+  --rust: #c95e34;
+  --gold: #d5a24d;
+  --olive: #566042;
+  --slate: #263446;
+  --white: #fff9ef;
+  --shadow: 0 26px 80px rgba(17, 12, 8, 0.18);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top right, rgba(201, 94, 52, 0.18), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(38, 52, 70, 0.16), transparent 34%),
+    linear-gradient(180deg, #f3ede3 0%, var(--paper) 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08)),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 26px,
+      rgba(0, 0, 0, 0.015) 27px,
+      transparent 28px
+    );
+  opacity: 0.5;
+}
+
+.home-shell {
+  position: relative;
+  width: min(1180px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 36px 0 64px;
+}
+
+.hero,
+.games,
+.roadmap {
+  margin-bottom: 28px;
+}
+
+.hero {
+  display: grid;
+  gap: 22px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+  align-items: stretch;
+}
+
+.hero-copy,
+.hero-note,
+.game-card,
+.roadmap-card {
+  border-radius: 28px;
+  box-shadow: var(--shadow);
+}
+
+.hero-copy {
+  padding: 34px;
+  color: var(--white);
+  background:
+    radial-gradient(circle at top right, rgba(213, 162, 77, 0.18), transparent 22%),
+    linear-gradient(145deg, #16181d 0%, #202630 54%, #17120f 100%);
+}
+
+.hero-note {
+  padding: 28px;
+  border: 1px solid rgba(22, 22, 22, 0.08);
+  background: rgba(255, 249, 239, 0.84);
+  backdrop-filter: blur(12px);
+}
+
+.eyebrow,
+.note-label,
+.section-head p,
+.game-tags span,
+.game-meta span,
+.step {
+  margin: 0;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 0.73rem;
+}
+
+.eyebrow,
+.note-label,
+.section-head p,
+.game-tags span,
+.step {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.hero-note .note-label {
+  color: var(--rust);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: "Rockwell", "Georgia", serif;
+  line-height: 0.95;
+}
+
+h1 {
+  margin-top: 10px;
+  font-size: clamp(3.3rem, 7vw, 6.2rem);
+}
+
+.hero-note h2,
+.section-head h2 {
+  font-size: clamp(2rem, 4vw, 3rem);
+}
+
+.lede {
+  max-width: 640px;
+  margin: 18px 0 0;
+  font-size: 1.08rem;
+  line-height: 1.6;
+  color: rgba(255, 249, 239, 0.86);
+}
+
+.hero-actions,
+.game-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.hero-actions {
+  margin-top: 28px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  text-decoration: none;
+  font-weight: 700;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease,
+    border-color 150ms ease;
+}
+
+.button:hover {
+  transform: translateY(-2px);
+}
+
+.button.primary {
+  color: #16120e;
+  background: linear-gradient(135deg, var(--gold), #f0c981);
+  box-shadow: 0 16px 32px rgba(213, 162, 77, 0.22);
+}
+
+.button.secondary,
+.button.tertiary {
+  color: var(--white);
+  border-color: rgba(255, 249, 239, 0.18);
+  background: rgba(255, 249, 239, 0.08);
+}
+
+.hero-note p,
+.game-summary,
+.roadmap-card p:last-child,
+.section-head > p:last-child {
+  line-height: 1.6;
+}
+
+.note-list,
+.game-points {
+  margin: 18px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.note-list li + li,
+.game-points li + li {
+  margin-top: 8px;
+}
+
+.section-head {
+  margin-bottom: 18px;
+}
+
+.section-head p {
+  color: var(--rust);
+}
+
+.section-head > p:last-child {
+  margin-top: 10px;
+  color: var(--muted);
+}
+
+.game-grid,
+.roadmap-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.game-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.game-card {
+  overflow: hidden;
+  border: 1px solid rgba(22, 22, 22, 0.08);
+  background: rgba(255, 250, 242, 0.78);
+}
+
+.game-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #dcd2c4;
+}
+
+.game-body {
+  padding: 22px;
+}
+
+.game-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.game-tags span {
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: var(--ink);
+  background: rgba(22, 22, 22, 0.08);
+}
+
+.game-card-yard .game-tags span:first-child {
+  background: rgba(201, 94, 52, 0.14);
+  color: #8b3a18;
+}
+
+.game-card-star .game-tags span:first-child {
+  background: rgba(38, 52, 70, 0.14);
+  color: #263446;
+}
+
+.game-card-lab .game-tags span:first-child {
+  background: rgba(86, 96, 66, 0.16);
+  color: #3f4b2e;
+}
+
+.game-card h3 {
+  font-size: 2rem;
+}
+
+.game-summary {
+  margin: 14px 0 0;
+  color: var(--muted);
+}
+
+.game-meta {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 20px 0 0;
+}
+
+.game-meta div {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(22, 22, 22, 0.05);
+}
+
+.game-meta span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+
+.game-meta strong {
+  font-size: 0.98rem;
+}
+
+.game-actions {
+  margin-top: 20px;
+}
+
+.game-card .button.tertiary {
+  color: var(--ink);
+  border-color: rgba(22, 22, 22, 0.1);
+  background: transparent;
+}
+
+.roadmap-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.roadmap-card {
+  min-height: 250px;
+  padding: 22px;
+  color: var(--white);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+    linear-gradient(155deg, #1f1c19 0%, #2a2420 48%, #313d31 100%);
+}
+
+.roadmap-card h3 {
+  margin-top: 18px;
+  font-size: 1.45rem;
+}
+
+.roadmap-card p:last-child {
+  margin-top: 14px;
+  color: rgba(255, 249, 239, 0.76);
+}
+
+@media (max-width: 980px) {
+  .hero,
+  .game-grid,
+  .roadmap-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-shell {
+    width: min(100vw - 20px, 1180px);
+    padding-top: 20px;
+  }
+
+  .hero-copy,
+  .hero-note,
+  .game-body,
+  .roadmap-card {
+    padding: 22px;
+  }
+
+  .game-meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
