@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kalshi Weather Lab</title>
+  <link rel="stylesheet" href="/kalshi-weather-lab.css">
+</head>
+<body>
+  <header class="lab-topbar">
+    <div>
+      <a class="back-link" href="/">BNAPSN</a>
+      <h1>Kalshi Weather Lab</h1>
+      <p id="status">Ready</p>
+    </div>
+    <form id="scan-form" class="controls">
+      <label>
+        Date
+        <input id="date" type="date">
+      </label>
+      <label>
+        Min edge
+        <input id="min-edge" type="number" min="-50" max="50" step="1" value="8">
+      </label>
+      <label>
+        Max cost
+        <input id="max-cost" type="number" min="0.10" max="25" step="0.10" value="3.00">
+      </label>
+      <label>
+        Access
+        <input id="access-token" type="password" autocomplete="off" placeholder="optional">
+      </label>
+      <label class="check">
+        <input id="include-negative" type="checkbox">
+        Show passes
+      </label>
+      <button type="submit">Scan</button>
+    </form>
+  </header>
+
+  <main class="lab-shell">
+    <section id="summary" class="summary-grid"></section>
+
+    <section class="table-panel">
+      <div class="section-head">
+        <h2>Candidate Markets</h2>
+        <span id="count"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Action</th>
+              <th>Market</th>
+              <th>Side</th>
+              <th>Ask</th>
+              <th>Adj prob</th>
+              <th>Raw</th>
+              <th>BE</th>
+              <th>Edge</th>
+              <th>Confidence</th>
+              <th>Max</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="candidates"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="split">
+      <section class="panel">
+        <div class="section-head">
+          <h2>Forecast Context</h2>
+        </div>
+        <div id="contexts" class="context-list"></div>
+      </section>
+      <section class="panel">
+        <div class="section-head">
+          <h2>Manual Ledger</h2>
+          <button id="clear-ledger" type="button" class="ghost">Clear</button>
+        </div>
+        <div id="ledger" class="ledger-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="detail-dialog">
+    <div class="dialog-head">
+      <h2 id="detail-title">Market</h2>
+      <button id="detail-close" type="button">Close</button>
+    </div>
+    <div id="detail-body"></div>
+  </dialog>
+
+  <script src="/kalshi-weather-lab.js"></script>
+</body>
+</html>

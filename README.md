@@ -119,6 +119,17 @@ Recommended production flow:
 3. Use the resulting `wss://...onrender.com` URL in the Star Sprint page.
 4. Optionally add a custom domain such as `starsprint-api.classiccarcollectorshub.com`.
 
+## Kalshi Weather Lab
+
+The front page links to `kalshi-weather-lab.html`, a read-only research dashboard for comparing Kalshi weather buckets against NWS forecast data. It does not place trades or submit orders.
+
+The live API route is served by the Star Sprint backend:
+
+- `GET /api/kalshi/weather/scan`
+- `GET /api/kalshi/weather/locations`
+
+Set `KALSHI_LAB_TOKEN` on the backend to require the Weather Lab access field before returning scan data.
+
 ### Persistence note
 
 Many platforms have ephemeral disks. If container filesystem resets, room files may be lost.

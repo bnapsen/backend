@@ -33,6 +33,10 @@ const {
   normalizeClipUploadType,
 } = require('./clip-media.js');
 const { createClipModerationService } = require('./clip-moderation.js');
+const {
+  WEATHER_LAB_LOCATIONS,
+  scanWeatherMarkets,
+} = require('./kalshi-weather-lab.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
@@ -71,6 +75,7 @@ const MAX_DIRECT_CLIP_UPLOAD_BYTES = 200 * 1024 * 1024;
 const CLIP_DIRECT_UPLOAD_TTL_MS = 2 * 60 * 60 * 1000;
 const GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES = 5 * 1024 * 1024 * 1024;
 const CLIP_ADMIN_TOKEN = String(process.env.CLIP_ADMIN_TOKEN || '').trim();
+const KALSHI_LAB_TOKEN = String(process.env.KALSHI_LAB_TOKEN || '').trim();
 const CLIP_UPLOAD_SIGNING_SECRET = String(
   process.env.CLIP_UPLOAD_SIGNING_SECRET
   || process.env.S3_SECRET_ACCESS_KEY
@@ -288,7 +293,7 @@ function corsHeaders(req) {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token, X-Kalshi-Lab-Token',
     Vary: 'Origin',
   };
 }
@@ -300,6 +305,64 @@ function sendJsonResponse(req, res, statusCode, payload) {
     'Cache-Control': 'no-store',
   });
   res.end(JSON.stringify(payload));
+}
+
+function requestHeader(req, name) {
+  return String(req.headers[String(name).toLowerCase()] || '').trim();
+}
+
+function hasKalshiWeatherLabAccess(req, requestUrl) {
+  if (!KALSHI_LAB_TOKEN) {
+    return true;
+  }
+  const providedToken = requestHeader(req, 'x-kalshi-lab-token') || String(requestUrl.searchParams.get('token') || '').trim();
+  return providedToken === KALSHI_LAB_TOKEN;
+}
+
+function readFloatParam(requestUrl, name, defaultValue) {
+  const value = Number(requestUrl.searchParams.get(name));
+  return Number.isFinite(value) ? value : defaultValue;
+}
+
+async function handleKalshiWeatherLocationsRequest(req, res, requestUrl) {
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, { error: 'Method not allowed.' });
+    return;
+  }
+  if (!hasKalshiWeatherLabAccess(req, requestUrl)) {
+    sendJsonResponse(req, res, 403, { error: 'A valid Kalshi Weather Lab token is required.' });
+    return;
+  }
+  sendJsonResponse(req, res, 200, { locations: WEATHER_LAB_LOCATIONS });
+}
+
+async function handleKalshiWeatherScanRequest(req, res, requestUrl) {
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, { error: 'Method not allowed.' });
+    return;
+  }
+  if (!hasKalshiWeatherLabAccess(req, requestUrl)) {
+    sendJsonResponse(req, res, 403, { error: 'A valid Kalshi Weather Lab token is required.' });
+    return;
+  }
+
+  try {
+    const scan = await scanWeatherMarkets({
+      date: requestUrl.searchParams.get('date'),
+      minEdge: readFloatParam(requestUrl, 'minEdge', 0.03),
+      maxCost: readFloatParam(requestUrl, 'maxCost', 3),
+      includeNegative:
+        requestUrl.searchParams.get('includeNegative') === '1'
+        || requestUrl.searchParams.get('includePasses') === '1',
+    });
+    sendJsonResponse(req, res, 200, scan);
+  } catch (error) {
+    const payload = { error: 'Unable to scan Kalshi weather markets right now.' };
+    if (process.env.DEBUG_ERRORS === 'true') {
+      payload.detail = error.stack || error.message;
+    }
+    sendJsonResponse(req, res, 502, payload);
+  }
 }
 
 function ensureDirectory(dirPath) {
@@ -4226,6 +4289,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/kalshi/weather/locations') {
+    await handleKalshiWeatherLocationsRequest(req, res, requestUrl);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/kalshi/weather/scan') {
+    await handleKalshiWeatherScanRequest(req, res, requestUrl);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/clips/upload-session') {
     await handleClipUploadSessionRequest(req, res);
     return;
@@ -4342,6 +4415,7 @@ const server = http.createServer(async (req, res) => {
     reviewsApi: '/api/reviews',
     songsApi: '/api/songs',
     clipsApi: '/api/clips',
+    kalshiWeatherApi: '/api/kalshi/weather/scan',
   });
 });
 
