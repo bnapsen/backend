@@ -584,7 +584,7 @@ dialog::backdrop {
 
 .chart-date-banner {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr;
   gap: 8px;
 }
 
@@ -608,6 +608,11 @@ dialog::backdrop {
   display: block;
   margin: 5px 0;
   font-size: 15px;
+}
+
+.live-status-card {
+  border-color: rgba(52, 211, 153, 0.42) !important;
+  background: linear-gradient(180deg, rgba(52, 211, 153, 0.12), #101820) !important;
 }
 
 .chart-legend {
@@ -799,6 +804,29 @@ dialog::backdrop {
 
 .observed-high-line {
   stroke: rgba(52, 211, 153, 0.65);
+}
+
+.live-pulse-ring {
+  fill: none;
+  stroke: rgba(52, 211, 153, 0.42);
+  stroke-width: 3;
+}
+
+.live-now-dot {
+  fill: var(--green);
+  stroke: #061410;
+  stroke-width: 2;
+}
+
+.live-now-label-bg {
+  fill: rgba(6, 20, 16, 0.94);
+  stroke: rgba(52, 211, 153, 0.7);
+}
+
+.live-now-label {
+  fill: var(--green);
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .chart-precip-bar {

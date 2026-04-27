@@ -315,6 +315,46 @@ async function getKalshiMarket(ticker) {
   return data.market || data;
 }
 
+function findWeatherLabLocation(options = {}) {
+  const series = String(options.series || '').trim().toUpperCase();
+  const stationId = String(options.stationId || '').trim().toUpperCase();
+  const label = String(options.location || options.label || '').trim().toLowerCase();
+  return WEATHER_LAB_LOCATIONS.find((location) => (
+    (series && location.series.toUpperCase() === series)
+    || (stationId && String(location.stationId || '').toUpperCase() === stationId)
+    || (label && location.label.toLowerCase() === label)
+  )) || null;
+}
+
+async function getWeatherLiveObservations(options = {}) {
+  const date = normalizeDate(options.date);
+  const location = findWeatherLabLocation(options);
+  if (!location) {
+    throw new Error('Unknown Weather Lab location or station.');
+  }
+
+  const observations = await getStationObservationContext(location, date);
+  return {
+    asOf: new Date().toISOString(),
+    date,
+    location,
+    observations,
+    chart: {
+      date,
+      localDate: observations.localDate,
+      dayPhase: observations.dayPhase,
+      timeZone: observations.timeZone || location.timeZone || DEFAULT_WEATHER_LAB_TIME_ZONE,
+      localHour: observations.localHour,
+      observations: observations.samples || [],
+      observedHighF: observations.observedHighF,
+      observedHighTime: observations.observedHighTime,
+      latestTempF: observations.latestTempF,
+      latestTime: observations.latestTime,
+      latestDescription: observations.latestDescription || '',
+    },
+  };
+}
+
 async function resolveWeatherMarkets(tickers) {
   const uniqueTickers = [...new Set((tickers || []).map((ticker) => String(ticker || '').trim()).filter(Boolean))].slice(0, 80);
   const markets = await Promise.all(uniqueTickers.map(async (ticker) => {
@@ -1117,6 +1157,7 @@ async function scanWeatherMarkets(options = {}) {
 
 module.exports = {
   WEATHER_LAB_LOCATIONS,
+  getWeatherLiveObservations,
   resolveWeatherMarkets,
   scanWeatherMarkets,
 };

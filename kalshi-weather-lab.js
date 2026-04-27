@@ -15,6 +15,7 @@
     dailyPortfolio: null,
     chartPayloads: {},
     nextChartId: 0,
+    chartLiveTimers: {},
   };
 
   const form = document.querySelector("#scan-form");
@@ -136,6 +137,10 @@
 
   document.querySelector("#detail-close").addEventListener("click", function () {
     detailDialog.close();
+  });
+
+  detailDialog.addEventListener("close", function () {
+    stopLiveObservationStreams();
   });
 
   renderLedger();
@@ -728,6 +733,7 @@
     const points = forecastPoints.concat(observedPoints);
     const marketDate = chart.date || scanDate;
     const timeZone = chart.timeZone || (context && context.timeZone) || "local";
+    const stationId = chartStationId(context);
     if (!points.length) {
       return '<div class="detail-block"><h3>Temperature Chart</h3><p class="subtext">No hourly chart data returned for ' + escapeHtml(formatDateWithRelative(marketDate)) + ".</p></div>";
     }
@@ -764,7 +770,6 @@
     }
 
     const forecastPath = linePath(forecastPoints, xForHour, yForTemp);
-    const observedPath = linePath(observedPoints, xForHour, yForTemp);
     const rangeOverlay = renderRangeOverlay(range, rangeBounds, xForHour, yForTemp, pad, innerWidth, yMin, yMax);
     const referenceLines = renderReferenceLines(chart, yForTemp, pad, innerWidth, tempBottom);
     const chartId = "temp-chart-" + (++state.nextChartId);
@@ -775,6 +780,11 @@
       points: points,
       forecastPoints: forecastPoints,
       observedPoints: observedPoints,
+      live: {
+        stationId: stationId,
+        date: marketDate,
+        enabled: Boolean(stationId && chart.dayPhase === "today"),
+      },
       dimensions: {
         width: width,
         height: height,
@@ -803,9 +813,8 @@
       '<text class="chart-axis-label" x="10" y="' + (precipTop + 18) + '">PoP</text>',
       renderNowLine(chart, xForHour, pad, tempBottom, height),
       forecastPath ? '<path class="chart-line forecast-line" d="' + forecastPath + '"></path>' : "",
-      observedPath ? '<path class="chart-line observed-line" d="' + observedPath + '"></path>' : "",
+      renderLiveObservationLayer(observedPoints, xForHour, yForTemp),
       renderChartDots(forecastPoints, xForHour, yForTemp, "forecast-dot"),
-      renderChartDots(observedPoints, xForHour, yForTemp, "observed-dot"),
       renderWindRibbon(forecastPoints, xForHour, height),
       '<line class="chart-crosshair chart-crosshair-x" x1="0" x2="0" y1="' + pad.top + '" y2="' + (height - pad.bottom) + '"></line>',
       '<line class="chart-crosshair chart-crosshair-y" x1="' + pad.left + '" x2="' + (width - pad.right) + '" y1="0" y2="0"></line>',
@@ -815,9 +824,9 @@
 
     return [
       '<div class="detail-block chart-block">',
-      renderChartDateBanner(title, marketDate, timeZone, chart),
+      renderChartDateBanner(title, marketDate, timeZone, chart, stationId),
       '<div class="chart-head"><div><h3>Interactive Temperature Path</h3><p class="subtext">Hover or tap the chart for exact hour-by-hour values. The shaded bucket is the Kalshi contract range for this row.</p></div>' + renderChartLegend(forecastPoints.length, observedPoints.length, range) + "</div>",
-      renderChartControls(chartId, observedPoints.length, range),
+      renderChartControls(chartId, observedPoints.length, range, Boolean(stationId)),
       '<div class="chart-stage interactive-chart" data-chart-id="' + chartId + '">' + svg + '<div class="chart-tooltip" hidden></div></div>',
       renderChartStats(context, chart, range),
       renderChartAccuracyNotes(context, chart, range),
@@ -826,7 +835,7 @@
     ].join("");
   }
 
-  function renderChartDateBanner(title, marketDate, timeZone, chart) {
+  function renderChartDateBanner(title, marketDate, timeZone, chart, stationId) {
     const generated = chart.generatedAt || chart.updatedAt;
     const dayPhase = chart.dayPhase ? chart.dayPhase : relativeDateLabel(marketDate).toLowerCase();
     return [
@@ -835,20 +844,36 @@
       '<div><span>Local clock</span><strong>' + escapeHtml(timeZone || "local") + '</strong><small>' + escapeHtml(dayPhase) + "</small></div>",
       '<div><span>NWS grid</span><strong>' + escapeHtml(chart.gridId ? chart.gridId + " " + chart.gridX + "," + chart.gridY : "n/a") + '</strong><small>' + escapeHtml(chart.forecastOffice || "forecast office n/a") + "</small></div>",
       '<div><span>Forecast run</span><strong>' + escapeHtml(generated ? formatTime(generated) : "n/a") + '</strong><small>NWS hourly + daily blend</small></div>',
+      '<div class="live-status-card"><span>Live station</span><strong data-live-temp>' + escapeHtml(valueWithF(chart.latestTempF)) + '</strong><small data-live-status>' + escapeHtml(liveStatusText(chart, stationId)) + "</small></div>",
       "</div>",
     ].join("");
   }
 
-  function renderChartControls(chartId, observedCount, range) {
+  function renderChartControls(chartId, observedCount, range, hasStation) {
+    const observedActive = observedCount || hasStation;
     return [
       '<div class="chart-controls" data-chart-controls="' + chartId + '">',
       '<button type="button" class="active" data-chart-toggle="forecast">Forecast</button>',
-      '<button type="button" class="' + (observedCount ? "active" : "") + '" data-chart-toggle="observed"' + (observedCount ? "" : " disabled") + '>Station obs</button>',
+      '<button type="button" class="' + (observedActive ? "active" : "") + '" data-chart-toggle="observed"' + (observedActive ? "" : " disabled") + '>Station obs</button>',
       '<button type="button" class="active" data-chart-toggle="precip">Precip</button>',
       '<button type="button" class="' + (range ? "active" : "") + '" data-chart-toggle="range"' + (range ? "" : " disabled") + '>Bucket</button>',
       '<button type="button" class="active" data-chart-toggle="refs">Refs</button>',
       "</div>",
     ].join("");
+  }
+
+  function chartStationId(context) {
+    const observations = context && context.observations ? context.observations : {};
+    const settlement = context && context.settlement ? context.settlement : {};
+    return observations.stationId || settlement.stationId || "";
+  }
+
+  function liveStatusText(chart, stationId) {
+    if (!stationId) return "No mapped station";
+    if (chart.dayPhase === "future") return stationId + " stream starts on market day";
+    if (chart.dayPhase === "past") return stationId + " final observation feed";
+    if (chart.latestTime) return stationId + " updated " + formatTime(chart.latestTime);
+    return stationId + " waiting for observations";
   }
 
   function temperatureTicks(yMin, yMax) {
@@ -906,6 +931,33 @@
     if (chart.dayPhase !== "today" || !Number.isFinite(Number(chart.localHour))) return "";
     const x = xForHour(chart.localHour);
     return '<line class="chart-now-line" x1="' + x + '" x2="' + x + '" y1="' + pad.top + '" y2="' + (height - pad.bottom) + '"></line><text class="chart-now-label" x="' + (x + 6) + '" y="' + (tempBottom - 8) + '">now</text>';
+  }
+
+  function renderLiveObservationLayer(points, xForHour, yForTemp) {
+    const path = linePath(points, xForHour, yForTemp);
+    const latest = points.length ? points[points.length - 1] : null;
+    return [
+      '<g class="live-observation-layer">',
+      path ? '<path class="chart-line observed-line" d="' + path + '"></path>' : "",
+      renderChartDots(points, xForHour, yForTemp, "observed-dot"),
+      latest ? renderLiveMarker(latest, xForHour, yForTemp) : "",
+      "</g>",
+    ].join("");
+  }
+
+  function renderLiveMarker(point, xForHour, yForTemp) {
+    const x = xForHour(point.hour);
+    const y = yForTemp(point.tempF);
+    const label = valueWithF(point.tempF);
+    const textWidth = Math.max(48, label.length * 7.2 + 18);
+    const labelX = Math.min(x + 10, 980 - textWidth - 10);
+    const labelY = Math.max(28, y - 24);
+    return [
+      '<circle class="live-pulse-ring" cx="' + x + '" cy="' + y + '" r="8"></circle>',
+      '<circle class="live-now-dot" cx="' + x + '" cy="' + y + '" r="5"></circle>',
+      '<rect class="live-now-label-bg" x="' + labelX + '" y="' + (labelY - 15) + '" width="' + textWidth + '" height="20" rx="6"></rect>',
+      '<text class="live-now-label" x="' + (labelX + 8) + '" y="' + labelY + '">LIVE ' + escapeHtml(label) + "</text>",
+    ].join("");
   }
 
   function renderChartAccuracyNotes(context, chart, range) {
@@ -1156,7 +1208,72 @@
         tooltip.hidden = true;
         highlightHourlyRow(stage, null);
       });
+
+      startLiveObservationStream(stage, payload);
     });
+  }
+
+  function startLiveObservationStream(stage, payload) {
+    const chartId = stage.dataset.chartId;
+    const live = payload && payload.live ? payload.live : null;
+    if (!chartId || !live || !live.stationId) return;
+    if (!live.enabled) {
+      updateLiveStatus(stage, null, live.stationId + " stream starts when this city reaches the market day.");
+      return;
+    }
+    if (state.chartLiveTimers[chartId]) return;
+    refreshLiveObservation(stage, payload);
+    state.chartLiveTimers[chartId] = setInterval(function () {
+      refreshLiveObservation(stage, payload);
+    }, 60000);
+  }
+
+  async function refreshLiveObservation(stage, payload) {
+    const live = payload && payload.live ? payload.live : null;
+    if (!live || !live.stationId) return;
+    try {
+      updateLiveStatus(stage, null, "Refreshing " + live.stationId + "...");
+      const params = new URLSearchParams({
+        stationId: live.stationId,
+        date: live.date,
+      });
+      const data = await fetchJson(kalshiWeatherEndpoint("/api/kalshi/weather/live?" + params.toString()));
+      applyLiveObservation(stage, payload, data);
+    } catch (error) {
+      updateLiveStatus(stage, null, "Live station refresh failed: " + error.message);
+    }
+  }
+
+  function applyLiveObservation(stage, payload, data) {
+    const chart = data && data.chart ? data.chart : {};
+    const observations = data && data.observations ? data.observations : {};
+    const points = chartPoints(Array.isArray(chart.observations) ? chart.observations : [], "observed");
+    payload.observedPoints = points;
+    payload.points = (payload.forecastPoints || []).concat(points);
+    const xForHour = function (hour) { return chartXFromPayload(payload, hour); };
+    const yForTemp = function (temp) { return chartYFromPayload(payload, temp); };
+    const layer = stage.querySelector(".live-observation-layer");
+    if (layer) {
+      layer.outerHTML = renderLiveObservationLayer(points, xForHour, yForTemp);
+    }
+    const latest = Number.isFinite(Number(chart.latestTempF)) ? chart.latestTempF : observations.latestTempF;
+    updateLiveStatus(stage, latest, liveStatusText(chart, observations.stationId || (payload.live && payload.live.stationId)));
+  }
+
+  function updateLiveStatus(stage, latestTempF, text) {
+    const block = stage.closest(".chart-block");
+    if (!block) return;
+    const tempEl = block.querySelector("[data-live-temp]");
+    const statusEl = block.querySelector("[data-live-status]");
+    if (tempEl && latestTempF !== null && latestTempF !== undefined) tempEl.textContent = valueWithF(latestTempF);
+    if (statusEl && text) statusEl.textContent = text;
+  }
+
+  function stopLiveObservationStreams() {
+    Object.keys(state.chartLiveTimers).forEach(function (chartId) {
+      clearInterval(state.chartLiveTimers[chartId]);
+    });
+    state.chartLiveTimers = {};
   }
 
   function nearestChartPoint(payload, viewX) {
