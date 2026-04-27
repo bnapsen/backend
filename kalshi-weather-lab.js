@@ -745,8 +745,9 @@
     });
     const minValue = Math.min.apply(null, values);
     const maxValue = Math.max.apply(null, values);
-    const yMin = Math.floor((minValue - 3) / 2) * 2;
-    const yMax = Math.ceil((maxValue + 3) / 2) * 2;
+    const yBounds = temperatureAxisBounds(minValue, maxValue);
+    const yMin = yBounds.min;
+    const yMax = yBounds.max;
     const width = 980;
     const height = 430;
     const pad = { left: 62, right: 132, top: 34, bottom: 42 };
@@ -876,18 +877,66 @@
     return stationId + " waiting for observations";
   }
 
+  function temperatureAxisBounds(minValue, maxValue) {
+    const min = Number(minValue);
+    const max = Number(maxValue);
+    const rawSpan = Math.max(0.5, max - min);
+    const padding = rawSpan <= 5 ? 0.6 : rawSpan <= 12 ? 1 : rawSpan <= 24 ? 1.5 : 3;
+    const boundStep = rawSpan <= 12 ? 0.5 : rawSpan <= 24 ? 1 : 2;
+    const lower = Math.floor((min - padding) / boundStep) * boundStep;
+    const upper = Math.ceil((max + padding) / boundStep) * boundStep;
+    return {
+      min: roundTemperatureValue(lower),
+      max: roundTemperatureValue(Math.max(upper, lower + boundStep)),
+    };
+  }
+
   function temperatureTicks(yMin, yMax) {
     const span = Math.max(1, Number(yMax) - Number(yMin));
-    const step = span <= 18 ? 1 : span <= 36 ? 2 : 5;
+    const step = temperatureGridStep(span);
+    const labelStep = temperatureLabelStep(span);
     const ticks = [];
     const start = Math.ceil(Number(yMin) / step) * step;
     for (let value = start; value <= Number(yMax) + 0.0001; value += step) {
+      const rounded = roundTemperatureValue(value);
+      const showLabel = isStepMultiple(rounded, labelStep) || Math.abs(rounded - start) < 0.0001 || rounded + step > Number(yMax);
       ticks.push({
-        value: value,
-        major: Math.abs(value % 5) < 0.0001 || value === start || value + step > Number(yMax),
+        value: rounded,
+        showLabel: showLabel,
+        major: showLabel || isStepMultiple(rounded, 5),
       });
     }
     return ticks;
+  }
+
+  function temperatureGridStep(span) {
+    if (span <= 5) return 0.25;
+    if (span <= 14) return 0.5;
+    if (span <= 28) return 1;
+    if (span <= 44) return 2;
+    return 5;
+  }
+
+  function temperatureLabelStep(span) {
+    if (span <= 9) return 0.5;
+    if (span <= 18) return 1;
+    if (span <= 32) return 2;
+    if (span <= 54) return 5;
+    return 10;
+  }
+
+  function isStepMultiple(value, step) {
+    const ratio = Number(value) / Number(step);
+    return Math.abs(ratio - Math.round(ratio)) < 0.0001;
+  }
+
+  function roundTemperatureValue(value) {
+    return Math.round(Number(value) * 100) / 100;
+  }
+
+  function formatTemperatureTick(value) {
+    const text = formatNumber(value, 1);
+    return text === "-0.0" ? "0.0F" : text + "F";
   }
 
   function renderTemperatureAxis(ticks, yForTemp, pad, innerWidth) {
@@ -895,13 +944,13 @@
     return ticks.map(function (tick) {
       const y = yForTemp(tick.value);
       const className = tick.major ? "chart-grid major" : "chart-grid minor";
-      const label = formatNumber(tick.value, 0) + "F";
+      const label = formatTemperatureTick(tick.value);
       return [
         '<line class="' + className + '" x1="' + pad.left + '" x2="' + plotRight + '" y1="' + y + '" y2="' + y + '"></line>',
         '<line class="chart-tick" x1="' + (pad.left - 5) + '" x2="' + pad.left + '" y1="' + y + '" y2="' + y + '"></line>',
         '<line class="chart-tick" x1="' + plotRight + '" x2="' + (plotRight + 5) + '" y1="' + y + '" y2="' + y + '"></line>',
-        '<text class="chart-axis-label chart-axis-left" x="' + (pad.left - 10) + '" y="' + (y + 4) + '">' + label + "</text>",
-        tick.major ? '<text class="chart-axis-label chart-axis-right" x="' + (plotRight + 10) + '" y="' + (y + 4) + '">' + label + "</text>" : "",
+        tick.showLabel ? '<text class="chart-axis-label chart-axis-left" x="' + (pad.left - 10) + '" y="' + (y + 4) + '">' + label + "</text>" : "",
+        tick.showLabel && tick.major ? '<text class="chart-axis-label chart-axis-right" x="' + (plotRight + 10) + '" y="' + (y + 4) + '">' + label + "</text>" : "",
       ].join("");
     }).join("");
   }
