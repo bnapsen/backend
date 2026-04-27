@@ -76,6 +76,18 @@ function stdev(values) {
   return Math.sqrt(variance);
 }
 
+function average(values) {
+  const finite = values.filter(Number.isFinite);
+  return finite.length ? finite.reduce((sum, value) => sum + value, 0) / finite.length : 0;
+}
+
+function weightedAverage(parts) {
+  const finite = parts.filter((part) => Number.isFinite(part.value) && part.value > 0 && Number.isFinite(part.weight) && part.weight > 0);
+  const weight = finite.reduce((sum, part) => sum + part.weight, 0);
+  if (!weight) return 0;
+  return finite.reduce((sum, part) => sum + part.value * part.weight, 0) / weight;
+}
+
 function isoDate(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '' : date.toISOString();
@@ -195,40 +207,188 @@ function appendLivePoint(candles, ticker) {
   return points;
 }
 
-function estimateBitcoinProbability({ currentPrice, targetPrice, candles, secondsToClose }) {
-  const closes = candles.map((point) => point.close).filter((value) => Number.isFinite(value) && value > 0);
+function ewmaStdev(values, lambda = 0.94) {
+  if (!values.length) return 0;
+  let variance = values[0] ** 2;
+  for (let index = 1; index < values.length; index += 1) {
+    variance = lambda * variance + (1 - lambda) * (values[index] ** 2);
+  }
+  return Math.sqrt(Math.max(0, variance));
+}
+
+function rangeSigmaPerMinute(points, lookback) {
+  const ranges = points.slice(-lookback)
+    .map((point) => {
+      const high = Number(point.high);
+      const low = Number(point.low);
+      return high > 0 && low > 0 && high >= low ? Math.log(high / low) / Math.sqrt(4 * Math.log(2)) : 0;
+    })
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return average(ranges);
+}
+
+function volatilityProfile(points) {
+  const closes = points.map((point) => point.close).filter((value) => Number.isFinite(value) && value > 0);
   const returns = [];
   for (let index = 1; index < closes.length; index += 1) {
     returns.push(Math.log(closes[index] / closes[index - 1]));
   }
-  const recentReturns = returns.slice(-90);
-  const sigmaPerMinute = Math.max(stdev(recentReturns), 0.00055);
+  const sigma5 = stdev(returns.slice(-5));
+  const sigma15 = stdev(returns.slice(-15));
+  const sigma60 = stdev(returns.slice(-60));
+  const sigma180 = stdev(returns.slice(-180));
+  const sigmaEwma = ewmaStdev(returns.slice(-120));
+  const sigmaRange = rangeSigmaPerMinute(points, 45);
+  const blended = weightedAverage([
+    { value: sigma5, weight: 0.12 },
+    { value: sigma15, weight: 0.23 },
+    { value: sigma60, weight: 0.28 },
+    { value: sigma180, weight: 0.10 },
+    { value: sigmaEwma, weight: 0.17 },
+    { value: sigmaRange, weight: 0.10 },
+  ]);
+  const sigmaPerMinute = Math.max(blended, 0.00065);
+  return {
+    closes,
+    returns,
+    sigmaPerMinute,
+    sigma5,
+    sigma15,
+    sigma60,
+    sigma180,
+    sigmaEwma,
+    sigmaRange,
+  };
+}
+
+function marketYesPrior(market) {
+  const yesBid = marketPrice(market, 'yes_bid_dollars', 'yes_bid');
+  const yesAsk = marketPrice(market, 'yes_ask_dollars', 'yes_ask');
+  const noBid = marketPrice(market, 'no_bid_dollars', 'no_bid');
+  const noAsk = marketPrice(market, 'no_ask_dollars', 'no_ask');
+  const bidCandidates = [yesBid, 1 - noAsk].filter((value) => Number.isFinite(value) && value > 0 && value < 1);
+  const askCandidates = [yesAsk, 1 - noBid].filter((value) => Number.isFinite(value) && value > 0 && value < 1);
+  const bid = bidCandidates.length ? Math.max(...bidCandidates) : 0;
+  const ask = askCandidates.length ? Math.min(...askCandidates) : 1;
+  const midpoint = bid > 0 && ask < 1 && ask >= bid
+    ? (bid + ask) / 2
+    : average([yesBid, yesAsk, 1 - noBid, 1 - noAsk].filter((value) => value > 0 && value < 1));
+  return {
+    probability: clamp(midpoint || 0.5, 0.001, 0.999),
+    bid: clamp(bid, 0, 1),
+    ask: clamp(ask, 0, 1),
+    spread: ask >= bid ? ask - bid : Math.max(0, yesAsk - yesBid),
+  };
+}
+
+function calibrationWeight({ dataGrade, secondsToClose, marketSpread, sigmaEffective }) {
+  const proxyPenalty = dataGrade === 'settlement-grade' ? 0.06 : 0.24;
+  const nearSettlementPenalty = secondsToClose <= 75 ? 0.15 : secondsToClose <= 180 ? 0.08 : 0.02;
+  const spreadPenalty = clamp(Number(marketSpread || 0) * 1.5, 0, 0.14);
+  const lowVolPenalty = Number(sigmaEffective || 0) < 0.0015 ? 0.06 : 0;
+  return clamp(0.12 + proxyPenalty + nearSettlementPenalty + spreadPenalty + lowVolPenalty, 0.12, 0.62);
+}
+
+function estimateSettlementAverage({ currentPrice, targetPrice, points, secondsToClose, settlementWindowSeconds }) {
+  const horizonSeconds = clamp(secondsToClose, 0, 15 * 60);
+  const settlementLength = clamp(settlementWindowSeconds, 1, 60);
+  const secondsToAverageStart = Math.max(0, horizonSeconds - settlementLength);
+  const averagingRemainingSeconds = clamp(Math.min(horizonSeconds, settlementLength), 1, settlementLength);
+  const settlementElapsedSeconds = Math.max(0, settlementLength - horizonSeconds);
+  const latestTimeMs = points.length ? Number(points[points.length - 1].timeMs) : Date.now();
+  const settlementStartMs = latestTimeMs - settlementElapsedSeconds * 1000;
+  const elapsedPoints = points.filter((point) => Number(point.timeMs) >= settlementStartMs && Number(point.close) > 0);
+  const elapsedSettlementAverage = elapsedPoints.length ? average(elapsedPoints.map((point) => Number(point.close))) : currentPrice;
+  const adjustedTargetPrice = settlementElapsedSeconds > 0
+    ? ((targetPrice * settlementLength) - (elapsedSettlementAverage * settlementElapsedSeconds)) / averagingRemainingSeconds
+    : targetPrice;
+  return {
+    horizonSeconds,
+    settlementLength,
+    secondsToAverageStart,
+    averagingRemainingSeconds,
+    settlementElapsedSeconds,
+    elapsedSettlementAverage,
+    adjustedTargetPrice,
+    effectiveVarianceSeconds: secondsToAverageStart + averagingRemainingSeconds / 3,
+    meanObservationSeconds: secondsToAverageStart + averagingRemainingSeconds / 2,
+  };
+}
+
+function estimateBitcoinProbability({ currentPrice, targetPrice, points, secondsToClose, market, dataGrade, proxyBid, proxyAsk, settlementWindowSeconds = 60 }) {
+  const profile = volatilityProfile(points);
+  const closes = profile.closes;
+  const sigmaPerMinute = profile.sigmaPerMinute;
   const sigmaPerSecond = sigmaPerMinute / Math.sqrt(60);
+  const settlement = estimateSettlementAverage({
+    currentPrice,
+    targetPrice,
+    points,
+    secondsToClose,
+    settlementWindowSeconds,
+  });
   const horizonSeconds = clamp(secondsToClose, 1, 15 * 60);
-  const sigmaHorizon = Math.max(sigmaPerSecond * Math.sqrt(horizonSeconds), 0.0002);
+  const microstructureNoise = Math.max(0.00003, Math.abs(Number(proxyAsk || 0) - Number(proxyBid || 0)) / Math.max(1, currentPrice) / 2);
+  const sigmaHorizon = Math.sqrt(
+    (sigmaPerSecond * Math.sqrt(Math.max(1, settlement.effectiveVarianceSeconds))) ** 2
+    + microstructureNoise ** 2
+  );
   const momentumLookback = Math.min(5, closes.length - 1);
   const momentumReturn = momentumLookback > 0
     ? Math.log(closes[closes.length - 1] / closes[closes.length - 1 - momentumLookback])
     : 0;
   const driftPerSecond = clamp((momentumReturn / Math.max(1, momentumLookback * 60)) * 0.20, -0.00001, 0.00001);
-  const logDistance = Math.log(targetPrice / currentPrice);
-  const z = (logDistance - driftPerSecond * horizonSeconds) / sigmaHorizon;
-  const yesProbability = clamp(1 - normalCdf(z), 0.001, 0.999);
+  const meanLogMove = driftPerSecond * settlement.meanObservationSeconds;
+  let rawYesProbability = settlement.adjustedTargetPrice <= 0 ? 0.999 : 0.001;
+  let z = 10;
+  if (settlement.adjustedTargetPrice > 0) {
+    const logDistance = Math.log(settlement.adjustedTargetPrice / currentPrice);
+    z = (logDistance - meanLogMove) / Math.max(0.00001, sigmaHorizon);
+    rawYesProbability = clamp(1 - normalCdf(z), 0.001, 0.999);
+  }
+  const prior = marketYesPrior(market);
+  const priorWeight = calibrationWeight({
+    dataGrade,
+    secondsToClose: horizonSeconds,
+    marketSpread: prior.spread,
+    sigmaEffective: sigmaHorizon,
+  });
+  const yesProbability = clamp((rawYesProbability * (1 - priorWeight)) + (prior.probability * priorWeight), 0.001, 0.999);
   const annualizedVol = sigmaPerMinute * Math.sqrt(525600);
   return {
     yesProbability,
     noProbability: 1 - yesProbability,
+    rawYesProbability,
+    rawNoProbability: 1 - rawYesProbability,
+    marketPriorYes: prior.probability,
+    marketPriorNo: 1 - prior.probability,
+    marketPriorSpread: prior.spread,
+    calibrationWeight: priorWeight,
     sigmaPerMinute,
+    sigma5: profile.sigma5,
+    sigma15: profile.sigma15,
+    sigma60: profile.sigma60,
+    sigma180: profile.sigma180,
+    sigmaEwma: profile.sigmaEwma,
+    sigmaRange: profile.sigmaRange,
     sigmaHorizon,
     horizonSeconds,
+    effectiveVarianceSeconds: settlement.effectiveVarianceSeconds,
+    secondsToAverageStart: settlement.secondsToAverageStart,
+    averagingRemainingSeconds: settlement.averagingRemainingSeconds,
+    settlementElapsedSeconds: settlement.settlementElapsedSeconds,
+    elapsedSettlementAverage: settlement.elapsedSettlementAverage,
+    adjustedTargetPrice: settlement.adjustedTargetPrice,
     annualizedVol,
     momentumReturn,
     driftPerSecond,
     z,
     reasons: [
       `Current proxy price ${currentPrice.toFixed(2)} versus Kalshi target ${targetPrice.toFixed(2)}.`,
-      `Horizon ${Math.round(horizonSeconds)} seconds; recent 1-minute realized sigma ${(sigmaPerMinute * 100).toFixed(3)}%.`,
+      `Horizon ${Math.round(horizonSeconds)} seconds; final-average effective variance horizon ${Math.round(settlement.effectiveVarianceSeconds)} seconds.`,
+      `Blended 1-minute realized sigma ${(sigmaPerMinute * 100).toFixed(3)}% from 5m/15m/60m/EWMA/range inputs.`,
       `Momentum input is ${(momentumReturn * 100).toFixed(3)}% over the last ${momentumLookback} minutes, shrunk to 20% weight.`,
+      `Raw final-average path odds ${(rawYesProbability * 100).toFixed(1)}% YES; Kalshi midpoint prior ${(prior.probability * 100).toFixed(1)}%; calibration weight ${(priorWeight * 100).toFixed(0)}%.`,
       'Settlement is the final 60-second CF Benchmarks BRTI average; this model approximates it with a spot proxy unless CF credentials are configured.',
     ],
   };
@@ -253,12 +413,13 @@ function sideQuote(market, side) {
   };
 }
 
-function scoreSide({ market, side, probability, maxCost, minEdge, secondsToClose, dataGrade }) {
+function scoreSide({ market, side, probability, rawProbability, maxCost, minEdge, secondsToClose, dataGrade }) {
   const quote = sideQuote(market, side);
   if (!Number.isFinite(quote.ask) || quote.ask <= 0 || quote.ask >= 1) {
     return {
       ...quote,
       probability,
+      rawProbability,
       breakEven: 1,
       edge: -1,
       contracts: 0,
@@ -284,6 +445,7 @@ function scoreSide({ market, side, probability, maxCost, minEdge, secondsToClose
     return {
       ...quote,
       probability: round(probability),
+      rawProbability: round(rawProbability),
       askCents: round(quote.ask * 100, 2),
       bidCents: round(quote.bid * 100, 2),
       breakEven: 1,
@@ -313,6 +475,7 @@ function scoreSide({ market, side, probability, maxCost, minEdge, secondsToClose
   return {
     ...quote,
     probability: round(probability),
+    rawProbability: round(rawProbability),
     askCents: round(quote.ask * 100, 2),
     bidCents: round(quote.bid * 100, 2),
     breakEven: round(breakEven),
@@ -363,14 +526,19 @@ async function scanBitcoin15m(options = {}) {
   const probability = estimateBitcoinProbability({
     currentPrice,
     targetPrice,
-    candles,
+    points: chartPoints,
     secondsToClose,
+    market,
+    dataGrade,
+    proxyBid: ticker.bid,
+    proxyAsk: ticker.ask,
   });
   const candidates = [
     scoreSide({
       market,
       side: 'yes',
       probability: probability.yesProbability,
+      rawProbability: probability.rawYesProbability,
       maxCost,
       minEdge,
       secondsToClose,
@@ -380,6 +548,7 @@ async function scanBitcoin15m(options = {}) {
       market,
       side: 'no',
       probability: probability.noProbability,
+      rawProbability: probability.rawNoProbability,
       maxCost,
       minEdge,
       secondsToClose,
@@ -422,9 +591,27 @@ async function scanBitcoin15m(options = {}) {
     model: {
       yesProbability: round(probability.yesProbability),
       noProbability: round(probability.noProbability),
+      rawYesProbability: round(probability.rawYesProbability),
+      rawNoProbability: round(probability.rawNoProbability),
+      marketPriorYes: round(probability.marketPriorYes),
+      marketPriorNo: round(probability.marketPriorNo),
+      marketPriorSpread: round(probability.marketPriorSpread),
+      calibrationWeight: round(probability.calibrationWeight),
       sigmaPerMinute: round(probability.sigmaPerMinute, 6),
+      sigma5: round(probability.sigma5, 6),
+      sigma15: round(probability.sigma15, 6),
+      sigma60: round(probability.sigma60, 6),
+      sigma180: round(probability.sigma180, 6),
+      sigmaEwma: round(probability.sigmaEwma, 6),
+      sigmaRange: round(probability.sigmaRange, 6),
       sigmaHorizon: round(probability.sigmaHorizon, 6),
       horizonSeconds: round(probability.horizonSeconds, 1),
+      effectiveVarianceSeconds: round(probability.effectiveVarianceSeconds, 1),
+      secondsToAverageStart: round(probability.secondsToAverageStart, 1),
+      averagingRemainingSeconds: round(probability.averagingRemainingSeconds, 1),
+      settlementElapsedSeconds: round(probability.settlementElapsedSeconds, 1),
+      elapsedSettlementAverage: round(probability.elapsedSettlementAverage, 2),
+      adjustedTargetPrice: round(probability.adjustedTargetPrice, 2),
       annualizedVol: round(probability.annualizedVol, 4),
       momentumReturn: round(probability.momentumReturn, 6),
       driftPerSecond: round(probability.driftPerSecond, 8),

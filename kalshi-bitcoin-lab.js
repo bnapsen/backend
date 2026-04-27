@@ -167,7 +167,7 @@
     summaryEl.innerHTML = [
       metric("Live BTC proxy", dollars(market.currentPrice), "Bid " + dollars(market.proxyBid) + " / ask " + dollars(market.proxyAsk), "price-metric"),
       metric("Kalshi target", dollars(market.targetPrice), "Distance " + signedDollars(market.distanceDollars)),
-      metric("Model YES", pct(model.yesProbability), "NO " + pct(model.noProbability)),
+      metric("Calibrated YES", pct(model.yesProbability), "Raw path " + pct(model.rawYesProbability) + " / prior " + pct(model.marketPriorYes)),
       metric("Best call", callLabel(best.recommendation), best.side ? best.side.toUpperCase() + " edge " + pct(best.edge) : "No candidate"),
     ].join("");
   }
@@ -198,7 +198,7 @@
         "<tr>",
         '<td><span class="side-pill ' + escapeHtml(row.side) + '">' + escapeHtml(String(row.side || "").toUpperCase()) + "</span></td>",
         "<td>" + formatCents(row.askCents) + '<br><span class="subtext">bid ' + formatCents(row.bidCents) + " / spread " + pct(row.spread) + "</span></td>",
-        "<td>" + pct(row.probability) + '<br><span class="subtext">horizon ' + escapeHtml(horizon) + "</span></td>",
+        "<td>" + pct(row.probability) + '<br><span class="subtext">raw ' + pct(row.rawProbability) + " / horizon " + escapeHtml(horizon) + "</span></td>",
         "<td>" + pct(row.breakEven) + '<br><span class="subtext">incl fee</span></td>',
         '<td class="' + edgeClass + '">' + pct(row.edge) + "</td>",
         '<td class="' + (Number(row.expectedProfit || 0) >= 0 ? "pos" : "neg") + '">' + signedDollars(row.expectedProfit) + "</td>",
@@ -371,6 +371,9 @@
     const reasons = Array.isArray(model.reasons) ? model.reasons : [];
     modelReasonsEl.innerHTML = [
       model.caveat ? "<p><strong>Data caveat:</strong> " + escapeHtml(model.caveat) + "</p>" : "",
+      "<p><strong>Odds engine:</strong> calibrated YES " + escapeHtml(pct(model.yesProbability)) + ", raw final-average path YES " + escapeHtml(pct(model.rawYesProbability)) + ", Kalshi prior " + escapeHtml(pct(model.marketPriorYes)) + ", shrink " + escapeHtml(pct(model.calibrationWeight)) + ".</p>",
+      "<p><strong>Time model:</strong> " + escapeHtml(formatDuration(model.horizonSeconds)) + " to close, " + escapeHtml(formatDuration(model.secondsToAverageStart)) + " until the final average starts, effective variance horizon " + escapeHtml(formatDuration(model.effectiveVarianceSeconds)) + ".</p>",
+      "<p><strong>Vol inputs:</strong> 5m " + escapeHtml(tinyPct(model.sigma5)) + ", 15m " + escapeHtml(tinyPct(model.sigma15)) + ", 60m " + escapeHtml(tinyPct(model.sigma60)) + ", EWMA " + escapeHtml(tinyPct(model.sigmaEwma)) + ", range " + escapeHtml(tinyPct(model.sigmaRange)) + " per minute.</p>",
       reasons.map(function (reason) { return "<p>" + escapeHtml(reason) + "</p>"; }).join(""),
     ].join("");
   }
@@ -415,6 +418,12 @@
     const number = Number(value);
     if (!Number.isFinite(number)) return "n/a";
     return (number * 100).toFixed(1) + "%";
+  }
+
+  function tinyPct(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "n/a";
+    return (number * 100).toFixed(3) + "%";
   }
 
   function formatCents(value) {
