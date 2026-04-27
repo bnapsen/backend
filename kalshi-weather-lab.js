@@ -44,6 +44,19 @@
   const detailTitle = document.querySelector("#detail-title");
   const detailBody = document.querySelector("#detail-body");
 
+  function openKalshiWindow(url) {
+    if (!url) return false;
+    const opened = window.open(
+      url,
+      "kalshiMarket-" + Date.now(),
+      "popup=yes,width=1280,height=900,left=80,top=40,resizable=yes,scrollbars=yes"
+    );
+    if (!opened) return false;
+    opened.opener = null;
+    opened.focus();
+    return true;
+  }
+
   dateInput.value = tomorrowIsoDate();
   tokenInput.value = localStorage.getItem("kalshiLabToken") || "";
   portfolioBankrollInput.value = localStorage.getItem(PORTFOLIO_BANKROLL_KEY) || "1000";
@@ -250,7 +263,11 @@
       button.addEventListener("click", function () { showTemperatureDetail(state.dailyPortfolio.items[Number(button.dataset.portfolioChart)].item); });
     });
     portfolioItemsEl.querySelectorAll("[data-portfolio-open]").forEach(function (button) {
-      button.addEventListener("click", function () { window.open(state.dailyPortfolio.items[Number(button.dataset.portfolioOpen)].item.url, "_blank", "noopener"); });
+      button.addEventListener("click", function () {
+        const pick = state.dailyPortfolio.items[Number(button.dataset.portfolioOpen)];
+        const url = pick && pick.item && pick.item.url;
+        if (!openKalshiWindow(url) && url) window.open(url, "_blank", "noopener");
+      });
     });
     portfolioItemsEl.querySelectorAll("[data-portfolio-audit]").forEach(function (button) {
       button.addEventListener("click", function () { addPortfolioPickToAudit(state.dailyPortfolio.items[Number(button.dataset.portfolioAudit)]); });
@@ -444,7 +461,11 @@
       button.addEventListener("click", function () { showTemperatureDetail(state.candidates[Number(button.dataset.chart)]); });
     });
     candidatesEl.querySelectorAll("[data-open]").forEach(function (button) {
-      button.addEventListener("click", function () { window.open(state.candidates[Number(button.dataset.open)].url, "_blank", "noopener"); });
+      button.addEventListener("click", function () {
+        const item = state.candidates[Number(button.dataset.open)];
+        const url = item && item.url;
+        if (!openKalshiWindow(url) && url) window.open(url, "_blank", "noopener");
+      });
     });
     candidatesEl.querySelectorAll("[data-log]").forEach(function (button) {
       button.addEventListener("click", function () { logCandidate(state.candidates[Number(button.dataset.log)]); });
@@ -538,7 +559,9 @@
       '<div class="detail-block"><h3>Settlement Proxy</h3><p>' + escapeHtml((settlement.stationId || observations.stationId || "Mapped station") + ": " + (settlement.stationHint || "") + ". " + (settlement.sourceNote || observations.note || "")) + "</p></div>",
       '<div class="detail-block"><h3>Risk Flags</h3><p>' + escapeHtml(item.riskFlags && item.riskFlags.length ? item.riskFlags.join(", ") : "None raised by this pass.") + "</p></div>",
     ].join("");
-    detailBody.querySelector("#detail-open").addEventListener("click", function () { window.open(item.url, "_blank", "noopener"); });
+    detailBody.querySelector("#detail-open").addEventListener("click", function () {
+      if (!openKalshiWindow(item.url)) window.open(item.url, "_blank", "noopener");
+    });
     detailBody.querySelector("#detail-log").addEventListener("click", function () { logCandidate(item); });
     detailDialog.showModal();
     bindInteractiveTemperatureCharts();
@@ -710,7 +733,9 @@
       '<div class="detail-block"><h3>Market Overlay</h3><p>' + escapeHtml(item.side.toUpperCase() + " " + item.subtitle + ". Model event odds " + pct(oddsMath.probability) + ", you pay " + pct(oddsMath.breakEven) + " after estimated fee, market prior " + pct(item.marketProbability) + ", edge " + pct(oddsMath.edge) + ".") + '</p><div class="actions"><button type="button" id="chart-open">Open Kalshi</button><button type="button" id="chart-log">Audit</button></div></div>',
       '<div class="detail-block"><h3>Forecast Notes</h3><p>' + escapeHtml((item.context && (item.context.detailedForecast || item.context.shortForecast)) || "No detailed forecast text returned.") + "</p></div>",
     ].join("");
-    detailBody.querySelector("#chart-open").addEventListener("click", function () { window.open(item.url, "_blank", "noopener"); });
+    detailBody.querySelector("#chart-open").addEventListener("click", function () {
+      if (!openKalshiWindow(item.url)) window.open(item.url, "_blank", "noopener");
+    });
     detailBody.querySelector("#chart-log").addEventListener("click", function () { logCandidate(item); });
     detailDialog.showModal();
     bindInteractiveTemperatureCharts();

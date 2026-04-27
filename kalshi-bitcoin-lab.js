@@ -27,6 +27,11 @@
   const accessTokenInput = document.querySelector("#access-token");
   const streamToggle = document.querySelector("#stream-toggle");
 
+  kalshiLinkEl.addEventListener("click", function (event) {
+    if (openKalshiWindow(kalshiLinkEl.href)) {
+      event.preventDefault();
+    }
+  });
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     restart();
@@ -116,6 +121,19 @@
       return window.location.origin;
     }
     return PROD_API_BASE;
+  }
+
+  function openKalshiWindow(url) {
+    if (!url) return false;
+    const opened = window.open(
+      url,
+      "kalshiMarket-" + Date.now(),
+      "popup=yes,width=1280,height=900,left=80,top=40,resizable=yes,scrollbars=yes"
+    );
+    if (!opened) return false;
+    opened.opener = null;
+    opened.focus();
+    return true;
   }
 
   function render(scan) {
