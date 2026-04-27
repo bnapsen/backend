@@ -37,9 +37,6 @@ a {
   padding: 18px 22px;
   border-bottom: 1px solid var(--line);
   background: rgba(7, 11, 15, 0.94);
-  position: sticky;
-  top: 0;
-  z-index: 20;
 }
 
 .back-link,

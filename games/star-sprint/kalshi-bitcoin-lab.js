@@ -6,7 +6,7 @@ const BTC_15M_SERIES = 'KXBTC15M';
 const COINBASE_PRODUCT = 'BTC-USD';
 const DEFAULT_MAX_COST = 5;
 const DEFAULT_MIN_EDGE = 0.02;
-const MARKET_CACHE_MS = 4_000;
+const MARKET_CACHE_MS = 1_000;
 const CANDLE_CACHE_MS = 20_000;
 const bitcoinCache = {
   markets: null,

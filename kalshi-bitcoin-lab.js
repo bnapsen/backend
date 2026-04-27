@@ -45,7 +45,7 @@
       startStream();
     } else {
       loadScan();
-      state.fallbackTimer = setInterval(loadScan, 2000);
+      state.fallbackTimer = setInterval(loadScan, 1000);
     }
   }
 
@@ -67,7 +67,7 @@
     source.addEventListener("scan", function (event) {
       try {
         render(JSON.parse(event.data));
-        setStatus("Live stream connected - refreshing about every 1.5s.");
+        setStatus("Live stream connected - refreshing about every 1s.");
       } catch (error) {
         setStatus("Live stream returned malformed data.", true);
       }
@@ -76,7 +76,7 @@
       setStatus("Live stream paused; falling back to polling.", true);
       stopStream();
       loadScan();
-      state.fallbackTimer = setInterval(loadScan, 2000);
+      state.fallbackTimer = setInterval(loadScan, 1000);
     });
   }
 
@@ -84,7 +84,7 @@
     try {
       setStatus("Refreshing Bitcoin market...");
       render(await fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/scan")));
-      setStatus(streamToggle.checked ? "Polling live every 2s." : "Manual refresh complete.");
+      setStatus(streamToggle.checked ? "Polling live every 1s." : "Manual refresh complete.");
     } catch (error) {
       setStatus(error.message || "Unable to load Bitcoin scan.", true);
     }

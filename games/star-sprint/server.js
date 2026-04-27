@@ -492,7 +492,7 @@ async function handleKalshiBitcoinStreamRequest(req, res, requestUrl) {
   await sendScan();
   const interval = setInterval(() => {
     sendScan().catch(() => {});
-  }, 1500);
+  }, 1000);
   req.on('close', () => {
     clearInterval(interval);
   });
