@@ -41,6 +41,46 @@
   <main class="lab-shell">
     <section id="summary" class="summary-grid"></section>
 
+    <section class="table-panel portfolio-panel">
+      <div class="section-head">
+        <div>
+          <h2>Daily Portfolio</h2>
+          <p class="subtext">Strict model basket. Positive EV is not guaranteed profit.</p>
+        </div>
+        <div class="panel-actions">
+          <label class="compact-label">
+            Budget
+            <input id="portfolio-budget" class="compact-input money-input" type="number" min="1" max="250" step="1" value="25">
+          </label>
+          <label class="compact-label">
+            Max/city
+            <input id="portfolio-city-cap" class="compact-input money-input" type="number" min="1" max="50" step="1" value="5">
+          </label>
+          <button id="portfolio-build" type="button" class="ghost">Build</button>
+          <button id="portfolio-audit" type="button" class="ghost">Audit basket</button>
+        </div>
+      </div>
+      <div id="portfolio-summary" class="portfolio-summary"></div>
+      <div class="table-wrap">
+        <table class="portfolio-table">
+          <thead>
+            <tr>
+              <th>Market</th>
+              <th>Side</th>
+              <th>Ask</th>
+              <th>Model p</th>
+              <th>Edge</th>
+              <th>Contracts</th>
+              <th>Cost</th>
+              <th>Model EV</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="portfolio-items"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="table-panel">
       <div class="section-head">
         <h2>Candidate Markets</h2>

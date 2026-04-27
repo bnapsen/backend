@@ -230,6 +230,10 @@ button:disabled {
   padding: 0 8px;
 }
 
+.money-input {
+  width: 72px;
+}
+
 .table-wrap {
   overflow: auto;
 }
@@ -238,6 +242,43 @@ table {
   width: 100%;
   min-width: 1180px;
   border-collapse: collapse;
+}
+
+.portfolio-panel {
+  margin-bottom: 16px;
+}
+
+.portfolio-table {
+  min-width: 900px;
+}
+
+.portfolio-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  border-bottom: 1px solid var(--line);
+}
+
+.portfolio-metric {
+  min-height: 72px;
+  padding: 12px 14px;
+  border-right: 1px solid var(--line);
+}
+
+.portfolio-metric:last-child {
+  border-right: 0;
+}
+
+.portfolio-metric span,
+.portfolio-metric small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.portfolio-metric strong {
+  display: block;
+  margin: 6px 0 4px;
+  font-size: 18px;
 }
 
 th,
@@ -524,16 +565,19 @@ dialog::backdrop {
 
   .summary-grid,
   .split,
-  .audit-summary {
+  .audit-summary,
+  .portfolio-summary {
     grid-template-columns: 1fr;
   }
 
-  .audit-metric {
+  .audit-metric,
+  .portfolio-metric {
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
 
-  .audit-metric:last-child {
+  .audit-metric:last-child,
+  .portfolio-metric:last-child {
     border-bottom: 0;
   }
 

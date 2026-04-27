@@ -3,11 +3,14 @@
   const AUTO_AUDIT_ENABLED_KEY = "kalshiWeatherAutoAuditEnabled";
   const AUTO_AUDIT_LIMIT_KEY = "kalshiWeatherAutoAuditLimit";
   const AUTO_AUDIT_MINUTES_KEY = "kalshiWeatherAutoAuditMinutes";
+  const PORTFOLIO_BUDGET_KEY = "kalshiWeatherPortfolioBudget";
+  const PORTFOLIO_CITY_CAP_KEY = "kalshiWeatherPortfolioCityCap";
   const state = {
     scan: null,
     candidates: [],
     ledger: loadAuditLedger(),
     autoAuditTimer: null,
+    dailyPortfolio: null,
   };
 
   const form = document.querySelector("#scan-form");
@@ -23,6 +26,10 @@
   const contextsEl = document.querySelector("#contexts");
   const auditSummaryEl = document.querySelector("#audit-summary");
   const ledgerEl = document.querySelector("#ledger");
+  const portfolioSummaryEl = document.querySelector("#portfolio-summary");
+  const portfolioItemsEl = document.querySelector("#portfolio-items");
+  const portfolioBudgetInput = document.querySelector("#portfolio-budget");
+  const portfolioCityCapInput = document.querySelector("#portfolio-city-cap");
   const autoAuditEnabledInput = document.querySelector("#auto-audit-enabled");
   const autoAuditLimitInput = document.querySelector("#auto-audit-limit");
   const autoAuditMinutesInput = document.querySelector("#auto-audit-minutes");
@@ -32,6 +39,8 @@
 
   dateInput.value = tomorrowIsoDate();
   tokenInput.value = localStorage.getItem("kalshiLabToken") || "";
+  portfolioBudgetInput.value = localStorage.getItem(PORTFOLIO_BUDGET_KEY) || "25";
+  portfolioCityCapInput.value = localStorage.getItem(PORTFOLIO_CITY_CAP_KEY) || "5";
   autoAuditEnabledInput.checked = localStorage.getItem(AUTO_AUDIT_ENABLED_KEY) === "1";
   autoAuditLimitInput.value = localStorage.getItem(AUTO_AUDIT_LIMIT_KEY) || "10";
   autoAuditMinutesInput.value = localStorage.getItem(AUTO_AUDIT_MINUTES_KEY) || "15";
@@ -55,6 +64,27 @@
 
   document.querySelector("#resolve-audit").addEventListener("click", function () {
     resolveAudit();
+  });
+
+  document.querySelector("#portfolio-build").addEventListener("click", function () {
+    localStorage.setItem(PORTFOLIO_BUDGET_KEY, String(portfolioBudget()));
+    localStorage.setItem(PORTFOLIO_CITY_CAP_KEY, String(portfolioCityCap()));
+    renderDailyPortfolio();
+    setStatus("Built a strict model-positive basket for " + formatDateWithRelative(portfolioMarketDate()) + ".");
+  });
+
+  document.querySelector("#portfolio-audit").addEventListener("click", function () {
+    addDailyPortfolioToAudit();
+  });
+
+  portfolioBudgetInput.addEventListener("change", function () {
+    localStorage.setItem(PORTFOLIO_BUDGET_KEY, String(portfolioBudget()));
+    renderDailyPortfolio();
+  });
+
+  portfolioCityCapInput.addEventListener("change", function () {
+    localStorage.setItem(PORTFOLIO_CITY_CAP_KEY, String(portfolioCityCap()));
+    renderDailyPortfolio();
   });
 
   autoAuditEnabledInput.addEventListener("change", function () {
@@ -122,6 +152,7 @@
 
   function renderScan() {
     renderSummary();
+    renderDailyPortfolio();
     renderCandidates();
     renderContexts();
   }
@@ -144,6 +175,180 @@
       metric("Buy flags", String(buyCount), "Research, small, or tiny"),
       metric("Scan health", errors ? errors + " issue" + (errors === 1 ? "" : "s") : "OK", "Avg edge " + pct(avgEdge) + ", after fees"),
     ].join("");
+  }
+
+  function renderDailyPortfolio() {
+    state.dailyPortfolio = buildDailyPortfolio();
+    const portfolio = state.dailyPortfolio;
+    portfolioSummaryEl.innerHTML = [
+      portfolioMetric("Basket cost", dollars(portfolio.costDollars), portfolio.items.length + " picks / $" + portfolio.budgetDollars.toFixed(0) + " cap"),
+      portfolioMetric("Model EV", signedDollars(portfolio.expectedProfitDollars), "model-only, not guaranteed"),
+      portfolioMetric("Avg edge", pct(portfolio.avgEdge), portfolio.excludedCount + " excluded"),
+      portfolioMetric("Max loss", dollars(portfolio.maxLossDollars), "if every pick loses"),
+      portfolioMetric("Rules", portfolio.rulesLabel, portfolio.dateLabel),
+    ].join("");
+
+    if (!portfolio.items.length) {
+      portfolioItemsEl.innerHTML = '<tr><td colspan="9" class="subtext">No strict daily portfolio right now. The basket excludes Audit, Pass, Avoid, low-confidence, and thin-edge picks.</td></tr>';
+      return;
+    }
+
+    portfolioItemsEl.innerHTML = portfolio.items.map(function (pick, index) {
+      const item = pick.item;
+      return [
+        "<tr>",
+        '<td><div class="market-name"><strong>' + escapeHtml(item.location) + " " + escapeHtml(item.subtitle) + "</strong>" + renderDateBadge(portfolio.marketDate) + "<span>" + escapeHtml(item.ticker) + "</span>" + renderRiskFlags(item) + "</div></td>",
+        '<td><span class="side ' + (item.side === "yes" ? "yes" : "no") + '">' + item.side.toUpperCase() + "</span></td>",
+        "<td>" + item.price.askCents + 'c<br><span class="subtext">bid ' + item.price.bidCents + "c</span></td>",
+        "<td>" + pct(item.probability) + "</td>",
+        '<td class="' + (item.adjustedEdge >= 0 ? "pos" : "neg") + '">' + pct(item.adjustedEdge) + "</td>",
+        "<td>" + pick.contracts + "</td>",
+        "<td>" + dollars(pick.costDollars) + "</td>",
+        '<td class="' + (pick.expectedProfitDollars >= 0 ? "pos" : "neg") + '">' + signedDollars(pick.expectedProfitDollars) + "</td>",
+        '<td><div class="actions"><button type="button" data-portfolio-detail="' + index + '">View</button><button type="button" data-portfolio-open="' + index + '">Kalshi</button><button type="button" data-portfolio-audit="' + index + '">Audit</button></div></td>',
+        "</tr>",
+      ].join("");
+    }).join("");
+
+    portfolioItemsEl.querySelectorAll("[data-portfolio-detail]").forEach(function (button) {
+      button.addEventListener("click", function () { showDetail(state.dailyPortfolio.items[Number(button.dataset.portfolioDetail)].item); });
+    });
+    portfolioItemsEl.querySelectorAll("[data-portfolio-open]").forEach(function (button) {
+      button.addEventListener("click", function () { window.open(state.dailyPortfolio.items[Number(button.dataset.portfolioOpen)].item.url, "_blank", "noopener"); });
+    });
+    portfolioItemsEl.querySelectorAll("[data-portfolio-audit]").forEach(function (button) {
+      button.addEventListener("click", function () { addPortfolioPickToAudit(state.dailyPortfolio.items[Number(button.dataset.portfolioAudit)]); });
+    });
+  }
+
+  function buildDailyPortfolio() {
+    const budget = portfolioBudget();
+    const cityCap = Math.min(portfolioCityCap(), budget);
+    const marketDate = portfolioMarketDate();
+    const selected = [];
+    const usedLocations = {};
+    let spent = 0;
+    let excludedCount = 0;
+
+    const strictCandidates = state.candidates
+      .filter(function (item) {
+        if (!isStrictPortfolioCandidate(item)) {
+          excludedCount += 1;
+          return false;
+        }
+        return true;
+      })
+      .sort(portfolioCandidateSort);
+
+    strictCandidates.forEach(function (item) {
+      if (selected.length >= 10) return;
+      if (usedLocations[item.location]) return;
+      const remainingBudget = budget - spent;
+      if (remainingBudget < 0.25) return;
+      const maxCost = Math.min(remainingBudget, cityCap);
+      const pick = sizePortfolioPick(item, maxCost);
+      if (!pick || pick.expectedProfitDollars <= 0) return;
+      selected.push(pick);
+      usedLocations[item.location] = true;
+      spent += pick.costDollars;
+    });
+
+    const expectedProfit = selected.reduce(function (sum, pick) { return sum + pick.expectedProfitDollars; }, 0);
+    const avgEdge = selected.length ? selected.reduce(function (sum, pick) { return sum + Number(pick.item.adjustedEdge || 0); }, 0) / selected.length : 0;
+    return {
+      marketDate: marketDate,
+      dateLabel: formatDateWithRelative(marketDate),
+      budgetDollars: budget,
+      cityCapDollars: cityCap,
+      costDollars: roundMoney(spent),
+      maxLossDollars: roundMoney(spent),
+      expectedProfitDollars: roundMoney(expectedProfit),
+      avgEdge: avgEdge,
+      excludedCount: excludedCount,
+      rulesLabel: "strict, 1/city",
+      items: selected,
+    };
+  }
+
+  function isStrictPortfolioCandidate(item) {
+    if (!item || item.recommendation === "audit-only") return false;
+    if (item.recommendation !== "research-buy" && item.recommendation !== "small-buy") return false;
+    if (item.confidence === "low") return false;
+    if (Number(item.adjustedEdge || 0) < 0.08) return false;
+    if (Number(item.probability || 0) < 0.08) return false;
+    const flags = (item.riskFlags || []).join(" ").toLowerCase();
+    if (flags.indexOf("station observation unavailable") >= 0) return false;
+    return true;
+  }
+
+  function portfolioCandidateSort(left, right) {
+    const rank = { "research-buy": 2, "small-buy": 1 };
+    const rankDiff = (rank[right.recommendation] || 0) - (rank[left.recommendation] || 0);
+    if (rankDiff) return rankDiff;
+    const evDiff = modelEvDollars(right) - modelEvDollars(left);
+    if (Math.abs(evDiff) > 0.001) return evDiff;
+    return Number(right.adjustedEdge || 0) - Number(left.adjustedEdge || 0);
+  }
+
+  function sizePortfolioPick(item, maxCost) {
+    const ask = Number(item.price && item.price.ask || 0);
+    if (!Number.isFinite(ask) || ask <= 0 || ask >= 1) return null;
+    const maxSize = Math.max(1, Math.floor(Number(item.price.askSize || 25)));
+    const upperContracts = Math.min(25, maxSize, Math.floor(maxCost / ask) + 1);
+    for (let contracts = upperContracts; contracts >= 1; contracts -= 1) {
+      const fee = kalshiFeeDollars(contracts, ask);
+      const cost = contracts * ask + fee;
+      if (cost > maxCost + 0.00001) continue;
+      const expectedProfit = contracts * Number(item.probability || 0) - cost;
+      return {
+        item: item,
+        contracts: contracts,
+        priceCents: item.price.askCents,
+        costDollars: roundMoney(cost),
+        feeDollars: roundMoney(fee),
+        expectedProfitDollars: roundMoney(expectedProfit),
+        payoutIfRightDollars: contracts,
+      };
+    }
+    return null;
+  }
+
+  function addDailyPortfolioToAudit() {
+    const portfolio = state.dailyPortfolio || buildDailyPortfolio();
+    if (!portfolio.items.length) {
+      setStatus("No daily portfolio picks to audit.", true);
+      return;
+    }
+    let added = 0;
+    portfolio.items.forEach(function (pick) {
+      if (addPortfolioPickToAudit(pick, true)) added += 1;
+    });
+    renderLedger();
+    setStatus(added ? "Added " + added + " daily portfolio picks to the edge audit." : "Daily portfolio picks are already in the edge audit.");
+  }
+
+  function addPortfolioPickToAudit(pick, silent) {
+    const item = pick && pick.item;
+    if (!item) return false;
+    const exists = state.ledger.some(function (entry) {
+      return entry.ticker === item.ticker && entry.side === item.side && entry.marketDate === portfolioMarketDate();
+    });
+    if (exists) {
+      if (!silent) setStatus("That portfolio pick is already in the edge audit.");
+      return false;
+    }
+    state.ledger.unshift(buildAuditEntry(
+      item,
+      Number(pick.contracts || 1),
+      Number(pick.priceCents || item.price.askCents || 1),
+      "Daily portfolio; " + item.recommendation + "; " + item.location + " " + item.subtitle
+    ));
+    saveLedger();
+    if (!silent) {
+      renderLedger();
+      setStatus("Added portfolio pick to the edge audit.");
+    }
+    return true;
   }
 
   function renderCandidates() {
@@ -459,6 +664,24 @@
     return state.scan && state.scan.date ? state.scan.date : dateInput.value;
   }
 
+  function portfolioMarketDate() {
+    return state.scan && state.scan.date ? state.scan.date : dateInput.value;
+  }
+
+  function portfolioBudget() {
+    const budget = clampInteger(portfolioBudgetInput.value, 1, 250, 25);
+    portfolioBudgetInput.value = String(budget);
+    localStorage.setItem(PORTFOLIO_BUDGET_KEY, String(budget));
+    return budget;
+  }
+
+  function portfolioCityCap() {
+    const cityCap = clampInteger(portfolioCityCapInput.value, 1, 50, 5);
+    portfolioCityCapInput.value = String(cityCap);
+    localStorage.setItem(PORTFOLIO_CITY_CAP_KEY, String(cityCap));
+    return cityCap;
+  }
+
   function saveLedger() {
     localStorage.setItem("kalshiWeatherEdgeAudit", JSON.stringify(state.ledger));
   }
@@ -506,6 +729,10 @@
     return '<div class="audit-metric"><span>' + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong><small>" + escapeHtml(subtext) + "</small></div>";
   }
 
+  function portfolioMetric(label, value, subtext) {
+    return '<div class="portfolio-metric"><span>' + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong><small>" + escapeHtml(subtext) + "</small></div>";
+  }
+
   function buyCandidates() {
     return state.candidates.filter(function (item) {
       return item.recommendation === "research-buy" || item.recommendation === "small-buy" || item.recommendation === "tiny-only";
@@ -539,6 +766,10 @@
     const number = Number(value || 0);
     const sign = number > 0 ? "+" : number < 0 ? "-" : "";
     return sign + "$" + Math.abs(number).toFixed(2);
+  }
+
+  function dollars(value) {
+    return "$" + Math.abs(Number(value || 0)).toFixed(2);
   }
 
   function normalizeMarketResult(result) {
