@@ -151,6 +151,20 @@ function readWindSpeedMph(period) {
   return round(numbers.reduce((sum, value) => sum + value, 0) / numbers.length, 1);
 }
 
+function readHumidity(period) {
+  const value = period && period.relativeHumidity
+    ? Number(period.relativeHumidity.value)
+    : null;
+  return Number.isFinite(value) ? round(value, 1) : null;
+}
+
+function readDewpointF(period) {
+  const value = period && period.dewpoint
+    ? fahrenheitFromCelsius(period.dewpoint.value)
+    : null;
+  return Number.isFinite(value) ? round(value, 1) : null;
+}
+
 function localHourDecimal(timestamp, timeZone) {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return null;
@@ -169,6 +183,8 @@ function buildHourlyChartSeries(dayHours, timeZone) {
         endTime: period.endTime || null,
         localHour: localHourDecimal(startTime, timeZone),
         tempF,
+        dewpointF: readDewpointF(period),
+        humidity: readHumidity(period),
         precipProbability: readPrecipProbability(period),
         windSpeedMph: readWindSpeedMph(period),
         windDirection: period.windDirection || '',
@@ -740,7 +756,17 @@ async function getWeatherLabContext(location, date) {
       sourceNote: 'Observation data is pulled from the mapped NWS station as a proxy. Kalshi settlement can depend on final NWS climate reports and corrections.',
     },
     chart: {
+      date,
+      localDate: observations.localDate,
+      dayPhase: observations.dayPhase,
       timeZone,
+      generatedAt: hourly.properties.generatedAt || daily.properties.generatedAt || null,
+      updatedAt: hourly.properties.updateTime || daily.properties.updateTime || null,
+      forecastOffice: point.properties.cwa || point.properties.gridId || null,
+      gridId: point.properties.gridId || null,
+      gridX: point.properties.gridX || null,
+      gridY: point.properties.gridY || null,
+      localHour: observations.localHour,
       hourlyForecast: hourlyChart,
       observations: observations.samples || [],
       hourlyMax,

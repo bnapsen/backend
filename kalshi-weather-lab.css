@@ -570,7 +570,7 @@ dialog::backdrop {
 
 .chart-block {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .chart-head,
@@ -580,6 +580,34 @@ dialog::backdrop {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.chart-date-banner {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.chart-date-banner div {
+  min-height: 74px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #14212c, #101820);
+}
+
+.chart-date-banner span,
+.chart-date-banner small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.chart-date-banner strong {
+  display: block;
+  margin: 5px 0;
+  font-size: 15px;
 }
 
 .chart-legend {
@@ -612,12 +640,43 @@ dialog::backdrop {
   background: rgba(251, 191, 36, 0.18);
 }
 
+.chart-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chart-controls button {
+  height: 30px;
+  border: 1px solid var(--line);
+  background: #101923;
+  color: var(--muted);
+  padding: 0 10px;
+}
+
+.chart-controls button.active {
+  border-color: rgba(52, 211, 153, 0.65);
+  color: var(--text);
+  background: rgba(52, 211, 153, 0.11);
+}
+
+.chart-controls button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chart-stage {
+  position: relative;
+}
+
 .chart-svg {
   width: 100%;
-  min-height: 260px;
+  min-height: 360px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #0b1218;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  touch-action: none;
 }
 
 .chart-bg {
@@ -633,9 +692,14 @@ dialog::backdrop {
   stroke: rgba(152, 168, 167, 0.1);
 }
 
+.chart-daylight-band {
+  fill: rgba(96, 165, 250, 0.07);
+}
+
 .chart-axis-label,
 .chart-ref-label,
-.chart-range-label {
+.chart-range-label,
+.chart-now-label {
   fill: var(--muted);
   font-size: 11px;
 }
@@ -694,9 +758,104 @@ dialog::backdrop {
   stroke: rgba(52, 211, 153, 0.65);
 }
 
+.chart-precip-bar {
+  fill: rgba(96, 165, 250, 0.32);
+}
+
+.chart-precip-base {
+  stroke: rgba(152, 168, 167, 0.25);
+  stroke-width: 1;
+}
+
+.chart-wind-label {
+  fill: var(--muted);
+  font-size: 9px;
+  text-anchor: middle;
+  opacity: 0.78;
+}
+
+.chart-now-line {
+  stroke: rgba(251, 113, 133, 0.85);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 4;
+}
+
+.chart-now-label {
+  fill: var(--red);
+  font-weight: 800;
+}
+
+.chart-crosshair,
+.chart-hover-dot {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chart-crosshair {
+  stroke: rgba(237, 244, 241, 0.72);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.chart-hover-dot {
+  fill: var(--text);
+  stroke: #071014;
+  stroke-width: 2;
+}
+
+.chart-stage.is-hovering .chart-crosshair,
+.chart-stage.is-hovering .chart-hover-dot {
+  opacity: 1;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  gap: 4px;
+  width: min(242px, calc(100% - 16px));
+  padding: 10px;
+  border: 1px solid rgba(52, 211, 153, 0.55);
+  border-radius: 8px;
+  background: rgba(9, 15, 20, 0.96);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  pointer-events: none;
+}
+
+.chart-tooltip strong,
+.chart-tooltip span,
+.chart-tooltip small {
+  display: block;
+}
+
+.chart-tooltip strong {
+  font-size: 14px;
+}
+
+.chart-tooltip span,
+.chart-tooltip small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.chart-stage.hide-forecast .forecast-line,
+.chart-stage.hide-forecast .forecast-dot,
+.chart-stage.hide-observed .observed-line,
+.chart-stage.hide-observed .observed-dot,
+.chart-stage.hide-precip .chart-precip-bar,
+.chart-stage.hide-range .chart-range-band,
+.chart-stage.hide-range .chart-threshold,
+.chart-stage.hide-range .chart-range-label,
+.chart-stage.hide-refs .chart-ref,
+.chart-stage.hide-refs .chart-ref-label {
+  display: none;
+}
+
 .chart-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
   gap: 8px;
 }
 
@@ -718,6 +877,23 @@ dialog::backdrop {
   display: block;
   margin-top: 5px;
   font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.chart-notes {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.34);
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.06);
+}
+
+.chart-notes p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .hourly-breakdown {
@@ -734,7 +910,7 @@ dialog::backdrop {
 
 .hourly-row {
   display: grid;
-  grid-template-columns: 64px 70px 64px 96px minmax(160px, 1fr);
+  grid-template-columns: 60px 64px 64px 76px 56px 96px minmax(160px, 1fr);
   gap: 10px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--line);
@@ -756,6 +932,11 @@ dialog::backdrop {
   font-weight: 800;
 }
 
+.hourly-row.is-active {
+  background: rgba(52, 211, 153, 0.08);
+  color: var(--text);
+}
+
 @media (max-width: 980px) {
   .lab-topbar,
   .controls {
@@ -766,7 +947,9 @@ dialog::backdrop {
   .summary-grid,
   .split,
   .audit-summary,
-  .portfolio-summary {
+  .portfolio-summary,
+  .chart-date-banner,
+  .chart-stats {
     grid-template-columns: 1fr;
   }
 
@@ -793,7 +976,6 @@ dialog::backdrop {
     justify-content: space-between;
   }
 
-  .chart-stats,
   .hourly-row {
     grid-template-columns: 1fr;
   }
