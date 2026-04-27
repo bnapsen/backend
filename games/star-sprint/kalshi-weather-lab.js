@@ -135,6 +135,50 @@ function fahrenheitFromCelsius(value) {
   return Number.isFinite(number) ? (number * 9 / 5) + 32 : null;
 }
 
+function readPrecipProbability(period) {
+  const value = period && period.probabilityOfPrecipitation
+    ? Number(period.probabilityOfPrecipitation.value)
+    : null;
+  return Number.isFinite(value) ? value : null;
+}
+
+function readWindSpeedMph(period) {
+  const text = String(period && period.windSpeed ? period.windSpeed : '');
+  const matches = text.match(/\d+(?:\.\d+)?/g);
+  if (!matches || !matches.length) return null;
+  const numbers = matches.map(Number).filter(Number.isFinite);
+  if (!numbers.length) return null;
+  return round(numbers.reduce((sum, value) => sum + value, 0) / numbers.length, 1);
+}
+
+function localHourDecimal(timestamp, timeZone) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = zonedDateTimeParts(date, timeZone);
+  return round(parts.hour + (parts.minute / 60), 2);
+}
+
+function buildHourlyChartSeries(dayHours, timeZone) {
+  return dayHours
+    .map((period) => {
+      const startTime = String(period.startTime || '');
+      const tempF = Number(period.temperature);
+      if (!startTime || !Number.isFinite(tempF)) return null;
+      return {
+        time: startTime,
+        endTime: period.endTime || null,
+        localHour: localHourDecimal(startTime, timeZone),
+        tempF,
+        precipProbability: readPrecipProbability(period),
+        windSpeedMph: readWindSpeedMph(period),
+        windDirection: period.windDirection || '',
+        shortForecast: period.shortForecast || '',
+        isDaytime: Boolean(period.isDaytime),
+      };
+    })
+    .filter(Boolean);
+}
+
 async function fetchJsonWithRetry(url, attempts = 4) {
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -189,6 +233,7 @@ async function getStationObservationContext(location, date) {
     observedHighTime: null,
     latestTempF: null,
     latestTime: null,
+    samples: [],
     source: location.stationId ? `NWS station ${location.stationId}` : 'No station configured',
     note: 'Station observations are a settlement proxy; final Kalshi settlement may use NWS climate reports and later corrections.',
   };
@@ -214,6 +259,7 @@ async function getStationObservationContext(location, date) {
         return Number.isFinite(tempF) && timestamp ? {
           tempF,
           timestamp,
+          localHour: localHourDecimal(timestamp, timeZone),
           textDescription: props.textDescription || '',
         } : null;
       })
@@ -228,6 +274,12 @@ async function getStationObservationContext(location, date) {
       latestTempF: latest ? round(latest.tempF, 1) : null,
       latestTime: latest ? latest.timestamp : null,
       latestDescription: latest ? latest.textDescription : '',
+      samples: observations.map((item) => ({
+        time: item.timestamp,
+        localHour: item.localHour,
+        tempF: round(item.tempF, 1),
+        description: item.textDescription,
+      })),
     });
   } catch (error) {
     return Object.assign(base, {
@@ -612,7 +664,9 @@ async function getWeatherLabContext(location, date) {
   const hourly = await fetchJsonWithRetry(point.properties.forecastHourly);
   const daily = await fetchJsonWithRetry(point.properties.forecast);
   const observations = await getStationObservationContext(location, date);
+  const timeZone = location.timeZone || DEFAULT_WEATHER_LAB_TIME_ZONE;
   const dayHours = (hourly.properties.periods || []).filter((period) => String(period.startTime || '').startsWith(date));
+  const hourlyChart = buildHourlyChartSeries(dayHours, timeZone);
   const temps = dayHours.map((period) => Number(period.temperature)).filter(Number.isFinite);
   const hourlyMax = temps.length ? Math.max(...temps) : null;
   const nowMs = Date.now();
@@ -663,6 +717,7 @@ async function getWeatherLabContext(location, date) {
   return {
     location,
     date,
+    timeZone,
     point: {
       gridId: point.properties.gridId,
       gridX: point.properties.gridX,
@@ -683,6 +738,19 @@ async function getWeatherLabContext(location, date) {
       stationId: location.stationId || null,
       stationHint: location.stationHint,
       sourceNote: 'Observation data is pulled from the mapped NWS station as a proxy. Kalshi settlement can depend on final NWS climate reports and corrections.',
+    },
+    chart: {
+      timeZone,
+      hourlyForecast: hourlyChart,
+      observations: observations.samples || [],
+      hourlyMax,
+      remainingHourlyMax,
+      dailyHigh,
+      meanHigh,
+      observedHighF: observations.observedHighF,
+      observedHighTime: observations.observedHighTime,
+      latestTempF: observations.latestTempF,
+      latestTime: observations.latestTime,
     },
     regime: {
       maxPrecipProbability: maxPrecip,
@@ -885,6 +953,8 @@ function scoreWeatherCandidate(market, location, context, range, side, maxCost) 
       low: range.low,
       high: range.high,
       center: range.center,
+      lowerBound: range.lowerBound,
+      upperBound: range.upperBound,
     },
     price: {
       ask,
@@ -932,6 +1002,8 @@ function scoreWeatherCandidate(market, location, context, range, side, maxCost) 
       peakWindDirections: context.regime.peakWindDirections,
       observations: context.observations,
       settlement: context.settlement,
+      chart: context.chart,
+      timeZone: context.timeZone,
     },
     closeTime: market.close_time,
     expectedExpirationTime: market.expected_expiration_time,

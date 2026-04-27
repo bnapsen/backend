@@ -228,13 +228,16 @@
         "<td>" + pick.contracts + "</td>",
         "<td>" + dollars(pick.costDollars) + "</td>",
         '<td class="' + (pick.expectedProfitDollars >= 0 ? "pos" : "neg") + '">' + signedDollars(pick.expectedProfitDollars) + "</td>",
-        '<td><div class="actions"><button type="button" data-portfolio-detail="' + index + '">View</button><button type="button" data-portfolio-open="' + index + '">Kalshi</button><button type="button" data-portfolio-audit="' + index + '">Audit</button></div></td>',
+        '<td><div class="actions"><button type="button" data-portfolio-detail="' + index + '">View</button><button type="button" data-portfolio-chart="' + index + '">Chart</button><button type="button" data-portfolio-open="' + index + '">Kalshi</button><button type="button" data-portfolio-audit="' + index + '">Audit</button></div></td>',
         "</tr>",
       ].join("");
     }).join("");
 
     portfolioItemsEl.querySelectorAll("[data-portfolio-detail]").forEach(function (button) {
       button.addEventListener("click", function () { showDetail(state.dailyPortfolio.items[Number(button.dataset.portfolioDetail)].item); });
+    });
+    portfolioItemsEl.querySelectorAll("[data-portfolio-chart]").forEach(function (button) {
+      button.addEventListener("click", function () { showTemperatureDetail(state.dailyPortfolio.items[Number(button.dataset.portfolioChart)].item); });
     });
     portfolioItemsEl.querySelectorAll("[data-portfolio-open]").forEach(function (button) {
       button.addEventListener("click", function () { window.open(state.dailyPortfolio.items[Number(button.dataset.portfolioOpen)].item.url, "_blank", "noopener"); });
@@ -417,13 +420,16 @@
         "<td>" + renderKellyCell(item, kellySettings) + "</td>",
         '<td><span class="confidence">' + escapeHtml(item.confidence) + "</span></td>",
         "<td>" + item.suggested.contracts + " @ " + item.suggested.maxPriceCents + 'c<br><span class="subtext">$' + Number(item.suggested.maxCost).toFixed(2) + "</span></td>",
-        '<td><div class="actions"><button type="button" data-detail="' + index + '">View</button><button type="button" data-open="' + index + '">Kalshi</button><button type="button" data-log="' + index + '">Audit</button></div></td>',
+        '<td><div class="actions"><button type="button" data-detail="' + index + '">View</button><button type="button" data-chart="' + index + '">Chart</button><button type="button" data-open="' + index + '">Kalshi</button><button type="button" data-log="' + index + '">Audit</button></div></td>',
         "</tr>",
       ].join("");
     }).join("");
 
     candidatesEl.querySelectorAll("[data-detail]").forEach(function (button) {
       button.addEventListener("click", function () { showDetail(state.candidates[Number(button.dataset.detail)]); });
+    });
+    candidatesEl.querySelectorAll("[data-chart]").forEach(function (button) {
+      button.addEventListener("click", function () { showTemperatureDetail(state.candidates[Number(button.dataset.chart)]); });
     });
     candidatesEl.querySelectorAll("[data-open]").forEach(function (button) {
       button.addEventListener("click", function () { window.open(state.candidates[Number(button.dataset.open)].url, "_blank", "noopener"); });
@@ -441,7 +447,7 @@
       return;
     }
 
-    contextsEl.innerHTML = contexts.map(function (context) {
+    contextsEl.innerHTML = contexts.map(function (context, index) {
       const observations = context.observations || {};
       return [
         '<div class="context-item">',
@@ -459,9 +465,14 @@
         "</div>",
         observations.note ? '<p class="subtext">' + escapeHtml(observations.note) + "</p>" : "",
         '<p class="subtext">' + escapeHtml(context.forecast.detailedForecast || context.forecast.shortForecast || "") + "</p>",
+        '<div class="actions context-actions"><button type="button" data-context-chart="' + index + '">Open temperature chart</button></div>',
         "</div>",
       ].join("");
     }).join("");
+
+    contextsEl.querySelectorAll("[data-context-chart]").forEach(function (button) {
+      button.addEventListener("click", function () { showContextTemperatureDetail(contexts[Number(button.dataset.contextChart)]); });
+    });
   }
 
   function renderLedger() {
@@ -502,6 +513,7 @@
     detailTitle.textContent = item.location + " " + item.subtitle + " " + item.side.toUpperCase() + " - " + formatDateWithRelative(scanDate);
     detailBody.innerHTML = [
       '<div class="detail-block"><h3>Decision</h3><p>Weather date: <strong>' + escapeHtml(formatDateWithRelative(scanDate)) + "</strong>. " + escapeHtml(item.recommendation) + " at " + item.price.askCents + "c ask. Adjusted edge " + pct(item.adjustedEdge) + ". Confidence " + escapeHtml(item.confidence) + '.</p><div class="actions"><button type="button" id="detail-open">Open Kalshi</button><button type="button" id="detail-log">Audit</button></div></div>',
+      renderTemperatureChartBlock(item.context, item.range, scanDate, item.location + " " + item.subtitle),
       '<div class="detail-block"><h3>Probability Stack</h3><p>Calibrated ' + pct(item.probability) + ". Weather-only " + pct(item.weatherProbability) + ". Market prior " + pct(item.marketProbability) + ". Raw " + pct(item.rawProbability) + ". Tight " + pct(item.tightProbability) + ". Wide " + pct(item.wideProbability) + ". Break-even " + pct(item.breakEven) + ".</p></div>",
       '<div class="detail-block"><h3>Calibration</h3><p>' + renderCalibrationDetail(item) + "</p></div>",
       '<div class="detail-block"><h3>Kelly Size</h3><p>Full Kelly ' + pct(kelly.fullKelly) + ". Fractional stake " + pct(kelly.fractionalKelly) + " of bankroll, target " + dollars(kelly.targetDollars) + ". This assumes the model probability is calibrated; bad odds make Kelly overbet.</p></div>",
@@ -670,6 +682,253 @@
       auditMetric("Calibration", resolved.length ? pct(hitRate) : "n/a", resolved.length ? "avg p " + pct(avgModelP) : "need settlements"),
       auditMetric("Checked", latestCheck ? formatTime(latestCheck) : "not yet", autoAuditEnabledInput.checked ? "auto on: top " + autoAuditLimit() + " / " + autoAuditMinutes() + "m" : "auto off"),
     ].join("");
+  }
+
+  function showTemperatureDetail(item) {
+    const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
+    if (!item) return;
+    detailTitle.textContent = item.location + " temperature chart - " + formatDateWithRelative(scanDate);
+    detailBody.innerHTML = [
+      renderTemperatureChartBlock(item.context, item.range, scanDate, item.location + " " + item.subtitle),
+      '<div class="detail-block"><h3>Market Overlay</h3><p>' + escapeHtml(item.side.toUpperCase() + " " + item.subtitle + ". Calibrated probability " + pct(item.probability) + ", market prior " + pct(item.marketProbability) + ", break-even " + pct(item.breakEven) + ", edge " + pct(item.adjustedEdge) + ".") + '</p><div class="actions"><button type="button" id="chart-open">Open Kalshi</button><button type="button" id="chart-log">Audit</button></div></div>',
+      '<div class="detail-block"><h3>Forecast Notes</h3><p>' + escapeHtml((item.context && (item.context.detailedForecast || item.context.shortForecast)) || "No detailed forecast text returned.") + "</p></div>",
+    ].join("");
+    detailBody.querySelector("#chart-open").addEventListener("click", function () { window.open(item.url, "_blank", "noopener"); });
+    detailBody.querySelector("#chart-log").addEventListener("click", function () { logCandidate(item); });
+    detailDialog.showModal();
+  }
+
+  function showContextTemperatureDetail(context) {
+    const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
+    if (!context) return;
+    const locationName = context.location && context.location.label ? context.location.label : "City";
+    const forecast = context.forecast || {};
+    const observations = context.observations || {};
+    const settlement = context.settlement || {};
+    detailTitle.textContent = locationName + " temperature chart - " + formatDateWithRelative(scanDate);
+    detailBody.innerHTML = [
+      renderTemperatureChartBlock(context, null, scanDate, locationName),
+      '<div class="detail-block"><h3>Forecast Details</h3><p>Mean ' + formatNumber(forecast.meanHigh, 1) + "F, hourly max " + valueOrNa(forecast.hourlyMax) + "F, remaining hourly max " + valueOrNa(forecast.remainingHourlyMax) + "F, daily forecast " + valueOrNa(forecast.dailyHigh) + "F. " + escapeHtml(forecast.detailedForecast || forecast.shortForecast || "") + "</p></div>",
+      '<div class="detail-block"><h3>Station Proxy</h3><p>' + escapeHtml((settlement.stationId || observations.stationId || "Mapped station") + ": " + (settlement.stationHint || observations.stationHint || "") + ". " + (settlement.sourceNote || observations.note || "")) + "</p></div>",
+    ].join("");
+    detailDialog.showModal();
+  }
+
+  function renderTemperatureChartBlock(context, range, scanDate, title) {
+    const chart = context && context.chart ? context.chart : {};
+    const forecast = Array.isArray(chart.hourlyForecast) ? chart.hourlyForecast : [];
+    const observed = Array.isArray(chart.observations) ? chart.observations : [];
+    const forecastPoints = chartPoints(forecast, "forecast");
+    const observedPoints = chartPoints(observed, "observed");
+    const points = forecastPoints.concat(observedPoints);
+    if (!points.length) {
+      return '<div class="detail-block"><h3>Temperature Chart</h3><p class="subtext">No hourly chart data returned for ' + escapeHtml(formatDateWithRelative(scanDate)) + ".</p></div>";
+    }
+
+    const rangeBounds = chartRangeBounds(range);
+    const values = points.map(function (point) { return point.tempF; });
+    [chart.hourlyMax, chart.remainingHourlyMax, chart.dailyHigh, chart.meanHigh, chart.observedHighF, rangeBounds.lower, rangeBounds.upper].forEach(function (value) {
+      if (Number.isFinite(Number(value))) values.push(Number(value));
+    });
+    const minValue = Math.min.apply(null, values);
+    const maxValue = Math.max.apply(null, values);
+    const yMin = Math.floor((minValue - 3) / 2) * 2;
+    const yMax = Math.ceil((maxValue + 3) / 2) * 2;
+    const width = 860;
+    const height = 300;
+    const pad = { left: 48, right: 18, top: 22, bottom: 38 };
+    const innerWidth = width - pad.left - pad.right;
+    const innerHeight = height - pad.top - pad.bottom;
+    const xForHour = function (hour) {
+      return pad.left + clampNumber(Number(hour), 0, 24) / 24 * innerWidth;
+    };
+    const yForTemp = function (temp) {
+      const scale = (Number(temp) - yMin) / Math.max(1, yMax - yMin);
+      return pad.top + (1 - scale) * innerHeight;
+    };
+
+    const yTicks = [];
+    for (let index = 0; index <= 4; index += 1) {
+      yTicks.push(yMin + (yMax - yMin) * index / 4);
+    }
+    const xTicks = [];
+    for (let hour = 0; hour <= 24; hour += 3) {
+      xTicks.push(hour);
+    }
+
+    const forecastPath = linePath(forecastPoints, xForHour, yForTemp);
+    const observedPath = linePath(observedPoints, xForHour, yForTemp);
+    const rangeOverlay = renderRangeOverlay(range, rangeBounds, xForHour, yForTemp, pad, innerWidth, yMin, yMax);
+    const referenceLines = renderReferenceLines(chart, xForHour, yForTemp, pad, innerWidth);
+    const svg = [
+      '<svg class="chart-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="' + escapeHtml(title + " temperature chart") + '">',
+      '<rect class="chart-bg" x="0" y="0" width="' + width + '" height="' + height + '"></rect>',
+      yTicks.map(function (tick) {
+        const y = yForTemp(tick);
+        return '<line class="chart-grid" x1="' + pad.left + '" x2="' + (width - pad.right) + '" y1="' + y + '" y2="' + y + '"></line><text class="chart-axis-label" x="8" y="' + (y + 4) + '">' + formatNumber(tick, 0) + 'F</text>';
+      }).join(""),
+      xTicks.map(function (hour) {
+        const x = xForHour(hour);
+        return '<line class="chart-grid faint" x1="' + x + '" x2="' + x + '" y1="' + pad.top + '" y2="' + (height - pad.bottom) + '"></line><text class="chart-axis-label" x="' + x + '" y="' + (height - 12) + '">' + chartHourLabel(hour) + '</text>';
+      }).join(""),
+      rangeOverlay,
+      referenceLines,
+      forecastPath ? '<path class="chart-line forecast-line" d="' + forecastPath + '"></path>' : "",
+      observedPath ? '<path class="chart-line observed-line" d="' + observedPath + '"></path>' : "",
+      renderChartDots(forecastPoints, xForHour, yForTemp, "forecast-dot"),
+      renderChartDots(observedPoints, xForHour, yForTemp, "observed-dot"),
+      "</svg>",
+    ].join("");
+
+    return [
+      '<div class="detail-block chart-block">',
+      '<div class="chart-head"><div><h3>Daily Temperature Chart</h3><p class="subtext">' + escapeHtml(title) + " - " + escapeHtml(formatDateWithRelative(scanDate)) + '</p></div>' + renderChartLegend(forecastPoints.length, observedPoints.length, range) + "</div>",
+      svg,
+      renderChartStats(context, chart, range),
+      renderHourlyBreakdown(forecast),
+      "</div>",
+    ].join("");
+  }
+
+  function chartPoints(items, kind) {
+    return items
+      .map(function (item) {
+        const tempF = Number(item.tempF);
+        const localHour = Number(item.localHour);
+        if (!Number.isFinite(tempF) || !Number.isFinite(localHour)) return null;
+        return {
+          kind: kind,
+          hour: localHour,
+          tempF: tempF,
+          time: item.time || "",
+          label: item.shortForecast || item.description || "",
+          precipProbability: item.precipProbability,
+          windSpeedMph: item.windSpeedMph,
+          windDirection: item.windDirection || "",
+        };
+      })
+      .filter(Boolean)
+      .sort(function (left, right) { return left.hour - right.hour; });
+  }
+
+  function chartRangeBounds(range) {
+    if (!range) return { lower: null, upper: null, label: "" };
+    const lower = Number.isFinite(Number(range.lowerBound)) ? Number(range.lowerBound) : null;
+    const upper = Number.isFinite(Number(range.upperBound)) ? Number(range.upperBound) : null;
+    return {
+      lower: lower,
+      upper: upper,
+      label: range.label || "",
+    };
+  }
+
+  function renderRangeOverlay(range, bounds, xForHour, yForTemp, pad, innerWidth, yMin, yMax) {
+    if (!range || (!Number.isFinite(Number(bounds.lower)) && !Number.isFinite(Number(bounds.upper)))) return "";
+    const left = pad.left;
+    const width = innerWidth;
+    const label = escapeHtml(bounds.label || "Contract range");
+    if (Number.isFinite(Number(bounds.lower)) && Number.isFinite(Number(bounds.upper))) {
+      const yTop = yForTemp(bounds.upper);
+      const yBottom = yForTemp(bounds.lower);
+      return '<rect class="chart-range-band" x="' + left + '" y="' + yTop + '" width="' + width + '" height="' + Math.max(2, yBottom - yTop) + '"></rect><text class="chart-range-label" x="' + (left + 8) + '" y="' + (yTop + 16) + '">' + label + "</text>";
+    }
+    if (Number.isFinite(Number(bounds.upper))) {
+      const yTop = yForTemp(Math.min(yMax, bounds.upper));
+      const yBottom = yForTemp(yMin);
+      return '<rect class="chart-range-band" x="' + left + '" y="' + yTop + '" width="' + width + '" height="' + Math.max(2, yBottom - yTop) + '"></rect><line class="chart-threshold" x1="' + left + '" x2="' + (left + width) + '" y1="' + yTop + '" y2="' + yTop + '"></line><text class="chart-range-label" x="' + (left + 8) + '" y="' + (yTop + 16) + '">' + label + "</text>";
+    }
+    const yBottom = yForTemp(bounds.lower);
+    return '<rect class="chart-range-band" x="' + left + '" y="' + yForTemp(yMax) + '" width="' + width + '" height="' + Math.max(2, yBottom - yForTemp(yMax)) + '"></rect><line class="chart-threshold" x1="' + left + '" x2="' + (left + width) + '" y1="' + yBottom + '" y2="' + yBottom + '"></line><text class="chart-range-label" x="' + (left + 8) + '" y="' + (yBottom - 8) + '">' + label + "</text>";
+  }
+
+  function renderReferenceLines(chart, xForHour, yForTemp, pad, innerWidth) {
+    const refs = [
+      { label: "mean", value: chart.meanHigh, className: "mean-line" },
+      { label: "daily", value: chart.dailyHigh, className: "daily-line" },
+      { label: "obs high", value: chart.observedHighF, className: "observed-high-line" },
+    ];
+    return refs.map(function (ref) {
+      if (!Number.isFinite(Number(ref.value))) return "";
+      const y = yForTemp(Number(ref.value));
+      return '<line class="chart-ref ' + ref.className + '" x1="' + pad.left + '" x2="' + (pad.left + innerWidth) + '" y1="' + y + '" y2="' + y + '"></line><text class="chart-ref-label" x="' + (pad.left + innerWidth - 74) + '" y="' + (y - 5) + '">' + escapeHtml(ref.label + " " + formatNumber(ref.value, 1) + "F") + "</text>";
+    }).join("");
+  }
+
+  function renderChartDots(points, xForHour, yForTemp, className) {
+    return points.map(function (point) {
+      const title = chartHourLabel(point.hour) + " " + formatNumber(point.tempF, 1) + "F" + (point.label ? " - " + point.label : "");
+      return '<circle class="' + className + '" cx="' + xForHour(point.hour) + '" cy="' + yForTemp(point.tempF) + '" r="3.4"><title>' + escapeHtml(title) + "</title></circle>";
+    }).join("");
+  }
+
+  function linePath(points, xForHour, yForTemp) {
+    if (!points.length) return "";
+    return points.map(function (point, index) {
+      const prefix = index === 0 ? "M" : "L";
+      return prefix + " " + round(xForHour(point.hour), 2) + " " + round(yForTemp(point.tempF), 2);
+    }).join(" ");
+  }
+
+  function renderChartLegend(forecastCount, observedCount, range) {
+    return [
+      '<div class="chart-legend">',
+      forecastCount ? '<span><i class="legend-swatch forecast"></i>NWS hourly</span>' : "",
+      observedCount ? '<span><i class="legend-swatch observed"></i>Station obs</span>' : "",
+      range ? '<span><i class="legend-swatch range"></i>Contract bucket</span>' : "",
+      "</div>",
+    ].join("");
+  }
+
+  function renderChartStats(context, chart, range) {
+    const observations = context && context.observations ? context.observations : {};
+    const stats = [
+      ["Mean model", valueWithF(chart.meanHigh)],
+      ["Hourly max", valueWithF(chart.hourlyMax)],
+      ["Remaining max", valueWithF(chart.remainingHourlyMax)],
+      ["NWS daily", valueWithF(chart.dailyHigh)],
+      ["Observed high", valueWithF(chart.observedHighF)],
+      ["Latest obs", valueWithF(chart.latestTempF)],
+      ["Bucket", range && range.label ? range.label : "all buckets"],
+      ["Station", observations.stationId || "n/a"],
+    ];
+    return '<div class="chart-stats">' + stats.map(function (stat) {
+      return '<div><span>' + escapeHtml(stat[0]) + '</span><strong>' + escapeHtml(stat[1]) + "</strong></div>";
+    }).join("") + "</div>";
+  }
+
+  function renderHourlyBreakdown(forecast) {
+    if (!forecast.length) return "";
+    return [
+      '<div class="hourly-breakdown">',
+      "<h3>Hourly Forecast Feed</h3>",
+      '<div class="hourly-table">',
+      '<div class="hourly-row hourly-head"><span>Time</span><span>Temp</span><span>PoP</span><span>Wind</span><span>Forecast</span></div>',
+      forecast.map(function (period) {
+        const wind = [period.windDirection, Number.isFinite(Number(period.windSpeedMph)) ? formatNumber(period.windSpeedMph, 0) + " mph" : ""].filter(Boolean).join(" ");
+        return '<div class="hourly-row"><span>' + escapeHtml(chartHourLabel(period.localHour)) + '</span><span>' + valueWithF(period.tempF) + '</span><span>' + escapeHtml(period.precipProbability == null ? "n/a" : formatNumber(period.precipProbability, 0) + "%") + '</span><span>' + escapeHtml(wind || "n/a") + '</span><span>' + escapeHtml(period.shortForecast || "n/a") + "</span></div>";
+      }).join(""),
+      "</div>",
+      "</div>",
+    ].join("");
+  }
+
+  function valueWithF(value) {
+    return Number.isFinite(Number(value)) ? formatNumber(value, 1) + "F" : "n/a";
+  }
+
+  function chartHourLabel(hourValue) {
+    const number = Number(hourValue);
+    if (!Number.isFinite(number)) return "n/a";
+    if (number >= 24) return "12a";
+    const hour = Math.floor(number);
+    const suffix = hour >= 12 ? "p" : "a";
+    const twelve = hour % 12 || 12;
+    return String(twelve) + suffix;
+  }
+
+  function clampNumber(value, min, max) {
+    if (!Number.isFinite(value)) return min;
+    return Math.max(min, Math.min(max, value));
   }
 
   function latestAuditCheckTime() {
