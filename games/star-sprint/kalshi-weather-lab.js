@@ -802,9 +802,9 @@ function weatherRecommendation(edge, confidence, ask, probability, context, rang
   if (edge <= -0.04) return 'avoid-or-sell';
   if (edge >= 0.03 && shouldAuditOnlySameDay(context, range, side)) return 'audit-only';
   if (edge >= 0.04 && heavyShrink) return 'audit-only';
-  if (edge >= 0.08 && confidence !== 'low' && probability >= 0.12) return 'research-buy';
-  if (edge >= 0.045 && confidence === 'high') return 'small-buy';
-  if (edge >= 0.025 && ask <= 0.05 && confidence !== 'low') return 'tiny-only';
+  if (edge >= 0.06 && confidence !== 'low' && probability >= 0.10) return 'research-buy';
+  if (edge >= 0.025 && confidence === 'high' && probability >= 0.06) return 'small-buy';
+  if (edge >= 0.018 && confidence !== 'low') return 'tiny-only';
   return 'pass';
 }
 

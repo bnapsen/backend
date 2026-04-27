@@ -250,7 +250,7 @@
     const kellySettings = currentKellySettings();
     const marketDate = portfolioMarketDate();
     const selected = [];
-    const usedLocations = {};
+    const spentByLocation = {};
     let spent = 0;
     let excludedCount = 0;
 
@@ -266,15 +266,17 @@
 
     strictCandidates.forEach(function (item) {
       if (selected.length >= 10) return;
-      if (usedLocations[item.location]) return;
       const remainingBudget = budget - spent;
       if (remainingBudget < 0.25) return;
-      const maxCost = Math.min(remainingBudget, cityCap);
+      const locationSpent = Number(spentByLocation[item.location] || 0);
+      const remainingCityBudget = cityCap - locationSpent;
+      if (remainingCityBudget < 0.25) return;
+      const maxCost = Math.min(remainingBudget, remainingCityBudget);
       const pick = sizePortfolioPick(item, maxCost, kellySettings);
       if (!pick || pick.expectedProfitDollars <= 0) return;
       selected.push(pick);
-      usedLocations[item.location] = true;
       spent += pick.costDollars;
+      spentByLocation[item.location] = locationSpent + pick.costDollars;
     });
 
     const expectedProfit = selected.reduce(function (sum, pick) { return sum + pick.expectedProfitDollars; }, 0);
@@ -293,7 +295,7 @@
       expectedProfitDollars: roundMoney(expectedProfit),
       avgEdge: avgEdge,
       excludedCount: excludedCount,
-      rulesLabel: "strict, Kelly, 1/city",
+      rulesLabel: "strict, Kelly, city cap",
       items: selected,
     };
   }
@@ -302,9 +304,8 @@
     if (!item || item.recommendation === "audit-only") return false;
     if (item.recommendation !== "research-buy" && item.recommendation !== "small-buy" && item.recommendation !== "tiny-only") return false;
     if (item.confidence === "low") return false;
-    if (Number(item.adjustedEdge || 0) < 0.025) return false;
+    if (Number(item.adjustedEdge || 0) < 0.02) return false;
     if (Number(item.probability || 0) < 0.04) return false;
-    if (item.recommendation === "tiny-only" && Number(item.price && item.price.ask || 0) > 0.05) return false;
     const flags = (item.riskFlags || []).join(" ").toLowerCase();
     if (flags.indexOf("station observation unavailable") >= 0) return false;
     if (flags.indexOf("heavy market-prior shrink") >= 0 && Number(item.adjustedEdge || 0) < 0.04) return false;
@@ -408,7 +409,7 @@
         '<td><div class="market-name"><strong>' + escapeHtml(item.location) + " " + escapeHtml(item.subtitle) + "</strong>" + renderDateBadge(scanDate) + "<span>" + escapeHtml(item.ticker) + "</span>" + renderRiskFlags(item) + "</div></td>",
         '<td><span class="side ' + (item.side === "yes" ? "yes" : "no") + '">' + item.side.toUpperCase() + "</span></td>",
         "<td>" + item.price.askCents + 'c<br><span class="subtext">bid ' + item.price.bidCents + "c</span></td>",
-        "<td>" + pct(item.probability) + "</td>",
+        "<td>" + pct(item.probability) + '<br><span class="subtext">mkt ' + pct(item.marketProbability) + "</span></td>",
         "<td>" + pct(item.rawProbability) + '<br><span class="subtext">tight ' + pct(item.tightProbability) + "</span></td>",
         "<td>" + pct(item.breakEven) + "</td>",
         '<td class="' + (item.adjustedEdge >= 0 ? "pos" : "neg") + '">' + pct(item.adjustedEdge) + "</td>",
