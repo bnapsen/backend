@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kalshi Bitcoin 15m Lab</title>
+  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css">
+</head>
+<body>
+  <header class="lab-topbar">
+    <div>
+      <a class="back-link" href="/">BNAPSN</a>
+      <h1>Kalshi Bitcoin 15m Lab</h1>
+      <p id="status">Ready</p>
+    </div>
+    <form id="scan-form" class="controls">
+      <label>
+        Min edge
+        <input id="min-edge" type="number" min="-50" max="50" step="0.5" value="2">
+      </label>
+      <label>
+        Max cost
+        <input id="max-cost" type="number" min="0.50" max="100" step="0.50" value="5.00">
+      </label>
+      <label>
+        Access
+        <input id="access-token" type="password" autocomplete="off" placeholder="optional">
+      </label>
+      <label class="check">
+        <input id="stream-toggle" type="checkbox" checked>
+        Live stream
+      </label>
+      <button type="submit">Refresh</button>
+    </form>
+  </header>
+
+  <main class="lab-shell">
+    <section id="summary" class="summary-grid"></section>
+
+    <section class="market-strip">
+      <div>
+        <span>Settlement source</span>
+        <strong>CF Benchmarks BRTI</strong>
+        <small>Kalshi averages the final 60 seconds before close.</small>
+      </div>
+      <div>
+        <span>Chart feed</span>
+        <strong id="chart-source">Loading</strong>
+        <small id="key-status">Checking key status</small>
+      </div>
+      <div>
+        <span>Current event</span>
+        <strong id="event-title">KXBTC15M</strong>
+        <small id="event-window">Waiting for market</small>
+      </div>
+      <div class="actions">
+        <a id="kalshi-link" class="button-link" href="https://kalshi.com/markets/kxbtc15m/bitcoin-price-up-down" target="_blank" rel="noopener">Open Kalshi</a>
+      </div>
+    </section>
+
+    <section class="chart-panel">
+      <div class="section-head">
+        <div>
+          <h2>BTC Path vs Kalshi Target</h2>
+          <p class="subtext">Live proxy chart unless a licensed CF Benchmarks feed is configured on the backend.</p>
+        </div>
+        <span id="clock-label">--</span>
+      </div>
+      <div id="chart-stage" class="chart-stage"></div>
+    </section>
+
+    <section class="table-panel">
+      <div class="section-head">
+        <div>
+          <h2>Model Odds Vs Price</h2>
+          <p class="subtext">Research signal only. The edge is model probability minus fee-adjusted break-even.</p>
+        </div>
+        <span id="recommendation-label">Waiting</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Side</th>
+              <th>Ask / Bid</th>
+              <th>Model odds</th>
+              <th>You pay</th>
+              <th>Edge</th>
+              <th>EV</th>
+              <th>Size</th>
+              <th>Call</th>
+            </tr>
+          </thead>
+          <tbody id="candidate-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="split">
+      <section class="panel">
+        <div class="section-head">
+          <h2>Why The Model Got There</h2>
+        </div>
+        <div id="model-reasons" class="reason-list"></div>
+      </section>
+      <section class="panel">
+        <div class="section-head">
+          <h2>Market Rules</h2>
+        </div>
+        <div id="rules" class="reason-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/kalshi-bitcoin-lab.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Kalshi Bitcoin 15m Lab thumbnail</title>
+  <desc id="desc">Dark dashboard thumbnail with Bitcoin price path, target line, and odds cards.</desc>
+  <rect width="640" height="360" fill="#071018"/>
+  <rect x="28" y="28" width="584" height="304" rx="18" fill="#101821" stroke="#263545" stroke-width="2"/>
+  <text x="54" y="72" fill="#29f5b2" font-family="Arial, sans-serif" font-size="30" font-weight="800">BTC 15m Lab</text>
+  <text x="54" y="100" fill="#9dacac" font-family="Arial, sans-serif" font-size="14">Model odds vs fee-adjusted Kalshi price</text>
+  <g transform="translate(54 128)">
+    <rect width="348" height="154" rx="12" fill="#0a1118" stroke="#263545"/>
+    <path d="M18 112 C54 92 72 118 105 96 S161 42 198 63 S252 119 324 36" fill="none" stroke="#60a5fa" stroke-width="5"/>
+    <path d="M16 75 H332" stroke="#fbbf24" stroke-width="3" stroke-dasharray="9 7"/>
+    <circle cx="324" cy="36" r="7" fill="#29f5b2" stroke="#06100d" stroke-width="4"/>
+    <text x="226" y="68" fill="#fbbf24" font-family="Arial, sans-serif" font-size="13" font-weight="700">target</text>
+    <text x="18" y="140" fill="#9dacac" font-family="Arial, sans-serif" font-size="12">final 60s CF BRTI average</text>
+  </g>
+  <g transform="translate(424 128)">
+    <rect width="144" height="64" rx="12" fill="#14202b" stroke="#263545"/>
+    <text x="16" y="24" fill="#9dacac" font-family="Arial, sans-serif" font-size="12">MODEL YES</text>
+    <text x="16" y="50" fill="#29f5b2" font-family="Arial, sans-serif" font-size="26" font-weight="800">54.8%</text>
+    <rect y="80" width="144" height="64" rx="12" fill="#14202b" stroke="#263545"/>
+    <text x="16" y="104" fill="#9dacac" font-family="Arial, sans-serif" font-size="12">YOU PAY</text>
+    <text x="16" y="130" fill="#edf4f1" font-family="Arial, sans-serif" font-size="26" font-weight="800">50.7%</text>
+    <rect y="160" width="144" height="64" rx="12" fill="#14202b" stroke="#263545"/>
+    <text x="16" y="184" fill="#9dacac" font-family="Arial, sans-serif" font-size="12">EDGE</text>
+    <text x="16" y="210" fill="#29f5b2" font-family="Arial, sans-serif" font-size="26" font-weight="800">+4.1%</text>
+  </g>
+</svg>

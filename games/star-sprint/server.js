@@ -39,6 +39,9 @@ const {
   resolveWeatherMarkets,
   scanWeatherMarkets,
 } = require('./kalshi-weather-lab.js');
+const {
+  scanBitcoin15m,
+} = require('./kalshi-bitcoin-lab.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
@@ -422,6 +425,77 @@ async function handleKalshiWeatherResolveRequest(req, res, requestUrl) {
     }
     sendJsonResponse(req, res, 502, payload);
   }
+}
+
+async function handleKalshiBitcoinScanRequest(req, res, requestUrl) {
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, { error: 'Method not allowed.' });
+    return;
+  }
+  if (!hasKalshiWeatherLabAccess(req, requestUrl)) {
+    sendJsonResponse(req, res, 403, { error: 'A valid Kalshi Lab token is required.' });
+    return;
+  }
+
+  try {
+    sendJsonResponse(req, res, 200, await scanBitcoin15m({
+      minEdge: readFloatParam(requestUrl, 'minEdge', 0.02),
+      maxCost: readFloatParam(requestUrl, 'maxCost', 5),
+      minutes: readFloatParam(requestUrl, 'minutes', 180),
+    }));
+  } catch (error) {
+    const payload = { error: 'Unable to scan Kalshi Bitcoin 15-minute market right now.' };
+    if (process.env.DEBUG_ERRORS === 'true') {
+      payload.detail = error.stack || error.message;
+    }
+    sendJsonResponse(req, res, 502, payload);
+  }
+}
+
+async function handleKalshiBitcoinStreamRequest(req, res, requestUrl) {
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, { error: 'Method not allowed.' });
+    return;
+  }
+  if (!hasKalshiWeatherLabAccess(req, requestUrl)) {
+    sendJsonResponse(req, res, 403, { error: 'A valid Kalshi Lab token is required.' });
+    return;
+  }
+
+  res.writeHead(200, {
+    ...corsHeaders(req),
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-store, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  let closed = false;
+  req.on('close', () => {
+    closed = true;
+  });
+
+  const sendScan = async () => {
+    if (closed) return;
+    try {
+      const payload = await scanBitcoin15m({
+        minEdge: readFloatParam(requestUrl, 'minEdge', 0.02),
+        maxCost: readFloatParam(requestUrl, 'maxCost', 5),
+        minutes: readFloatParam(requestUrl, 'minutes', 180),
+      });
+      res.write(`event: scan\ndata: ${JSON.stringify(payload)}\n\n`);
+    } catch (error) {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: 'Unable to refresh Bitcoin scan.' })}\n\n`);
+    }
+  };
+
+  await sendScan();
+  const interval = setInterval(() => {
+    sendScan().catch(() => {});
+  }, 5000);
+  req.on('close', () => {
+    clearInterval(interval);
+  });
 }
 
 function ensureDirectory(dirPath) {
@@ -4368,6 +4442,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/kalshi/bitcoin/scan') {
+    await handleKalshiBitcoinScanRequest(req, res, requestUrl);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/kalshi/bitcoin/stream') {
+    await handleKalshiBitcoinStreamRequest(req, res, requestUrl);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/clips/upload-session') {
     await handleClipUploadSessionRequest(req, res);
     return;
@@ -4485,6 +4569,7 @@ const server = http.createServer(async (req, res) => {
     songsApi: '/api/songs',
     clipsApi: '/api/clips',
     kalshiWeatherApi: '/api/kalshi/weather/scan',
+    kalshiBitcoinApi: '/api/kalshi/bitcoin/scan',
   });
 });
 
