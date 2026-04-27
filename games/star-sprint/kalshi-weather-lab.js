@@ -1,6 +1,7 @@
 'use strict';
 
 const KALSHI_API_BASE_URL = 'https://api.elections.kalshi.com/trade-api/v2';
+const DEFAULT_WEATHER_LAB_TIME_ZONE = 'America/Los_Angeles';
 
 const WEATHER_LAB_LOCATIONS = Object.freeze([
   { series: 'KXHIGHNY', label: 'New York', lat: 40.78, lon: -73.97, stationHint: 'Central Park / NYC market' },
@@ -30,7 +31,7 @@ function round(value, places = 4) {
 }
 
 function tomorrowIsoDate() {
-  return new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return addIsoDays(isoDateInTimeZone(new Date(), DEFAULT_WEATHER_LAB_TIME_ZONE), 1);
 }
 
 function normalizeDate(value) {
@@ -51,6 +52,29 @@ function dateTickerPart(dateText) {
   const month = date.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }).toUpperCase();
   const day = String(date.getUTCDate());
   return `${year}${month}${day}`;
+}
+
+function isoDateInTimeZone(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const byType = {};
+  for (const part of parts) {
+    byType[part.type] = part.value;
+  }
+  return `${byType.year}-${byType.month}-${byType.day}`;
+}
+
+function addIsoDays(dateText, days) {
+  const date = new Date(`${dateText}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    return dateText;
+  }
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 async function fetchJsonWithRetry(url, attempts = 4) {
