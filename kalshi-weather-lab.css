@@ -688,8 +688,22 @@ dialog::backdrop {
   stroke-width: 1;
 }
 
+.chart-grid.major {
+  stroke: rgba(237, 244, 241, 0.24);
+  stroke-width: 1.15;
+}
+
+.chart-grid.minor {
+  stroke: rgba(152, 168, 167, 0.11);
+}
+
 .chart-grid.faint {
   stroke: rgba(152, 168, 167, 0.1);
+}
+
+.chart-tick {
+  stroke: rgba(152, 168, 167, 0.5);
+  stroke-width: 1;
 }
 
 .chart-daylight-band {
@@ -701,6 +715,18 @@ dialog::backdrop {
 .chart-range-label,
 .chart-now-label {
   fill: var(--muted);
+  font-size: 11px;
+}
+
+.chart-axis-left {
+  text-anchor: end;
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chart-axis-right {
+  fill: rgba(237, 244, 241, 0.72);
   font-size: 11px;
 }
 
@@ -744,6 +770,23 @@ dialog::backdrop {
 .chart-ref {
   stroke-width: 1.2;
   stroke-dasharray: 4 5;
+}
+
+.chart-ref-connector {
+  stroke: rgba(237, 244, 241, 0.28);
+  stroke-width: 1;
+}
+
+.chart-ref-label-bg {
+  fill: rgba(9, 15, 20, 0.92);
+  stroke: rgba(237, 244, 241, 0.2);
+  stroke-width: 1;
+}
+
+.chart-ref-label {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .mean-line {

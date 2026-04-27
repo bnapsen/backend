@@ -743,7 +743,7 @@
     const yMax = Math.ceil((maxValue + 3) / 2) * 2;
     const width = 980;
     const height = 430;
-    const pad = { left: 56, right: 28, top: 34, bottom: 42 };
+    const pad = { left: 62, right: 132, top: 34, bottom: 42 };
     const innerWidth = width - pad.left - pad.right;
     const tempBottom = 286;
     const precipTop = 318;
@@ -757,10 +757,7 @@
       return pad.top + (1 - scale) * innerHeight;
     };
 
-    const yTicks = [];
-    for (let index = 0; index <= 5; index += 1) {
-      yTicks.push(yMin + (yMax - yMin) * index / 5);
-    }
+    const yTicks = temperatureTicks(yMin, yMax);
     const xTicks = [];
     for (let hour = 0; hour <= 24; hour += 2) {
       xTicks.push(hour);
@@ -769,7 +766,7 @@
     const forecastPath = linePath(forecastPoints, xForHour, yForTemp);
     const observedPath = linePath(observedPoints, xForHour, yForTemp);
     const rangeOverlay = renderRangeOverlay(range, rangeBounds, xForHour, yForTemp, pad, innerWidth, yMin, yMax);
-    const referenceLines = renderReferenceLines(chart, xForHour, yForTemp, pad, innerWidth);
+    const referenceLines = renderReferenceLines(chart, yForTemp, pad, innerWidth, tempBottom);
     const chartId = "temp-chart-" + (++state.nextChartId);
     state.chartPayloads[chartId] = {
       title: title,
@@ -794,10 +791,7 @@
       '<rect class="chart-bg" x="0" y="0" width="' + width + '" height="' + height + '"></rect>',
       '<rect class="chart-daylight-band" x="' + xForHour(11) + '" y="' + pad.top + '" width="' + (xForHour(17) - xForHour(11)) + '" height="' + innerHeight + '"></rect>',
       '<text class="chart-range-label" x="' + (xForHour(11) + 8) + '" y="' + (pad.top + 16) + '">peak heating window</text>',
-      yTicks.map(function (tick) {
-        const y = yForTemp(tick);
-        return '<line class="chart-grid" x1="' + pad.left + '" x2="' + (width - pad.right) + '" y1="' + y + '" y2="' + y + '"></line><text class="chart-axis-label" x="10" y="' + (y + 4) + '">' + formatNumber(tick, 0) + 'F</text>';
-      }).join(""),
+      renderTemperatureAxis(yTicks, yForTemp, pad, innerWidth),
       xTicks.map(function (hour) {
         const x = xForHour(hour);
         return '<line class="chart-grid faint" x1="' + x + '" x2="' + x + '" y1="' + pad.top + '" y2="' + tempBottom + '"></line><text class="chart-axis-label" x="' + x + '" y="' + (height - 12) + '">' + chartHourLabel(hour) + '</text>';
@@ -855,6 +849,36 @@
       '<button type="button" class="active" data-chart-toggle="refs">Refs</button>',
       "</div>",
     ].join("");
+  }
+
+  function temperatureTicks(yMin, yMax) {
+    const span = Math.max(1, Number(yMax) - Number(yMin));
+    const step = span <= 18 ? 1 : span <= 36 ? 2 : 5;
+    const ticks = [];
+    const start = Math.ceil(Number(yMin) / step) * step;
+    for (let value = start; value <= Number(yMax) + 0.0001; value += step) {
+      ticks.push({
+        value: value,
+        major: Math.abs(value % 5) < 0.0001 || value === start || value + step > Number(yMax),
+      });
+    }
+    return ticks;
+  }
+
+  function renderTemperatureAxis(ticks, yForTemp, pad, innerWidth) {
+    const plotRight = pad.left + innerWidth;
+    return ticks.map(function (tick) {
+      const y = yForTemp(tick.value);
+      const className = tick.major ? "chart-grid major" : "chart-grid minor";
+      const label = formatNumber(tick.value, 0) + "F";
+      return [
+        '<line class="' + className + '" x1="' + pad.left + '" x2="' + plotRight + '" y1="' + y + '" y2="' + y + '"></line>',
+        '<line class="chart-tick" x1="' + (pad.left - 5) + '" x2="' + pad.left + '" y1="' + y + '" y2="' + y + '"></line>',
+        '<line class="chart-tick" x1="' + plotRight + '" x2="' + (plotRight + 5) + '" y1="' + y + '" y2="' + y + '"></line>',
+        '<text class="chart-axis-label chart-axis-left" x="' + (pad.left - 10) + '" y="' + (y + 4) + '">' + label + "</text>",
+        tick.major ? '<text class="chart-axis-label chart-axis-right" x="' + (plotRight + 10) + '" y="' + (y + 4) + '">' + label + "</text>" : "",
+      ].join("");
+    }).join("");
   }
 
   function renderPrecipBars(points, xForHour, precipTop, precipHeight) {
@@ -952,16 +976,48 @@
     return '<rect class="chart-range-band" x="' + left + '" y="' + yForTemp(yMax) + '" width="' + width + '" height="' + Math.max(2, yBottom - yForTemp(yMax)) + '"></rect><line class="chart-threshold" x1="' + left + '" x2="' + (left + width) + '" y1="' + yBottom + '" y2="' + yBottom + '"></line><text class="chart-range-label" x="' + (left + 8) + '" y="' + (yBottom - 8) + '">' + label + "</text>";
   }
 
-  function renderReferenceLines(chart, xForHour, yForTemp, pad, innerWidth) {
+  function renderReferenceLines(chart, yForTemp, pad, innerWidth, tempBottom) {
     const refs = [
       { label: "mean", value: chart.meanHigh, className: "mean-line" },
       { label: "daily", value: chart.dailyHigh, className: "daily-line" },
       { label: "obs high", value: chart.observedHighF, className: "observed-high-line" },
-    ];
+    ]
+      .filter(function (ref) { return Number.isFinite(Number(ref.value)); })
+      .map(function (ref) {
+        return Object.assign({}, ref, {
+          y: yForTemp(Number(ref.value)),
+          text: ref.label + " " + formatNumber(ref.value, 1) + "F",
+        });
+      })
+      .sort(function (left, right) { return left.y - right.y; });
+
+    const minGap = 20;
+    const labelMin = pad.top + 14;
+    const labelMax = tempBottom - 8;
+    refs.forEach(function (ref, index) {
+      ref.labelY = clampNumber(ref.y, labelMin, labelMax);
+      if (index > 0 && ref.labelY - refs[index - 1].labelY < minGap) {
+        ref.labelY = refs[index - 1].labelY + minGap;
+      }
+    });
+    if (refs.length && refs[refs.length - 1].labelY > labelMax) {
+      const overflow = refs[refs.length - 1].labelY - labelMax;
+      refs.forEach(function (ref) {
+        ref.labelY = clampNumber(ref.labelY - overflow, labelMin, labelMax);
+      });
+    }
+
+    const plotRight = pad.left + innerWidth;
+    const labelX = plotRight + 38;
     return refs.map(function (ref) {
-      if (!Number.isFinite(Number(ref.value))) return "";
-      const y = yForTemp(Number(ref.value));
-      return '<line class="chart-ref ' + ref.className + '" x1="' + pad.left + '" x2="' + (pad.left + innerWidth) + '" y1="' + y + '" y2="' + y + '"></line><text class="chart-ref-label" x="' + (pad.left + innerWidth - 74) + '" y="' + (y - 5) + '">' + escapeHtml(ref.label + " " + formatNumber(ref.value, 1) + "F") + "</text>";
+      const textWidth = Math.max(72, ref.text.length * 6.6);
+      const labelY = ref.labelY;
+      return [
+        '<line class="chart-ref ' + ref.className + '" x1="' + pad.left + '" x2="' + plotRight + '" y1="' + ref.y + '" y2="' + ref.y + '"></line>',
+        '<line class="chart-ref-connector" x1="' + plotRight + '" x2="' + (labelX - 6) + '" y1="' + ref.y + '" y2="' + labelY + '"></line>',
+        '<rect class="chart-ref-label-bg" x="' + (labelX - 4) + '" y="' + (labelY - 14) + '" width="' + (textWidth + 8) + '" height="18" rx="5"></rect>',
+        '<text class="chart-ref-label" x="' + labelX + '" y="' + labelY + '">' + escapeHtml(ref.text) + "</text>",
+      ].join("");
     }).join("");
   }
 
