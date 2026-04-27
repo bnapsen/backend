@@ -4,16 +4,16 @@ const KALSHI_API_BASE_URL = 'https://api.elections.kalshi.com/trade-api/v2';
 const DEFAULT_WEATHER_LAB_TIME_ZONE = 'America/Los_Angeles';
 
 const WEATHER_LAB_LOCATIONS = Object.freeze([
-  { series: 'KXHIGHNY', label: 'New York', lat: 40.78, lon: -73.97, stationHint: 'Central Park / NYC market' },
-  { series: 'KXHIGHMIA', label: 'Miami', lat: 25.79, lon: -80.29, stationHint: 'Miami International Airport' },
-  { series: 'KXHIGHDEN', label: 'Denver', lat: 39.86, lon: -104.67, stationHint: 'Denver airport area' },
-  { series: 'KXHIGHLAX', label: 'Los Angeles', lat: 33.94, lon: -118.40, stationHint: 'Los Angeles airport area' },
-  { series: 'KXHIGHTDAL', label: 'Dallas', lat: 32.85, lon: -96.85, stationHint: 'Dallas airport area' },
-  { series: 'KXHIGHTLV', label: 'Las Vegas', lat: 36.08, lon: -115.15, stationHint: 'Las Vegas airport area' },
-  { series: 'KXHIGHTSEA', label: 'Seattle', lat: 47.45, lon: -122.31, stationHint: 'Seattle airport area' },
-  { series: 'KXHIGHTNOLA', label: 'New Orleans', lat: 29.99, lon: -90.26, stationHint: 'New Orleans airport area' },
-  { series: 'KXHIGHTHOU', label: 'Houston', lat: 29.98, lon: -95.34, stationHint: 'Houston airport area' },
-  { series: 'KXHIGHTMIN', label: 'Minneapolis', lat: 44.88, lon: -93.22, stationHint: 'Minneapolis airport area' },
+  { series: 'KXHIGHNY', label: 'New York', lat: 40.78, lon: -73.97, stationId: 'KNYC', timeZone: 'America/New_York', stationHint: 'Central Park / NYC market' },
+  { series: 'KXHIGHMIA', label: 'Miami', lat: 25.79, lon: -80.29, stationId: 'KMIA', timeZone: 'America/New_York', stationHint: 'Miami International Airport' },
+  { series: 'KXHIGHDEN', label: 'Denver', lat: 39.86, lon: -104.67, stationId: 'KDEN', timeZone: 'America/Denver', stationHint: 'Denver airport area' },
+  { series: 'KXHIGHLAX', label: 'Los Angeles', lat: 33.94, lon: -118.40, stationId: 'KLAX', timeZone: 'America/Los_Angeles', stationHint: 'Los Angeles airport area' },
+  { series: 'KXHIGHTDAL', label: 'Dallas', lat: 32.85, lon: -96.85, stationId: 'KDAL', timeZone: 'America/Chicago', stationHint: 'Dallas airport area' },
+  { series: 'KXHIGHTLV', label: 'Las Vegas', lat: 36.08, lon: -115.15, stationId: 'KLAS', timeZone: 'America/Los_Angeles', stationHint: 'Las Vegas airport area' },
+  { series: 'KXHIGHTSEA', label: 'Seattle', lat: 47.45, lon: -122.31, stationId: 'KSEA', timeZone: 'America/Los_Angeles', stationHint: 'Seattle airport area' },
+  { series: 'KXHIGHTNOLA', label: 'New Orleans', lat: 29.99, lon: -90.26, stationId: 'KMSY', timeZone: 'America/Chicago', stationHint: 'New Orleans airport area' },
+  { series: 'KXHIGHTHOU', label: 'Houston', lat: 29.98, lon: -95.34, stationId: 'KIAH', timeZone: 'America/Chicago', stationHint: 'Houston airport area' },
+  { series: 'KXHIGHTMIN', label: 'Minneapolis', lat: 44.88, lon: -93.22, stationId: 'KMSP', timeZone: 'America/Chicago', stationHint: 'Minneapolis airport area' },
 ]);
 
 function parseNumber(value, defaultValue = 0) {
@@ -77,6 +77,58 @@ function addIsoDays(dateText, days) {
   return date.toISOString().slice(0, 10);
 }
 
+function compareIsoDates(left, right) {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function zonedDateTimeParts(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(date);
+  const byType = {};
+  for (const part of parts) {
+    byType[part.type] = part.value;
+  }
+  return {
+    year: Number(byType.year),
+    month: Number(byType.month),
+    day: Number(byType.day),
+    hour: Number(byType.hour),
+    minute: Number(byType.minute),
+    second: Number(byType.second),
+  };
+}
+
+function zonedDateTimeToUtc(dateText, timeZone, hour = 0, minute = 0, second = 0) {
+  const match = String(dateText || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+  const targetLocalMs = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), hour, minute, second);
+  let utcMs = targetLocalMs;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const parts = zonedDateTimeParts(new Date(utcMs), timeZone);
+    const actualLocalMs = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+    const delta = targetLocalMs - actualLocalMs;
+    if (Math.abs(delta) < 1000) break;
+    utcMs += delta;
+  }
+  return new Date(utcMs);
+}
+
+function fahrenheitFromCelsius(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? (number * 9 / 5) + 32 : null;
+}
+
 async function fetchJsonWithRetry(url, attempts = 4) {
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -107,6 +159,75 @@ async function fetchJsonWithRetry(url, attempts = 4) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getStationObservationContext(location, date) {
+  const timeZone = location.timeZone || DEFAULT_WEATHER_LAB_TIME_ZONE;
+  const today = isoDateInTimeZone(new Date(), timeZone);
+  const dayComparison = compareIsoDates(date, today);
+  const dayPhase = dayComparison < 0 ? 'past' : dayComparison === 0 ? 'today' : 'future';
+  const nowParts = zonedDateTimeParts(new Date(), timeZone);
+  const elapsedRatio = dayPhase === 'today'
+    ? clamp((nowParts.hour * 60 + nowParts.minute) / 1440, 0, 1)
+    : dayPhase === 'past' ? 1 : 0;
+  const base = {
+    stationId: location.stationId || null,
+    stationHint: location.stationHint || '',
+    timeZone,
+    dayPhase,
+    localDate: today,
+    localHour: dayPhase === 'today' ? nowParts.hour + (nowParts.minute / 60) : null,
+    elapsedRatio,
+    observationCount: 0,
+    observedHighF: null,
+    observedHighTime: null,
+    latestTempF: null,
+    latestTime: null,
+    source: location.stationId ? `NWS station ${location.stationId}` : 'No station configured',
+    note: 'Station observations are a settlement proxy; final Kalshi settlement may use NWS climate reports and later corrections.',
+  };
+
+  if (!location.stationId || dayPhase === 'future') {
+    return base;
+  }
+
+  const start = zonedDateTimeToUtc(date, timeZone, 0, 0, 0);
+  const end = zonedDateTimeToUtc(addIsoDays(date, 1), timeZone, 0, 0, 0);
+  if (!start || !end) {
+    return Object.assign(base, { error: 'Unable to build local observation window.' });
+  }
+
+  try {
+    const url = `https://api.weather.gov/stations/${encodeURIComponent(location.stationId)}/observations?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}&limit=500`;
+    const data = await fetchJsonWithRetry(url, 3);
+    const observations = (data.features || [])
+      .map((feature) => {
+        const props = feature.properties || {};
+        const tempF = fahrenheitFromCelsius(props.temperature && props.temperature.value);
+        const timestamp = props.timestamp || '';
+        return Number.isFinite(tempF) && timestamp ? {
+          tempF,
+          timestamp,
+          textDescription: props.textDescription || '',
+        } : null;
+      })
+      .filter(Boolean)
+      .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+    const high = observations.reduce((best, item) => (!best || item.tempF > best.tempF ? item : best), null);
+    const latest = observations.length ? observations[observations.length - 1] : null;
+    return Object.assign(base, {
+      observationCount: observations.length,
+      observedHighF: high ? round(high.tempF, 1) : null,
+      observedHighTime: high ? high.timestamp : null,
+      latestTempF: latest ? round(latest.tempF, 1) : null,
+      latestTime: latest ? latest.timestamp : null,
+      latestDescription: latest ? latest.textDescription : '',
+    });
+  } catch (error) {
+    return Object.assign(base, {
+      error: error.message,
+    });
+  }
 }
 
 async function getKalshiMarkets(series, limit = 200) {
@@ -254,13 +375,121 @@ function getWeatherMarketRange(market) {
   return null;
 }
 
+function applyObservedHighGuardrails(range, context, probability, reasons, riskFlags) {
+  const observations = context.observations || {};
+  if (observations.dayPhase !== 'today') {
+    if (observations.stationId) {
+      reasons.push(`Settlement proxy ${observations.stationId}: no same-day guardrail applied for ${observations.dayPhase || 'future'} market.`);
+    }
+    return probability;
+  }
+
+  if (observations.error) {
+    riskFlags.push('Station observation unavailable');
+    reasons.push(`Station observation fetch failed for ${observations.stationId || 'mapped station'}: ${observations.error}`);
+    return probability * 0.82;
+  }
+
+  if (observations.observedHighF === null) {
+    riskFlags.push('No observed high yet');
+    reasons.push(`No valid ${observations.stationId || 'station'} temperature observations found for this local market day.`);
+    return probability * 0.9;
+  }
+
+  const observedHigh = Number(observations.observedHighF);
+  const latest = observations.latestTempF === null ? observedHigh : Number(observations.latestTempF);
+  const remainingMax = observations.remainingHourlyMaxF === undefined
+    ? context.forecast.remainingHourlyMax
+    : observations.remainingHourlyMaxF;
+  const elapsed = Number(observations.elapsedRatio || 0);
+  const stationLabel = observations.stationId || 'mapped station';
+  riskFlags.push('Same-day station guardrail');
+  reasons.push(`${stationLabel} high so far ${observedHigh.toFixed(1)}F, latest ${latest.toFixed(1)}F, local day ${(elapsed * 100).toFixed(0)}% elapsed.`);
+
+  if (range.upperBound !== null && range.upperBound !== undefined && observedHigh > range.upperBound) {
+    reasons.push('Observed high is already above this bucket ceiling; YES is treated as effectively dead.');
+    return 0.001;
+  }
+
+  if ((range.upperBound === null || range.upperBound === undefined) && observedHigh >= range.lowerBound) {
+    reasons.push('Observed high has already crossed this above-threshold bucket; YES is treated as effectively locked unless observations are corrected.');
+    return 0.999;
+  }
+
+  if (range.lowerBound === null || range.lowerBound === undefined) {
+    const heatRoom = Number(range.upperBound) - Math.max(observedHigh, latest);
+    if (remainingMax !== null && Number.isFinite(Number(remainingMax)) && Number(remainingMax) <= Number(range.upperBound)) {
+      probability = Math.max(probability, clamp(0.58 + elapsed * 0.35, 0.58, 0.96));
+      reasons.push('Remaining hourly forecast stays under the bucket ceiling, so below-threshold YES is boosted.');
+    } else if (heatRoom <= 2 && elapsed < 0.75) {
+      probability *= 0.72;
+      riskFlags.push('Below bucket still vulnerable to afternoon heating');
+    }
+    return probability;
+  }
+
+  if (range.upperBound === null || range.upperBound === undefined) {
+    const gap = Number(range.lowerBound) - Math.max(observedHigh, latest);
+    if (gap > 0 && remainingMax !== null && Number.isFinite(Number(remainingMax)) && Number(remainingMax) < Number(range.lowerBound)) {
+      probability *= elapsed > 0.55 ? 0.28 : 0.55;
+      riskFlags.push('Above bucket needs forecast overperformance');
+      reasons.push('Remaining hourly forecast does not reach the threshold.');
+    } else if (gap > 4 && elapsed > 0.45) {
+      probability *= 0.45;
+      riskFlags.push('Large same-day temperature catch-up required');
+    }
+    return probability;
+  }
+
+  if (observedHigh >= range.lowerBound && observedHigh <= range.upperBound) {
+    const heatRisk = remainingMax !== null && Number.isFinite(Number(remainingMax))
+      ? Number(remainingMax) - Number(range.upperBound)
+      : null;
+    const holdProbability = heatRisk === null
+      ? clamp(0.42 + elapsed * 0.35, 0.42, 0.82)
+      : heatRisk <= 0
+        ? clamp(0.58 + elapsed * 0.36, 0.58, 0.95)
+        : clamp(0.72 - heatRisk * 0.16 - (1 - elapsed) * 0.18, 0.08, 0.74);
+    probability = (probability * 0.35) + (holdProbability * 0.65);
+    if (heatRisk !== null && heatRisk > 0) {
+      riskFlags.push('Bucket can still be overshot');
+      reasons.push(`Observed high is inside the bucket, but remaining hourly forecast allows about ${heatRisk.toFixed(1)}F of overshoot risk.`);
+    } else {
+      reasons.push('Observed high is inside the bucket and remaining hourly forecast does not exceed the ceiling.');
+    }
+    return probability;
+  }
+
+  if (observedHigh < range.lowerBound) {
+    const gap = Number(range.lowerBound) - Math.max(observedHigh, latest);
+    if (remainingMax !== null && Number.isFinite(Number(remainingMax)) && Number(remainingMax) < Number(range.lowerBound)) {
+      probability *= elapsed > 0.45 ? 0.32 : 0.58;
+      riskFlags.push('Bucket below observed/remaining trajectory');
+      reasons.push('Observed high has not reached the bucket and remaining hourly forecast stays below it.');
+    } else if (gap > 4 && elapsed > 0.45) {
+      probability *= 0.5;
+      riskFlags.push('Late-day catch-up required');
+    }
+  }
+
+  return probability;
+}
+
 async function getWeatherLabContext(location, date) {
   const point = await fetchJsonWithRetry(`https://api.weather.gov/points/${location.lat},${location.lon}`);
   const hourly = await fetchJsonWithRetry(point.properties.forecastHourly);
   const daily = await fetchJsonWithRetry(point.properties.forecast);
+  const observations = await getStationObservationContext(location, date);
   const dayHours = (hourly.properties.periods || []).filter((period) => String(period.startTime || '').startsWith(date));
   const temps = dayHours.map((period) => Number(period.temperature)).filter(Number.isFinite);
   const hourlyMax = temps.length ? Math.max(...temps) : null;
+  const nowMs = Date.now();
+  const remainingTemps = dayHours
+    .filter((period) => Date.parse(String(period.endTime || period.startTime || '')) >= nowMs)
+    .map((period) => Number(period.temperature))
+    .filter(Number.isFinite);
+  const remainingHourlyMax = remainingTemps.length ? Math.max(...remainingTemps) : null;
+  observations.remainingHourlyMaxF = remainingHourlyMax;
   const dailyPeriod = (daily.properties.periods || []).find((period) => (
     String(period.startTime || '').startsWith(date)
     && (period.isDaytime || /day|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday/i.test(String(period.name || '')))
@@ -271,7 +500,16 @@ async function getWeatherLabContext(location, date) {
     throw new Error(`No NWS high forecast found for ${location.label} ${date}.`);
   }
 
-  const meanHigh = highParts.reduce((sum, value) => sum + value, 0) / highParts.length;
+  let meanHigh = highParts.reduce((sum, value) => sum + value, 0) / highParts.length;
+  let forecastFinalHigh = meanHigh;
+  if (observations.dayPhase === 'today' && observations.observedHighF !== null) {
+    const projectedParts = [observations.observedHighF, remainingHourlyMax].filter((value) => value !== null && Number.isFinite(value));
+    forecastFinalHigh = projectedParts.length ? Math.max(...projectedParts) : observations.observedHighF;
+    if (dailyHigh !== null && observations.elapsedRatio < 0.42) {
+      forecastFinalHigh = Math.max(forecastFinalHigh, (forecastFinalHigh * 0.7) + (dailyHigh * 0.3));
+    }
+    meanHigh = forecastFinalHigh;
+  }
   const peakHours = dayHours.filter((period) => {
     const match = String(period.startTime || '').match(/T(\d{2})/);
     if (!match) return false;
@@ -301,10 +539,18 @@ async function getWeatherLabContext(location, date) {
     },
     forecast: {
       hourlyMax,
+      remainingHourlyMax,
       dailyHigh,
       meanHigh,
+      forecastFinalHigh,
       shortForecast: dailyPeriod ? dailyPeriod.shortForecast : null,
       detailedForecast: dailyPeriod ? dailyPeriod.detailedForecast : null,
+    },
+    observations,
+    settlement: {
+      stationId: location.stationId || null,
+      stationHint: location.stationHint,
+      sourceNote: 'Observation data is pulled from the mapped NWS station as a proxy. Kalshi settlement can depend on final NWS climate reports and corrections.',
     },
     regime: {
       maxPrecipProbability: maxPrecip,
@@ -352,10 +598,14 @@ function adjustedWeatherProbability(range, context) {
     reasons.push('Bucket is near the NWS mean high, so the model treats it as a central forecast bucket.');
   }
 
+  probability = applyObservedHighGuardrails(range, context, probability, reasons, riskFlags);
+
   const spreadPenalty = Math.min(0.28, Math.abs(tight - wide) * 0.8);
   let confidenceScore = 0.78 - spreadPenalty;
   if (wet) confidenceScore -= 0.08;
   if (upslope) confidenceScore -= 0.08;
+  if (context.observations && context.observations.dayPhase === 'today') confidenceScore -= 0.06;
+  if (context.observations && context.observations.error) confidenceScore -= 0.18;
   if (context.forecast.hourlyMax === null || context.forecast.dailyHigh === null) confidenceScore -= 0.12;
   confidenceScore = clamp(confidenceScore, 0.2, 0.9);
   const confidence = confidenceScore >= 0.68 ? 'high' : confidenceScore >= 0.48 ? 'medium' : 'low';
@@ -374,11 +624,53 @@ function adjustedWeatherProbability(range, context) {
   };
 }
 
-function weatherRecommendation(edge, confidence, ask, probability) {
+function shouldAuditOnlySameDay(context, range, side) {
+  const observations = context.observations || {};
+  if (observations.dayPhase !== 'today') return false;
+  if (observations.error || observations.observedHighF === null) return true;
+
+  const observedHigh = Number(observations.observedHighF);
+  const remainingMax = Number(context.forecast.remainingHourlyMax);
+  const hasRemainingMax = Number.isFinite(remainingMax);
+  const elapsed = Number(observations.elapsedRatio || 0);
+
+  if (range.kind === 'between') {
+    const inside = observedHigh >= range.lowerBound && observedHigh <= range.upperBound;
+    if (side === 'yes') {
+      return !(inside && hasRemainingMax && remainingMax <= range.upperBound && elapsed >= 0.72);
+    }
+    if (observedHigh > range.upperBound) return false;
+    if (hasRemainingMax && remainingMax < range.lowerBound) return false;
+    return inside || elapsed < 0.55;
+  }
+
+  if (range.kind === 'below') {
+    if (side === 'yes') {
+      if (observedHigh > range.upperBound) return false;
+      return !(hasRemainingMax && remainingMax <= range.upperBound && elapsed >= 0.65);
+    }
+    if (observedHigh > range.upperBound) return false;
+    return elapsed < 0.65;
+  }
+
+  if (range.kind === 'above') {
+    if (side === 'yes') {
+      if (observedHigh >= range.lowerBound) return false;
+      return elapsed < 0.65 || (hasRemainingMax && remainingMax < range.lowerBound);
+    }
+    if (observedHigh >= range.lowerBound) return false;
+    return elapsed < 0.65;
+  }
+
+  return true;
+}
+
+function weatherRecommendation(edge, confidence, ask, probability, context, range, side) {
+  if (edge <= -0.04) return 'avoid-or-sell';
+  if (edge >= 0.03 && shouldAuditOnlySameDay(context, range, side)) return 'audit-only';
   if (edge >= 0.12 && confidence !== 'low' && probability >= 0.12) return 'research-buy';
   if (edge >= 0.06 && confidence === 'high') return 'small-buy';
   if (edge >= 0.03 && ask <= 0.05) return 'tiny-only';
-  if (edge <= -0.04) return 'avoid-or-sell';
   return 'pass';
 }
 
@@ -431,11 +723,12 @@ function scoreWeatherCandidate(market, location, context, range, side, maxCost) 
 
   const breakEven = cost / contracts;
   const edge = probability - breakEven;
-  const recommendation = weatherRecommendation(edge, yesModel.confidence, ask, probability);
+  const recommendation = weatherRecommendation(edge, yesModel.confidence, ask, probability, context, range, side);
   const rankByRecommendation = {
     'research-buy': 4,
     'small-buy': 3,
     'tiny-only': 2,
+    'audit-only': 1.5,
     pass: 1,
     'avoid-or-sell': 0,
   };
@@ -485,17 +778,22 @@ function scoreWeatherCandidate(market, location, context, range, side, maxCost) 
     context: {
       meanHigh: context.forecast.meanHigh,
       hourlyMax: context.forecast.hourlyMax,
+      remainingHourlyMax: context.forecast.remainingHourlyMax,
       dailyHigh: context.forecast.dailyHigh,
+      forecastFinalHigh: context.forecast.forecastFinalHigh,
       shortForecast: context.forecast.shortForecast,
       detailedForecast: context.forecast.detailedForecast,
       maxPrecipProbability: context.regime.maxPrecipProbability,
       peakWindDirections: context.regime.peakWindDirections,
+      observations: context.observations,
+      settlement: context.settlement,
     },
     closeTime: market.close_time,
     expectedExpirationTime: market.expected_expiration_time,
     url: kalshiMarketUrl(market, location),
     rationale: [
-      `${location.label} NWS mean high ${Number(context.forecast.meanHigh).toFixed(1)}F from hourly max ${context.forecast.hourlyMax}F and daily high ${context.forecast.dailyHigh}F.`,
+      `${location.label} NWS model high ${Number(context.forecast.meanHigh).toFixed(1)}F from hourly max ${context.forecast.hourlyMax}F, remaining hourly max ${context.forecast.remainingHourlyMax}F, and daily high ${context.forecast.dailyHigh}F.`,
+      `${location.stationId || 'Mapped station'} observation proxy: ${context.observations.observedHighF === null ? 'no observed high yet' : `${context.observations.observedHighF}F high so far`}; ${context.settlement.sourceNote}`,
       `${side.toUpperCase()} fair probability after weather adjustments: ${(probability * 100).toFixed(1)}%; fee-adjusted break-even: ${(breakEven * 100).toFixed(1)}%.`,
       ...yesModel.reasons,
     ],

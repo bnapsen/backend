@@ -193,16 +193,22 @@
     }
 
     contextsEl.innerHTML = contexts.map(function (context) {
+      const observations = context.observations || {};
       return [
         '<div class="context-item">',
         "<h3>" + escapeHtml(context.location.label) + " " + renderDateBadge(scanDate) + "</h3>",
         '<div class="context-row">',
         "<span>mean " + formatNumber(context.forecast.meanHigh, 1) + "F</span>",
         "<span>hourly " + valueOrNa(context.forecast.hourlyMax) + "F</span>",
+        "<span>remaining " + valueOrNa(context.forecast.remainingHourlyMax) + "F</span>",
         "<span>daily " + valueOrNa(context.forecast.dailyHigh) + "F</span>",
+        "<span>" + escapeHtml(observations.stationId || "station") + " high " + valueOrNa(observations.observedHighF) + "F</span>",
+        "<span>latest " + valueOrNa(observations.latestTempF) + "F</span>",
+        "<span>" + escapeHtml(observations.dayPhase || "future") + "</span>",
         "<span>PoP " + valueOrNa(context.regime.maxPrecipProbability) + "%</span>",
         "<span>wind " + escapeHtml((context.regime.peakWindDirections || []).join("/") || "n/a") + "</span>",
         "</div>",
+        observations.note ? '<p class="subtext">' + escapeHtml(observations.note) + "</p>" : "",
         '<p class="subtext">' + escapeHtml(context.forecast.detailedForecast || context.forecast.shortForecast || "") + "</p>",
         "</div>",
       ].join("");
@@ -241,12 +247,15 @@
 
   function showDetail(item) {
     const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
+    const observations = item.context && item.context.observations ? item.context.observations : {};
+    const settlement = item.context && item.context.settlement ? item.context.settlement : {};
     detailTitle.textContent = item.location + " " + item.subtitle + " " + item.side.toUpperCase() + " - " + formatDateWithRelative(scanDate);
     detailBody.innerHTML = [
       '<div class="detail-block"><h3>Decision</h3><p>Weather date: <strong>' + escapeHtml(formatDateWithRelative(scanDate)) + "</strong>. " + escapeHtml(item.recommendation) + " at " + item.price.askCents + "c ask. Adjusted edge " + pct(item.adjustedEdge) + ". Confidence " + escapeHtml(item.confidence) + '.</p><div class="actions"><button type="button" id="detail-open">Open Kalshi</button><button type="button" id="detail-log">Audit</button></div></div>',
       '<div class="detail-block"><h3>Probability Stack</h3><p>Adjusted ' + pct(item.probability) + ". Raw sigma=3 " + pct(item.rawProbability) + ". Tight sigma=2 " + pct(item.tightProbability) + ". Wide sigma=4 " + pct(item.wideProbability) + ". Break-even " + pct(item.breakEven) + ".</p></div>",
       '<div class="detail-block"><h3>Model EV</h3><p>Suggested size ' + item.suggested.contracts + " contracts at " + item.suggested.maxPriceCents + "c. Model expected profit " + signedDollars(modelEvDollars(item)) + " before any later price movement.</p></div>",
-      '<div class="detail-block"><h3>Forecast</h3><p>Mean ' + formatNumber(item.context.meanHigh, 1) + "F, hourly max " + valueOrNa(item.context.hourlyMax) + "F, daily high " + valueOrNa(item.context.dailyHigh) + "F. " + escapeHtml(item.context.detailedForecast || item.context.shortForecast || "") + "</p></div>",
+      '<div class="detail-block"><h3>Forecast And Observations</h3><p>Mean ' + formatNumber(item.context.meanHigh, 1) + "F, hourly max " + valueOrNa(item.context.hourlyMax) + "F, remaining hourly max " + valueOrNa(item.context.remainingHourlyMax) + "F, daily high " + valueOrNa(item.context.dailyHigh) + "F. " + escapeHtml(observations.stationId || "Station") + " high so far " + valueOrNa(observations.observedHighF) + "F, latest " + valueOrNa(observations.latestTempF) + "F. " + escapeHtml(item.context.detailedForecast || item.context.shortForecast || "") + "</p></div>",
+      '<div class="detail-block"><h3>Settlement Proxy</h3><p>' + escapeHtml((settlement.stationId || observations.stationId || "Mapped station") + ": " + (settlement.stationHint || "") + ". " + (settlement.sourceNote || observations.note || "")) + "</p></div>",
       '<div class="detail-block"><h3>Rationale</h3><ul>' + (item.rationale || []).map(function (line) { return "<li>" + escapeHtml(line) + "</li>"; }).join("") + "</ul></div>",
       '<div class="detail-block"><h3>Risk Flags</h3><p>' + escapeHtml(item.riskFlags && item.riskFlags.length ? item.riskFlags.join(", ") : "None raised by this pass.") + "</p></div>",
     ].join("");
@@ -558,6 +567,7 @@
   function actionClass(action) {
     if (action === "research-buy" || action === "small-buy") return "buy";
     if (action === "tiny-only") return "tiny";
+    if (action === "audit-only") return "audit";
     if (action === "avoid-or-sell") return "avoid";
     return "pass";
   }
@@ -567,6 +577,7 @@
       "research-buy": "Research",
       "small-buy": "Small",
       "tiny-only": "Tiny",
+      "audit-only": "Audit",
       "avoid-or-sell": "Avoid",
       "pass": "Pass",
     }[action] || action;
