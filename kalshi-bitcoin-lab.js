@@ -45,7 +45,7 @@
       startStream();
     } else {
       loadScan();
-      state.fallbackTimer = setInterval(loadScan, 5000);
+      state.fallbackTimer = setInterval(loadScan, 2000);
     }
   }
 
@@ -67,7 +67,7 @@
     source.addEventListener("scan", function (event) {
       try {
         render(JSON.parse(event.data));
-        setStatus("Live stream connected.");
+        setStatus("Live stream connected - refreshing about every 1.5s.");
       } catch (error) {
         setStatus("Live stream returned malformed data.", true);
       }
@@ -76,7 +76,7 @@
       setStatus("Live stream paused; falling back to polling.", true);
       stopStream();
       loadScan();
-      state.fallbackTimer = setInterval(loadScan, 5000);
+      state.fallbackTimer = setInterval(loadScan, 2000);
     });
   }
 
@@ -84,7 +84,7 @@
     try {
       setStatus("Refreshing Bitcoin market...");
       render(await fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/scan")));
-      setStatus(streamToggle.checked ? "Polling live." : "Manual refresh complete.");
+      setStatus(streamToggle.checked ? "Polling live every 2s." : "Manual refresh complete.");
     } catch (error) {
       setStatus(error.message || "Unable to load Bitcoin scan.", true);
     }
@@ -136,8 +136,8 @@
     const model = scan.model || {};
     const best = scan.best || {};
     summaryEl.innerHTML = [
-      metric("BTC proxy", dollars(market.currentPrice), "Target " + dollars(market.targetPrice)),
-      metric("Distance", signedDollars(market.distanceDollars), pct(market.distancePct) + " from target"),
+      metric("Live BTC proxy", dollars(market.currentPrice), "Bid " + dollars(market.proxyBid) + " / ask " + dollars(market.proxyAsk), "price-metric"),
+      metric("Kalshi target", dollars(market.targetPrice), "Distance " + signedDollars(market.distanceDollars)),
       metric("Model YES", pct(model.yesProbability), "NO " + pct(model.noProbability)),
       metric("Best call", callLabel(best.recommendation), best.side ? best.side.toUpperCase() + " edge " + pct(best.edge) : "No candidate"),
     ].join("");
@@ -179,14 +179,23 @@
 
   function renderChart(scan) {
     const chart = scan.chart || {};
-    const points = Array.isArray(chart.points) ? chart.points : [];
+    const allPoints = Array.isArray(chart.points) ? chart.points : [];
+    const openTime = new Date(chart.openTime || 0).getTime();
+    const closeTime = new Date(chart.closeTime || 0).getTime();
+    const latestRaw = allPoints[allPoints.length - 1] || null;
+    const windowStart = Number.isFinite(openTime) && openTime > 0 ? openTime - 120_000 : Date.now() - 20 * 60_000;
+    const windowEnd = Number.isFinite(closeTime) && closeTime > 0 ? closeTime + 20_000 : Date.now() + 30_000;
+    let points = allPoints.filter(function (point) {
+      return Number(point.timeMs) >= windowStart && Number(point.timeMs) <= windowEnd;
+    });
+    if (points.length < 3) points = allPoints.slice(-30);
     if (!points.length) {
       chartStage.innerHTML = '<p class="subtext">No BTC chart data yet.</p>';
       return;
     }
-    const width = 1040;
-    const height = 430;
-    const pad = { left: 76, right: 34, top: 26, bottom: 42 };
+    const width = 1120;
+    const height = 470;
+    const pad = { left: 84, right: 164, top: 34, bottom: 48 };
     const innerWidth = width - pad.left - pad.right;
     const innerHeight = height - pad.top - pad.bottom;
     const values = points.flatMap(function (point) { return [point.low, point.high, point.close]; })
@@ -195,11 +204,12 @@
       .filter(Number.isFinite);
     const minValue = Math.min.apply(null, values);
     const maxValue = Math.max.apply(null, values);
-    const span = Math.max(10, maxValue - minValue);
-    const yMin = Math.floor((minValue - span * 0.08) / 25) * 25;
-    const yMax = Math.ceil((maxValue + span * 0.08) / 25) * 25;
-    const minTime = points[0].timeMs;
-    const maxTime = Math.max(points[points.length - 1].timeMs, new Date(chart.closeTime || 0).getTime());
+    const span = Math.max(8, maxValue - minValue);
+    const yStep = span <= 18 ? 2 : span <= 45 ? 5 : span <= 90 ? 10 : 25;
+    const yMin = Math.floor((minValue - Math.max(4, span * 0.18)) / yStep) * yStep;
+    const yMax = Math.ceil((maxValue + Math.max(4, span * 0.18)) / yStep) * yStep;
+    const minTime = Math.min(windowStart, points[0].timeMs);
+    const maxTime = Math.max(windowEnd, points[points.length - 1].timeMs);
     const xForTime = function (timeMs) {
       return pad.left + ((Number(timeMs) - minTime) / Math.max(1, maxTime - minTime)) * innerWidth;
     };
@@ -210,33 +220,50 @@
       return (index ? "L" : "M") + xForTime(point.timeMs).toFixed(2) + " " + yForPrice(point.close).toFixed(2);
     }).join(" ");
     const ticks = [];
-    for (let value = Math.ceil(yMin / 50) * 50; value <= yMax + 0.1; value += 50) ticks.push(value);
+    for (let value = Math.ceil(yMin / yStep) * yStep; value <= yMax + 0.1; value += yStep) ticks.push(value);
     const xTicks = [];
-    for (let index = 0; index < points.length; index += Math.max(1, Math.floor(points.length / 6))) xTicks.push(points[index]);
+    for (let time = Math.ceil(minTime / 60_000) * 60_000; time <= maxTime + 1; time += 3 * 60_000) {
+      xTicks.push({ time: new Date(time).toISOString(), timeMs: time });
+    }
     const targetY = yForPrice(chart.targetPrice);
-    const latest = points[points.length - 1];
+    const latest = latestRaw || points[points.length - 1];
     const settleStart = new Date(chart.settlementAveragingStart || 0).getTime();
-    const closeTime = new Date(chart.closeTime || 0).getTime();
     const settleX = xForTime(settleStart);
     const closeX = xForTime(closeTime);
+    const latestX = xForTime(latest.timeMs);
+    const latestY = yForPrice(latest.close);
+    const currentLabelY = clampNumber(latestY, pad.top + 24, height - pad.bottom - 10);
+    const targetLabelY = clampNumber(targetY, pad.top + 44, height - pad.bottom - 28);
+    const aboveTarget = Number(chart.currentPrice) >= Number(chart.targetPrice);
     chartStage.innerHTML = [
+      '<div class="live-price-card">',
+      "<span>Live BTC proxy</span>",
+      "<strong>" + escapeHtml(dollars(chart.currentPrice)) + "</strong>",
+      '<small class="' + (aboveTarget ? "pos" : "neg") + '">' + escapeHtml((aboveTarget ? "above " : "below ") + signedDollars(Number(chart.currentPrice) - Number(chart.targetPrice)) + " vs target") + "</small>",
+      "</div>",
       '<svg class="chart-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Bitcoin price chart">',
       '<rect class="chart-bg" x="0" y="0" width="' + width + '" height="' + height + '"></rect>',
       Number.isFinite(settleX) && Number.isFinite(closeX) ? '<rect class="settle-band" x="' + settleX + '" y="' + pad.top + '" width="' + Math.max(2, closeX - settleX) + '" height="' + innerHeight + '"></rect>' : "",
+      Number.isFinite(openTime) ? '<rect class="open-band" x="' + xForTime(openTime) + '" y="' + pad.top + '" width="' + Math.max(2, xForTime(closeTime) - xForTime(openTime)) + '" height="' + innerHeight + '"></rect>' : "",
       ticks.map(function (value) {
         const y = yForPrice(value);
-        return '<line class="grid major" x1="' + pad.left + '" x2="' + (width - pad.right) + '" y1="' + y + '" y2="' + y + '"></line><text class="axis-label" x="' + (pad.left - 10) + '" y="' + (y + 4) + '" text-anchor="end">$' + formatNumber(value, 0) + "</text>";
+        return '<line class="grid major" x1="' + pad.left + '" x2="' + (width - pad.right) + '" y1="' + y + '" y2="' + y + '"></line><text class="axis-label axis-left" x="' + (pad.left - 10) + '" y="' + (y + 4) + '" text-anchor="end">$' + formatNumber(value, 0) + '</text><text class="axis-label axis-right" x="' + (width - pad.right + 10) + '" y="' + (y + 4) + '">$' + formatNumber(value, 0) + "</text>";
       }).join(""),
       xTicks.map(function (point) {
         const x = xForTime(point.timeMs);
         return '<line class="grid" x1="' + x + '" x2="' + x + '" y1="' + pad.top + '" y2="' + (height - pad.bottom) + '"></line><text class="axis-label" x="' + x + '" y="' + (height - 12) + '">' + formatTime(point.time) + "</text>";
       }).join(""),
       '<line class="target-line" x1="' + pad.left + '" x2="' + (width - pad.right) + '" y1="' + targetY + '" y2="' + targetY + '"></line>',
-      '<text class="line-label" x="' + (width - pad.right - 138) + '" y="' + (targetY - 8) + '">Kalshi target ' + dollars(chart.targetPrice) + "</text>",
+      '<rect class="price-label-bg target-bg" x="' + (width - pad.right + 8) + '" y="' + (targetLabelY - 17) + '" width="138" height="25" rx="7"></rect>',
+      '<text class="line-label target-label" x="' + (width - pad.right + 18) + '" y="' + targetLabelY + '">Target ' + dollars(chart.targetPrice) + "</text>",
       '<path class="price-line" d="' + path + '"></path>',
-      '<circle class="current-dot" cx="' + xForTime(latest.timeMs) + '" cy="' + yForPrice(latest.close) + '" r="6"></circle>',
+      '<line class="current-line" x1="' + pad.left + '" x2="' + (width - pad.right) + '" y1="' + latestY + '" y2="' + latestY + '"></line>',
+      '<circle class="current-dot" cx="' + latestX + '" cy="' + latestY + '" r="7"></circle>',
+      '<rect class="price-label-bg current-bg" x="' + (width - pad.right + 8) + '" y="' + (currentLabelY - 17) + '" width="142" height="25" rx="7"></rect>',
+      '<text class="line-label current-label" x="' + (width - pad.right + 18) + '" y="' + currentLabelY + '">' + dollars(latest.close) + "</text>",
+      '<text class="last-price-tag" x="' + Math.min(width - pad.right - 172, latestX + 10) + '" y="' + (latestY - 12) + '">' + dollars(latest.close) + "</text>",
       '<text class="line-label" x="' + (pad.left + 8) + '" y="' + (pad.top + 16) + '">' + escapeHtml(chart.source || "BTC proxy") + "</text>",
-      '<text class="line-label" x="' + (settleX + 6) + '" y="' + (pad.top + 34) + '">final 60s average</text>',
+      Number.isFinite(settleX) ? '<text class="line-label settle-label" x="' + Math.max(pad.left + 8, settleX + 6) + '" y="' + (pad.top + 38) + '">final 60s average</text>' : "",
       "</svg>",
     ].join("");
   }
@@ -262,8 +289,8 @@
     ].join("");
   }
 
-  function metric(label, value, subtext) {
-    return '<div class="metric"><span>' + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong><small>" + escapeHtml(subtext || "") + "</small></div>";
+  function metric(label, value, subtext, className) {
+    return '<div class="metric ' + escapeHtml(className || "") + '"><span>' + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong><small>" + escapeHtml(subtext || "") + "</small></div>";
   }
 
   function callLabel(value) {
@@ -311,6 +338,12 @@
   function formatNumber(value, places) {
     const number = Number(value);
     return Number.isFinite(number) ? number.toLocaleString(undefined, { minimumFractionDigits: places, maximumFractionDigits: places }) : "n/a";
+  }
+
+  function clampNumber(value, min, max) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return min;
+    return Math.max(min, Math.min(max, number));
   }
 
   function formatTime(value) {

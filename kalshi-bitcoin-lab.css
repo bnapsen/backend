@@ -175,6 +175,12 @@ button,
   font-size: 24px;
 }
 
+.price-metric strong {
+  color: var(--green);
+  font-size: 32px;
+  letter-spacing: 0;
+}
+
 .market-strip {
   display: grid;
   grid-template-columns: 1.2fr 1.2fr 1.4fr auto;
@@ -204,8 +210,38 @@ button,
 }
 
 .chart-stage {
+  position: relative;
   min-height: 430px;
   padding: 14px;
+}
+
+.live-price-card {
+  position: absolute;
+  top: 26px;
+  right: 28px;
+  z-index: 2;
+  min-width: 218px;
+  padding: 13px 14px;
+  border: 1px solid rgba(41, 245, 178, 0.34);
+  border-radius: 8px;
+  background: rgba(6, 16, 20, 0.92);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+}
+
+.live-price-card span,
+.live-price-card small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.live-price-card strong {
+  display: block;
+  margin: 5px 0;
+  color: var(--green);
+  font-size: 32px;
+  line-height: 1;
 }
 
 .chart-svg {
@@ -230,7 +266,13 @@ button,
 .axis-label,
 .line-label {
   fill: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.axis-left,
+.axis-right {
+  fill: rgba(237, 244, 241, 0.86);
 }
 
 .price-line {
@@ -241,14 +283,56 @@ button,
 
 .target-line {
   stroke: var(--amber);
-  stroke-width: 2;
+  stroke-width: 2.5;
   stroke-dasharray: 8 6;
+}
+
+.current-line {
+  stroke: rgba(41, 245, 178, 0.36);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 6;
 }
 
 .current-dot {
   fill: var(--green);
   stroke: #06221a;
   stroke-width: 3;
+}
+
+.price-label-bg {
+  stroke-width: 1;
+}
+
+.current-bg {
+  fill: rgba(41, 245, 178, 0.16);
+  stroke: rgba(41, 245, 178, 0.5);
+}
+
+.target-bg {
+  fill: rgba(251, 191, 36, 0.14);
+  stroke: rgba(251, 191, 36, 0.48);
+}
+
+.current-label {
+  fill: var(--green);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.target-label {
+  fill: var(--amber);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.last-price-tag {
+  fill: var(--green);
+  font-size: 13px;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: rgba(7, 11, 15, 0.9);
+  stroke-width: 5px;
+  stroke-linejoin: round;
 }
 
 .settle-band {
@@ -356,5 +440,10 @@ th {
   button,
   .button-link {
     width: 100%;
+  }
+
+  .live-price-card {
+    position: static;
+    margin-bottom: 10px;
   }
 }

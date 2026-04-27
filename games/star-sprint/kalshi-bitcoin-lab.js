@@ -6,6 +6,13 @@ const BTC_15M_SERIES = 'KXBTC15M';
 const COINBASE_PRODUCT = 'BTC-USD';
 const DEFAULT_MAX_COST = 5;
 const DEFAULT_MIN_EDGE = 0.02;
+const MARKET_CACHE_MS = 4_000;
+const CANDLE_CACHE_MS = 20_000;
+const bitcoinCache = {
+  markets: null,
+  marketsAt: 0,
+  candles: new Map(),
+};
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -89,6 +96,10 @@ function eventWindowFromMarket(market) {
 }
 
 async function getBitcoin15mMarkets() {
+  const nowMs = Date.now();
+  if (bitcoinCache.markets && nowMs - bitcoinCache.marketsAt < MARKET_CACHE_MS) {
+    return bitcoinCache.markets;
+  }
   const params = new URLSearchParams({
     series_ticker: BTC_15M_SERIES,
     status: 'open',
@@ -105,7 +116,9 @@ async function getBitcoin15mMarkets() {
     const close = new Date(market.close_time || 0).getTime();
     return close > now - 15_000 && open <= now + 60_000;
   }) || usable.find((market) => new Date(market.close_time || 0).getTime() > now - 15_000) || usable[0] || null;
-  return { markets: usable, active };
+  bitcoinCache.markets = { markets: usable, active };
+  bitcoinCache.marketsAt = nowMs;
+  return bitcoinCache.markets;
 }
 
 async function getCoinbaseTicker() {
@@ -120,6 +133,12 @@ async function getCoinbaseTicker() {
 }
 
 async function getCoinbaseCandles(minutes = 180) {
+  const cacheKey = String(clamp(minutes, 30, 360));
+  const cached = bitcoinCache.candles.get(cacheKey);
+  const nowMs = Date.now();
+  if (cached && nowMs - cached.at < CANDLE_CACHE_MS) {
+    return cached.points;
+  }
   const end = new Date();
   const start = new Date(end.getTime() - clamp(minutes, 30, 360) * 60_000);
   const params = new URLSearchParams({
@@ -128,7 +147,7 @@ async function getCoinbaseCandles(minutes = 180) {
     end: end.toISOString(),
   });
   const candles = await fetchJson(`${COINBASE_API_BASE_URL}/products/${COINBASE_PRODUCT}/candles?${params.toString()}`);
-  return (Array.isArray(candles) ? candles : [])
+  const points = (Array.isArray(candles) ? candles : [])
     .map((row) => ({
       time: isoDate(Number(row[0]) * 1000),
       timeMs: Number(row[0]) * 1000,
@@ -140,6 +159,40 @@ async function getCoinbaseCandles(minutes = 180) {
     }))
     .filter((point) => Number.isFinite(point.close) && point.timeMs)
     .sort((left, right) => left.timeMs - right.timeMs);
+  bitcoinCache.candles.set(cacheKey, { at: nowMs, points });
+  return points;
+}
+
+function appendLivePoint(candles, ticker) {
+  const points = Array.isArray(candles) ? candles.slice() : [];
+  const price = Number(ticker && ticker.price);
+  const timeMs = new Date(ticker && ticker.time || Date.now()).getTime();
+  if (!Number.isFinite(price) || !Number.isFinite(timeMs)) return points;
+  const livePoint = {
+    time: isoDate(timeMs),
+    timeMs,
+    low: price,
+    high: price,
+    open: price,
+    close: price,
+    volume: 0,
+    live: true,
+  };
+  const last = points[points.length - 1];
+  if (last && Math.abs(Number(last.timeMs) - timeMs) < 15_000) {
+    points[points.length - 1] = {
+      ...last,
+      high: Math.max(Number(last.high || price), price),
+      low: Math.min(Number(last.low || price), price),
+      close: price,
+      live: true,
+      time: livePoint.time,
+      timeMs,
+    };
+    return points;
+  }
+  points.push(livePoint);
+  return points;
 }
 
 function estimateBitcoinProbability({ currentPrice, targetPrice, candles, secondsToClose }) {
@@ -304,6 +357,7 @@ async function scanBitcoin15m(options = {}) {
   const secondsSinceOpen = Math.max(0, (now - window.openMs) / 1000);
   const targetPrice = Number(market.floor_strike);
   const currentPrice = Number(ticker.price);
+  const chartPoints = appendLivePoint(candles, ticker);
   const dataGrade = sourceStatus().cfBenchmarksConfigured ? 'settlement-grade' : 'proxy';
   const probability = estimateBitcoinProbability({
     currentPrice,
@@ -384,7 +438,7 @@ async function scanBitcoin15m(options = {}) {
     chart: {
       product: COINBASE_PRODUCT,
       source: ticker.source,
-      points: candles,
+      points: chartPoints,
       targetPrice: round(targetPrice, 2),
       currentPrice: round(currentPrice, 2),
       openTime: window.openTime,
