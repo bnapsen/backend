@@ -49,6 +49,14 @@
         </div>
         <div class="panel-actions">
           <label class="compact-label">
+            Bankroll
+            <input id="portfolio-bankroll" class="compact-input bankroll-input" type="number" min="25" max="100000" step="25" value="1000">
+          </label>
+          <label class="compact-label">
+            Kelly %
+            <input id="portfolio-kelly-percent" class="compact-input percent-input" type="number" min="1" max="100" step="1" value="25">
+          </label>
+          <label class="compact-label">
             Budget
             <input id="portfolio-budget" class="compact-input money-input" type="number" min="1" max="250" step="1" value="25">
           </label>
@@ -70,6 +78,7 @@
               <th>Ask</th>
               <th>Model p</th>
               <th>Edge</th>
+              <th>Kelly</th>
               <th>Contracts</th>
               <th>Cost</th>
               <th>Model EV</th>
@@ -99,6 +108,7 @@
               <th>BE</th>
               <th>Edge</th>
               <th>EV</th>
+              <th>Kelly</th>
               <th>Confidence</th>
               <th>Max</th>
               <th></th>

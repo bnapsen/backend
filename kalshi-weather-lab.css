@@ -234,6 +234,14 @@ button:disabled {
   width: 72px;
 }
 
+.bankroll-input {
+  width: 88px;
+}
+
+.percent-input {
+  width: 64px;
+}
+
 .table-wrap {
   overflow: auto;
 }
@@ -249,12 +257,12 @@ table {
 }
 
 .portfolio-table {
-  min-width: 900px;
+  min-width: 980px;
 }
 
 .portfolio-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
   border-bottom: 1px solid var(--line);
 }
 

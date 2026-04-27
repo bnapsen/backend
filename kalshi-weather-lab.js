@@ -5,6 +5,8 @@
   const AUTO_AUDIT_MINUTES_KEY = "kalshiWeatherAutoAuditMinutes";
   const PORTFOLIO_BUDGET_KEY = "kalshiWeatherPortfolioBudget";
   const PORTFOLIO_CITY_CAP_KEY = "kalshiWeatherPortfolioCityCap";
+  const PORTFOLIO_BANKROLL_KEY = "kalshiWeatherPortfolioBankroll";
+  const PORTFOLIO_KELLY_PERCENT_KEY = "kalshiWeatherPortfolioKellyPercent";
   const state = {
     scan: null,
     candidates: [],
@@ -28,6 +30,8 @@
   const ledgerEl = document.querySelector("#ledger");
   const portfolioSummaryEl = document.querySelector("#portfolio-summary");
   const portfolioItemsEl = document.querySelector("#portfolio-items");
+  const portfolioBankrollInput = document.querySelector("#portfolio-bankroll");
+  const portfolioKellyPercentInput = document.querySelector("#portfolio-kelly-percent");
   const portfolioBudgetInput = document.querySelector("#portfolio-budget");
   const portfolioCityCapInput = document.querySelector("#portfolio-city-cap");
   const autoAuditEnabledInput = document.querySelector("#auto-audit-enabled");
@@ -39,6 +43,8 @@
 
   dateInput.value = tomorrowIsoDate();
   tokenInput.value = localStorage.getItem("kalshiLabToken") || "";
+  portfolioBankrollInput.value = localStorage.getItem(PORTFOLIO_BANKROLL_KEY) || "1000";
+  portfolioKellyPercentInput.value = localStorage.getItem(PORTFOLIO_KELLY_PERCENT_KEY) || "25";
   portfolioBudgetInput.value = localStorage.getItem(PORTFOLIO_BUDGET_KEY) || "25";
   portfolioCityCapInput.value = localStorage.getItem(PORTFOLIO_CITY_CAP_KEY) || "5";
   autoAuditEnabledInput.checked = localStorage.getItem(AUTO_AUDIT_ENABLED_KEY) === "1";
@@ -67,6 +73,8 @@
   });
 
   document.querySelector("#portfolio-build").addEventListener("click", function () {
+    localStorage.setItem(PORTFOLIO_BANKROLL_KEY, String(portfolioBankroll()));
+    localStorage.setItem(PORTFOLIO_KELLY_PERCENT_KEY, String(portfolioKellyPercent()));
     localStorage.setItem(PORTFOLIO_BUDGET_KEY, String(portfolioBudget()));
     localStorage.setItem(PORTFOLIO_CITY_CAP_KEY, String(portfolioCityCap()));
     renderDailyPortfolio();
@@ -75,6 +83,18 @@
 
   document.querySelector("#portfolio-audit").addEventListener("click", function () {
     addDailyPortfolioToAudit();
+  });
+
+  portfolioBankrollInput.addEventListener("change", function () {
+    localStorage.setItem(PORTFOLIO_BANKROLL_KEY, String(portfolioBankroll()));
+    renderDailyPortfolio();
+    renderCandidates();
+  });
+
+  portfolioKellyPercentInput.addEventListener("change", function () {
+    localStorage.setItem(PORTFOLIO_KELLY_PERCENT_KEY, String(portfolioKellyPercent()));
+    renderDailyPortfolio();
+    renderCandidates();
   });
 
   portfolioBudgetInput.addEventListener("change", function () {
@@ -184,12 +204,13 @@
       portfolioMetric("Basket cost", dollars(portfolio.costDollars), portfolio.items.length + " picks / $" + portfolio.budgetDollars.toFixed(0) + " cap"),
       portfolioMetric("Model EV", signedDollars(portfolio.expectedProfitDollars), "model-only, not guaranteed"),
       portfolioMetric("Avg edge", pct(portfolio.avgEdge), portfolio.excludedCount + " excluded"),
-      portfolioMetric("Max loss", dollars(portfolio.maxLossDollars), "if every pick loses"),
+      portfolioMetric("Kelly risk", pct(portfolio.bankrollRisk), portfolio.kellyPercent + "% Kelly on " + dollars(portfolio.bankrollDollars)),
+      portfolioMetric("Max loss", dollars(portfolio.maxLossDollars), "max " + dollars(portfolio.cityCapDollars) + " per city"),
       portfolioMetric("Rules", portfolio.rulesLabel, portfolio.dateLabel),
     ].join("");
 
     if (!portfolio.items.length) {
-      portfolioItemsEl.innerHTML = '<tr><td colspan="9" class="subtext">No strict daily portfolio right now. The basket excludes Audit, Pass, Avoid, low-confidence, and thin-edge picks.</td></tr>';
+      portfolioItemsEl.innerHTML = '<tr><td colspan="10" class="subtext">No strict daily portfolio right now. The basket excludes Audit, Pass, Avoid, low-confidence, thin-edge picks, and bets above fractional Kelly size.</td></tr>';
       return;
     }
 
@@ -202,6 +223,7 @@
         "<td>" + item.price.askCents + 'c<br><span class="subtext">bid ' + item.price.bidCents + "c</span></td>",
         "<td>" + pct(item.probability) + "</td>",
         '<td class="' + (item.adjustedEdge >= 0 ? "pos" : "neg") + '">' + pct(item.adjustedEdge) + "</td>",
+        "<td>" + pct(pick.fullKelly) + '<br><span class="subtext">' + pct(pick.fractionalKelly) + " / " + dollars(pick.kellyTargetDollars) + "</span></td>",
         "<td>" + pick.contracts + "</td>",
         "<td>" + dollars(pick.costDollars) + "</td>",
         '<td class="' + (pick.expectedProfitDollars >= 0 ? "pos" : "neg") + '">' + signedDollars(pick.expectedProfitDollars) + "</td>",
@@ -224,6 +246,7 @@
   function buildDailyPortfolio() {
     const budget = portfolioBudget();
     const cityCap = Math.min(portfolioCityCap(), budget);
+    const kellySettings = currentKellySettings();
     const marketDate = portfolioMarketDate();
     const selected = [];
     const usedLocations = {};
@@ -246,7 +269,7 @@
       const remainingBudget = budget - spent;
       if (remainingBudget < 0.25) return;
       const maxCost = Math.min(remainingBudget, cityCap);
-      const pick = sizePortfolioPick(item, maxCost);
+      const pick = sizePortfolioPick(item, maxCost, kellySettings);
       if (!pick || pick.expectedProfitDollars <= 0) return;
       selected.push(pick);
       usedLocations[item.location] = true;
@@ -260,12 +283,16 @@
       dateLabel: formatDateWithRelative(marketDate),
       budgetDollars: budget,
       cityCapDollars: cityCap,
+      bankrollDollars: kellySettings.bankroll,
+      kellyPercent: kellySettings.kellyPercent,
+      kellyFraction: kellySettings.kellyFraction,
+      bankrollRisk: kellySettings.bankroll > 0 ? spent / kellySettings.bankroll : 0,
       costDollars: roundMoney(spent),
       maxLossDollars: roundMoney(spent),
       expectedProfitDollars: roundMoney(expectedProfit),
       avgEdge: avgEdge,
       excludedCount: excludedCount,
-      rulesLabel: "strict, 1/city",
+      rulesLabel: "strict, Kelly, 1/city",
       items: selected,
     };
   }
@@ -290,22 +317,33 @@
     return Number(right.adjustedEdge || 0) - Number(left.adjustedEdge || 0);
   }
 
-  function sizePortfolioPick(item, maxCost) {
+  function sizePortfolioPick(item, maxCost, kellySettings) {
     const ask = Number(item.price && item.price.ask || 0);
+    const probability = Number(item.probability || 0);
     if (!Number.isFinite(ask) || ask <= 0 || ask >= 1) return null;
+    if (!Number.isFinite(probability) || probability <= 0 || probability > 1) return null;
     const maxSize = Math.max(1, Math.floor(Number(item.price.askSize || 25)));
     const upperContracts = Math.min(25, maxSize, Math.floor(maxCost / ask) + 1);
     for (let contracts = upperContracts; contracts >= 1; contracts -= 1) {
       const fee = kalshiFeeDollars(contracts, ask);
       const cost = contracts * ask + fee;
       if (cost > maxCost + 0.00001) continue;
-      const expectedProfit = contracts * Number(item.probability || 0) - cost;
+      const breakEven = cost / contracts;
+      const fullKelly = kellyFractionFor(probability, breakEven);
+      const fractionalKelly = fullKelly * kellySettings.kellyFraction;
+      const kellyTarget = kellySettings.bankroll * fractionalKelly;
+      if (kellyTarget <= 0 || cost > kellyTarget + 0.00001) continue;
+      const expectedProfit = contracts * probability - cost;
       return {
         item: item,
         contracts: contracts,
         priceCents: item.price.askCents,
         costDollars: roundMoney(cost),
         feeDollars: roundMoney(fee),
+        breakEven: round(breakEven, 4),
+        fullKelly: fullKelly,
+        fractionalKelly: fractionalKelly,
+        kellyTargetDollars: roundMoney(kellyTarget),
         expectedProfitDollars: roundMoney(expectedProfit),
         payoutIfRightDollars: contracts,
       };
@@ -354,11 +392,12 @@
   function renderCandidates() {
     countEl.textContent = state.candidates.length + " candidates";
     if (!state.candidates.length) {
-      candidatesEl.innerHTML = '<tr><td colspan="12" class="subtext">No markets cleared the current filters.</td></tr>';
+      candidatesEl.innerHTML = '<tr><td colspan="13" class="subtext">No markets cleared the current filters.</td></tr>';
       return;
     }
 
     const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
+    const kellySettings = currentKellySettings();
     candidatesEl.innerHTML = state.candidates.map(function (item, index) {
       return [
         "<tr>",
@@ -371,6 +410,7 @@
         "<td>" + pct(item.breakEven) + "</td>",
         '<td class="' + (item.adjustedEdge >= 0 ? "pos" : "neg") + '">' + pct(item.adjustedEdge) + "</td>",
         '<td class="' + (modelEvDollars(item) >= 0 ? "pos" : "neg") + '">' + signedDollars(modelEvDollars(item)) + "</td>",
+        "<td>" + renderKellyCell(item, kellySettings) + "</td>",
         '<td><span class="confidence">' + escapeHtml(item.confidence) + "</span></td>",
         "<td>" + item.suggested.contracts + " @ " + item.suggested.maxPriceCents + 'c<br><span class="subtext">$' + Number(item.suggested.maxCost).toFixed(2) + "</span></td>",
         '<td><div class="actions"><button type="button" data-detail="' + index + '">View</button><button type="button" data-open="' + index + '">Kalshi</button><button type="button" data-log="' + index + '">Audit</button></div></td>',
@@ -454,10 +494,12 @@
     const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
     const observations = item.context && item.context.observations ? item.context.observations : {};
     const settlement = item.context && item.context.settlement ? item.context.settlement : {};
+    const kelly = kellyForCandidate(item, currentKellySettings());
     detailTitle.textContent = item.location + " " + item.subtitle + " " + item.side.toUpperCase() + " - " + formatDateWithRelative(scanDate);
     detailBody.innerHTML = [
       '<div class="detail-block"><h3>Decision</h3><p>Weather date: <strong>' + escapeHtml(formatDateWithRelative(scanDate)) + "</strong>. " + escapeHtml(item.recommendation) + " at " + item.price.askCents + "c ask. Adjusted edge " + pct(item.adjustedEdge) + ". Confidence " + escapeHtml(item.confidence) + '.</p><div class="actions"><button type="button" id="detail-open">Open Kalshi</button><button type="button" id="detail-log">Audit</button></div></div>',
       '<div class="detail-block"><h3>Probability Stack</h3><p>Adjusted ' + pct(item.probability) + ". Raw sigma=3 " + pct(item.rawProbability) + ". Tight sigma=2 " + pct(item.tightProbability) + ". Wide sigma=4 " + pct(item.wideProbability) + ". Break-even " + pct(item.breakEven) + ".</p></div>",
+      '<div class="detail-block"><h3>Kelly Size</h3><p>Full Kelly ' + pct(kelly.fullKelly) + ". Fractional stake " + pct(kelly.fractionalKelly) + " of bankroll, target " + dollars(kelly.targetDollars) + ". This assumes the model probability is calibrated; bad odds make Kelly overbet.</p></div>",
       '<div class="detail-block"><h3>Model EV</h3><p>Suggested size ' + item.suggested.contracts + " contracts at " + item.suggested.maxPriceCents + "c. Model expected profit " + signedDollars(modelEvDollars(item)) + " before any later price movement.</p></div>",
       '<div class="detail-block"><h3>Forecast And Observations</h3><p>Mean ' + formatNumber(item.context.meanHigh, 1) + "F, hourly max " + valueOrNa(item.context.hourlyMax) + "F, remaining hourly max " + valueOrNa(item.context.remainingHourlyMax) + "F, daily high " + valueOrNa(item.context.dailyHigh) + "F. " + escapeHtml(observations.stationId || "Station") + " high so far " + valueOrNa(observations.observedHighF) + "F, latest " + valueOrNa(observations.latestTempF) + "F. " + escapeHtml(item.context.detailedForecast || item.context.shortForecast || "") + "</p></div>",
       '<div class="detail-block"><h3>Settlement Proxy</h3><p>' + escapeHtml((settlement.stationId || observations.stationId || "Mapped station") + ": " + (settlement.stationHint || "") + ". " + (settlement.sourceNote || observations.note || "")) + "</p></div>",
@@ -668,6 +710,30 @@
     return state.scan && state.scan.date ? state.scan.date : dateInput.value;
   }
 
+  function currentKellySettings() {
+    const bankroll = portfolioBankroll();
+    const kellyPercent = portfolioKellyPercent();
+    return {
+      bankroll: bankroll,
+      kellyPercent: kellyPercent,
+      kellyFraction: kellyPercent / 100,
+    };
+  }
+
+  function portfolioBankroll() {
+    const bankroll = clampInteger(portfolioBankrollInput.value, 25, 100000, 1000);
+    portfolioBankrollInput.value = String(bankroll);
+    localStorage.setItem(PORTFOLIO_BANKROLL_KEY, String(bankroll));
+    return bankroll;
+  }
+
+  function portfolioKellyPercent() {
+    const kellyPercent = clampInteger(portfolioKellyPercentInput.value, 1, 100, 25);
+    portfolioKellyPercentInput.value = String(kellyPercent);
+    localStorage.setItem(PORTFOLIO_KELLY_PERCENT_KEY, String(kellyPercent));
+    return kellyPercent;
+  }
+
   function portfolioBudget() {
     const budget = clampInteger(portfolioBudgetInput.value, 1, 250, 25);
     portfolioBudgetInput.value = String(budget);
@@ -741,6 +807,35 @@
 
   function modelEvDollars(item) {
     return Number(item.suggested && item.suggested.modelEv != null ? item.suggested.modelEv : Number(item.suggested.contracts || 0) * Number(item.adjustedEdge || 0));
+  }
+
+  function renderKellyCell(item, settings) {
+    const kelly = kellyForCandidate(item, settings);
+    if (kelly.fullKelly <= 0) {
+      return '0.0%<br><span class="subtext">$0 target</span>';
+    }
+    return pct(kelly.fullKelly) + '<br><span class="subtext">' + pct(kelly.fractionalKelly) + " / " + dollars(kelly.targetDollars) + "</span>";
+  }
+
+  function kellyForCandidate(item, settings) {
+    const probability = Number(item.probability || 0);
+    const price = Number(item.breakEven || (item.price && item.price.ask) || 0);
+    const sizing = settings || currentKellySettings();
+    const fullKelly = kellyFractionFor(probability, price);
+    const fractionalKelly = fullKelly * sizing.kellyFraction;
+    return {
+      fullKelly: fullKelly,
+      fractionalKelly: fractionalKelly,
+      targetDollars: roundMoney(sizing.bankroll * fractionalKelly),
+    };
+  }
+
+  function kellyFractionFor(probability, breakEvenCost) {
+    const p = Number(probability);
+    const c = Number(breakEvenCost);
+    if (!Number.isFinite(p) || !Number.isFinite(c)) return 0;
+    if (p <= 0 || p > 1 || c <= 0 || c >= 1 || p <= c) return 0;
+    return Math.max(0, Math.min(1, (p - c) / (1 - c)));
   }
 
   function kalshiFeeDollars(contracts, priceDollars) {
