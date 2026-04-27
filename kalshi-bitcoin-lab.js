@@ -6,6 +6,8 @@
     scan: null,
     stream: null,
     fallbackTimer: null,
+    clockTimer: null,
+    marketClock: null,
   };
 
   const form = document.querySelector("#scan-form");
@@ -19,6 +21,14 @@
   const eventWindowEl = document.querySelector("#event-window");
   const kalshiLinkEl = document.querySelector("#kalshi-link");
   const clockLabelEl = document.querySelector("#clock-label");
+  const marketCountdownEl = document.querySelector("#market-countdown");
+  const marketPhaseEl = document.querySelector("#market-phase");
+  const marketProgressEl = document.querySelector("#market-progress");
+  const settlementProgressEl = document.querySelector("#settlement-progress");
+  const marketOpenLabelEl = document.querySelector("#market-open-label");
+  const marketSettlementLabelEl = document.querySelector("#market-settlement-label");
+  const marketCloseLabelEl = document.querySelector("#market-close-label");
+  const marketClockNoteEl = document.querySelector("#market-clock-note");
   const recommendationLabelEl = document.querySelector("#recommendation-label");
   const modelReasonsEl = document.querySelector("#model-reasons");
   const rulesEl = document.querySelector("#rules");
@@ -42,6 +52,7 @@
     localStorage.setItem("kalshiLabToken", accessTokenInput.value.trim());
   });
 
+  startClockTicker();
   restart();
 
   function restart() {
@@ -170,13 +181,16 @@
       source.kalshiWebsocketConfigured ? "Kalshi WS configured" : "Kalshi WS not configured",
     ].join(" / ");
     eventTitleEl.textContent = scan.ticker || "KXBTC15M";
-    eventWindowEl.textContent = market.closeTime ? "Closes " + formatTime(market.closeTime) + " / " + Math.max(0, Math.round(Number(market.secondsToClose || 0))) + "s left" : "Waiting";
+    eventWindowEl.textContent = market.closeTime ? "Closes " + formatTime(market.closeTime) + " / " + formatDuration(Number(market.secondsToClose || 0)) + " left" : "Waiting";
     clockLabelEl.textContent = scan.generatedAt ? "Updated " + formatTime(scan.generatedAt) : "--";
     if (scan.url) kalshiLinkEl.href = scan.url;
+    syncMarketClock(scan);
   }
 
   function renderCandidates(scan) {
     const rows = Array.isArray(scan.candidates) ? scan.candidates : [];
+    const secondsToClose = Number(scan.market && scan.market.secondsToClose);
+    const horizon = Number.isFinite(secondsToClose) ? formatDuration(secondsToClose) : "n/a";
     recommendationLabelEl.textContent = rows[0] ? callLabel(rows[0].recommendation) : "No market";
     rowsEl.innerHTML = rows.map(function (row) {
       const edgeClass = Number(row.edge || 0) >= 0 ? "pos" : "neg";
@@ -184,7 +198,7 @@
         "<tr>",
         '<td><span class="side-pill ' + escapeHtml(row.side) + '">' + escapeHtml(String(row.side || "").toUpperCase()) + "</span></td>",
         "<td>" + formatCents(row.askCents) + '<br><span class="subtext">bid ' + formatCents(row.bidCents) + " / spread " + pct(row.spread) + "</span></td>",
-        "<td>" + pct(row.probability) + "</td>",
+        "<td>" + pct(row.probability) + '<br><span class="subtext">horizon ' + escapeHtml(horizon) + "</span></td>",
         "<td>" + pct(row.breakEven) + '<br><span class="subtext">incl fee</span></td>',
         '<td class="' + edgeClass + '">' + pct(row.edge) + "</td>",
         '<td class="' + (Number(row.expectedProfit || 0) >= 0 ? "pos" : "neg") + '">' + signedDollars(row.expectedProfit) + "</td>",
@@ -193,6 +207,72 @@
         "</tr>",
       ].join("");
     }).join("");
+  }
+
+  function startClockTicker() {
+    if (state.clockTimer) return;
+    state.clockTimer = setInterval(updateMarketClock, 1000);
+  }
+
+  function syncMarketClock(scan) {
+    const market = scan.market || {};
+    const openMs = new Date(market.openTime || 0).getTime();
+    const closeMs = new Date(market.closeTime || 0).getTime();
+    const settlementStartMs = new Date(market.settlementAveragingStart || 0).getTime();
+    if (!Number.isFinite(openMs) || !Number.isFinite(closeMs) || openMs <= 0 || closeMs <= openMs) {
+      state.marketClock = null;
+      updateMarketClock();
+      return;
+    }
+    state.marketClock = {
+      ticker: scan.ticker || "KXBTC15M",
+      openMs,
+      closeMs,
+      settlementStartMs: Number.isFinite(settlementStartMs) && settlementStartMs > openMs ? settlementStartMs : closeMs - 60_000,
+      generatedAtMs: new Date(scan.generatedAt || Date.now()).getTime(),
+    };
+    updateMarketClock();
+  }
+
+  function updateMarketClock() {
+    if (!marketCountdownEl || !state.marketClock) {
+      if (marketCountdownEl) marketCountdownEl.textContent = "--:--";
+      if (marketPhaseEl) marketPhaseEl.textContent = "Waiting for active market";
+      if (marketProgressEl) marketProgressEl.style.width = "0%";
+      if (settlementProgressEl) settlementProgressEl.style.width = "0%";
+      return;
+    }
+    const clock = state.marketClock;
+    const now = Date.now();
+    const durationMs = Math.max(1, clock.closeMs - clock.openMs);
+    const remainingSeconds = Math.max(0, Math.ceil((clock.closeMs - now) / 1000));
+    const elapsedPct = clampNumber(((now - clock.openMs) / durationMs) * 100, 0, 100);
+    const settlementPct = clampNumber(((clock.closeMs - clock.settlementStartMs) / durationMs) * 100, 0, 100);
+    const settlementSeconds = Math.max(0, Math.ceil((clock.settlementStartMs - now) / 1000));
+    const inSettlementAverage = now >= clock.settlementStartMs && now <= clock.closeMs;
+    const beforeOpen = now < clock.openMs;
+
+    marketCountdownEl.textContent = formatDuration(remainingSeconds);
+    marketProgressEl.style.width = elapsedPct.toFixed(2) + "%";
+    settlementProgressEl.style.width = settlementPct.toFixed(2) + "%";
+    marketOpenLabelEl.textContent = "Open " + formatTime(clock.openMs);
+    marketSettlementLabelEl.textContent = "Final avg " + formatTime(clock.settlementStartMs);
+    marketCloseLabelEl.textContent = "Close " + formatTime(clock.closeMs);
+
+    if (beforeOpen) {
+      marketPhaseEl.textContent = "Market opens in " + formatDuration((clock.openMs - now) / 1000);
+    } else if (remainingSeconds <= 0) {
+      marketPhaseEl.textContent = "Closed; waiting for next 15m market";
+    } else if (inSettlementAverage) {
+      marketPhaseEl.textContent = "Final 60-second averaging window";
+    } else {
+      marketPhaseEl.textContent = "Trading window; final average begins in " + formatDuration(settlementSeconds);
+    }
+
+    eventWindowEl.textContent = remainingSeconds > 0
+      ? "Closes " + formatTime(clock.closeMs) + " / " + formatDuration(remainingSeconds) + " left"
+      : "Closed; waiting for next market";
+    marketClockNoteEl.textContent = "Odds horizon right now: " + formatDuration(remainingSeconds) + ". The model recomputes as the live stream advances.";
   }
 
   function renderChart(scan) {
@@ -368,6 +448,13 @@
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "n/a";
     return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  }
+
+  function formatDuration(value) {
+    const totalSeconds = Math.max(0, Math.ceil(Number(value) || 0));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
   }
 
   function setStatus(message, error) {

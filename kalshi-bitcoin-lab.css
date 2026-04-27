@@ -145,6 +145,7 @@ button,
 
 .metric,
 .market-strip,
+.clock-panel,
 .chart-panel,
 .table-panel,
 .panel {
@@ -198,6 +199,81 @@ button,
   display: block;
   margin: 5px 0 3px;
   overflow-wrap: anywhere;
+}
+
+.clock-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.clock-readout {
+  padding: 14px;
+  border: 1px solid rgba(41, 245, 178, 0.2);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(41, 245, 178, 0.12), rgba(96, 165, 250, 0.08));
+}
+
+.clock-readout span,
+.clock-meta,
+.clock-readout small {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.clock-readout strong {
+  display: block;
+  margin: 5px 0 4px;
+  color: var(--green);
+  font-size: 42px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.clock-track-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.clock-track {
+  position: relative;
+  height: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(237, 244, 241, 0.14);
+  border-radius: 999px;
+  background: #081017;
+}
+
+.clock-progress,
+.settlement-progress {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0%;
+}
+
+.clock-progress {
+  background: linear-gradient(90deg, rgba(41, 245, 178, 0.95), rgba(96, 165, 250, 0.9));
+}
+
+.settlement-progress {
+  left: auto;
+  right: 0;
+  background: rgba(251, 191, 36, 0.32);
+  border-left: 1px solid rgba(251, 191, 36, 0.7);
+}
+
+.clock-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .section-head {
@@ -428,6 +504,7 @@ th {
 
   .summary-grid,
   .market-strip,
+  .clock-panel,
   .split {
     grid-template-columns: 1fr;
   }
