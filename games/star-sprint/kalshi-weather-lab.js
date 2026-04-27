@@ -16,6 +16,12 @@ const WEATHER_LAB_LOCATIONS = Object.freeze([
   { series: 'KXHIGHTMIN', label: 'Minneapolis', lat: 44.88, lon: -93.22, stationId: 'KMSP', timeZone: 'America/Chicago', stationHint: 'Minneapolis airport area' },
 ]);
 
+const WEATHER_MODEL_SIGMAS = Object.freeze({
+  raw: 3,
+  tight: 2,
+  wide: 4,
+});
+
 function parseNumber(value, defaultValue = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : defaultValue;
@@ -295,6 +301,27 @@ function marketSize(market, side) {
   return size > 0 ? size : 25;
 }
 
+function marketPriorProbability(market, side, ask, bid) {
+  const prices = [];
+  if (bid > 0 && bid < 1) {
+    prices.push({ value: bid, weight: 1 });
+  }
+  if (ask > 0 && ask < 1) {
+    prices.push({ value: ask, weight: 1 });
+  }
+  const last = marketPrice(market, 'last_price_dollars', 'last_price');
+  const sideLast = side === 'yes' ? last : 1 - last;
+  if (sideLast > 0 && sideLast < 1) {
+    prices.push({ value: sideLast, weight: 0.35 });
+  }
+  if (!prices.length) {
+    return clamp(ask || 0.5, 0.01, 0.99);
+  }
+  const totalWeight = prices.reduce((sum, price) => sum + price.weight, 0);
+  const weighted = prices.reduce((sum, price) => sum + price.value * price.weight, 0) / totalWeight;
+  return clamp(weighted, 0.01, 0.99);
+}
+
 function kalshiFeeDollars(contracts, priceDollars) {
   return Math.ceil(0.07 * contracts * priceDollars * (1 - priceDollars) * 100) / 100;
 }
@@ -325,6 +352,111 @@ function weatherProbability(range, meanHigh, sigma) {
     return 1 - normalCdf((range.lowerBound - meanHigh) / sigma);
   }
   return normalCdf((range.upperBound - meanHigh) / sigma) - normalCdf((range.lowerBound - meanHigh) / sigma);
+}
+
+function sameDayStationLockProbability(range, context, side) {
+  const observations = context.observations || {};
+  if (observations.dayPhase !== 'today' || observations.observedHighF === null || observations.error) {
+    return null;
+  }
+
+  const observedHigh = Number(observations.observedHighF);
+  if (!Number.isFinite(observedHigh)) {
+    return null;
+  }
+
+  let yesProbability = null;
+  if (range.upperBound !== null && range.upperBound !== undefined && observedHigh > range.upperBound) {
+    yesProbability = 0.001;
+  } else if ((range.upperBound === null || range.upperBound === undefined) && observedHigh >= range.lowerBound) {
+    yesProbability = 0.999;
+  }
+
+  if (yesProbability === null) {
+    return null;
+  }
+
+  return side === 'yes' ? yesProbability : 1 - yesProbability;
+}
+
+function calibrationMarketWeight(context, yesModel, weatherProbabilityValue, marketProbability) {
+  const observations = context.observations || {};
+  let weight = 0.72;
+
+  if (yesModel.confidence === 'high') weight -= 0.08;
+  if (yesModel.confidence === 'medium') weight += 0.03;
+  if (yesModel.confidence === 'low') weight += 0.14;
+  if (observations.dayPhase === 'today') weight -= 0.08;
+  if (observations.dayPhase === 'future') weight += 0.08;
+  if (context.regime && (context.regime.precipWords || context.regime.cloudWords)) weight += 0.05;
+
+  const dispersion = Math.abs(Number(yesModel.tightProbability || 0) - Number(yesModel.wideProbability || 0));
+  if (dispersion > 0.16) weight += 0.06;
+  if (dispersion > 0.28) weight += 0.06;
+
+  const divergence = Math.abs(weatherProbabilityValue - marketProbability);
+  if (divergence > 0.15) weight += 0.08;
+  if (divergence > 0.30) weight += 0.08;
+  if (marketProbability < 0.08 || marketProbability > 0.92) weight += 0.04;
+
+  return clamp(weight, 0.50, 0.92);
+}
+
+function calibrationDistanceCap(confidence, context, marketProbability) {
+  const observations = context.observations || {};
+  let cap = confidence === 'high' ? 0.10 : confidence === 'medium' ? 0.065 : 0.035;
+  if (observations.dayPhase === 'today' && observations.observedHighF !== null && !observations.error) cap += 0.04;
+  if (context.regime && (context.regime.precipWords || context.regime.cloudWords)) cap -= 0.015;
+  if (marketProbability < 0.08 || marketProbability > 0.92) cap -= 0.02;
+  return clamp(cap, 0.025, 0.16);
+}
+
+function calibrateSideProbability(weatherProbabilityValue, marketProbability, context, yesModel, range, side) {
+  const reasons = [];
+  const riskFlags = [];
+  const stationLock = sameDayStationLockProbability(range, context, side);
+  if (stationLock !== null) {
+    reasons.push('Same-day station guardrail indicates this side is effectively decided before final NWS corrections.');
+    riskFlags.push('Station-dominant calibration');
+    return {
+      probability: clamp(stationLock, 0.001, 0.999),
+      marketProbability,
+      weatherProbability: weatherProbabilityValue,
+      marketWeight: 0,
+      distanceCap: null,
+      reasons,
+      riskFlags,
+    };
+  }
+
+  const marketWeight = calibrationMarketWeight(context, yesModel, weatherProbabilityValue, marketProbability);
+  const distanceCap = calibrationDistanceCap(yesModel.confidence, context, marketProbability);
+  let probability = (marketProbability * marketWeight) + (weatherProbabilityValue * (1 - marketWeight));
+  const distance = probability - marketProbability;
+
+  if (distance > distanceCap) {
+    probability = marketProbability + distanceCap;
+    riskFlags.push('Model edge capped by calibration');
+  } else if (distance < -distanceCap) {
+    probability = marketProbability - distanceCap;
+    riskFlags.push('Model disagreement capped by calibration');
+  }
+
+  reasons.push(`Market prior ${(marketProbability * 100).toFixed(1)}%; weather-only model ${(weatherProbabilityValue * 100).toFixed(1)}%.`);
+  reasons.push(`Calibration used ${(marketWeight * 100).toFixed(0)}% market weight and capped model-market separation at ${(distanceCap * 100).toFixed(1)} points.`);
+  if (marketWeight >= 0.82) {
+    riskFlags.push('Heavy market-prior shrink');
+  }
+
+  return {
+    probability: clamp(probability, 0.005, 0.995),
+    marketProbability,
+    weatherProbability: weatherProbabilityValue,
+    marketWeight,
+    distanceCap,
+    reasons,
+    riskFlags,
+  };
 }
 
 function getWeatherMarketRange(market) {
@@ -564,12 +696,12 @@ async function getWeatherLabContext(location, date) {
 
 function adjustedWeatherProbability(range, context) {
   const meanHigh = Number(context.forecast.meanHigh);
-  const raw = weatherProbability(range, meanHigh, 3);
-  const tight = weatherProbability(range, meanHigh, 2);
-  const wide = weatherProbability(range, meanHigh, 4);
+  const raw = weatherProbability(range, meanHigh, WEATHER_MODEL_SIGMAS.raw);
+  const tight = weatherProbability(range, meanHigh, WEATHER_MODEL_SIGMAS.tight);
+  const wide = weatherProbability(range, meanHigh, WEATHER_MODEL_SIGMAS.wide);
   let probability = 0.45 * raw + 0.35 * tight + 0.20 * wide;
   const reasons = [
-    `Raw sigma=3 model ${(raw * 100).toFixed(1)}%, tight sigma=2 ${(tight * 100).toFixed(1)}%, wide sigma=4 ${(wide * 100).toFixed(1)}%.`,
+    `Raw sigma=${WEATHER_MODEL_SIGMAS.raw} model ${(raw * 100).toFixed(1)}%, tight sigma=${WEATHER_MODEL_SIGMAS.tight} ${(tight * 100).toFixed(1)}%, wide sigma=${WEATHER_MODEL_SIGMAS.wide} ${(wide * 100).toFixed(1)}%.`,
   ];
   const riskFlags = [];
 
@@ -665,12 +797,14 @@ function shouldAuditOnlySameDay(context, range, side) {
   return true;
 }
 
-function weatherRecommendation(edge, confidence, ask, probability, context, range, side) {
+function weatherRecommendation(edge, confidence, ask, probability, context, range, side, calibration) {
+  const heavyShrink = calibration && calibration.marketWeight >= 0.84;
   if (edge <= -0.04) return 'avoid-or-sell';
   if (edge >= 0.03 && shouldAuditOnlySameDay(context, range, side)) return 'audit-only';
-  if (edge >= 0.12 && confidence !== 'low' && probability >= 0.12) return 'research-buy';
-  if (edge >= 0.06 && confidence === 'high') return 'small-buy';
-  if (edge >= 0.03 && ask <= 0.05) return 'tiny-only';
+  if (edge >= 0.04 && heavyShrink) return 'audit-only';
+  if (edge >= 0.08 && confidence !== 'low' && probability >= 0.12) return 'research-buy';
+  if (edge >= 0.045 && confidence === 'high') return 'small-buy';
+  if (edge >= 0.025 && ask <= 0.05 && confidence !== 'low') return 'tiny-only';
   return 'pass';
 }
 
@@ -709,10 +843,13 @@ function scoreWeatherCandidate(market, location, context, range, side, maxCost) 
   }
 
   const yesModel = adjustedWeatherProbability(range, context);
-  const probability = side === 'yes' ? yesModel.adjustedProbability : 1 - yesModel.adjustedProbability;
+  const weatherOnlyProbability = side === 'yes' ? yesModel.adjustedProbability : 1 - yesModel.adjustedProbability;
   const rawProbability = side === 'yes' ? yesModel.rawProbability : 1 - yesModel.rawProbability;
   const tightProbability = side === 'yes' ? yesModel.tightProbability : 1 - yesModel.tightProbability;
   const wideProbability = side === 'yes' ? yesModel.wideProbability : 1 - yesModel.wideProbability;
+  const marketProbability = marketPriorProbability(market, side, ask, bid);
+  const calibration = calibrateSideProbability(weatherOnlyProbability, marketProbability, context, yesModel, range, side);
+  const probability = calibration.probability;
   const affordableContracts = Math.floor(maxCost / ask);
   const contracts = Math.max(1, Math.min(Math.floor(size), affordableContracts, 25));
   const fee = kalshiFeeDollars(contracts, ask);
@@ -723,7 +860,7 @@ function scoreWeatherCandidate(market, location, context, range, side, maxCost) 
 
   const breakEven = cost / contracts;
   const edge = probability - breakEven;
-  const recommendation = weatherRecommendation(edge, yesModel.confidence, ask, probability, context, range, side);
+  const recommendation = weatherRecommendation(edge, yesModel.confidence, ask, probability, context, range, side, calibration);
   const rankByRecommendation = {
     'research-buy': 4,
     'small-buy': 3,
@@ -758,14 +895,22 @@ function scoreWeatherCandidate(market, location, context, range, side, maxCost) 
       last: marketPrice(market, 'last_price_dollars', 'last_price'),
     },
     probability: round(probability),
+    weatherProbability: round(weatherOnlyProbability),
+    marketProbability: round(marketProbability),
     rawProbability: round(rawProbability),
     tightProbability: round(tightProbability),
     wideProbability: round(wideProbability),
     breakEven: round(breakEven),
     adjustedEdge: round(edge),
     rawEdge: round(rawProbability - breakEven),
+    weatherEdge: round(weatherOnlyProbability - breakEven),
+    calibration: {
+      marketWeight: round(calibration.marketWeight),
+      distanceCap: calibration.distanceCap === null ? null : round(calibration.distanceCap),
+      notes: calibration.reasons,
+    },
     confidence: yesModel.confidence,
-    riskFlags: yesModel.riskFlags,
+    riskFlags: [...yesModel.riskFlags, ...calibration.riskFlags],
     recommendation,
     rank: rankByRecommendation[recommendation] || 0,
     suggested: {
@@ -794,8 +939,9 @@ function scoreWeatherCandidate(market, location, context, range, side, maxCost) 
     rationale: [
       `${location.label} NWS model high ${Number(context.forecast.meanHigh).toFixed(1)}F from hourly max ${context.forecast.hourlyMax}F, remaining hourly max ${context.forecast.remainingHourlyMax}F, and daily high ${context.forecast.dailyHigh}F.`,
       `${location.stationId || 'Mapped station'} observation proxy: ${context.observations.observedHighF === null ? 'no observed high yet' : `${context.observations.observedHighF}F high so far`}; ${context.settlement.sourceNote}`,
-      `${side.toUpperCase()} fair probability after weather adjustments: ${(probability * 100).toFixed(1)}%; fee-adjusted break-even: ${(breakEven * 100).toFixed(1)}%.`,
+      `${side.toUpperCase()} calibrated probability: ${(probability * 100).toFixed(1)}%; weather-only ${(weatherOnlyProbability * 100).toFixed(1)}%; market prior ${(marketProbability * 100).toFixed(1)}%; fee-adjusted break-even ${(breakEven * 100).toFixed(1)}%.`,
       ...yesModel.reasons,
+      ...calibration.reasons,
     ],
   };
 }
@@ -847,10 +993,18 @@ async function scanWeatherMarkets(options = {}) {
     asOf: new Date().toISOString(),
     date,
     assumptions: {
-      rawSigmaF: 3,
-      tightSigmaF: 2,
-      wideSigmaF: 4,
-      note: 'Weather Lab blends raw normal models and weather-regime penalties. It is a research model, not proof of edge.',
+      rawSigmaF: WEATHER_MODEL_SIGMAS.raw,
+      tightSigmaF: WEATHER_MODEL_SIGMAS.tight,
+      wideSigmaF: WEATHER_MODEL_SIGMAS.wide,
+      calibration: 'Weather-only odds are shrunk toward a Kalshi market prior and capped unless same-day station data is decisive.',
+      knownFailureModes: [
+        'NWS forecast error is not perfectly normal.',
+        'Local station settlement can differ from the mapped forecast point.',
+        'Weather regime, clouds, precipitation, and wind shifts can bias the high.',
+        'Kalshi prices include trader information the weather model may not have.',
+        'Large model-market gaps are capped until the audit ledger proves calibration.',
+      ],
+      note: 'Weather Lab now reports calibrated research odds, not true odds or guaranteed edge.',
     },
     filters: {
       minEdge,

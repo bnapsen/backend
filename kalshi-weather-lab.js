@@ -193,7 +193,8 @@
       metric("Top edge", top ? pct(top.adjustedEdge) : "n/a", top ? top.location + " " + top.subtitle + " " + top.side.toUpperCase() : "No candidate"),
       metric("Model EV", signedDollars(modelEv), buys.length + " flags, $" + modelCost.toFixed(2) + " model stake"),
       metric("Buy flags", String(buyCount), "Research, small, or tiny"),
-      metric("Scan health", errors ? errors + " issue" + (errors === 1 ? "" : "s") : "OK", "Avg edge " + pct(avgEdge) + ", after fees"),
+      metric("Calibration", "Market-shrunk", "Avg edge " + pct(avgEdge) + ", after fees"),
+      metric("Scan health", errors ? errors + " issue" + (errors === 1 ? "" : "s") : "OK", "NWS + Kalshi prior"),
     ].join("");
   }
 
@@ -221,7 +222,7 @@
         '<td><div class="market-name"><strong>' + escapeHtml(item.location) + " " + escapeHtml(item.subtitle) + "</strong>" + renderDateBadge(portfolio.marketDate) + "<span>" + escapeHtml(item.ticker) + "</span>" + renderRiskFlags(item) + "</div></td>",
         '<td><span class="side ' + (item.side === "yes" ? "yes" : "no") + '">' + item.side.toUpperCase() + "</span></td>",
         "<td>" + item.price.askCents + 'c<br><span class="subtext">bid ' + item.price.bidCents + "c</span></td>",
-        "<td>" + pct(item.probability) + "</td>",
+        "<td>" + pct(item.probability) + '<br><span class="subtext">mkt ' + pct(item.marketProbability) + "</span></td>",
         '<td class="' + (item.adjustedEdge >= 0 ? "pos" : "neg") + '">' + pct(item.adjustedEdge) + "</td>",
         "<td>" + pct(pick.fullKelly) + '<br><span class="subtext">' + pct(pick.fractionalKelly) + " / " + dollars(pick.kellyTargetDollars) + "</span></td>",
         "<td>" + pick.contracts + "</td>",
@@ -299,12 +300,14 @@
 
   function isStrictPortfolioCandidate(item) {
     if (!item || item.recommendation === "audit-only") return false;
-    if (item.recommendation !== "research-buy" && item.recommendation !== "small-buy") return false;
+    if (item.recommendation !== "research-buy" && item.recommendation !== "small-buy" && item.recommendation !== "tiny-only") return false;
     if (item.confidence === "low") return false;
-    if (Number(item.adjustedEdge || 0) < 0.08) return false;
-    if (Number(item.probability || 0) < 0.08) return false;
+    if (Number(item.adjustedEdge || 0) < 0.025) return false;
+    if (Number(item.probability || 0) < 0.04) return false;
+    if (item.recommendation === "tiny-only" && Number(item.price && item.price.ask || 0) > 0.05) return false;
     const flags = (item.riskFlags || []).join(" ").toLowerCase();
     if (flags.indexOf("station observation unavailable") >= 0) return false;
+    if (flags.indexOf("heavy market-prior shrink") >= 0 && Number(item.adjustedEdge || 0) < 0.04) return false;
     return true;
   }
 
@@ -498,7 +501,8 @@
     detailTitle.textContent = item.location + " " + item.subtitle + " " + item.side.toUpperCase() + " - " + formatDateWithRelative(scanDate);
     detailBody.innerHTML = [
       '<div class="detail-block"><h3>Decision</h3><p>Weather date: <strong>' + escapeHtml(formatDateWithRelative(scanDate)) + "</strong>. " + escapeHtml(item.recommendation) + " at " + item.price.askCents + "c ask. Adjusted edge " + pct(item.adjustedEdge) + ". Confidence " + escapeHtml(item.confidence) + '.</p><div class="actions"><button type="button" id="detail-open">Open Kalshi</button><button type="button" id="detail-log">Audit</button></div></div>',
-      '<div class="detail-block"><h3>Probability Stack</h3><p>Adjusted ' + pct(item.probability) + ". Raw sigma=3 " + pct(item.rawProbability) + ". Tight sigma=2 " + pct(item.tightProbability) + ". Wide sigma=4 " + pct(item.wideProbability) + ". Break-even " + pct(item.breakEven) + ".</p></div>",
+      '<div class="detail-block"><h3>Probability Stack</h3><p>Calibrated ' + pct(item.probability) + ". Weather-only " + pct(item.weatherProbability) + ". Market prior " + pct(item.marketProbability) + ". Raw " + pct(item.rawProbability) + ". Tight " + pct(item.tightProbability) + ". Wide " + pct(item.wideProbability) + ". Break-even " + pct(item.breakEven) + ".</p></div>",
+      '<div class="detail-block"><h3>Calibration</h3><p>' + renderCalibrationDetail(item) + "</p></div>",
       '<div class="detail-block"><h3>Kelly Size</h3><p>Full Kelly ' + pct(kelly.fullKelly) + ". Fractional stake " + pct(kelly.fractionalKelly) + " of bankroll, target " + dollars(kelly.targetDollars) + ". This assumes the model probability is calibrated; bad odds make Kelly overbet.</p></div>",
       '<div class="detail-block"><h3>Model EV</h3><p>Suggested size ' + item.suggested.contracts + " contracts at " + item.suggested.maxPriceCents + "c. Model expected profit " + signedDollars(modelEvDollars(item)) + " before any later price movement.</p></div>",
       '<div class="detail-block"><h3>Forecast And Observations</h3><p>Mean ' + formatNumber(item.context.meanHigh, 1) + "F, hourly max " + valueOrNa(item.context.hourlyMax) + "F, remaining hourly max " + valueOrNa(item.context.remainingHourlyMax) + "F, daily high " + valueOrNa(item.context.dailyHigh) + "F. " + escapeHtml(observations.stationId || "Station") + " high so far " + valueOrNa(observations.observedHighF) + "F, latest " + valueOrNa(observations.latestTempF) + "F. " + escapeHtml(item.context.detailedForecast || item.context.shortForecast || "") + "</p></div>",
@@ -815,6 +819,15 @@
       return '0.0%<br><span class="subtext">$0 target</span>';
     }
     return pct(kelly.fullKelly) + '<br><span class="subtext">' + pct(kelly.fractionalKelly) + " / " + dollars(kelly.targetDollars) + "</span>";
+  }
+
+  function renderCalibrationDetail(item) {
+    const calibration = item.calibration || {};
+    const notes = Array.isArray(calibration.notes) ? calibration.notes : [];
+    const weight = calibration.marketWeight == null ? "n/a" : pct(calibration.marketWeight);
+    const cap = calibration.distanceCap == null ? "station override" : pct(calibration.distanceCap);
+    const noteText = notes.length ? " " + notes.join(" ") : "";
+    return escapeHtml("Market weight " + weight + ". Separation cap " + cap + "." + noteText);
   }
 
   function kellyForCandidate(item, settings) {
