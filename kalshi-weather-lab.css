@@ -564,6 +564,94 @@ dialog::backdrop {
   padding-left: 18px;
 }
 
+.odds-cell {
+  display: grid;
+  gap: 3px;
+  min-width: 118px;
+}
+
+.odds-cell strong {
+  font-size: 13px;
+}
+
+.odds-cell span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.odds-cell .pos,
+.odds-metric strong.pos {
+  color: var(--green);
+}
+
+.odds-cell .neg,
+.odds-metric strong.neg {
+  color: var(--red);
+}
+
+.odds-cell small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.odds-summary-grid,
+.odds-stack-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.odds-stack-grid {
+  grid-template-columns: repeat(6, minmax(105px, 1fr));
+}
+
+.odds-metric {
+  min-height: 72px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.odds-metric span,
+.odds-metric small {
+  display: block;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.odds-metric span {
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.odds-metric strong {
+  display: block;
+  margin: 5px 0 3px;
+  color: var(--text);
+  font-size: 22px;
+}
+
+.odds-metric strong.pos {
+  color: var(--green);
+}
+
+.odds-metric strong.neg {
+  color: var(--red);
+}
+
+.odds-formula {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: rgba(41, 245, 178, 0.07);
+  color: var(--text) !important;
+}
+
+.odds-reasons li + li {
+  margin-top: 5px;
+}
+
 .context-actions {
   margin-top: 10px;
 }
@@ -1020,7 +1108,9 @@ dialog::backdrop {
   .audit-summary,
   .portfolio-summary,
   .chart-date-banner,
-  .chart-stats {
+  .chart-stats,
+  .odds-summary-grid,
+  .odds-stack-grid {
     grid-template-columns: 1fr;
   }
 

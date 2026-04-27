@@ -229,8 +229,8 @@
         '<td><div class="market-name"><strong>' + escapeHtml(item.location) + " " + escapeHtml(item.subtitle) + "</strong>" + renderDateBadge(portfolio.marketDate) + "<span>" + escapeHtml(item.ticker) + "</span>" + renderRiskFlags(item) + "</div></td>",
         '<td><span class="side ' + (item.side === "yes" ? "yes" : "no") + '">' + item.side.toUpperCase() + "</span></td>",
         "<td>" + item.price.askCents + 'c<br><span class="subtext">bid ' + item.price.bidCents + "c</span></td>",
-        "<td>" + pct(item.probability) + '<br><span class="subtext">mkt ' + pct(item.marketProbability) + "</span></td>",
-        '<td class="' + (item.adjustedEdge >= 0 ? "pos" : "neg") + '">' + pct(item.adjustedEdge) + "</td>",
+        "<td>" + renderOddsComparisonCell(item, pick) + "</td>",
+        '<td class="' + (Number(pick.modelEdge || item.adjustedEdge || 0) >= 0 ? "pos" : "neg") + '">' + pct(Number(pick.modelEdge || item.adjustedEdge || 0)) + "</td>",
         "<td>" + pct(pick.fullKelly) + '<br><span class="subtext">' + pct(pick.fractionalKelly) + " / " + dollars(pick.kellyTargetDollars) + "</span></td>",
         "<td>" + pick.contracts + "</td>",
         "<td>" + dollars(pick.costDollars) + "</td>",
@@ -241,7 +241,10 @@
     }).join("");
 
     portfolioItemsEl.querySelectorAll("[data-portfolio-detail]").forEach(function (button) {
-      button.addEventListener("click", function () { showDetail(state.dailyPortfolio.items[Number(button.dataset.portfolioDetail)].item); });
+      button.addEventListener("click", function () {
+        const pick = state.dailyPortfolio.items[Number(button.dataset.portfolioDetail)];
+        showDetail(pick.item, pick);
+      });
     });
     portfolioItemsEl.querySelectorAll("[data-portfolio-chart]").forEach(function (button) {
       button.addEventListener("click", function () { showTemperatureDetail(state.dailyPortfolio.items[Number(button.dataset.portfolioChart)].item); });
@@ -348,6 +351,7 @@
       const kellyTarget = kellySettings.bankroll * fractionalKelly;
       if (kellyTarget <= 0 || cost > kellyTarget + 0.00001) continue;
       const expectedProfit = contracts * probability - cost;
+      const modelEdge = probability - breakEven;
       return {
         item: item,
         contracts: contracts,
@@ -355,6 +359,7 @@
         costDollars: roundMoney(cost),
         feeDollars: roundMoney(fee),
         breakEven: round(breakEven, 4),
+        modelEdge: round(modelEdge, 4),
         fullKelly: fullKelly,
         fractionalKelly: fractionalKelly,
         kellyTargetDollars: roundMoney(kellyTarget),
@@ -419,7 +424,7 @@
         '<td><div class="market-name"><strong>' + escapeHtml(item.location) + " " + escapeHtml(item.subtitle) + "</strong>" + renderDateBadge(scanDate) + "<span>" + escapeHtml(item.ticker) + "</span>" + renderRiskFlags(item) + "</div></td>",
         '<td><span class="side ' + (item.side === "yes" ? "yes" : "no") + '">' + item.side.toUpperCase() + "</span></td>",
         "<td>" + item.price.askCents + 'c<br><span class="subtext">bid ' + item.price.bidCents + "c</span></td>",
-        "<td>" + pct(item.probability) + '<br><span class="subtext">mkt ' + pct(item.marketProbability) + "</span></td>",
+        "<td>" + renderOddsComparisonCell(item) + "</td>",
         "<td>" + pct(item.rawProbability) + '<br><span class="subtext">tight ' + pct(item.tightProbability) + "</span></td>",
         "<td>" + pct(item.breakEven) + "</td>",
         '<td class="' + (item.adjustedEdge >= 0 ? "pos" : "neg") + '">' + pct(item.adjustedEdge) + "</td>",
@@ -499,7 +504,8 @@
         '<div class="context-row">',
         "<span>" + entry.contracts + " contracts</span>",
         "<span>" + entry.priceCents + "c</span>",
-        "<span>p " + pct(entry.modelProbability) + "</span>",
+        "<span>model " + pct(entry.modelProbability) + "</span>",
+        "<span>pay " + pct(entry.breakEven) + "</span>",
         "<span>edge " + pct(entry.adjustedEdge) + "</span>",
         "<span>EV " + signedDollars(entry.expectedProfitDollars || 0) + "</span>",
         entry.latestPrice != null ? "<span>mark " + escapeHtml(entry.latestPrice) + "c</span>" : "",
@@ -512,22 +518,24 @@
     }).join("");
   }
 
-  function showDetail(item) {
+  function showDetail(item, pick) {
     const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
     const observations = item.context && item.context.observations ? item.context.observations : {};
     const settlement = item.context && item.context.settlement ? item.context.settlement : {};
     const kelly = kellyForCandidate(item, currentKellySettings());
+    const oddsMath = oddsMathForItem(item, pick);
     detailTitle.textContent = item.location + " " + item.subtitle + " " + item.side.toUpperCase() + " - " + formatDateWithRelative(scanDate);
     detailBody.innerHTML = [
-      '<div class="detail-block"><h3>Decision</h3><p>Weather date: <strong>' + escapeHtml(formatDateWithRelative(scanDate)) + "</strong>. " + escapeHtml(item.recommendation) + " at " + item.price.askCents + "c ask. Adjusted edge " + pct(item.adjustedEdge) + ". Confidence " + escapeHtml(item.confidence) + '.</p><div class="actions"><button type="button" id="detail-open">Open Kalshi</button><button type="button" id="detail-log">Audit</button></div></div>',
+      '<div class="detail-block"><h3>Decision</h3><p>Weather date: <strong>' + escapeHtml(formatDateWithRelative(scanDate)) + "</strong>. " + escapeHtml(item.recommendation) + " at " + item.price.askCents + "c ask. Model event odds " + pct(oddsMath.probability) + " versus fee-adjusted pay odds " + pct(oddsMath.breakEven) + ". Edge " + pct(oddsMath.edge) + ". Confidence " + escapeHtml(item.confidence) + '.</p><div class="actions"><button type="button" id="detail-open">Open Kalshi</button><button type="button" id="detail-log">Audit</button></div></div>',
+      renderOddsExplanationBlock(item, pick),
       renderTemperatureChartBlock(item.context, item.range, scanDate, item.location + " " + item.subtitle),
-      '<div class="detail-block"><h3>Probability Stack</h3><p>Calibrated ' + pct(item.probability) + ". Weather-only " + pct(item.weatherProbability) + ". Market prior " + pct(item.marketProbability) + ". Raw " + pct(item.rawProbability) + ". Tight " + pct(item.tightProbability) + ". Wide " + pct(item.wideProbability) + ". Break-even " + pct(item.breakEven) + ".</p></div>",
+      renderProbabilityStackBlock(item),
+      renderWhyOddsBlock(item),
       '<div class="detail-block"><h3>Calibration</h3><p>' + renderCalibrationDetail(item) + "</p></div>",
       '<div class="detail-block"><h3>Kelly Size</h3><p>Full Kelly ' + pct(kelly.fullKelly) + ". Fractional stake " + pct(kelly.fractionalKelly) + " of bankroll, target " + dollars(kelly.targetDollars) + ". This assumes the model probability is calibrated; bad odds make Kelly overbet.</p></div>",
-      '<div class="detail-block"><h3>Model EV</h3><p>Suggested size ' + item.suggested.contracts + " contracts at " + item.suggested.maxPriceCents + "c. Model expected profit " + signedDollars(modelEvDollars(item)) + " before any later price movement.</p></div>",
+      '<div class="detail-block"><h3>Model EV</h3><p>Suggested size ' + oddsMath.contracts + " contracts at " + oddsMath.priceCents + "c. Model expected profit " + signedDollars(oddsMath.expectedProfit) + " before any later price movement.</p></div>",
       '<div class="detail-block"><h3>Forecast And Observations</h3><p>Mean ' + formatNumber(item.context.meanHigh, 1) + "F, hourly max " + valueOrNa(item.context.hourlyMax) + "F, remaining hourly max " + valueOrNa(item.context.remainingHourlyMax) + "F, daily high " + valueOrNa(item.context.dailyHigh) + "F. " + escapeHtml(observations.stationId || "Station") + " high so far " + valueOrNa(observations.observedHighF) + "F, latest " + valueOrNa(observations.latestTempF) + "F. " + escapeHtml(item.context.detailedForecast || item.context.shortForecast || "") + "</p></div>",
       '<div class="detail-block"><h3>Settlement Proxy</h3><p>' + escapeHtml((settlement.stationId || observations.stationId || "Mapped station") + ": " + (settlement.stationHint || "") + ". " + (settlement.sourceNote || observations.note || "")) + "</p></div>",
-      '<div class="detail-block"><h3>Rationale</h3><ul>' + (item.rationale || []).map(function (line) { return "<li>" + escapeHtml(line) + "</li>"; }).join("") + "</ul></div>",
       '<div class="detail-block"><h3>Risk Flags</h3><p>' + escapeHtml(item.riskFlags && item.riskFlags.length ? item.riskFlags.join(", ") : "None raised by this pass.") + "</p></div>",
     ].join("");
     detailBody.querySelector("#detail-open").addEventListener("click", function () { window.open(item.url, "_blank", "noopener"); });
@@ -695,10 +703,11 @@
   function showTemperatureDetail(item) {
     const scanDate = state.scan && state.scan.date ? state.scan.date : dateInput.value;
     if (!item) return;
+    const oddsMath = oddsMathForItem(item);
     detailTitle.textContent = item.location + " temperature chart - " + formatDateWithRelative(scanDate);
     detailBody.innerHTML = [
       renderTemperatureChartBlock(item.context, item.range, scanDate, item.location + " " + item.subtitle),
-      '<div class="detail-block"><h3>Market Overlay</h3><p>' + escapeHtml(item.side.toUpperCase() + " " + item.subtitle + ". Calibrated probability " + pct(item.probability) + ", market prior " + pct(item.marketProbability) + ", break-even " + pct(item.breakEven) + ", edge " + pct(item.adjustedEdge) + ".") + '</p><div class="actions"><button type="button" id="chart-open">Open Kalshi</button><button type="button" id="chart-log">Audit</button></div></div>',
+      '<div class="detail-block"><h3>Market Overlay</h3><p>' + escapeHtml(item.side.toUpperCase() + " " + item.subtitle + ". Model event odds " + pct(oddsMath.probability) + ", you pay " + pct(oddsMath.breakEven) + " after estimated fee, market prior " + pct(item.marketProbability) + ", edge " + pct(oddsMath.edge) + ".") + '</p><div class="actions"><button type="button" id="chart-open">Open Kalshi</button><button type="button" id="chart-log">Audit</button></div></div>',
       '<div class="detail-block"><h3>Forecast Notes</h3><p>' + escapeHtml((item.context && (item.context.detailedForecast || item.context.shortForecast)) || "No detailed forecast text returned.") + "</p></div>",
     ].join("");
     detailBody.querySelector("#chart-open").addEventListener("click", function () { window.open(item.url, "_blank", "noopener"); });
@@ -1526,6 +1535,92 @@
 
   function modelEvDollars(item) {
     return Number(item.suggested && item.suggested.modelEv != null ? item.suggested.modelEv : Number(item.suggested.contracts || 0) * Number(item.adjustedEdge || 0));
+  }
+
+  function oddsMathForItem(item, pick) {
+    const probability = Number(item && item.probability || 0);
+    const contracts = Number(pick && pick.contracts || item && item.suggested && item.suggested.contracts || 1);
+    const priceCents = Number(pick && pick.priceCents || item && item.price && item.price.askCents || item && item.suggested && item.suggested.maxPriceCents || 0);
+    const price = priceCents / 100;
+    const fee = Number(pick && pick.feeDollars != null ? pick.feeDollars : kalshiFeeDollars(contracts, price));
+    const cost = Number(pick && pick.costDollars != null ? pick.costDollars : contracts * price + fee);
+    const breakEven = Number(pick && pick.breakEven != null ? pick.breakEven : cost / Math.max(1, contracts));
+    const edge = probability - breakEven;
+    const expectedProfit = contracts * probability - cost;
+    return {
+      probability: probability,
+      contracts: contracts,
+      priceCents: priceCents,
+      price: price,
+      fee: fee,
+      cost: cost,
+      breakEven: breakEven,
+      edge: edge,
+      expectedProfit: expectedProfit,
+      marketProbability: Number(item && item.marketProbability || 0),
+      weatherProbability: Number(item && item.weatherProbability || 0),
+    };
+  }
+
+  function renderOddsComparisonCell(item, pick) {
+    const math = oddsMathForItem(item, pick);
+    const edgeClass = math.edge >= 0 ? "pos" : "neg";
+    return [
+      '<div class="odds-cell">',
+      '<strong class="' + edgeClass + '">model ' + pct(math.probability) + "</strong>",
+      '<span>pay ' + pct(math.breakEven) + ' <small>incl fee</small></span>',
+      '<span class="' + edgeClass + '">edge ' + pct(math.edge) + "</span>",
+      '<span class="subtext">market prior ' + pct(math.marketProbability) + "</span>",
+      "</div>",
+    ].join("");
+  }
+
+  function renderOddsExplanationBlock(item, pick) {
+    const math = oddsMathForItem(item, pick);
+    const edgeClass = math.edge >= 0 ? "pos" : "neg";
+    return [
+      '<div class="detail-block odds-explainer">',
+      '<h3>Odds Vs Price</h3>',
+      '<div class="odds-summary-grid">',
+      oddsMetric("Model event odds", pct(math.probability), item.side.toUpperCase() + " " + item.subtitle),
+      oddsMetric("You pay", pct(math.breakEven), math.priceCents + "c ask + " + dollars(math.fee) + " estimated fee"),
+      oddsMetric("Edge", pct(math.edge), "model odds minus break-even", edgeClass),
+      oddsMetric("Model EV", signedDollars(math.expectedProfit), math.contracts + " contract" + (math.contracts === 1 ? "" : "s") + " in this calculation", math.expectedProfit >= 0 ? "pos" : "neg"),
+      "</div>",
+      '<p class="odds-formula">Formula: edge = calibrated model probability - fee-adjusted break-even = ' + pct(math.probability) + " - " + pct(math.breakEven) + " = " + pct(math.edge) + ".</p>",
+      '<p class="subtext">The displayed ask is the market price. The pay odds here are the effective break-even after the estimated Kalshi fee, so tiny bets can need a higher true probability than the ask alone suggests.</p>',
+      "</div>",
+    ].join("");
+  }
+
+  function renderProbabilityStackBlock(item) {
+    return [
+      '<div class="detail-block odds-stack">',
+      '<h3>Probability Stack</h3>',
+      '<div class="odds-stack-grid">',
+      oddsMetric("Raw weather", pct(item.rawProbability), "normal forecast error"),
+      oddsMetric("Tight weather", pct(item.tightProbability), "low-error scenario"),
+      oddsMetric("Wide weather", pct(item.wideProbability), "high-error scenario"),
+      oddsMetric("Weather-only", pct(item.weatherProbability), "forecast + station guardrails"),
+      oddsMetric("Market prior", pct(item.marketProbability), "Kalshi bid/ask midpoint signal"),
+      oddsMetric("Final model", pct(item.probability), "market-shrunk calibrated odds", Number(item.adjustedEdge || 0) >= 0 ? "pos" : "neg"),
+      "</div>",
+      "</div>",
+    ].join("");
+  }
+
+  function renderWhyOddsBlock(item) {
+    const lines = (item.rationale || []).slice(0, 8);
+    if (!lines.length) {
+      lines.push("No rationale was returned for this market.");
+    }
+    return '<div class="detail-block"><h3>Why The Model Got There</h3><ul class="odds-reasons">' + lines.map(function (line) {
+      return "<li>" + escapeHtml(line) + "</li>";
+    }).join("") + "</ul></div>";
+  }
+
+  function oddsMetric(label, value, subtext, className) {
+    return '<div class="odds-metric"><span>' + escapeHtml(label) + '</span><strong class="' + escapeHtml(className || "") + '">' + escapeHtml(value) + '</strong><small>' + escapeHtml(subtext) + "</small></div>";
   }
 
   function renderKellyCell(item, settings) {
