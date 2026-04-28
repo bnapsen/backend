@@ -276,7 +276,7 @@
     summaryEl.innerHTML = [
       metric(spotLabel, dollars(market.currentPrice), spotSubtext, "price-metric"),
       metric("Kalshi target", dollars(market.targetPrice), "Distance " + signedDollars(market.distanceDollars)),
-      metric("YES expiry odds", pct(model.yesProbability), "Hold-to-settle raw " + pct(model.rawYesProbability) + " / market prior " + pct(model.marketPriorYes)),
+      metric("YES expiry odds", pct(model.yesProbability), "Raw " + pct(model.rawYesProbability) + " / " + modelSigmaSummary(model)),
       metric("Best call", callLabel(best.recommendation), best.side ? best.side.toUpperCase() + " edge " + pct(best.edge) : "No candidate"),
     ].join("");
   }
@@ -303,6 +303,7 @@
 
   function renderCandidates(scan) {
     const rows = Array.isArray(scan.candidates) ? scan.candidates : [];
+    const model = scan.model || {};
     const secondsToClose = Number(scan.market && scan.market.secondsToClose);
     const horizon = Number.isFinite(secondsToClose) ? formatDuration(secondsToClose) : "n/a";
     recommendationLabelEl.textContent = rows[0] ? callLabel(rows[0].recommendation) : "No market";
@@ -312,7 +313,7 @@
         "<tr>",
         '<td><span class="side-pill ' + escapeHtml(row.side) + '">' + escapeHtml(String(row.side || "").toUpperCase()) + "</span></td>",
         "<td>" + formatCents(row.askCents) + '<br><span class="subtext">bid ' + formatCents(row.bidCents) + " / spread " + pct(row.spread) + "</span></td>",
-        "<td>" + pct(row.probability) + '<br><span class="subtext">settlement odds / horizon ' + escapeHtml(horizon) + "</span></td>",
+        "<td>" + pct(row.probability) + '<br><span class="subtext">' + escapeHtml(sideSigmaText(row.side, model.z)) + " / horizon " + escapeHtml(horizon) + "</span></td>",
         "<td>" + pct(row.breakEven) + '<br><span class="subtext">incl fee</span></td>',
         '<td class="' + edgeClass + '">' + pct(row.edge) + "</td>",
         '<td class="' + (Number(row.expectedProfit || 0) >= 0 ? "pos" : "neg") + '">' + signedDollars(row.expectedProfit) + "</td>",
@@ -556,15 +557,18 @@
       expiry: {
         probability,
         rawProbability: Number(candidate.rawProbability),
+        priorProbability: side === "yes" ? Number(model.marketPriorYes) : Number(model.marketPriorNo),
+        calibrationWeight: Number(model.calibrationWeight),
         edge: Number(candidate.edge),
         edgeOk,
+        sigmaLabel: sideSigmaText(side, model.z),
         title: side.toUpperCase() + " " + pct(probability),
-        detail: "Hold-to-settlement odds. Stop, take-profit, and cash-out settings are not probability inputs.",
+        detail: "Raw " + pct(candidate.rawProbability) + " from " + sideSigmaText(side, model.z) + "; prior " + pct(side === "yes" ? model.marketPriorYes : model.marketPriorNo) + " with " + pct(model.calibrationWeight) + " blend.",
       },
       exit,
       rules: {
         entry: "Place " + side.toUpperCase() + " only with a buy limit at " + formatCents(entryLimitCents) + " or better; skip if the ask is above " + formatCents(maxEntryCents) + ".",
-        odds: "The " + pct(probability) + " " + side.toUpperCase() + " odds are for expiry/settlement only. Exit limits change realized P&L, not the contract's settlement probability.",
+        odds: "The " + pct(probability) + " " + side.toUpperCase() + " odds are for expiry/settlement only: raw " + pct(candidate.rawProbability) + " from " + sideSigmaText(side, model.z) + ", then blended toward Kalshi prior by " + pct(model.calibrationWeight) + ". Exit limits change realized P&L, not settlement probability.",
         profit: "After entry around " + formatCents(entryCents) + ", set a sell limit at " + formatCents(exit.sellLimitCents) + "; take posted bids at or above that level.",
         stop: "Cut if bid trades at or below " + formatCents(exit.stopLimitCents) + ", or exit before the final average if expiry odds drop below " + pct(0.55) + ".",
       },
@@ -1118,7 +1122,7 @@
       '<div class="chart-decision-card ' + escapeHtml(plan.actionClass) + '">',
       "<span>" + escapeHtml(plan.actionLabel) + "</span>",
       "<strong>Entry " + escapeHtml(formatCents(plan.entry.limitCents)) + " max " + escapeHtml(formatCents(plan.entry.maxEntryCents)) + "</strong>",
-      "<small>Expiry " + escapeHtml(pct(plan.expiry.probability)) + " / sell " + escapeHtml(formatCents(plan.exit.sellLimitCents)) + " / stop " + escapeHtml(formatCents(plan.exit.stopLimit)) + "</small>",
+      "<small>Expiry " + escapeHtml(pct(plan.expiry.probability)) + " / " + escapeHtml(plan.expiry.sigmaLabel) + " / sell " + escapeHtml(formatCents(plan.exit.sellLimitCents)) + "</small>",
       "</div>",
       '<div class="chart-hover-card" hidden></div>',
     ].join("") : '<div class="chart-hover-card" hidden></div>';
@@ -1223,6 +1227,7 @@
       renderKalshiSpotMode(scan),
       renderQuoteMode(scan),
       "<p><strong>Expiry odds engine:</strong> calibrated YES " + escapeHtml(pct(model.yesProbability)) + ", raw final-average path YES " + escapeHtml(pct(model.rawYesProbability)) + ", Kalshi prior " + escapeHtml(pct(model.marketPriorYes)) + ", shrink " + escapeHtml(pct(model.calibrationWeight)) + ". These are settlement odds, independent of stop-loss or cash-out settings.</p>",
+      "<p><strong>Sigma/time adjustment:</strong> YES z-score " + escapeHtml(formatSigma(model.z)) + "; " + escapeHtml(sideSigmaText("yes", model.z)) + ". Effective variance horizon " + escapeHtml(formatDuration(model.effectiveVarianceSeconds)) + " with " + escapeHtml(formatDuration(model.secondsToAverageStart)) + " until the final average starts.</p>",
       "<p><strong>Time model:</strong> " + escapeHtml(formatDuration(model.horizonSeconds)) + " to close, " + escapeHtml(formatDuration(model.secondsToAverageStart)) + " until the final average starts, effective variance horizon " + escapeHtml(formatDuration(model.effectiveVarianceSeconds)) + ".</p>",
       "<p><strong>Vol inputs:</strong> 5m " + escapeHtml(tinyPct(model.sigma5)) + ", 15m " + escapeHtml(tinyPct(model.sigma15)) + ", 60m " + escapeHtml(tinyPct(model.sigma60)) + ", EWMA " + escapeHtml(tinyPct(model.sigmaEwma)) + ", range " + escapeHtml(tinyPct(model.sigmaRange)) + " per minute.</p>",
       renderTickerComponents(scan),
@@ -1300,6 +1305,27 @@
     if (value === "research-buy" || value === "tiny-only") return "good";
     if (value === "avoid" || value === "too-late") return "bad";
     return "watch";
+  }
+
+  function modelSigmaSummary(model) {
+    const z = Number(model && model.z);
+    if (!Number.isFinite(z)) return "sigma n/a";
+    return "YES z " + formatSigma(z);
+  }
+
+  function sideSigmaText(side, zValue) {
+    const z = Number(zValue);
+    if (!Number.isFinite(z)) return "sigma n/a";
+    const isYes = String(side || "").toLowerCase() === "yes";
+    const outOfMoney = isYes ? z > 0 : z < 0;
+    const label = outOfMoney ? "OTM" : "ITM";
+    return String(side || "").toUpperCase() + " " + label + " " + formatSigma(Math.abs(z));
+  }
+
+  function formatSigma(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "n/a";
+    return number.toFixed(2) + " sigma";
   }
 
   function pct(value) {
