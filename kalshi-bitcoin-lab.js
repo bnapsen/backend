@@ -61,7 +61,7 @@
       startStream();
     } else {
       loadScan();
-      state.fallbackTimer = setInterval(loadScan, 1000);
+      state.fallbackTimer = setInterval(loadScan, 750);
     }
   }
 
@@ -83,7 +83,7 @@
     source.addEventListener("scan", function (event) {
       try {
         render(JSON.parse(event.data));
-        setStatus("Live stream connected - refreshing about every 1s.");
+        setStatus("Live stream connected - refreshing about every 0.75s.");
       } catch (error) {
         setStatus("Live stream returned malformed data.", true);
       }
@@ -92,7 +92,7 @@
       setStatus("Live stream paused; falling back to polling.", true);
       stopStream();
       loadScan();
-      state.fallbackTimer = setInterval(loadScan, 1000);
+      state.fallbackTimer = setInterval(loadScan, 750);
     });
   }
 
@@ -100,7 +100,7 @@
     try {
       setStatus("Refreshing Bitcoin market...");
       render(await fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/scan")));
-      setStatus(streamToggle.checked ? "Polling live every 1s." : "Manual refresh complete.");
+      setStatus(streamToggle.checked ? "Polling live every 0.75s." : "Manual refresh complete.");
     } catch (error) {
       setStatus(error.message || "Unable to load Bitcoin scan.", true);
     }
@@ -164,8 +164,9 @@
     const market = scan.market || {};
     const model = scan.model || {};
     const best = scan.best || {};
+    const range = Number(market.proxyDispersionDollars || 0);
     summaryEl.innerHTML = [
-      metric("Live BTC proxy", dollars(market.currentPrice), "Bid " + dollars(market.proxyBid) + " / ask " + dollars(market.proxyAsk), "price-metric"),
+      metric("Live BTC proxy", dollars(market.currentPrice), "Bid " + dollars(market.proxyBid) + " / ask " + dollars(market.proxyAsk) + " / source range " + dollars(range), "price-metric"),
       metric("Kalshi target", dollars(market.targetPrice), "Distance " + signedDollars(market.distanceDollars)),
       metric("Calibrated YES", pct(model.yesProbability), "Raw path " + pct(model.rawYesProbability) + " / prior " + pct(model.marketPriorYes)),
       metric("Best call", callLabel(best.recommendation), best.side ? best.side.toUpperCase() + " edge " + pct(best.edge) : "No candidate"),
@@ -175,11 +176,12 @@
   function renderMarketStrip(scan) {
     const source = scan.source || {};
     const market = scan.market || {};
-    chartSourceEl.textContent = source.chartSource || "Unknown";
+    chartSourceEl.textContent = source.tickerSource || source.chartSource || "Unknown";
     keyStatusEl.textContent = [
+      source.tickerSummary || "",
       source.cfBenchmarksConfigured ? "CF key configured" : "CF key not configured",
       source.kalshiWebsocketConfigured ? "Kalshi WS configured" : "Kalshi WS not configured",
-    ].join(" / ");
+    ].filter(Boolean).join(" / ");
     eventTitleEl.textContent = scan.ticker || "KXBTC15M";
     eventWindowEl.textContent = market.closeTime ? "Closes " + formatTime(market.closeTime) + " / " + formatDuration(Number(market.secondsToClose || 0)) + " left" : "Waiting";
     clockLabelEl.textContent = scan.generatedAt ? "Updated " + formatTime(scan.generatedAt) : "--";
@@ -374,8 +376,18 @@
       "<p><strong>Odds engine:</strong> calibrated YES " + escapeHtml(pct(model.yesProbability)) + ", raw final-average path YES " + escapeHtml(pct(model.rawYesProbability)) + ", Kalshi prior " + escapeHtml(pct(model.marketPriorYes)) + ", shrink " + escapeHtml(pct(model.calibrationWeight)) + ".</p>",
       "<p><strong>Time model:</strong> " + escapeHtml(formatDuration(model.horizonSeconds)) + " to close, " + escapeHtml(formatDuration(model.secondsToAverageStart)) + " until the final average starts, effective variance horizon " + escapeHtml(formatDuration(model.effectiveVarianceSeconds)) + ".</p>",
       "<p><strong>Vol inputs:</strong> 5m " + escapeHtml(tinyPct(model.sigma5)) + ", 15m " + escapeHtml(tinyPct(model.sigma15)) + ", 60m " + escapeHtml(tinyPct(model.sigma60)) + ", EWMA " + escapeHtml(tinyPct(model.sigmaEwma)) + ", range " + escapeHtml(tinyPct(model.sigmaRange)) + " per minute.</p>",
+      renderTickerComponents(scan),
       reasons.map(function (reason) { return "<p>" + escapeHtml(reason) + "</p>"; }).join(""),
     ].join("");
+  }
+
+  function renderTickerComponents(scan) {
+    const source = scan.source || {};
+    const components = Array.isArray(source.tickerComponents) ? source.tickerComponents : [];
+    if (!components.length) return "";
+    return "<p><strong>Live ticker blend:</strong> " + components.map(function (item) {
+      return escapeHtml(item.venue + " " + dollars(item.price));
+    }).join(" / ") + ". Range " + escapeHtml(dollars(source.tickerDispersionDollars || 0)) + ".</p>";
   }
 
   function renderRules(scan) {

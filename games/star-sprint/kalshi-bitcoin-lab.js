@@ -2,15 +2,22 @@
 
 const KALSHI_API_BASE_URL = 'https://api.elections.kalshi.com/trade-api/v2';
 const COINBASE_API_BASE_URL = 'https://api.exchange.coinbase.com';
+const KRAKEN_API_BASE_URL = 'https://api.kraken.com/0/public';
+const BITSTAMP_API_BASE_URL = 'https://www.bitstamp.net/api/v2';
+const GEMINI_API_BASE_URL = 'https://api.gemini.com/v1';
 const BTC_15M_SERIES = 'KXBTC15M';
 const COINBASE_PRODUCT = 'BTC-USD';
 const DEFAULT_MAX_COST = 5;
 const DEFAULT_MIN_EDGE = 0.02;
 const MARKET_CACHE_MS = 1_000;
+const TICKER_CACHE_MS = 650;
 const CANDLE_CACHE_MS = 20_000;
 const bitcoinCache = {
   markets: null,
   marketsAt: 0,
+  ticker: null,
+  tickerAt: 0,
+  tickerPromise: null,
   candles: new Map(),
 };
 
@@ -31,13 +38,19 @@ function parseNumber(value, defaultValue = 0) {
 }
 
 async function fetchJson(url, options = {}) {
+  const { timeoutMs = 5_000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const response = await fetch(url, {
-    ...options,
+    ...fetchOptions,
+    signal: fetchOptions.signal || controller.signal,
     headers: {
       Accept: 'application/json',
       'User-Agent': 'BNAPSN-Kalshi-Bitcoin-Lab/1.0',
-      ...(options.headers || {}),
+      ...(fetchOptions.headers || {}),
     },
+  }).finally(() => {
+    clearTimeout(timer);
   });
   if (!response.ok) {
     throw new Error(`Request failed ${response.status}: ${url}`);
@@ -79,6 +92,13 @@ function stdev(values) {
 function average(values) {
   const finite = values.filter(Number.isFinite);
   return finite.length ? finite.reduce((sum, value) => sum + value, 0) / finite.length : 0;
+}
+
+function median(values) {
+  const finite = values.filter(Number.isFinite).sort((left, right) => left - right);
+  if (!finite.length) return 0;
+  const middle = Math.floor(finite.length / 2);
+  return finite.length % 2 ? finite[middle] : (finite[middle - 1] + finite[middle]) / 2;
 }
 
 function weightedAverage(parts) {
@@ -134,13 +154,152 @@ async function getBitcoin15mMarkets() {
 }
 
 async function getCoinbaseTicker() {
-  const data = await fetchJson(`${COINBASE_API_BASE_URL}/products/${COINBASE_PRODUCT}/ticker`);
+  const data = await fetchJson(`${COINBASE_API_BASE_URL}/products/${COINBASE_PRODUCT}/ticker`, { timeoutMs: 1_800 });
   return {
+    venue: 'Coinbase',
     price: Number(data.price),
     bid: Number(data.bid),
     ask: Number(data.ask),
     time: isoDate(data.time || Date.now()),
-    source: 'Coinbase BTC-USD proxy',
+  };
+}
+
+async function getKrakenTicker() {
+  const data = await fetchJson(`${KRAKEN_API_BASE_URL}/Ticker?pair=XBTUSD`, { timeoutMs: 1_800 });
+  const result = data && data.result ? data.result[Object.keys(data.result)[0]] : null;
+  return {
+    venue: 'Kraken',
+    price: Number(result && result.c && result.c[0]),
+    bid: Number(result && result.b && result.b[0]),
+    ask: Number(result && result.a && result.a[0]),
+    time: isoDate(Date.now()),
+  };
+}
+
+async function getBitstampTicker() {
+  const data = await fetchJson(`${BITSTAMP_API_BASE_URL}/ticker/btcusd/`, { timeoutMs: 1_800 });
+  return {
+    venue: 'Bitstamp',
+    price: Number(data.last),
+    bid: Number(data.bid),
+    ask: Number(data.ask),
+    time: isoDate(Number(data.timestamp) * 1000 || Date.now()),
+  };
+}
+
+async function getGeminiTicker() {
+  const data = await fetchJson(`${GEMINI_API_BASE_URL}/pubticker/btcusd`, { timeoutMs: 1_800 });
+  return {
+    venue: 'Gemini',
+    price: Number(data.last),
+    bid: Number(data.bid),
+    ask: Number(data.ask),
+    time: isoDate(Date.now()),
+  };
+}
+
+function normalizeTickerQuote(quote) {
+  const price = Number(quote && quote.price);
+  const bid = Number(quote && quote.bid);
+  const ask = Number(quote && quote.ask);
+  if (!Number.isFinite(price) || price <= 0) return null;
+  return {
+    venue: String(quote.venue || 'Unknown'),
+    price,
+    bid: Number.isFinite(bid) && bid > 0 ? bid : price,
+    ask: Number.isFinite(ask) && ask > 0 ? ask : price,
+    time: quote.time || isoDate(Date.now()),
+  };
+}
+
+function compositeTicker(quotes) {
+  const usable = quotes.map(normalizeTickerQuote).filter(Boolean);
+  if (!usable.length) {
+    throw new Error('No live BTC/USD quote sources returned usable data.');
+  }
+  const prices = usable.map((quote) => quote.price);
+  const bids = usable.map((quote) => quote.bid);
+  const asks = usable.map((quote) => quote.ask);
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const price = median(prices);
+  const bid = median(bids);
+  const ask = median(asks);
+  const times = usable.map((quote) => new Date(quote.time || 0).getTime()).filter(Number.isFinite);
+  return {
+    price,
+    bid,
+    ask,
+    time: isoDate(times.length ? Math.max(...times) : Date.now()),
+    source: usable.length > 1 ? 'Composite BTC-USD proxy' : `${usable[0].venue} BTC-USD proxy`,
+    sourceCount: usable.length,
+    sources: usable.map((quote) => ({
+      venue: quote.venue,
+      price: round(quote.price, 2),
+      bid: round(quote.bid, 2),
+      ask: round(quote.ask, 2),
+      time: quote.time,
+    })),
+    dispersionDollars: maxPrice - minPrice,
+    dispersionPct: price > 0 ? (maxPrice - minPrice) / price : 0,
+  };
+}
+
+async function getBitcoinTicker() {
+  const nowMs = Date.now();
+  if (bitcoinCache.ticker && nowMs - bitcoinCache.tickerAt < TICKER_CACHE_MS) {
+    return bitcoinCache.ticker;
+  }
+  if (bitcoinCache.tickerPromise) {
+    return bitcoinCache.tickerPromise;
+  }
+  bitcoinCache.tickerPromise = Promise.allSettled([
+    getCoinbaseTicker(),
+    getKrakenTicker(),
+    getBitstampTicker(),
+    getGeminiTicker(),
+  ]).then((results) => {
+    const quotes = results
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => result.value);
+    const ticker = compositeTicker(quotes);
+    bitcoinCache.ticker = ticker;
+    bitcoinCache.tickerAt = Date.now();
+    return ticker;
+  }).catch((error) => {
+    if (bitcoinCache.ticker) {
+      return {
+        ...bitcoinCache.ticker,
+        stale: true,
+        source: `${bitcoinCache.ticker.source || 'BTC-USD proxy'} stale fallback`,
+        error: error.message,
+      };
+    }
+    throw error;
+  }).finally(() => {
+    bitcoinCache.tickerPromise = null;
+  });
+  return bitcoinCache.tickerPromise;
+}
+
+function tickerQualityPenalty(ticker) {
+  const count = Number(ticker && ticker.sourceCount || 0);
+  const dispersionPct = Number(ticker && ticker.dispersionPct || 0);
+  if (count >= 3 && dispersionPct <= 0.0008) return 0;
+  if (count >= 2 && dispersionPct <= 0.0015) return 0.05;
+  return 0.12;
+}
+
+function tickerSourceObject(ticker) {
+  const count = Number(ticker && ticker.sourceCount || 0);
+  const dispersion = Number(ticker && ticker.dispersionDollars || 0);
+  return {
+    tickerSource: ticker && ticker.source ? ticker.source : 'Composite BTC-USD proxy',
+    tickerSummary: `${count || 1} spot sources; range $${dispersion.toFixed(2)}`,
+    tickerComponents: Array.isArray(ticker && ticker.sources) ? ticker.sources : [],
+    tickerDispersionDollars: round(dispersion, 2),
+    tickerDispersionPct: round(Number(ticker && ticker.dispersionPct || 0), 6),
+    tickerStale: Boolean(ticker && ticker.stale),
   };
 }
 
@@ -281,12 +440,12 @@ function marketYesPrior(market) {
   };
 }
 
-function calibrationWeight({ dataGrade, secondsToClose, marketSpread, sigmaEffective }) {
+function calibrationWeight({ dataGrade, secondsToClose, marketSpread, sigmaEffective, tickerPenalty = 0 }) {
   const proxyPenalty = dataGrade === 'settlement-grade' ? 0.06 : 0.24;
   const nearSettlementPenalty = secondsToClose <= 75 ? 0.15 : secondsToClose <= 180 ? 0.08 : 0.02;
   const spreadPenalty = clamp(Number(marketSpread || 0) * 1.5, 0, 0.14);
   const lowVolPenalty = Number(sigmaEffective || 0) < 0.0015 ? 0.06 : 0;
-  return clamp(0.12 + proxyPenalty + nearSettlementPenalty + spreadPenalty + lowVolPenalty, 0.12, 0.62);
+  return clamp(0.12 + proxyPenalty + nearSettlementPenalty + spreadPenalty + lowVolPenalty + tickerPenalty, 0.12, 0.7);
 }
 
 function estimateSettlementAverage({ currentPrice, targetPrice, points, secondsToClose, settlementWindowSeconds }) {
@@ -315,7 +474,7 @@ function estimateSettlementAverage({ currentPrice, targetPrice, points, secondsT
   };
 }
 
-function estimateBitcoinProbability({ currentPrice, targetPrice, points, secondsToClose, market, dataGrade, proxyBid, proxyAsk, settlementWindowSeconds = 60 }) {
+function estimateBitcoinProbability({ currentPrice, targetPrice, points, secondsToClose, market, dataGrade, proxyBid, proxyAsk, tickerPenalty = 0, settlementWindowSeconds = 60 }) {
   const profile = volatilityProfile(points);
   const closes = profile.closes;
   const sigmaPerMinute = profile.sigmaPerMinute;
@@ -352,6 +511,7 @@ function estimateBitcoinProbability({ currentPrice, targetPrice, points, seconds
     secondsToClose: horizonSeconds,
     marketSpread: prior.spread,
     sigmaEffective: sigmaHorizon,
+    tickerPenalty,
   });
   const yesProbability = clamp((rawYesProbability * (1 - priorWeight)) + (prior.probability * priorWeight), 0.001, 0.999);
   const annualizedVol = sigmaPerMinute * Math.sqrt(525600);
@@ -364,6 +524,7 @@ function estimateBitcoinProbability({ currentPrice, targetPrice, points, seconds
     marketPriorNo: 1 - prior.probability,
     marketPriorSpread: prior.spread,
     calibrationWeight: priorWeight,
+    tickerPenalty,
     sigmaPerMinute,
     sigma5: profile.sigma5,
     sigma15: profile.sigma15,
@@ -501,7 +662,7 @@ async function scanBitcoin15m(options = {}) {
   const minEdge = clamp(parseNumber(options.minEdge, DEFAULT_MIN_EDGE), -0.5, 0.5);
   const [{ active: market, markets }, ticker, candles] = await Promise.all([
     getBitcoin15mMarkets(),
-    getCoinbaseTicker(),
+    getBitcoinTicker(),
     getCoinbaseCandles(parseNumber(options.minutes, 180)),
   ]);
 
@@ -532,6 +693,7 @@ async function scanBitcoin15m(options = {}) {
     dataGrade,
     proxyBid: ticker.bid,
     proxyAsk: ticker.ask,
+    tickerPenalty: tickerQualityPenalty(ticker),
   });
   const candidates = [
     scoreSide({
@@ -570,12 +732,20 @@ async function scanBitcoin15m(options = {}) {
       settlementSource: 'CF Benchmarks BRTI',
       settlementSummary: 'Final value is the simple average of the 60 CF Benchmarks BRTI prints before market close.',
     },
-    source: sourceStatus(),
+    source: {
+      ...sourceStatus(),
+      ...tickerSourceObject(ticker),
+    },
     market: {
       targetPrice: round(targetPrice, 2),
       currentPrice: round(currentPrice, 2),
       proxyBid: round(ticker.bid, 2),
       proxyAsk: round(ticker.ask, 2),
+      proxySource: ticker.source,
+      proxySourceCount: Number(ticker.sourceCount || 1),
+      proxyDispersionDollars: round(Number(ticker.dispersionDollars || 0), 2),
+      proxyDispersionPct: round(Number(ticker.dispersionPct || 0), 6),
+      proxyComponents: Array.isArray(ticker.sources) ? ticker.sources : [],
       proxyTime: ticker.time,
       openTime: window.openTime,
       closeTime: window.closeTime,
@@ -597,6 +767,7 @@ async function scanBitcoin15m(options = {}) {
       marketPriorNo: round(probability.marketPriorNo),
       marketPriorSpread: round(probability.marketPriorSpread),
       calibrationWeight: round(probability.calibrationWeight),
+      tickerPenalty: round(probability.tickerPenalty),
       sigmaPerMinute: round(probability.sigmaPerMinute, 6),
       sigma5: round(probability.sigma5, 6),
       sigma15: round(probability.sigma15, 6),
@@ -619,7 +790,7 @@ async function scanBitcoin15m(options = {}) {
       dataGrade,
       caveat: dataGrade === 'settlement-grade'
         ? 'Using configured settlement-grade source.'
-        : 'Using Coinbase BTC-USD as a proxy for CF Benchmarks BRTI. Treat edges as research-only until calibrated.',
+        : `Using ${ticker.source} as a proxy for CF Benchmarks BRTI. Treat edges as research-only until calibrated.`,
       reasons: probability.reasons,
     },
     candidates,
@@ -645,8 +816,8 @@ function sourceStatus() {
     settlementSource: 'CF Benchmarks BRTI',
     chartSource: process.env.CF_BENCHMARKS_USERNAME && process.env.CF_BENCHMARKS_API_KEY
       ? 'CF Benchmarks BRTI'
-      : 'Coinbase BTC-USD proxy',
-    keyHint: 'Set KALSHI_API_KEY_ID plus KALSHI_PRIVATE_KEY_PEM or KALSHI_PRIVATE_KEY_PATH for Kalshi WebSocket later; set CF_BENCHMARKS_USERNAME and CF_BENCHMARKS_API_KEY for settlement-grade BRTI if licensed.',
+      : 'Composite BTC-USD proxy',
+    keyHint: 'Set KALSHI_API_KEY_ID plus KALSHI_PRIVATE_KEY_PEM or KALSHI_PRIVATE_KEY_PATH for Kalshi WebSocket later; set CF_BENCHMARKS_USERNAME and CF_BENCHMARKS_API_KEY for settlement-grade BRTI if licensed. Proxy ticks blend Coinbase, Kraken, Bitstamp, and Gemini when available.',
   };
 }
 

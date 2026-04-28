@@ -471,12 +471,14 @@ async function handleKalshiBitcoinStreamRequest(req, res, requestUrl) {
   });
 
   let closed = false;
+  let refreshing = false;
   req.on('close', () => {
     closed = true;
   });
 
   const sendScan = async () => {
-    if (closed) return;
+    if (closed || refreshing) return;
+    refreshing = true;
     try {
       const payload = await scanBitcoin15m({
         minEdge: readFloatParam(requestUrl, 'minEdge', 0.02),
@@ -486,13 +488,15 @@ async function handleKalshiBitcoinStreamRequest(req, res, requestUrl) {
       res.write(`event: scan\ndata: ${JSON.stringify(payload)}\n\n`);
     } catch (error) {
       res.write(`event: error\ndata: ${JSON.stringify({ error: 'Unable to refresh Bitcoin scan.' })}\n\n`);
+    } finally {
+      refreshing = false;
     }
   };
 
   await sendScan();
   const interval = setInterval(() => {
     sendScan().catch(() => {});
-  }, 1000);
+  }, 750);
   req.on('close', () => {
     clearInterval(interval);
   });
