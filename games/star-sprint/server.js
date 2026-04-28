@@ -543,6 +543,7 @@ async function handleKalshiBitcoinOrderPreviewRequest(req, res, requestUrl) {
       side: body.side,
       minEdge: readFloatParam(requestUrl, 'minEdge', Number(body.minEdge || 0.02)),
       maxCost: readFloatParam(requestUrl, 'maxCost', Number(body.maxCost || 5)),
+      maxContracts: readFloatParam(requestUrl, 'maxContracts', Number(body.maxContracts || 25)),
       maxPriceCents: Number(body.maxPriceCents || 0),
       minutes: readFloatParam(requestUrl, 'minutes', Number(body.minutes || 180)),
     }));
@@ -585,6 +586,7 @@ async function handleKalshiBitcoinPlaceOrderRequest(req, res, requestUrl) {
       confirm: body.confirm,
       minEdge: readFloatParam(requestUrl, 'minEdge', Number(body.minEdge || 0.02)),
       maxCost: readFloatParam(requestUrl, 'maxCost', Number(body.maxCost || 5)),
+      maxContracts: readFloatParam(requestUrl, 'maxContracts', Number(body.maxContracts || 25)),
       maxPriceCents: Number(body.maxPriceCents || 0),
       minutes: readFloatParam(requestUrl, 'minutes', Number(body.minutes || 180)),
     }));

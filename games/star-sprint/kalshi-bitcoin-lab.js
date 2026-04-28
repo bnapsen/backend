@@ -1102,7 +1102,7 @@ function sideQuote(market, side) {
   };
 }
 
-function scoreSide({ market, side, probability, rawProbability, maxCost, minEdge, secondsToClose, dataGrade }) {
+function scoreSide({ market, side, probability, rawProbability, maxCost, minEdge, secondsToClose, dataGrade, maxContracts }) {
   const quote = sideQuote(market, side);
   if (!Number.isFinite(quote.ask) || quote.ask <= 0 || quote.ask >= 1) {
     return {
@@ -1119,7 +1119,8 @@ function scoreSide({ market, side, probability, rawProbability, maxCost, minEdge
     };
   }
   const askSize = Math.max(1, Math.floor(quote.askSize || 25));
-  let contracts = Math.max(1, Math.min(25, askSize, Math.floor(maxCost / quote.ask)));
+  const maxContractCount = Math.max(1, Math.min(25, Math.floor(parseNumber(maxContracts, 25))));
+  let contracts = Math.max(1, Math.min(maxContractCount, askSize, Math.floor(maxCost / quote.ask)));
   let fee = kalshiFeeDollars(contracts, quote.ask);
   let cost = contracts * quote.ask + fee;
   while (contracts > 1 && cost > maxCost + 0.00001) {
@@ -1291,6 +1292,7 @@ function ticketFromScan(scan, candidate, options = {}) {
       side: candidate && candidate.side,
       action: 'buy',
       contracts: Math.max(0, Math.floor(Number(candidate && candidate.contracts || 0))),
+      maxContracts: Math.max(1, Math.floor(parseNumber(options.maxContracts, 25))),
       limitPriceCents: priceCents,
       maxCost: round(Math.min(maxCost, Number(candidate && candidate.cost || maxCost)), 2),
       estimatedFee: round(Number(candidate && candidate.fee || 0), 2),
@@ -1321,8 +1323,10 @@ function ticketFromScan(scan, candidate, options = {}) {
 async function previewBitcoin15mOrder(options = {}) {
   const maxCost = clamp(parseNumber(options.maxCost, DEFAULT_MAX_COST), 0.5, ORDER_MAX_COST_HARD_CAP);
   const minEdge = clamp(parseNumber(options.minEdge, DEFAULT_MIN_EDGE), -0.5, 0.5);
+  const maxContracts = Math.max(1, Math.min(25, Math.floor(parseNumber(options.maxContracts, 25))));
   const scan = await scanBitcoin15m({
     maxCost,
+    maxContracts,
     minEdge,
     minutes: parseNumber(options.minutes, 180),
   });
@@ -1330,6 +1334,7 @@ async function previewBitcoin15mOrder(options = {}) {
   return ticketFromScan(scan, candidate, {
     ...options,
     maxCost,
+    maxContracts,
     minEdge,
   });
 }
@@ -1374,6 +1379,7 @@ async function placeBitcoin15mOrder(options = {}) {
 async function scanBitcoin15m(options = {}) {
   const maxCost = clamp(parseNumber(options.maxCost, DEFAULT_MAX_COST), 0.5, 100);
   const minEdge = clamp(parseNumber(options.minEdge, DEFAULT_MIN_EDGE), -0.5, 0.5);
+  const maxContracts = Math.max(1, Math.min(25, Math.floor(parseNumber(options.maxContracts, 25))));
   const marketSet = await getBitcoin15mMarkets();
   const initialClock = kalshiClockStatus();
   const [{ market, markets }, ticker, candles] = await Promise.all([
@@ -1427,6 +1433,7 @@ async function scanBitcoin15m(options = {}) {
       minEdge,
       secondsToClose,
       dataGrade,
+      maxContracts,
     }),
     scoreSide({
       market,
@@ -1437,6 +1444,7 @@ async function scanBitcoin15m(options = {}) {
       minEdge,
       secondsToClose,
       dataGrade,
+      maxContracts,
     }),
   ].sort((left, right) => right.edge - left.edge);
 

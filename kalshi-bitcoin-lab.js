@@ -11,6 +11,13 @@
     clockTimer: null,
     marketClock: null,
     tradeTicket: null,
+    auto: {
+      lastTicker: "",
+      lastAttemptTicker: "",
+      lastAttemptAt: 0,
+      running: false,
+      log: [],
+    },
   };
 
   const form = document.querySelector("#scan-form");
@@ -44,6 +51,13 @@
   const placeTicketButton = document.querySelector("#place-ticket");
   const ticketCardEl = document.querySelector("#ticket-card");
   const ticketStatusEl = document.querySelector("#ticket-status");
+  const autoEnableInput = document.querySelector("#auto-enable");
+  const autoModeInput = document.querySelector("#auto-mode");
+  const autoMinEdgeInput = document.querySelector("#auto-min-edge");
+  const autoFirstMinutesInput = document.querySelector("#auto-first-minutes");
+  const autoMaxCostInput = document.querySelector("#auto-max-cost");
+  const autoStatusEl = document.querySelector("#auto-status");
+  const autoLogEl = document.querySelector("#auto-log");
 
   kalshiLinkEl.addEventListener("click", function (event) {
     if (openKalshiWindow(kalshiLinkEl.href)) {
@@ -69,6 +83,10 @@
   accessTokenInput.value = localStorage.getItem("kalshiLabToken") || "";
   accessTokenInput.addEventListener("input", function () {
     localStorage.setItem("kalshiLabToken", accessTokenInput.value.trim());
+  });
+  restoreAutoSettings();
+  [autoEnableInput, autoModeInput, autoMinEdgeInput, autoFirstMinutesInput, autoMaxCostInput].forEach(function (input) {
+    input.addEventListener("change", saveAutoSettings);
   });
 
   startClockTicker();
@@ -137,12 +155,14 @@
     return data;
   }
 
-  function bitcoinEndpoint(path) {
+  function bitcoinEndpoint(path, overrides) {
+    const paramsSource = overrides || {};
     const params = new URLSearchParams({
-      minEdge: String(Number(minEdgeInput.value || 0) / 100),
-      maxCost: String(Number(maxCostInput.value || 5)),
-      minutes: "180",
+      minEdge: String(paramsSource.minEdge != null ? Number(paramsSource.minEdge) : Number(minEdgeInput.value || 0) / 100),
+      maxCost: String(paramsSource.maxCost != null ? Number(paramsSource.maxCost) : Number(maxCostInput.value || 5)),
+      minutes: String(paramsSource.minutes != null ? Number(paramsSource.minutes) : 180),
     });
+    if (paramsSource.maxContracts != null) params.set("maxContracts", String(Number(paramsSource.maxContracts)));
     const token = accessTokenInput.value.trim();
     if (token) params.set("token", token);
     return defaultApiBase() + path + "?" + params.toString();
@@ -191,6 +211,7 @@
     renderChart(scan);
     renderReasons(scan);
     renderRules(scan);
+    evaluateAutoPilot(scan);
   }
 
   function renderSummary(scan) {
@@ -264,11 +285,7 @@
         maxCost: Number(maxCostInput.value || 5),
         minutes: 180,
       };
-      const data = await fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/order-preview"), {
-        method: "POST",
-        headers: tradeHeaders(),
-        body: JSON.stringify(payload),
-      });
+      const data = await requestTicketPreview(payload);
       state.tradeTicket = data;
       renderTradeTicket(data);
       setTicketStatus(data.ok ? "Ticket ready. Final Buy will re-check price and send FOK." : "Ticket blocked. No order sent.");
@@ -277,6 +294,14 @@
       renderTradeTicket(null);
       setTicketStatus(error.message || "Could not prepare ticket.", true);
     }
+  }
+
+  async function requestTicketPreview(payload) {
+    return fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/order-preview", payload), {
+      method: "POST",
+      headers: tradeHeaders(),
+      body: JSON.stringify(payload),
+    });
   }
 
   async function placePreparedTicket() {
@@ -294,17 +319,19 @@
     try {
       setTicketStatus("Sending final order...");
       placeTicketButton.disabled = true;
-      const data = await fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/place-order"), {
+      const placePayload = {
+        side: ticket.side,
+        maxCost: Number(ticket.maxCost || maxCostInput.value || 5),
+        minEdge: Math.max(Number(minEdgeInput.value || 0) / 100, Number(ticket.requiredMinEdge || 0)),
+        maxPriceCents: ticket.limitPriceCents,
+        maxContracts: Math.max(1, Math.floor(Number(ticket.contracts || 1))),
+        confirm: "PLACE_ORDER",
+        minutes: 180,
+      };
+      const data = await fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/place-order", placePayload), {
         method: "POST",
         headers: tradeHeaders(),
-        body: JSON.stringify({
-          side: ticket.side,
-          maxCost: Number(maxCostInput.value || 5),
-          minEdge: Number(minEdgeInput.value || 0) / 100,
-          maxPriceCents: ticket.limitPriceCents,
-          confirm: "PLACE_ORDER",
-          minutes: 180,
-        }),
+        body: JSON.stringify(placePayload),
       });
       if (!data.ok) {
         state.tradeTicket = data;
@@ -392,6 +419,127 @@
     if (!ticketStatusEl) return;
     ticketStatusEl.textContent = message;
     ticketStatusEl.className = error ? "neg" : "";
+  }
+
+  function restoreAutoSettings() {
+    const saved = JSON.parse(localStorage.getItem("kalshiBtcAutoPilot") || "{}");
+    autoEnableInput.checked = saved.enabled === true;
+    autoModeInput.value = saved.mode === "dry" ? "dry" : "confirm";
+    autoMinEdgeInput.value = saved.minEdge || "8";
+    autoFirstMinutesInput.value = saved.firstMinutes || "10";
+    autoMaxCostInput.value = saved.maxCost || "1.25";
+    updateAutoStatus(autoEnableInput.checked ? "Watcher armed for the next fresh market." : "Watcher is off.");
+  }
+
+  function saveAutoSettings() {
+    localStorage.setItem("kalshiBtcAutoPilot", JSON.stringify({
+      enabled: autoEnableInput.checked,
+      mode: autoModeInput.value,
+      minEdge: autoMinEdgeInput.value,
+      firstMinutes: autoFirstMinutesInput.value,
+      maxCost: autoMaxCostInput.value,
+    }));
+    if (!autoEnableInput.checked) {
+      updateAutoStatus("Watcher is off.");
+    } else {
+      updateAutoStatus("Watcher armed for the next fresh market.");
+    }
+  }
+
+  function evaluateAutoPilot(scan) {
+    if (!autoEnableInput.checked || state.auto.running) return;
+    const market = scan.market || {};
+    const ticker = scan.ticker || "";
+    const best = scan.best || {};
+    if (!ticker || state.auto.lastTicker === ticker) return;
+    const nowMs = Date.now();
+    if (state.auto.lastAttemptTicker === ticker && nowMs - state.auto.lastAttemptAt < 15000) return;
+
+    const secondsSinceOpen = Number(market.secondsSinceOpen);
+    const firstWindowSeconds = Math.max(60, Number(autoFirstMinutesInput.value || 10) * 60);
+    if (!Number.isFinite(secondsSinceOpen) || secondsSinceOpen < 0) return;
+    if (secondsSinceOpen > firstWindowSeconds) {
+      updateAutoStatus("Waiting for the next market; current one is past the entry window.");
+      return;
+    }
+
+    const minEdge = Number(autoMinEdgeInput.value || 8) / 100;
+    if (!Number.isFinite(Number(best.edge)) || Number(best.edge) < minEdge) {
+      updateAutoStatus("Watching " + ticker + "; best edge " + pct(best.edge) + " is below " + pct(minEdge) + ".");
+      return;
+    }
+
+    state.auto.running = true;
+    state.auto.lastAttemptTicker = ticker;
+    state.auto.lastAttemptAt = nowMs;
+    runAutoPilotTicket(ticker, minEdge).finally(function () {
+      state.auto.running = false;
+    });
+  }
+
+  async function runAutoPilotTicket(ticker, minEdge) {
+    const payload = {
+      side: "",
+      minEdge,
+      maxCost: Number(autoMaxCostInput.value || 1.25),
+      maxContracts: 1,
+      minutes: 180,
+    };
+    try {
+      const data = await requestTicketPreview(payload);
+      if (!data.ok) {
+        addAutoLog("Blocked " + ticker, (data.blockers || []).join(" / ") || "Ticket did not pass guardrails.", true);
+        updateAutoStatus("Auto Pilot blocked this attempt; it will retry while the market is still fresh.");
+        return;
+      }
+      state.auto.lastTicker = ticker;
+      const ticket = data.ticket || {};
+      const summary = String(ticket.side || "").toUpperCase()
+        + " 1 @ " + formatCents(ticket.limitPriceCents)
+        + " / edge " + pct(ticket.edge)
+        + " / model " + pct(ticket.modelProbability);
+      if (autoModeInput.value === "dry") {
+        addAutoLog("Dry run " + ticker, summary + ". No order sent.", false);
+        updateAutoStatus("Dry run logged for " + ticker + ".");
+        return;
+      }
+      state.tradeTicket = data;
+      if (state.tradeTicket.ticket) state.tradeTicket.ticket.requiredMinEdge = minEdge;
+      renderTradeTicket(data);
+      addAutoLog("Prepared " + ticker, summary + ". Final Buy is ready.", false);
+      setTicketStatus("Auto Pilot prepared a one-contract ticket. Final Buy still needs your click.");
+      updateAutoStatus("Prepared one-contract ticket for " + ticker + ".");
+    } catch (error) {
+      addAutoLog("Auto Pilot error", error.message || "Unable to prepare ticket.", true);
+      updateAutoStatus("Auto Pilot hit an error while preparing the ticket.");
+    }
+  }
+
+  function updateAutoStatus(message) {
+    if (autoStatusEl) autoStatusEl.textContent = message;
+  }
+
+  function addAutoLog(title, detail, error) {
+    const entry = {
+      title,
+      detail,
+      error: Boolean(error),
+      time: new Date().toISOString(),
+    };
+    state.auto.log.unshift(entry);
+    state.auto.log = state.auto.log.slice(0, 18);
+    renderAutoLog();
+  }
+
+  function renderAutoLog() {
+    autoLogEl.innerHTML = state.auto.log.map(function (entry) {
+      return [
+        '<div class="auto-entry">',
+        '<strong class="' + (entry.error ? "neg" : "pos") + '">' + escapeHtml(entry.title) + "</strong>",
+        "<small>" + escapeHtml(formatTime(entry.time) + " / " + entry.detail) + "</small>",
+        "</div>",
+      ].join("");
+    }).join("");
   }
 
   function startClockTicker() {

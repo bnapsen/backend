@@ -103,6 +103,15 @@ input {
   padding: 0 10px;
 }
 
+select {
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0d141b;
+  color: var(--text);
+  padding: 0 10px;
+}
+
 input[type="number"] {
   width: 86px;
 }
@@ -173,6 +182,7 @@ button:disabled {
 .chart-panel,
 .table-panel,
 .trade-panel,
+.auto-panel,
 .panel {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -449,6 +459,10 @@ button:disabled {
   margin-top: 14px;
 }
 
+.auto-panel {
+  margin-top: 14px;
+}
+
 .trade-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
@@ -521,6 +535,39 @@ button:disabled {
   display: grid;
   align-content: start;
   gap: 10px;
+}
+
+.auto-grid {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) repeat(3, minmax(110px, 140px)) minmax(180px, 1fr);
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+}
+
+.auto-log {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 0 14px 14px;
+}
+
+.auto-entry {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid rgba(237, 244, 241, 0.1);
+  border-radius: 8px;
+  background: #0d141b;
+}
+
+.auto-entry strong {
+  font-size: 13px;
+}
+
+.auto-entry small {
+  line-height: 1.4;
 }
 
 table {
@@ -609,6 +656,7 @@ th {
   .market-strip,
   .clock-panel,
   .trade-grid,
+  .auto-grid,
   .split {
     grid-template-columns: 1fr;
   }
@@ -618,6 +666,7 @@ th {
   }
 
   input,
+  select,
   #access-token,
   button,
   .button-link {
