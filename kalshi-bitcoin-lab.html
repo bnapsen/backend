@@ -109,10 +109,31 @@
               <th>EV</th>
               <th>Size</th>
               <th>Call</th>
+              <th>Ticket</th>
             </tr>
           </thead>
           <tbody id="candidate-rows"></tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="trade-panel">
+      <div class="section-head">
+        <div>
+          <h2>Confirm-Only Trade Ticket</h2>
+          <p class="subtext">The server re-checks the live Kalshi quote before the final click can send a fill-or-kill order.</p>
+        </div>
+        <button id="prepare-ticket" type="button">Prepare Best</button>
+      </div>
+      <div class="trade-grid">
+        <div id="ticket-card" class="ticket-card">
+          <strong>No ticket prepared</strong>
+          <p class="subtext">Prepare a ticket from the current best row or from a side button in the table.</p>
+        </div>
+        <div class="ticket-actions">
+          <button id="place-ticket" class="danger-button" type="button" disabled>Final Buy</button>
+          <small id="ticket-status">No order has been sent.</small>
+        </div>
       </div>
     </section>
 

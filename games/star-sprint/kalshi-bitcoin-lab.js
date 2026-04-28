@@ -10,6 +10,8 @@ try {
 }
 
 const KALSHI_API_BASE_URL = 'https://api.elections.kalshi.com/trade-api/v2';
+const KALSHI_API_PATH_PREFIX = '/trade-api/v2';
+const KALSHI_CREATE_ORDER_PATH = `${KALSHI_API_PATH_PREFIX}/portfolio/orders`;
 const KALSHI_WS_URL = 'wss://api.elections.kalshi.com/trade-api/ws/v2';
 const KALSHI_WS_PATH = '/trade-api/ws/v2';
 const COINBASE_API_BASE_URL = 'https://api.exchange.coinbase.com';
@@ -24,6 +26,9 @@ const DEFAULT_MIN_EDGE = 0.02;
 const MARKET_CACHE_MS = 450;
 const MARKET_DETAIL_CACHE_MS = 250;
 const WS_QUOTE_FRESH_MS = 2_000;
+const ORDER_QUOTE_FRESH_MS = 1_500;
+const ORDER_MIN_SECONDS_TO_CLOSE = 35;
+const ORDER_MAX_COST_HARD_CAP = 5;
 const TICKER_CACHE_MS = 300;
 const CANDLE_CACHE_MS = 8_000;
 const bitcoinCache = {
@@ -134,6 +139,22 @@ function kalshiWsHeaders() {
   };
 }
 
+function kalshiRestHeaders(method, fullPath) {
+  const timestamp = String(Date.now());
+  const pathWithoutQuery = String(fullPath || '').split('?')[0];
+  return {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'KALSHI-ACCESS-KEY': String(process.env.KALSHI_API_KEY_ID || ''),
+    'KALSHI-ACCESS-SIGNATURE': signKalshiText(`${timestamp}${String(method || 'GET').toUpperCase()}${pathWithoutQuery}`),
+    'KALSHI-ACCESS-TIMESTAMP': timestamp,
+  };
+}
+
+function kalshiTradingConfigured() {
+  return Boolean(process.env.KALSHI_API_KEY_ID && kalshiPrivateKeyPem());
+}
+
 function normalizeTimestamp(value) {
   if (value == null || value === '') return isoDate(Date.now());
   const number = Number(value);
@@ -159,6 +180,13 @@ function recordKalshiClockSync(url, response, startedAtMs) {
 }
 
 function kalshiNowMs() {
+  if (
+    kalshiTickerWs.status === 'connected'
+    && kalshiTickerWs.lastMessageAt
+    && Date.now() - kalshiTickerWs.lastMessageAt <= WS_QUOTE_FRESH_MS
+  ) {
+    return Date.now();
+  }
   if (kalshiClockSync.serverTimeMs > 0 && kalshiClockSync.localTimeMs > 0) {
     return kalshiClockSync.serverTimeMs + (Date.now() - kalshiClockSync.localTimeMs);
   }
@@ -167,12 +195,16 @@ function kalshiNowMs() {
 
 function kalshiClockStatus() {
   const nowMs = kalshiNowMs();
+  const wsAgeMs = kalshiTickerWs.lastMessageAt ? Date.now() - kalshiTickerWs.lastMessageAt : null;
+  const wsFresh = Number.isFinite(wsAgeMs) && wsAgeMs <= WS_QUOTE_FRESH_MS && kalshiTickerWs.status === 'connected';
   return {
-    clockSource: kalshiClockSync.source,
+    clockSource: wsFresh ? 'Kalshi WebSocket ticker clock' : kalshiClockSync.source,
     clockTime: isoDate(nowMs),
     kalshiResponseDate: kalshiClockSync.responseDate,
     kalshiClockRoundTripMs: round(kalshiClockSync.roundTripMs, 0),
     localClockOffsetMs: round(nowMs - Date.now(), 0),
+    websocketClockAgeMs: wsFresh ? round(wsAgeMs, 0) : null,
+    websocketLastMessageAt: kalshiTickerWs.lastMessageAt ? isoDate(kalshiTickerWs.lastMessageAt) : '',
   };
 }
 
@@ -197,6 +229,20 @@ async function fetchJson(url, options = {}) {
   }
   recordKalshiClockSync(url, response, startedAtMs);
   return response.json();
+}
+
+async function fetchKalshiAuthJson(path, options = {}) {
+  const { method = 'GET', body = null, timeoutMs = 5_000 } = options;
+  if (!kalshiTradingConfigured()) {
+    throw new Error('Kalshi trading credentials are not configured.');
+  }
+  const bodyText = body == null ? undefined : JSON.stringify(body);
+  return fetchJson(`${KALSHI_API_BASE_URL}${String(path || '').replace(KALSHI_API_PATH_PREFIX, '')}`, {
+    method,
+    timeoutMs,
+    headers: kalshiRestHeaders(method, `${KALSHI_API_PATH_PREFIX}${String(path || '').replace(KALSHI_API_PATH_PREFIX, '')}`),
+    body: bodyText,
+  });
 }
 
 function marketPrice(market, dollarsField, centsField) {
@@ -257,9 +303,13 @@ function isoDate(value) {
 function eventWindowFromMarket(market) {
   const open = new Date(market.open_time || market.created_time || Date.now());
   const close = new Date(market.close_time || market.expected_expiration_time || Date.now());
+  const expectedExpiration = new Date(market.expected_expiration_time || market.close_time || Date.now());
+  const expiration = new Date(market.expiration_time || market.latest_expiration_time || market.close_time || Date.now());
   return {
     openTime: isoDate(open),
     closeTime: isoDate(close),
+    expectedExpirationTime: isoDate(expectedExpiration),
+    expirationTime: isoDate(expiration),
     openMs: open.getTime(),
     closeMs: close.getTime(),
     targetReferenceTime: isoDate(open),
@@ -1135,6 +1185,192 @@ function kalshiBitcoinMarketUrl(market) {
   return `https://kalshi.com/markets/kxbtc15m/bitcoin-price-up-down${eventTicker ? `/${eventTicker}` : ''}${hash}`;
 }
 
+function selectedCandidate(scan, side) {
+  const candidates = Array.isArray(scan && scan.candidates) ? scan.candidates : [];
+  const wanted = String(side || '').toLowerCase();
+  if (wanted === 'yes' || wanted === 'no') {
+    return candidates.find((candidate) => candidate.side === wanted) || null;
+  }
+  return candidates[0] || null;
+}
+
+function quoteAgeMsFromMarket(market) {
+  const receivedAt = new Date(market && market.quoteReceivedAt || 0).getTime();
+  if (!Number.isFinite(receivedAt) || receivedAt <= 0) return Number.POSITIVE_INFINITY;
+  return Math.max(0, Date.now() - receivedAt);
+}
+
+function orderPriceCents(candidate, maxPriceCents) {
+  const askCents = Math.ceil(Number(candidate && candidate.askCents));
+  const priceCents = clamp(askCents, 1, 99);
+  const cap = Number(maxPriceCents);
+  if (Number.isFinite(cap) && cap > 0) {
+    return Math.min(priceCents, clamp(Math.floor(cap), 1, 99));
+  }
+  return priceCents;
+}
+
+function buildBitcoinOrderPayload(scan, candidate, options = {}) {
+  const priceCents = orderPriceCents(candidate, options.maxPriceCents);
+  const contracts = Math.max(1, Math.floor(Number(candidate.contracts || 0)));
+  const feeCents = Math.max(0, Math.ceil(Number(candidate.fee || 0) * 100));
+  const maxCostCents = Math.max(1, contracts * priceCents + feeCents);
+  const payload = {
+    ticker: scan.ticker,
+    action: 'buy',
+    side: candidate.side,
+    count: contracts,
+    type: 'limit',
+    time_in_force: 'fill_or_kill',
+    buy_max_cost: maxCostCents,
+    client_order_id: options.clientOrderId || `bnapsn-btc15m-${Date.now()}-${crypto.randomUUID()}`,
+    cancel_order_on_pause: true,
+  };
+  payload[candidate.side === 'yes' ? 'yes_price' : 'no_price'] = priceCents;
+  return payload;
+}
+
+function ticketFromScan(scan, candidate, options = {}) {
+  const market = scan.market || {};
+  const quoteAgeMs = quoteAgeMsFromMarket(market);
+  const maxCost = clamp(parseNumber(options.maxCost, DEFAULT_MAX_COST), 0.5, ORDER_MAX_COST_HARD_CAP);
+  const maxPriceCents = Number(options.maxPriceCents);
+  const priceCents = candidate && candidate.side ? orderPriceCents(candidate, maxPriceCents) : 0;
+  const warnings = [];
+  const blockers = [];
+
+  if (!kalshiTradingConfigured()) {
+    blockers.push('Kalshi API key/private key is not configured on the server.');
+  }
+  if (!candidate || !candidate.side) {
+    blockers.push('No candidate is available for this 15-minute market.');
+  }
+  if (!Number.isFinite(Number(candidate && candidate.edge)) || Number(candidate.edge) < parseNumber(options.minEdge, DEFAULT_MIN_EDGE)) {
+    blockers.push('The current candidate no longer clears the requested edge.');
+  }
+  if (!['research-buy', 'tiny-only'].includes(String(candidate && candidate.recommendation || ''))) {
+    blockers.push(`The model call is ${candidate && candidate.recommendation ? candidate.recommendation : 'not buyable'} right now.`);
+  }
+  if (!Number.isFinite(Number(candidate && candidate.contracts)) || Number(candidate.contracts) < 1) {
+    blockers.push('Suggested contract size is below one contract.');
+  }
+  if (Number.isFinite(maxPriceCents) && maxPriceCents > 0 && Math.ceil(Number(candidate && candidate.askCents)) > Math.floor(maxPriceCents)) {
+    blockers.push('The ask moved above the preview limit price.');
+  }
+  if (String(market.quoteTransport || '') !== 'websocket') {
+    blockers.push('Live Kalshi WebSocket quotes are not fresh yet.');
+  }
+  if (!Number.isFinite(quoteAgeMs) || quoteAgeMs > ORDER_QUOTE_FRESH_MS) {
+    blockers.push(`Quote age is ${Number.isFinite(quoteAgeMs) ? Math.round(quoteAgeMs) : 'unknown'}ms; wait for a fresh tick.`);
+  }
+  if (Number(market.secondsToClose || 0) < ORDER_MIN_SECONDS_TO_CLOSE) {
+    blockers.push(`Only ${Math.round(Number(market.secondsToClose || 0))} seconds remain; too close for a guarded FOK order.`);
+  }
+  if (String(scan.model && scan.model.dataGrade || '') !== 'settlement-grade') {
+    warnings.push('Spot is still a proxy for CF Benchmarks BRTI, so this is not a fully settlement-matched signal.');
+  }
+  if (parseNumber(options.maxCost, DEFAULT_MAX_COST) > ORDER_MAX_COST_HARD_CAP) {
+    warnings.push(`Trade-ticket max cost is capped at $${ORDER_MAX_COST_HARD_CAP.toFixed(2)} per click.`);
+  }
+
+  const payloadPreview = candidate && candidate.side
+    ? buildBitcoinOrderPayload(scan, candidate, { maxPriceCents, clientOrderId: 'generated-on-final-click' })
+    : null;
+  if (payloadPreview) {
+    delete payloadPreview.client_order_id;
+  }
+
+  return {
+    ok: blockers.length === 0,
+    blockers,
+    warnings,
+    ticket: {
+      ticker: scan.ticker,
+      title: scan.title,
+      url: scan.url,
+      side: candidate && candidate.side,
+      action: 'buy',
+      contracts: Math.max(0, Math.floor(Number(candidate && candidate.contracts || 0))),
+      limitPriceCents: priceCents,
+      maxCost: round(Math.min(maxCost, Number(candidate && candidate.cost || maxCost)), 2),
+      estimatedFee: round(Number(candidate && candidate.fee || 0), 2),
+      expectedProfit: round(Number(candidate && candidate.expectedProfit || 0), 2),
+      edge: round(Number(candidate && candidate.edge || 0)),
+      modelProbability: round(Number(candidate && candidate.probability || 0)),
+      breakEven: round(Number(candidate && candidate.breakEven || 0)),
+      quoteAgeMs: round(quoteAgeMs, 0),
+      quoteSource: market.quoteSource || '',
+      clockSource: market.clockSource || '',
+      secondsToClose: round(Number(market.secondsToClose || 0), 1),
+      targetPrice: market.targetPrice,
+      currentPrice: market.currentPrice,
+      generatedAt: scan.generatedAt,
+      orderPayloadPreview: payloadPreview,
+    },
+    scanSummary: {
+      ticker: scan.ticker,
+      bestSide: scan.best && scan.best.side,
+      bestEdge: scan.best && scan.best.edge,
+      quoteSource: market.quoteSource || '',
+      quoteAgeMs: round(quoteAgeMs, 0),
+      secondsToClose: round(Number(market.secondsToClose || 0), 1),
+    },
+  };
+}
+
+async function previewBitcoin15mOrder(options = {}) {
+  const maxCost = clamp(parseNumber(options.maxCost, DEFAULT_MAX_COST), 0.5, ORDER_MAX_COST_HARD_CAP);
+  const minEdge = clamp(parseNumber(options.minEdge, DEFAULT_MIN_EDGE), -0.5, 0.5);
+  const scan = await scanBitcoin15m({
+    maxCost,
+    minEdge,
+    minutes: parseNumber(options.minutes, 180),
+  });
+  const candidate = selectedCandidate(scan, options.side);
+  return ticketFromScan(scan, candidate, {
+    ...options,
+    maxCost,
+    minEdge,
+  });
+}
+
+async function placeBitcoin15mOrder(options = {}) {
+  if (String(options.confirm || '') !== 'PLACE_ORDER') {
+    return {
+      ok: false,
+      error: 'Final confirmation was not supplied. No order was sent.',
+    };
+  }
+  const preview = await previewBitcoin15mOrder(options);
+  if (!preview.ok) {
+    return {
+      ...preview,
+      ok: false,
+      error: preview.blockers[0] || 'Order ticket is not currently placeable.',
+    };
+  }
+  const payload = buildBitcoinOrderPayload({
+    ticker: preview.ticket.ticker,
+  }, {
+    side: preview.ticket.side,
+    contracts: preview.ticket.contracts,
+    askCents: preview.ticket.limitPriceCents,
+    fee: preview.ticket.estimatedFee,
+  }, {
+    maxPriceCents: preview.ticket.limitPriceCents,
+  });
+  const response = await fetchKalshiAuthJson(KALSHI_CREATE_ORDER_PATH, {
+    method: 'POST',
+    timeoutMs: 4_000,
+    body: payload,
+  });
+  return {
+    ok: true,
+    ticket: preview.ticket,
+    order: response && response.order ? response.order : response,
+  };
+}
+
 async function scanBitcoin15m(options = {}) {
   const maxCost = clamp(parseNumber(options.maxCost, DEFAULT_MAX_COST), 0.5, 100);
   const minEdge = clamp(parseNumber(options.minEdge, DEFAULT_MIN_EDGE), -0.5, 0.5);
@@ -1249,8 +1485,12 @@ async function scanBitcoin15m(options = {}) {
       clockTime: clock.clockTime,
       kalshiClockRoundTripMs: clock.kalshiClockRoundTripMs,
       localClockOffsetMs: clock.localClockOffsetMs,
+      websocketClockAgeMs: clock.websocketClockAgeMs,
+      websocketLastMessageAt: clock.websocketLastMessageAt,
       openTime: window.openTime,
       closeTime: window.closeTime,
+      expectedExpirationTime: window.expectedExpirationTime,
+      expirationTime: window.expirationTime,
       targetReferenceTime: window.targetReferenceTime,
       settlementAveragingStart: window.settlementAveragingStart,
       settlementAveragingEnd: window.settlementAveragingEnd,
@@ -1332,5 +1572,7 @@ function sourceStatus() {
 
 module.exports = {
   BTC_15M_SERIES,
+  placeBitcoin15mOrder,
+  previewBitcoin15mOrder,
   scanBitcoin15m,
 };

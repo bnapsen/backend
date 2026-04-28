@@ -10,6 +10,7 @@
     fallbackTimer: null,
     clockTimer: null,
     marketClock: null,
+    tradeTicket: null,
   };
 
   const form = document.querySelector("#scan-form");
@@ -38,6 +39,10 @@
   const maxCostInput = document.querySelector("#max-cost");
   const accessTokenInput = document.querySelector("#access-token");
   const streamToggle = document.querySelector("#stream-toggle");
+  const prepareTicketButton = document.querySelector("#prepare-ticket");
+  const placeTicketButton = document.querySelector("#place-ticket");
+  const ticketCardEl = document.querySelector("#ticket-card");
+  const ticketStatusEl = document.querySelector("#ticket-status");
 
   kalshiLinkEl.addEventListener("click", function (event) {
     if (openKalshiWindow(kalshiLinkEl.href)) {
@@ -49,6 +54,16 @@
     restart();
   });
   streamToggle.addEventListener("change", restart);
+  rowsEl.addEventListener("click", function (event) {
+    const button = event.target.closest("[data-ticket-side]");
+    if (button) {
+      prepareTicket(button.getAttribute("data-ticket-side"));
+    }
+  });
+  prepareTicketButton.addEventListener("click", function () {
+    prepareTicket("");
+  });
+  placeTicketButton.addEventListener("click", placePreparedTicket);
   accessTokenInput.value = localStorage.getItem("kalshiLabToken") || "";
   accessTokenInput.addEventListener("input", function () {
     localStorage.setItem("kalshiLabToken", accessTokenInput.value.trim());
@@ -108,8 +123,11 @@
     }
   }
 
-  async function fetchJson(url) {
-    const response = await fetch(url, { cache: "no-store" });
+  async function fetchJson(url, options) {
+    const response = await fetch(url, {
+      cache: "no-store",
+      ...(options || {}),
+    });
     const data = await response.json().catch(function () { return {}; });
     if (!response.ok) {
       throw new Error(data.error || "Request failed.");
@@ -126,6 +144,17 @@
     const token = accessTokenInput.value.trim();
     if (token) params.set("token", token);
     return defaultApiBase() + path + "?" + params.toString();
+  }
+
+  function tradeHeaders() {
+    const token = accessTokenInput.value.trim();
+    return {
+      "Content-Type": "application/json",
+      ...(token ? {
+        "X-Kalshi-Lab-Token": token,
+        "X-Kalshi-Trade-Token": token,
+      } : {}),
+    };
   }
 
   function defaultApiBase() {
@@ -217,14 +246,122 @@
         '<td class="' + (Number(row.expectedProfit || 0) >= 0 ? "pos" : "neg") + '">' + signedDollars(row.expectedProfit) + "</td>",
         "<td>" + row.contracts + '<br><span class="subtext">' + dollars(row.cost) + " cost / " + dollars(row.fee) + " fee</span></td>",
         '<td><span class="call-pill ' + callClass(row.recommendation) + '">' + escapeHtml(callLabel(row.recommendation)) + "</span></td>",
+        '<td><button class="mini-button" type="button" data-ticket-side="' + escapeHtml(row.side) + '">Ticket</button></td>',
         "</tr>",
       ].join("");
     }).join("");
   }
 
+  async function prepareTicket(side) {
+    try {
+      setTicketStatus("Preparing live ticket...");
+      placeTicketButton.disabled = true;
+      const payload = {
+        side: side || "",
+        minEdge: Number(minEdgeInput.value || 0) / 100,
+        maxCost: Number(maxCostInput.value || 5),
+        minutes: 180,
+      };
+      const data = await fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/order-preview"), {
+        method: "POST",
+        headers: tradeHeaders(),
+        body: JSON.stringify(payload),
+      });
+      state.tradeTicket = data;
+      renderTradeTicket(data);
+      setTicketStatus(data.ok ? "Ticket ready. Final Buy will re-check price and send FOK." : "Ticket blocked. No order sent.");
+    } catch (error) {
+      state.tradeTicket = null;
+      renderTradeTicket(null);
+      setTicketStatus(error.message || "Could not prepare ticket.", true);
+    }
+  }
+
+  async function placePreparedTicket() {
+    const prepared = state.tradeTicket || {};
+    const ticket = prepared.ticket || {};
+    if (!prepared.ok || !ticket.side) {
+      setTicketStatus("Prepare a valid ticket first.", true);
+      return;
+    }
+    const label = String(ticket.side || "").toUpperCase() + " " + ticket.contracts + " @ " + formatCents(ticket.limitPriceCents);
+    if (!window.confirm("Final click: send " + label + " as fill-or-kill?")) {
+      setTicketStatus("Final order canceled. No order sent.");
+      return;
+    }
+    try {
+      setTicketStatus("Sending final order...");
+      placeTicketButton.disabled = true;
+      const data = await fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/place-order"), {
+        method: "POST",
+        headers: tradeHeaders(),
+        body: JSON.stringify({
+          side: ticket.side,
+          maxCost: Number(maxCostInput.value || 5),
+          minEdge: Number(minEdgeInput.value || 0) / 100,
+          maxPriceCents: ticket.limitPriceCents,
+          confirm: "PLACE_ORDER",
+          minutes: 180,
+        }),
+      });
+      if (!data.ok) {
+        state.tradeTicket = data;
+        renderTradeTicket(data);
+        setTicketStatus(data.error || "Order blocked. No order sent.", true);
+        return;
+      }
+      state.tradeTicket = null;
+      renderTradeTicket(null);
+      const order = data.order || {};
+      setTicketStatus("Order sent: " + String(order.order_id || order.client_order_id || "Kalshi accepted it") + ".");
+      loadScan();
+    } catch (error) {
+      renderTradeTicket(state.tradeTicket);
+      setTicketStatus(error.message || "Final order failed. No order may have been sent.", true);
+    }
+  }
+
+  function renderTradeTicket(data) {
+    if (!ticketCardEl || !placeTicketButton) return;
+    if (!data || !data.ticket) {
+      ticketCardEl.innerHTML = '<strong>No ticket prepared</strong><p class="subtext">Prepare a ticket from the current best row or from a side button in the table.</p>';
+      placeTicketButton.disabled = true;
+      return;
+    }
+    const ticket = data.ticket;
+    const blockers = Array.isArray(data.blockers) ? data.blockers : [];
+    const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+    ticketCardEl.innerHTML = [
+      '<div class="ticket-main">',
+      '<span class="side-pill ' + escapeHtml(ticket.side) + '">' + escapeHtml(String(ticket.side || "").toUpperCase()) + "</span>",
+      "<strong>" + escapeHtml(ticket.contracts + " contracts @ " + formatCents(ticket.limitPriceCents)) + "</strong>",
+      "<small>" + escapeHtml(dollars(ticket.maxCost) + " max / edge " + pct(ticket.edge) + " / model " + pct(ticket.modelProbability) + " vs pay " + pct(ticket.breakEven)) + "</small>",
+      "</div>",
+      '<div class="ticket-facts">',
+      ticketLine("Quote", (ticket.quoteSource || "Unknown") + " / " + Math.round(Number(ticket.quoteAgeMs || 0)) + "ms"),
+      ticketLine("Clock", (ticket.clockSource || "Unknown") + " / " + formatDuration(ticket.secondsToClose) + " left"),
+      ticketLine("Target", dollars(ticket.targetPrice) + " / spot " + dollars(ticket.currentPrice)),
+      ticketLine("EV", signedDollars(ticket.expectedProfit) + " before model error"),
+      "</div>",
+      blockers.length ? '<div class="ticket-list bad-list">' + blockers.map(function (item) { return "<p>" + escapeHtml(item) + "</p>"; }).join("") + "</div>" : "",
+      warnings.length ? '<div class="ticket-list warn-list">' + warnings.map(function (item) { return "<p>" + escapeHtml(item) + "</p>"; }).join("") + "</div>" : "",
+    ].join("");
+    placeTicketButton.disabled = !data.ok;
+  }
+
+  function ticketLine(label, value) {
+    return "<p><span>" + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong></p>";
+  }
+
+  function setTicketStatus(message, error) {
+    if (!ticketStatusEl) return;
+    ticketStatusEl.textContent = message;
+    ticketStatusEl.className = error ? "neg" : "";
+  }
+
   function startClockTicker() {
     if (state.clockTimer) return;
-    state.clockTimer = setInterval(updateMarketClock, 1000);
+    state.clockTimer = setInterval(updateMarketClock, 250);
   }
 
   function syncMarketClock(scan) {
@@ -246,6 +383,7 @@
       clientReceivedAtMs: Date.now(),
       clockSource: market.clockSource || (scan.clock && scan.clock.clockSource) || "server clock",
       localClockOffsetMs: Number(market.localClockOffsetMs || 0),
+      websocketClockAgeMs: Number(market.websocketClockAgeMs || (scan.clock && scan.clock.websocketClockAgeMs) || 0),
     };
     updateMarketClock();
   }
@@ -292,7 +430,7 @@
     eventWindowEl.textContent = remainingSeconds > 0
       ? "Closes " + formatTime(clock.closeMs) + " / " + formatDuration(remainingSeconds) + " left"
       : "Closed; waiting for next market";
-    marketClockNoteEl.textContent = "Odds horizon right now: " + formatDuration(remainingSeconds) + ". Clock source: " + clock.clockSource + ". Offset vs browser: " + Math.round(clock.localClockOffsetMs || 0) + "ms.";
+    marketClockNoteEl.textContent = "Odds horizon right now: " + formatDuration(remainingSeconds) + ". Clock source: " + clock.clockSource + ". Offset vs browser: " + Math.round(clock.localClockOffsetMs || 0) + "ms. WS age: " + Math.round(clock.websocketClockAgeMs || 0) + "ms.";
   }
 
   function renderChart(scan) {

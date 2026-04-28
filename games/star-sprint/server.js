@@ -40,6 +40,8 @@ const {
   scanWeatherMarkets,
 } = require('./kalshi-weather-lab.js');
 const {
+  placeBitcoin15mOrder,
+  previewBitcoin15mOrder,
   scanBitcoin15m,
 } = require('./kalshi-bitcoin-lab.js');
 
@@ -81,6 +83,7 @@ const CLIP_DIRECT_UPLOAD_TTL_MS = 2 * 60 * 60 * 1000;
 const GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES = 5 * 1024 * 1024 * 1024;
 const CLIP_ADMIN_TOKEN = String(process.env.CLIP_ADMIN_TOKEN || '').trim();
 const KALSHI_LAB_TOKEN = String(process.env.KALSHI_LAB_TOKEN || '').trim();
+const KALSHI_TRADE_TOKEN = String(process.env.KALSHI_TRADE_TOKEN || process.env.KALSHI_LAB_TOKEN || '').trim();
 const CLIP_UPLOAD_SIGNING_SECRET = String(
   process.env.CLIP_UPLOAD_SIGNING_SECRET
   || process.env.S3_SECRET_ACCESS_KEY
@@ -298,7 +301,7 @@ function corsHeaders(req) {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token, X-Kalshi-Lab-Token',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token, X-Kalshi-Lab-Token, X-Kalshi-Trade-Token',
     Vary: 'Origin',
   };
 }
@@ -322,6 +325,16 @@ function hasKalshiWeatherLabAccess(req, requestUrl) {
   }
   const providedToken = requestHeader(req, 'x-kalshi-lab-token') || String(requestUrl.searchParams.get('token') || '').trim();
   return providedToken === KALSHI_LAB_TOKEN;
+}
+
+function hasKalshiTradeAccess(req, requestUrl) {
+  if (!KALSHI_TRADE_TOKEN) {
+    return false;
+  }
+  const providedToken = requestHeader(req, 'x-kalshi-trade-token')
+    || requestHeader(req, 'x-kalshi-lab-token')
+    || String(requestUrl.searchParams.get('token') || '').trim();
+  return providedToken === KALSHI_TRADE_TOKEN;
 }
 
 function readFloatParam(requestUrl, name, defaultValue) {
@@ -504,6 +517,84 @@ async function handleKalshiBitcoinStreamRequest(req, res, requestUrl) {
   req.on('close', () => {
     clearInterval(interval);
   });
+}
+
+async function handleKalshiBitcoinOrderPreviewRequest(req, res, requestUrl) {
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, { ok: false, error: 'Method not allowed.' });
+    return;
+  }
+  if (!hasKalshiWeatherLabAccess(req, requestUrl)) {
+    sendJsonResponse(req, res, 403, { ok: false, error: 'A valid Kalshi Lab token is required.' });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, { ok: false, error: error.message });
+    return;
+  }
+
+  try {
+    sendJsonResponse(req, res, 200, await previewBitcoin15mOrder({
+      side: body.side,
+      minEdge: readFloatParam(requestUrl, 'minEdge', Number(body.minEdge || 0.02)),
+      maxCost: readFloatParam(requestUrl, 'maxCost', Number(body.maxCost || 5)),
+      maxPriceCents: Number(body.maxPriceCents || 0),
+      minutes: readFloatParam(requestUrl, 'minutes', Number(body.minutes || 180)),
+    }));
+  } catch (error) {
+    const payload = { ok: false, error: 'Unable to prepare a Kalshi Bitcoin order ticket right now.' };
+    if (process.env.DEBUG_ERRORS === 'true') {
+      payload.detail = error.stack || error.message;
+    }
+    sendJsonResponse(req, res, 502, payload);
+  }
+}
+
+async function handleKalshiBitcoinPlaceOrderRequest(req, res, requestUrl) {
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, { ok: false, error: 'Method not allowed.' });
+    return;
+  }
+  if (!hasKalshiTradeAccess(req, requestUrl)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: KALSHI_TRADE_TOKEN
+        ? 'A valid Kalshi trade token is required before an order can be sent.'
+        : 'Kalshi trade token is not configured on the server. No order was sent.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, { ok: false, error: error.message });
+    return;
+  }
+
+  try {
+    sendJsonResponse(req, res, 200, await placeBitcoin15mOrder({
+      side: body.side,
+      confirm: body.confirm,
+      minEdge: readFloatParam(requestUrl, 'minEdge', Number(body.minEdge || 0.02)),
+      maxCost: readFloatParam(requestUrl, 'maxCost', Number(body.maxCost || 5)),
+      maxPriceCents: Number(body.maxPriceCents || 0),
+      minutes: readFloatParam(requestUrl, 'minutes', Number(body.minutes || 180)),
+    }));
+  } catch (error) {
+    const payload = { ok: false, error: 'Kalshi rejected the order or the trading request failed.' };
+    if (process.env.DEBUG_ERRORS === 'true') {
+      payload.detail = error.stack || error.message;
+    }
+    sendJsonResponse(req, res, 502, payload);
+  }
 }
 
 function ensureDirectory(dirPath) {
@@ -4457,6 +4548,16 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/kalshi/bitcoin/stream') {
     await handleKalshiBitcoinStreamRequest(req, res, requestUrl);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/kalshi/bitcoin/order-preview') {
+    await handleKalshiBitcoinOrderPreviewRequest(req, res, requestUrl);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/kalshi/bitcoin/place-order') {
+    await handleKalshiBitcoinPlaceOrderRequest(req, res, requestUrl);
     return;
   }
 
