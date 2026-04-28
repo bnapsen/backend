@@ -164,9 +164,14 @@
     const market = scan.market || {};
     const model = scan.model || {};
     const best = scan.best || {};
-    const range = Number(market.proxyDispersionDollars || 0);
+    const source = scan.source || {};
+    const range = Number(source.tickerAuthoritative ? source.compositeReferenceRange : market.proxyDispersionDollars || 0);
+    const spotLabel = source.tickerAuthoritative ? "Kalshi BRTI spot" : "Live BTC proxy";
+    const spotSubtext = source.tickerAuthoritative
+      ? "CF Benchmarks live / proxy check range " + dollars(range)
+      : "Bid " + dollars(market.proxyBid) + " / ask " + dollars(market.proxyAsk) + " / source range " + dollars(range);
     summaryEl.innerHTML = [
-      metric("Live BTC proxy", dollars(market.currentPrice), "Bid " + dollars(market.proxyBid) + " / ask " + dollars(market.proxyAsk) + " / source range " + dollars(range), "price-metric"),
+      metric(spotLabel, dollars(market.currentPrice), spotSubtext, "price-metric"),
       metric("Kalshi target", dollars(market.targetPrice), "Distance " + signedDollars(market.distanceDollars)),
       metric("Calibrated YES", pct(model.yesProbability), "Raw path " + pct(model.rawYesProbability) + " / prior " + pct(model.marketPriorYes)),
       metric("Best call", callLabel(best.recommendation), best.side ? best.side.toUpperCase() + " edge " + pct(best.edge) : "No candidate"),
@@ -179,6 +184,7 @@
     chartSourceEl.textContent = source.tickerSource || source.chartSource || "Unknown";
     keyStatusEl.textContent = [
       source.tickerSummary || "",
+      source.tickerMode || "",
       source.cfBenchmarksConfigured ? "CF key configured" : "CF key not configured",
       source.kalshiWebsocketConfigured ? "Kalshi WS configured" : "Kalshi WS not configured",
     ].filter(Boolean).join(" / ");
@@ -279,6 +285,7 @@
 
   function renderChart(scan) {
     const chart = scan.chart || {};
+    const source = scan.source || {};
     const allPoints = Array.isArray(chart.points) ? chart.points : [];
     const openTime = new Date(chart.openTime || 0).getTime();
     const closeTime = new Date(chart.closeTime || 0).getTime();
@@ -335,9 +342,10 @@
     const currentLabelY = clampNumber(latestY, pad.top + 24, height - pad.bottom - 10);
     const targetLabelY = clampNumber(targetY, pad.top + 44, height - pad.bottom - 28);
     const aboveTarget = Number(chart.currentPrice) >= Number(chart.targetPrice);
+    const spotLabel = source.tickerAuthoritative ? "Kalshi BRTI spot" : "Live BTC proxy";
     chartStage.innerHTML = [
       '<div class="live-price-card">',
-      "<span>Live BTC proxy</span>",
+      "<span>" + escapeHtml(spotLabel) + "</span>",
       "<strong>" + escapeHtml(dollars(chart.currentPrice)) + "</strong>",
       '<small class="' + (aboveTarget ? "pos" : "neg") + '">' + escapeHtml((aboveTarget ? "above " : "below ") + signedDollars(Number(chart.currentPrice) - Number(chart.targetPrice)) + " vs target") + "</small>",
       "</div>",
@@ -373,6 +381,7 @@
     const reasons = Array.isArray(model.reasons) ? model.reasons : [];
     modelReasonsEl.innerHTML = [
       model.caveat ? "<p><strong>Data caveat:</strong> " + escapeHtml(model.caveat) + "</p>" : "",
+      renderKalshiSpotMode(scan),
       "<p><strong>Odds engine:</strong> calibrated YES " + escapeHtml(pct(model.yesProbability)) + ", raw final-average path YES " + escapeHtml(pct(model.rawYesProbability)) + ", Kalshi prior " + escapeHtml(pct(model.marketPriorYes)) + ", shrink " + escapeHtml(pct(model.calibrationWeight)) + ".</p>",
       "<p><strong>Time model:</strong> " + escapeHtml(formatDuration(model.horizonSeconds)) + " to close, " + escapeHtml(formatDuration(model.secondsToAverageStart)) + " until the final average starts, effective variance horizon " + escapeHtml(formatDuration(model.effectiveVarianceSeconds)) + ".</p>",
       "<p><strong>Vol inputs:</strong> 5m " + escapeHtml(tinyPct(model.sigma5)) + ", 15m " + escapeHtml(tinyPct(model.sigma15)) + ", 60m " + escapeHtml(tinyPct(model.sigma60)) + ", EWMA " + escapeHtml(tinyPct(model.sigmaEwma)) + ", range " + escapeHtml(tinyPct(model.sigmaRange)) + " per minute.</p>",
@@ -384,10 +393,23 @@
   function renderTickerComponents(scan) {
     const source = scan.source || {};
     const components = Array.isArray(source.tickerComponents) ? source.tickerComponents : [];
-    if (!components.length) return "";
-    return "<p><strong>Live ticker blend:</strong> " + components.map(function (item) {
+    const referenceComponents = Array.isArray(source.compositeReferenceComponents) ? source.compositeReferenceComponents : [];
+    const liveLabel = source.tickerAuthoritative ? "Live Kalshi spot" : "Live ticker blend";
+    const livePart = components.length ? "<p><strong>" + liveLabel + ":</strong> " + components.map(function (item) {
       return escapeHtml(item.venue + " " + dollars(item.price));
-    }).join(" / ") + ". Range " + escapeHtml(dollars(source.tickerDispersionDollars || 0)) + ".</p>";
+    }).join(" / ") + ". Range " + escapeHtml(dollars(source.tickerDispersionDollars || 0)) + ".</p>" : "";
+    const referencePart = referenceComponents.length ? "<p><strong>Exchange proxy cross-check:</strong> " + referenceComponents.map(function (item) {
+      return escapeHtml(item.venue + " " + dollars(item.price));
+    }).join(" / ") + ". Range " + escapeHtml(dollars(source.compositeReferenceRange || 0)) + ".</p>" : "";
+    return livePart + referencePart;
+  }
+
+  function renderKalshiSpotMode(scan) {
+    const source = scan.source || {};
+    if (!source.tickerMode) return "";
+    const label = source.tickerAuthoritative ? "Kalshi spot mode" : "Proxy mode";
+    const cfError = source.tickerCfError ? " CF request note: " + source.tickerCfError : "";
+    return "<p><strong>" + escapeHtml(label) + ":</strong> " + escapeHtml(source.tickerMode + cfError) + "</p>";
   }
 
   function renderRules(scan) {
