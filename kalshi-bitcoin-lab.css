@@ -179,6 +179,7 @@ button:disabled {
 .metric,
 .market-strip,
 .clock-panel,
+.strategy-panel,
 .chart-panel,
 .table-panel,
 .trade-panel,
@@ -317,6 +318,98 @@ button:disabled {
   border-bottom: 1px solid var(--line);
 }
 
+.strategy-panel {
+  margin-bottom: 14px;
+}
+
+.strategy-action {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--amber);
+  font-size: 13px;
+}
+
+.strategy-action.buy {
+  background: rgba(41, 245, 178, 0.14);
+  color: var(--green);
+}
+
+.strategy-action.sell {
+  background: rgba(255, 82, 119, 0.14);
+  color: var(--red);
+}
+
+.strategy-controls {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(92px, 1fr));
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(237, 244, 241, 0.08);
+}
+
+.strategy-controls input,
+.strategy-controls select {
+  width: 100%;
+}
+
+.strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 10px;
+  padding: 14px;
+}
+
+.strategy-card {
+  display: grid;
+  gap: 7px;
+  min-height: 112px;
+  padding: 12px;
+  border: 1px solid rgba(237, 244, 241, 0.1);
+  border-radius: 8px;
+  background: #0d141b;
+}
+
+.strategy-card span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.strategy-card strong {
+  color: var(--amber);
+  font-size: 18px;
+}
+
+.strategy-card.pos strong {
+  color: var(--green);
+}
+
+.strategy-card.sell strong,
+.strategy-card.neg strong {
+  color: var(--red);
+}
+
+.strategy-card small {
+  line-height: 1.45;
+}
+
+.strategy-rules {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.strategy-rules p {
+  padding: 10px 12px;
+  border: 1px solid rgba(237, 244, 241, 0.08);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .chart-stage {
   position: relative;
   min-height: 430px;
@@ -334,6 +427,66 @@ button:disabled {
   border-radius: 8px;
   background: rgba(6, 16, 20, 0.92);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+}
+
+.chart-decision-card,
+.chart-hover-card {
+  position: absolute;
+  z-index: 3;
+  border: 1px solid rgba(237, 244, 241, 0.14);
+  border-radius: 8px;
+  background: rgba(6, 16, 20, 0.94);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+}
+
+.chart-decision-card {
+  top: 128px;
+  right: 28px;
+  display: grid;
+  gap: 5px;
+  min-width: 218px;
+  padding: 12px 14px;
+}
+
+.chart-decision-card span,
+.chart-hover-card span,
+.chart-hover-card small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.chart-decision-card strong {
+  color: var(--amber);
+  font-size: 16px;
+}
+
+.chart-decision-card.buy strong,
+.chart-decision-card.buy span {
+  color: var(--green);
+}
+
+.chart-decision-card.sell strong,
+.chart-decision-card.sell span {
+  color: var(--red);
+}
+
+.chart-decision-card small {
+  line-height: 1.35;
+}
+
+.chart-hover-card {
+  pointer-events: none;
+  width: 224px;
+  padding: 10px 12px;
+}
+
+.chart-hover-card strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--green);
+  font-size: 14px;
 }
 
 .live-price-card span,
@@ -449,6 +602,37 @@ button:disabled {
 
 .open-band {
   fill: rgba(96, 165, 250, 0.08);
+}
+
+.entry-band {
+  fill: rgba(41, 245, 178, 0.08);
+  stroke: rgba(41, 245, 178, 0.16);
+}
+
+.win-zone {
+  opacity: 0.28;
+}
+
+.yes-zone {
+  fill: rgba(41, 245, 178, 0.12);
+}
+
+.no-zone {
+  fill: rgba(255, 82, 119, 0.12);
+}
+
+.now-line {
+  stroke: rgba(237, 244, 241, 0.72);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 6;
+}
+
+.entry-label {
+  fill: var(--green);
+}
+
+.now-label {
+  fill: var(--text);
 }
 
 .table-wrap {
@@ -655,6 +839,8 @@ th {
   .summary-grid,
   .market-strip,
   .clock-panel,
+  .strategy-controls,
+  .strategy-grid,
   .trade-grid,
   .auto-grid,
   .split {
@@ -674,6 +860,11 @@ th {
   }
 
   .live-price-card {
+    position: static;
+    margin-bottom: 10px;
+  }
+
+  .chart-decision-card {
     position: static;
     margin-bottom: 10px;
   }

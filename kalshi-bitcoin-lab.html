@@ -78,6 +78,56 @@
       </div>
     </section>
 
+    <section class="strategy-panel">
+      <div class="section-head">
+        <div>
+          <h2>Execution Plan</h2>
+          <p class="subtext">Exact entry limit, position size, and cash-out levels from the live model and your bankroll settings.</p>
+        </div>
+        <strong id="strategy-action">Waiting</strong>
+      </div>
+      <div class="strategy-controls">
+        <label>
+          Bankroll
+          <input id="strategy-bankroll" type="number" min="1" max="1000000" step="10" value="1000">
+        </label>
+        <label>
+          Risk / trade %
+          <input id="strategy-risk" type="number" min="0.01" max="10" step="0.05" value="0.25">
+        </label>
+        <label>
+          Kelly %
+          <input id="strategy-kelly" type="number" min="0" max="100" step="5" value="10">
+        </label>
+        <label>
+          Holding side
+          <select id="strategy-position-side">
+            <option value="auto">Best side</option>
+            <option value="yes">YES</option>
+            <option value="no">NO</option>
+          </select>
+        </label>
+        <label>
+          Avg entry
+          <input id="strategy-entry-cents" type="number" min="1" max="99" step="0.1" placeholder="auto">
+        </label>
+        <label>
+          Take profit
+          <input id="strategy-take-profit" type="number" min="1" max="80" step="1" value="10">
+        </label>
+        <label>
+          Stop loss
+          <input id="strategy-stop-loss" type="number" min="1" max="80" step="1" value="6">
+        </label>
+        <label>
+          Exit buffer
+          <input id="strategy-exit-buffer" type="number" min="0" max="20" step="0.5" value="1.5">
+        </label>
+      </div>
+      <div id="strategy-grid" class="strategy-grid"></div>
+      <div id="strategy-rules" class="strategy-rules"></div>
+    </section>
+
     <section class="chart-panel">
       <div class="section-head">
         <div>

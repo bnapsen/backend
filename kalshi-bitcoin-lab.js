@@ -11,6 +11,8 @@
     clockTimer: null,
     marketClock: null,
     tradeTicket: null,
+    executionPlan: null,
+    chartMeta: null,
     auto: {
       lastTicker: "",
       lastAttemptTicker: "",
@@ -58,6 +60,17 @@
   const autoMaxCostInput = document.querySelector("#auto-max-cost");
   const autoStatusEl = document.querySelector("#auto-status");
   const autoLogEl = document.querySelector("#auto-log");
+  const strategyActionEl = document.querySelector("#strategy-action");
+  const strategyGridEl = document.querySelector("#strategy-grid");
+  const strategyRulesEl = document.querySelector("#strategy-rules");
+  const strategyBankrollInput = document.querySelector("#strategy-bankroll");
+  const strategyRiskInput = document.querySelector("#strategy-risk");
+  const strategyKellyInput = document.querySelector("#strategy-kelly");
+  const strategyPositionSideInput = document.querySelector("#strategy-position-side");
+  const strategyEntryCentsInput = document.querySelector("#strategy-entry-cents");
+  const strategyTakeProfitInput = document.querySelector("#strategy-take-profit");
+  const strategyStopLossInput = document.querySelector("#strategy-stop-loss");
+  const strategyExitBufferInput = document.querySelector("#strategy-exit-buffer");
 
   kalshiLinkEl.addEventListener("click", function (event) {
     if (openKalshiWindow(kalshiLinkEl.href)) {
@@ -84,6 +97,22 @@
   accessTokenInput.addEventListener("input", function () {
     localStorage.setItem("kalshiLabToken", accessTokenInput.value.trim());
   });
+  restoreStrategySettings();
+  [
+    strategyBankrollInput,
+    strategyRiskInput,
+    strategyKellyInput,
+    strategyPositionSideInput,
+    strategyEntryCentsInput,
+    strategyTakeProfitInput,
+    strategyStopLossInput,
+    strategyExitBufferInput,
+  ].forEach(function (input) {
+    input.addEventListener("input", saveStrategySettings);
+    input.addEventListener("change", saveStrategySettings);
+  });
+  chartStage.addEventListener("mousemove", handleChartHover);
+  chartStage.addEventListener("mouseleave", hideChartHover);
   restoreAutoSettings();
   [autoEnableInput, autoModeInput, autoMinEdgeInput, autoFirstMinutesInput, autoMaxCostInput].forEach(function (input) {
     input.addEventListener("change", saveAutoSettings);
@@ -208,6 +237,7 @@
     renderSummary(scan);
     renderMarketStrip(scan);
     renderCandidates(scan);
+    renderExecutionPlan(scan);
     renderChart(scan);
     renderReasons(scan);
     renderRules(scan);
@@ -275,6 +305,280 @@
     }).join("");
   }
 
+  function restoreStrategySettings() {
+    const saved = JSON.parse(localStorage.getItem("kalshiBtcStrategy") || "{}");
+    strategyBankrollInput.value = saved.bankroll || "1000";
+    strategyRiskInput.value = saved.risk || "0.25";
+    strategyKellyInput.value = saved.kelly || "10";
+    strategyPositionSideInput.value = ["auto", "yes", "no"].includes(saved.side) ? saved.side : "auto";
+    strategyEntryCentsInput.value = saved.entryCents || "";
+    strategyTakeProfitInput.value = saved.takeProfit || "10";
+    strategyStopLossInput.value = saved.stopLoss || "6";
+    strategyExitBufferInput.value = saved.exitBuffer || "1.5";
+  }
+
+  function saveStrategySettings() {
+    localStorage.setItem("kalshiBtcStrategy", JSON.stringify({
+      bankroll: strategyBankrollInput.value,
+      risk: strategyRiskInput.value,
+      kelly: strategyKellyInput.value,
+      side: strategyPositionSideInput.value,
+      entryCents: strategyEntryCentsInput.value,
+      takeProfit: strategyTakeProfitInput.value,
+      stopLoss: strategyStopLossInput.value,
+      exitBuffer: strategyExitBufferInput.value,
+    }));
+    if (state.scan) {
+      renderExecutionPlan(state.scan);
+      renderChart(state.scan);
+    }
+  }
+
+  function renderExecutionPlan(scan) {
+    const plan = buildExecutionPlan(scan);
+    state.executionPlan = plan;
+    if (!plan) {
+      strategyActionEl.textContent = "No market";
+      strategyActionEl.className = "strategy-action wait";
+      strategyGridEl.innerHTML = "";
+      strategyRulesEl.innerHTML = "";
+      return;
+    }
+
+    strategyActionEl.textContent = plan.actionLabel;
+    strategyActionEl.className = "strategy-action " + plan.actionClass;
+    strategyGridEl.innerHTML = [
+      strategyCard("Entry limit", plan.entry.title, plan.entry.detail, plan.entry.ok ? "pos" : "wait"),
+      strategyCard("Size", plan.size.title, plan.size.detail, plan.size.contracts > 0 ? "pos" : "wait"),
+      strategyCard("Cash-out", plan.exit.title, plan.exit.detail, plan.exit.actionClass),
+      strategyCard("Timing", plan.timing.title, plan.timing.detail, plan.timing.entryOpen ? "pos" : "wait"),
+    ].join("");
+    strategyRulesEl.innerHTML = [
+      "<p><strong>Buy limit:</strong> " + escapeHtml(plan.rules.entry) + "</p>",
+      "<p><strong>Profit exit:</strong> " + escapeHtml(plan.rules.profit) + "</p>",
+      "<p><strong>Stop/time exit:</strong> " + escapeHtml(plan.rules.stop) + "</p>",
+    ].join("");
+  }
+
+  function buildExecutionPlan(scan) {
+    const rows = Array.isArray(scan.candidates) ? scan.candidates : [];
+    if (!rows.length) return null;
+    const market = scan.market || {};
+    const model = scan.model || {};
+    const best = scan.best || rows[0];
+    const selectedSide = strategyPositionSideInput.value === "auto" ? best.side : strategyPositionSideInput.value;
+    const candidate = rows.find(function (row) { return row.side === selectedSide; }) || best;
+    const side = candidate.side || "yes";
+    const probability = Number(candidate.probability);
+    const askCents = Number(candidate.askCents);
+    const bidCents = Number(candidate.bidCents);
+    const minEdge = Number(minEdgeInput.value || 0) / 100;
+    const maxEntryCents = maxEntryLimitCents(probability, minEdge);
+    const roundedAsk = Math.ceil(askCents);
+    const entryLimitCents = clampNumber(Math.min(roundedAsk, maxEntryCents), 1, 99);
+    const spread = Number(candidate.spread || 0);
+    const timing = executionTiming(market, model);
+    const recommendationOk = candidate.recommendation === "research-buy" || candidate.recommendation === "tiny-only";
+    const edgeOk = Number(candidate.edge) >= minEdge;
+    const priceOk = askCents <= maxEntryCents;
+    const spreadOk = spread <= 0.08;
+    const entryOk = timing.entryOpen && recommendationOk && edgeOk && priceOk && spreadOk;
+
+    const bankroll = Math.max(1, Number(strategyBankrollInput.value || 1000));
+    const riskBudget = bankroll * clampNumber(Number(strategyRiskInput.value || 0.25) / 100, 0.0001, 1);
+    const kellyFraction = kellyCostFraction(probability, entryLimitCents / 100);
+    const kellyBudget = bankroll * kellyFraction * clampNumber(Number(strategyKellyInput.value || 10) / 100, 0, 1);
+    const maxCostBudget = Math.max(0.5, Number(maxCostInput.value || 5));
+    const budget = Math.max(0, Math.min(riskBudget, kellyBudget || 0, maxCostBudget));
+    const sized = contractsForBudget(budget, entryLimitCents);
+
+    const manualEntry = Number(strategyEntryCentsInput.value);
+    const entryCents = Number.isFinite(manualEntry) && manualEntry > 0 ? manualEntry : entryLimitCents;
+    const takeProfitCents = Math.max(1, Number(strategyTakeProfitInput.value || 10));
+    const stopLossCents = Math.max(1, Number(strategyStopLossInput.value || 6));
+    const exitBufferCents = Math.max(0, Number(strategyExitBufferInput.value || 1.5));
+    const exit = exitPlan({
+      candidate,
+      side,
+      probability,
+      bidCents,
+      entryCents,
+      takeProfitCents,
+      stopLossCents,
+      exitBufferCents,
+      timing,
+    });
+
+    let actionLabel = "WAIT";
+    let actionClass = "wait";
+    let entryTitle = "Wait for " + side.toUpperCase() + " <= " + formatCents(maxEntryCents);
+    let entryDetail = "Ask " + formatCents(askCents) + " / max edge price " + formatCents(maxEntryCents) + " / edge " + pct(candidate.edge) + ".";
+    if (entryOk && sized.contracts > 0) {
+      actionLabel = "BUY " + side.toUpperCase() + " <= " + formatCents(entryLimitCents);
+      actionClass = "buy";
+      entryTitle = "Buy " + side.toUpperCase() + " limit " + formatCents(entryLimitCents);
+      entryDetail = "Current ask " + formatCents(askCents) + "; do not chase above " + formatCents(maxEntryCents) + ".";
+    } else if (!timing.entryOpen) {
+      entryTitle = "No fresh entry";
+      entryDetail = timing.reason + " Limit remains " + formatCents(maxEntryCents) + " if this setup appears earlier next cycle.";
+    } else if (!priceOk) {
+      actionLabel = "BID <= " + formatCents(maxEntryCents);
+      entryDetail = "Current ask " + formatCents(askCents) + " is above the max edge price.";
+    } else if (!spreadOk) {
+      actionLabel = "REST ONLY";
+      entryDetail = "Spread is " + pct(spread) + "; use a resting limit no higher than " + formatCents(entryLimitCents) + ".";
+    }
+
+    return {
+      side,
+      candidate,
+      actionLabel,
+      actionClass,
+      timing,
+      entry: {
+        ok: entryOk,
+        limitCents: entryLimitCents,
+        maxEntryCents,
+        askCents,
+        bidCents,
+        title: entryTitle,
+        detail: entryDetail,
+      },
+      size: {
+        contracts: entryOk ? sized.contracts : 0,
+        budget,
+        cost: sized.cost,
+        kellyFraction,
+        title: entryOk && sized.contracts > 0 ? sized.contracts + " contracts" : "0 contracts",
+        detail: "Risk cap " + dollars(riskBudget) + " / " + Math.round(Number(strategyKellyInput.value || 10)) + "% Kelly " + dollars(kellyBudget) + " / ticket cost " + dollars(sized.cost) + ".",
+      },
+      exit,
+      rules: {
+        entry: "Place " + side.toUpperCase() + " only with a buy limit at " + formatCents(entryLimitCents) + " or better; skip if the ask is above " + formatCents(maxEntryCents) + ".",
+        profit: "After entry around " + formatCents(entryCents) + ", set a sell limit at " + formatCents(exit.sellLimitCents) + "; take posted bids at or above that level.",
+        stop: "Cut if bid trades at or below " + formatCents(exit.stopLimitCents) + ", or exit before the final average if the model odds drop below " + pct(0.55) + ".",
+      },
+    };
+  }
+
+  function executionTiming(market, model) {
+    const openMs = new Date(market.openTime || 0).getTime();
+    const closeMs = new Date(market.closeTime || 0).getTime();
+    const settleStartMs = new Date(market.settlementAveragingStart || 0).getTime();
+    const nowMs = new Date(market.clockTime || Date.now()).getTime();
+    const entryEndMs = Math.min(openMs + 10 * 60_000, settleStartMs - 60_000);
+    const entryOpen = Number.isFinite(openMs) && Number.isFinite(entryEndMs) && nowMs >= openMs && nowMs <= entryEndMs;
+    const secondsToAverageStart = Number(model.secondsToAverageStart);
+    const detail = entryOpen
+      ? "Entry window open until " + formatTime(entryEndMs) + ". Final avg starts " + formatTime(settleStartMs) + "."
+      : "Entry window closed; final avg starts " + formatTime(settleStartMs) + ".";
+    return {
+      openMs,
+      closeMs,
+      settleStartMs,
+      nowMs,
+      entryEndMs,
+      entryOpen,
+      secondsToAverageStart,
+      title: entryOpen ? "Enter before " + formatTime(entryEndMs) : "Late window",
+      detail,
+      reason: entryOpen ? "Fresh-window entry is still live." : "The first-10-minute entry window is closed.",
+    };
+  }
+
+  function exitPlan(options) {
+    const entryCents = clampNumber(options.entryCents, 1, 99);
+    const bidCents = Number(options.bidCents);
+    const takeProfitLimit = clampNumber(entryCents + options.takeProfitCents, 1, 99);
+    const stopLimit = clampNumber(entryCents - options.stopLossCents, 1, 99);
+    const modelCashOutLimit = clampNumber((Number(options.probability) * 100) - options.exitBufferCents, 1, 99);
+    const plannedSellLimit = clampNumber(Math.min(takeProfitLimit, Math.max(modelCashOutLimit, entryCents + 1)), 1, 99);
+    const nearFinalAverage = Number(options.timing.secondsToAverageStart) <= 90;
+    let title = "Hold; sell >= " + formatCents(plannedSellLimit);
+    let detail = "Bid " + formatCents(bidCents) + " / take profit " + formatCents(takeProfitLimit) + " / model cash-out " + formatCents(modelCashOutLimit) + ".";
+    let actionClass = "wait";
+    let sellLimitCents = plannedSellLimit;
+
+    if (bidCents >= takeProfitLimit) {
+      title = "Take profit now";
+      sellLimitCents = Math.floor(bidCents);
+      detail = "Current bid clears the take-profit limit of " + formatCents(takeProfitLimit) + ".";
+      actionClass = "sell";
+    } else if (bidCents <= stopLimit) {
+      title = "Stop out";
+      sellLimitCents = Math.max(1, Math.floor(bidCents));
+      detail = "Current bid is at or below the stop level of " + formatCents(stopLimit) + ".";
+      actionClass = "sell";
+    } else if (bidCents >= modelCashOutLimit && bidCents > entryCents) {
+      title = "Cash out on model";
+      sellLimitCents = Math.floor(bidCents);
+      detail = "Bid is at or above model cash-out level " + formatCents(modelCashOutLimit) + ".";
+      actionClass = "sell";
+    } else if (nearFinalAverage && Number(options.probability) < 0.55) {
+      title = "Time exit";
+      sellLimitCents = Math.max(1, Math.floor(bidCents));
+      detail = "Final averaging is close and model odds are under 55%.";
+      actionClass = "sell";
+    }
+
+    return {
+      entryCents,
+      bidCents,
+      takeProfitLimit,
+      stopLimit,
+      modelCashOutLimit,
+      sellLimitCents,
+      title,
+      detail,
+      actionClass,
+    };
+  }
+
+  function strategyCard(label, title, detail, className) {
+    return [
+      '<div class="strategy-card ' + escapeHtml(className || "") + '">',
+      "<span>" + escapeHtml(label) + "</span>",
+      "<strong>" + escapeHtml(title) + "</strong>",
+      "<small>" + escapeHtml(detail) + "</small>",
+      "</div>",
+    ].join("");
+  }
+
+  function maxEntryLimitCents(probability, minEdge) {
+    const probabilityNumber = Number(probability);
+    if (!Number.isFinite(probabilityNumber)) return 1;
+    for (let cents = 99; cents >= 1; cents -= 1) {
+      const price = cents / 100;
+      const breakEven = price + kalshiFeeDollars(1, price);
+      if (probabilityNumber - breakEven >= minEdge) return cents;
+    }
+    return 1;
+  }
+
+  function contractsForBudget(budget, limitCents) {
+    const price = clampNumber(limitCents, 1, 99) / 100;
+    let contracts = Math.min(25, Math.floor(Number(budget || 0) / price));
+    while (contracts > 0) {
+      const cost = contracts * price + kalshiFeeDollars(contracts, price);
+      if (cost <= Number(budget || 0) + 0.00001) {
+        return { contracts, cost };
+      }
+      contracts -= 1;
+    }
+    return { contracts: 0, cost: 0 };
+  }
+
+  function kellyCostFraction(probability, priceDollars) {
+    const price = Number(priceDollars) + kalshiFeeDollars(1, Number(priceDollars));
+    const probabilityNumber = Number(probability);
+    if (!Number.isFinite(price) || !Number.isFinite(probabilityNumber) || price <= 0 || price >= 1) return 0;
+    return clampNumber((probabilityNumber - price) / (1 - price), 0, 1);
+  }
+
+  function kalshiFeeDollars(contracts, priceDollars) {
+    return Math.ceil(0.07 * contracts * priceDollars * (1 - priceDollars) * 100) / 100;
+  }
+
   async function prepareTicket(side) {
     try {
       setTicketStatus("Preparing live ticket...");
@@ -283,6 +587,8 @@
         side: side || "",
         minEdge: Number(minEdgeInput.value || 0) / 100,
         maxCost: Number(maxCostInput.value || 5),
+        maxPriceCents: side || !state.executionPlan ? 0 : state.executionPlan.entry.maxEntryCents,
+        maxContracts: side || !state.executionPlan ? undefined : state.executionPlan.size.contracts,
         minutes: 180,
       };
       const data = await requestTicketPreview(payload);
@@ -630,6 +936,7 @@
     });
     if (points.length < 3) points = allPoints.slice(-30);
     if (!points.length) {
+      state.chartMeta = null;
       chartStage.innerHTML = '<p class="subtext">No BTC chart data yet.</p>';
       return;
     }
@@ -676,16 +983,42 @@
     const targetLabelY = clampNumber(targetY, pad.top + 44, height - pad.bottom - 28);
     const aboveTarget = Number(chart.currentPrice) >= Number(chart.targetPrice);
     const spotLabel = source.tickerAuthoritative ? "Kalshi BRTI spot" : "Live BTC proxy";
+    const plan = state.executionPlan;
+    const winZone = Number.isFinite(targetY) && plan
+      ? plan.side === "yes"
+        ? '<rect class="win-zone yes-zone" x="' + pad.left + '" y="' + pad.top + '" width="' + innerWidth + '" height="' + Math.max(0, targetY - pad.top) + '"></rect>'
+        : '<rect class="win-zone no-zone" x="' + pad.left + '" y="' + targetY + '" width="' + innerWidth + '" height="' + Math.max(0, (height - pad.bottom) - targetY) + '"></rect>'
+      : "";
+    const entryStartX = plan ? xForTime(plan.timing.openMs) : NaN;
+    const entryEndX = plan ? xForTime(plan.timing.entryEndMs) : NaN;
+    const nowX = plan ? xForTime(plan.timing.nowMs) : NaN;
+    const entryBand = plan && Number.isFinite(entryStartX) && Number.isFinite(entryEndX)
+      ? '<rect class="entry-band" x="' + entryStartX + '" y="' + pad.top + '" width="' + Math.max(1, entryEndX - entryStartX) + '" height="' + innerHeight + '"></rect><text class="line-label entry-label" x="' + (entryStartX + 8) + '" y="' + (height - pad.bottom - 12) + '">entry window</text>'
+      : "";
+    const nowLine = plan && Number.isFinite(nowX)
+      ? '<line class="now-line" x1="' + nowX + '" x2="' + nowX + '" y1="' + pad.top + '" y2="' + (height - pad.bottom) + '"></line><text class="line-label now-label" x="' + (nowX + 6) + '" y="' + (pad.top + 60) + '">now</text>'
+      : "";
+    const decisionCard = plan ? [
+      '<div class="chart-decision-card ' + escapeHtml(plan.actionClass) + '">',
+      "<span>" + escapeHtml(plan.actionLabel) + "</span>",
+      "<strong>Entry " + escapeHtml(formatCents(plan.entry.limitCents)) + " max " + escapeHtml(formatCents(plan.entry.maxEntryCents)) + "</strong>",
+      "<small>Exit sell " + escapeHtml(formatCents(plan.exit.sellLimitCents)) + " / stop " + escapeHtml(formatCents(plan.exit.stopLimit)) + "</small>",
+      "</div>",
+      '<div class="chart-hover-card" hidden></div>',
+    ].join("") : '<div class="chart-hover-card" hidden></div>';
     chartStage.innerHTML = [
       '<div class="live-price-card">',
       "<span>" + escapeHtml(spotLabel) + "</span>",
       "<strong>" + escapeHtml(dollars(chart.currentPrice)) + "</strong>",
       '<small class="' + (aboveTarget ? "pos" : "neg") + '">' + escapeHtml((aboveTarget ? "above " : "below ") + signedDollars(Number(chart.currentPrice) - Number(chart.targetPrice)) + " vs target") + "</small>",
       "</div>",
+      decisionCard,
       '<svg class="chart-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Bitcoin price chart">',
       '<rect class="chart-bg" x="0" y="0" width="' + width + '" height="' + height + '"></rect>',
+      winZone,
       Number.isFinite(settleX) && Number.isFinite(closeX) ? '<rect class="settle-band" x="' + settleX + '" y="' + pad.top + '" width="' + Math.max(2, closeX - settleX) + '" height="' + innerHeight + '"></rect>' : "",
       Number.isFinite(openTime) ? '<rect class="open-band" x="' + xForTime(openTime) + '" y="' + pad.top + '" width="' + Math.max(2, xForTime(closeTime) - xForTime(openTime)) + '" height="' + innerHeight + '"></rect>' : "",
+      entryBand,
       ticks.map(function (value) {
         const y = yForPrice(value);
         return '<line class="grid major" x1="' + pad.left + '" x2="' + (width - pad.right) + '" y1="' + y + '" y2="' + y + '"></line><text class="axis-label axis-left" x="' + (pad.left - 10) + '" y="' + (y + 4) + '" text-anchor="end">$' + formatNumber(value, 0) + '</text><text class="axis-label axis-right" x="' + (width - pad.right + 10) + '" y="' + (y + 4) + '">$' + formatNumber(value, 0) + "</text>";
@@ -705,8 +1038,65 @@
       '<text class="last-price-tag" x="' + Math.min(width - pad.right - 172, latestX + 10) + '" y="' + (latestY - 12) + '">' + dollars(latest.close) + "</text>",
       '<text class="line-label" x="' + (pad.left + 8) + '" y="' + (pad.top + 16) + '">' + escapeHtml(chart.source || "BTC proxy") + "</text>",
       Number.isFinite(settleX) ? '<text class="line-label settle-label" x="' + Math.max(pad.left + 8, settleX + 6) + '" y="' + (pad.top + 38) + '">final 60s average</text>' : "",
+      nowLine,
       "</svg>",
     ].join("");
+    state.chartMeta = {
+      points,
+      width,
+      height,
+      pad,
+      innerWidth,
+      innerHeight,
+      minTime,
+      maxTime,
+      targetPrice: Number(chart.targetPrice),
+      openMs: openTime,
+      entryEndMs: plan && plan.timing.entryEndMs,
+      settleStartMs: settleStart,
+      closeMs: closeTime,
+      side: plan && plan.side,
+    };
+  }
+
+  function handleChartHover(event) {
+    const meta = state.chartMeta;
+    const hover = chartStage.querySelector(".chart-hover-card");
+    const svg = chartStage.querySelector(".chart-svg");
+    if (!meta || !hover || !svg) return;
+    const rect = svg.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
+      hideChartHover();
+      return;
+    }
+    const viewX = ((event.clientX - rect.left) / Math.max(1, rect.width)) * meta.width;
+    const timeMs = meta.minTime + ((viewX - meta.pad.left) / Math.max(1, meta.innerWidth)) * (meta.maxTime - meta.minTime);
+    const nearest = meta.points.reduce(function (best, point) {
+      return Math.abs(Number(point.timeMs) - timeMs) < Math.abs(Number(best.timeMs) - timeMs) ? point : best;
+    }, meta.points[0]);
+    const price = Number(nearest.close);
+    const zone = price >= meta.targetPrice ? "YES zone" : "NO zone";
+    const timing = Number(nearest.timeMs) <= Number(meta.entryEndMs)
+      ? "entry window"
+      : Number(nearest.timeMs) >= Number(meta.settleStartMs)
+        ? "final average"
+        : "late window";
+    const stageRect = chartStage.getBoundingClientRect();
+    const maxLeft = Math.max(10, chartStage.clientWidth - 238);
+    const maxTop = Math.max(10, chartStage.clientHeight - 118);
+    hover.hidden = false;
+    hover.style.left = Math.min(maxLeft, Math.max(10, event.clientX - stageRect.left + 14)) + "px";
+    hover.style.top = Math.min(maxTop, Math.max(10, event.clientY - stageRect.top + 14)) + "px";
+    hover.innerHTML = [
+      "<strong>" + escapeHtml(formatTime(nearest.timeMs) + " / " + dollars(price)) + "</strong>",
+      "<span>" + escapeHtml(zone + " / " + timing) + "</span>",
+      "<small>" + escapeHtml("Distance " + signedDollars(price - meta.targetPrice) + " vs target") + "</small>",
+    ].join("");
+  }
+
+  function hideChartHover() {
+    const hover = chartStage.querySelector(".chart-hover-card");
+    if (hover) hover.hidden = true;
   }
 
   function renderReasons(scan) {
