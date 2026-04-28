@@ -40,6 +40,7 @@
   const accessTokenInput = document.querySelector("#access-token");
   const streamToggle = document.querySelector("#stream-toggle");
   const prepareTicketButton = document.querySelector("#prepare-ticket");
+  const openTicketKalshiButton = document.querySelector("#open-ticket-kalshi");
   const placeTicketButton = document.querySelector("#place-ticket");
   const ticketCardEl = document.querySelector("#ticket-card");
   const ticketStatusEl = document.querySelector("#ticket-status");
@@ -63,6 +64,7 @@
   prepareTicketButton.addEventListener("click", function () {
     prepareTicket("");
   });
+  openTicketKalshiButton.addEventListener("click", openPreparedTicketOnKalshi);
   placeTicketButton.addEventListener("click", placePreparedTicket);
   accessTokenInput.value = localStorage.getItem("kalshiLabToken") || "";
   accessTokenInput.addEventListener("input", function () {
@@ -321,10 +323,42 @@
     }
   }
 
+  async function openPreparedTicketOnKalshi() {
+    const prepared = state.tradeTicket || {};
+    const ticket = prepared.ticket || {};
+    if (!ticket.url) {
+      setTicketStatus("Prepare a ticket first.", true);
+      return;
+    }
+    const details = [
+      "Kalshi BTC 15m ticket",
+      "Ticker: " + (ticket.ticker || ""),
+      "Side: BUY " + String(ticket.side || "").toUpperCase(),
+      "Contracts: " + ticket.contracts,
+      "Limit: " + formatCents(ticket.limitPriceCents),
+      "Max cost: " + dollars(ticket.maxCost),
+      "Model odds: " + pct(ticket.modelProbability),
+      "Break-even: " + pct(ticket.breakEven),
+      "Edge: " + pct(ticket.edge),
+    ].join("\n");
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(details);
+        setTicketStatus("Ticket copied. Opening exact Kalshi market...");
+      } else {
+        setTicketStatus("Opening exact Kalshi market. Clipboard unavailable in this browser.");
+      }
+    } catch (error) {
+      setTicketStatus("Opening exact Kalshi market. Clipboard copy was blocked.", true);
+    }
+    openKalshiWindow(ticket.url);
+  }
+
   function renderTradeTicket(data) {
     if (!ticketCardEl || !placeTicketButton) return;
     if (!data || !data.ticket) {
       ticketCardEl.innerHTML = '<strong>No ticket prepared</strong><p class="subtext">Prepare a ticket from the current best row or from a side button in the table.</p>';
+      openTicketKalshiButton.disabled = true;
       placeTicketButton.disabled = true;
       return;
     }
@@ -346,6 +380,7 @@
       blockers.length ? '<div class="ticket-list bad-list">' + blockers.map(function (item) { return "<p>" + escapeHtml(item) + "</p>"; }).join("") + "</div>" : "",
       warnings.length ? '<div class="ticket-list warn-list">' + warnings.map(function (item) { return "<p>" + escapeHtml(item) + "</p>"; }).join("") + "</div>" : "",
     ].join("");
+    openTicketKalshiButton.disabled = !ticket.url;
     placeTicketButton.disabled = !data.ok;
   }
 
