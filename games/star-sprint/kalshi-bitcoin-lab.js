@@ -1,6 +1,17 @@
 'use strict';
 
+const crypto = require('crypto');
+const fs = require('fs');
+let WebSocket = null;
+try {
+  WebSocket = require('ws');
+} catch (error) {
+  WebSocket = null;
+}
+
 const KALSHI_API_BASE_URL = 'https://api.elections.kalshi.com/trade-api/v2';
+const KALSHI_WS_URL = 'wss://api.elections.kalshi.com/trade-api/ws/v2';
+const KALSHI_WS_PATH = '/trade-api/ws/v2';
 const COINBASE_API_BASE_URL = 'https://api.exchange.coinbase.com';
 const KRAKEN_API_BASE_URL = 'https://api.kraken.com/0/public';
 const BITSTAMP_API_BASE_URL = 'https://www.bitstamp.net/api/v2';
@@ -10,16 +21,34 @@ const BTC_15M_SERIES = 'KXBTC15M';
 const COINBASE_PRODUCT = 'BTC-USD';
 const DEFAULT_MAX_COST = 5;
 const DEFAULT_MIN_EDGE = 0.02;
-const MARKET_CACHE_MS = 1_000;
-const TICKER_CACHE_MS = 650;
-const CANDLE_CACHE_MS = 20_000;
+const MARKET_CACHE_MS = 450;
+const MARKET_DETAIL_CACHE_MS = 250;
+const WS_QUOTE_FRESH_MS = 2_000;
+const TICKER_CACHE_MS = 300;
+const CANDLE_CACHE_MS = 8_000;
 const bitcoinCache = {
   markets: null,
   marketsAt: 0,
+  marketDetails: new Map(),
   ticker: null,
   tickerAt: 0,
   tickerPromise: null,
   candles: new Map(),
+};
+const kalshiTickerWs = {
+  socket: null,
+  ticker: '',
+  quote: null,
+  status: 'idle',
+  error: '',
+  reconnectAt: 0,
+  connectedAt: 0,
+  lastMessageAt: 0,
+  subscriptionId: 1,
+};
+const kalshiPrivateKeyCache = {
+  source: '',
+  value: '',
 };
 
 function clamp(value, min, max) {
@@ -46,6 +75,56 @@ function cfBenchmarksAuthHeader() {
   const username = String(process.env.CF_BENCHMARKS_USERNAME || '');
   const key = String(process.env.CF_BENCHMARKS_API_KEY || '');
   return `Basic ${Buffer.from(`${username}:${key}`).toString('base64')}`;
+}
+
+function kalshiPrivateKeyPem() {
+  const inline = String(process.env.KALSHI_PRIVATE_KEY_PEM || '').trim();
+  if (inline) {
+    const source = `inline:${inline.length}`;
+    if (kalshiPrivateKeyCache.source !== source) {
+      kalshiPrivateKeyCache.source = source;
+      kalshiPrivateKeyCache.value = inline.replace(/\\n/g, '\n');
+    }
+    return kalshiPrivateKeyCache.value;
+  }
+  const keyPath = String(process.env.KALSHI_PRIVATE_KEY_PATH || '').trim();
+  if (!keyPath) return '';
+  if (kalshiPrivateKeyCache.source === `path:${keyPath}`) return kalshiPrivateKeyCache.value;
+  try {
+    kalshiPrivateKeyCache.source = `path:${keyPath}`;
+    kalshiPrivateKeyCache.value = fs.readFileSync(keyPath, 'utf8');
+    return kalshiPrivateKeyCache.value;
+  } catch (error) {
+    kalshiPrivateKeyCache.source = '';
+    kalshiPrivateKeyCache.value = '';
+    kalshiTickerWs.error = `Unable to read KALSHI_PRIVATE_KEY_PATH: ${error.message}`;
+    return '';
+  }
+}
+
+function kalshiWebsocketConfigured() {
+  return Boolean(WebSocket && process.env.KALSHI_API_KEY_ID && kalshiPrivateKeyPem());
+}
+
+function signKalshiText(text) {
+  const key = kalshiPrivateKeyPem();
+  if (!key) return '';
+  const signature = crypto.sign('sha256', Buffer.from(text), {
+    key,
+    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+    saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+  });
+  return signature.toString('base64');
+}
+
+function kalshiWsHeaders() {
+  const timestamp = String(Date.now());
+  return {
+    'Content-Type': 'application/json',
+    'KALSHI-ACCESS-KEY': String(process.env.KALSHI_API_KEY_ID || ''),
+    'KALSHI-ACCESS-SIGNATURE': signKalshiText(`${timestamp}GET${KALSHI_WS_PATH}`),
+    'KALSHI-ACCESS-TIMESTAMP': timestamp,
+  };
 }
 
 function normalizeTimestamp(value) {
@@ -148,6 +227,20 @@ function eventWindowFromMarket(market) {
   };
 }
 
+function selectActiveBitcoinMarket(markets, now) {
+  const usable = Array.isArray(markets) ? markets : [];
+  const active = usable.find((market) => {
+    const open = new Date(market.open_time || 0).getTime();
+    const close = new Date(market.close_time || 0).getTime();
+    return open <= now + 1_500 && close > now + 250;
+  });
+  if (active) return active;
+  return usable.find((market) => {
+    const close = new Date(market.close_time || 0).getTime();
+    return close > now + 250;
+  }) || null;
+}
+
 async function getBitcoin15mMarkets() {
   const nowMs = Date.now();
   if (bitcoinCache.markets && nowMs - bitcoinCache.marketsAt < MARKET_CACHE_MS) {
@@ -164,14 +257,156 @@ async function getBitcoin15mMarkets() {
   const usable = markets
     .filter((market) => market && market.ticker && market.title && /BTC price up/i.test(market.title))
     .sort((left, right) => new Date(left.close_time).getTime() - new Date(right.close_time).getTime());
-  const active = usable.find((market) => {
-    const open = new Date(market.open_time || 0).getTime();
-    const close = new Date(market.close_time || 0).getTime();
-    return close > now - 15_000 && open <= now + 60_000;
-  }) || usable.find((market) => new Date(market.close_time || 0).getTime() > now - 15_000) || usable[0] || null;
+  const active = selectActiveBitcoinMarket(usable, now);
   bitcoinCache.markets = { markets: usable, active };
   bitcoinCache.marketsAt = nowMs;
   return bitcoinCache.markets;
+}
+
+function complementPrice(value) {
+  const price = Number(value);
+  return Number.isFinite(price) ? round(clamp(1 - price, 0, 1), 4).toFixed(4) : '';
+}
+
+function normalizeKalshiQuoteMessage(message) {
+  const yesBid = marketPrice(message, 'yes_bid_dollars', 'yes_bid');
+  const yesAsk = marketPrice(message, 'yes_ask_dollars', 'yes_ask');
+  const noBid = marketPrice(message, 'no_bid_dollars', 'no_bid') || Number(complementPrice(yesAsk));
+  const noAsk = marketPrice(message, 'no_ask_dollars', 'no_ask') || Number(complementPrice(yesBid));
+  return {
+    yes_bid_dollars: Number.isFinite(yesBid) ? yesBid.toFixed(4) : '',
+    yes_ask_dollars: Number.isFinite(yesAsk) ? yesAsk.toFixed(4) : '',
+    no_bid_dollars: Number.isFinite(noBid) ? noBid.toFixed(4) : '',
+    no_ask_dollars: Number.isFinite(noAsk) ? noAsk.toFixed(4) : '',
+    last_price_dollars: message.price_dollars || message.last_price_dollars || '',
+    yes_bid_size_fp: message.yes_bid_size_fp || '',
+    yes_ask_size_fp: message.yes_ask_size_fp || '',
+    no_bid_size_fp: message.no_bid_size_fp || message.yes_ask_size_fp || '',
+    no_ask_size_fp: message.no_ask_size_fp || message.yes_bid_size_fp || '',
+    quoteUpdatedTime: normalizeTimestamp(message.ts_ms || message.ts || message.time || Date.now()),
+  };
+}
+
+function currentKalshiWsQuote(ticker) {
+  if (!kalshiTickerWs.quote || kalshiTickerWs.ticker !== ticker) return null;
+  const quoteAgeMs = Date.now() - new Date(kalshiTickerWs.quote.quoteReceivedAt || 0).getTime();
+  if (!Number.isFinite(quoteAgeMs) || quoteAgeMs > WS_QUOTE_FRESH_MS) return null;
+  return {
+    ...kalshiTickerWs.quote.fields,
+    quoteSource: 'Kalshi WebSocket ticker',
+    quoteTransport: 'websocket',
+    quoteLatencyMs: Math.max(0, Date.now() - new Date(kalshiTickerWs.quote.quoteUpdatedTime || Date.now()).getTime()),
+    quoteReceivedAt: kalshiTickerWs.quote.quoteReceivedAt,
+  };
+}
+
+function connectKalshiTickerWebsocket(ticker) {
+  if (!ticker || !kalshiWebsocketConfigured()) return;
+  if (kalshiTickerWs.ticker === ticker && kalshiTickerWs.socket && kalshiTickerWs.socket.readyState <= WebSocket.OPEN) return;
+  if (Date.now() < kalshiTickerWs.reconnectAt) return;
+
+  if (kalshiTickerWs.socket) {
+    try {
+      kalshiTickerWs.socket.close();
+    } catch (error) {
+      // Ignore close errors during ticker rotation.
+    }
+  }
+
+  kalshiTickerWs.ticker = ticker;
+  kalshiTickerWs.quote = null;
+  kalshiTickerWs.status = 'connecting';
+  kalshiTickerWs.error = '';
+
+  let socket;
+  try {
+    socket = new WebSocket(KALSHI_WS_URL, { headers: kalshiWsHeaders() });
+  } catch (error) {
+    kalshiTickerWs.status = 'error';
+    kalshiTickerWs.error = error.message;
+    kalshiTickerWs.reconnectAt = Date.now() + 10_000;
+    return;
+  }
+  kalshiTickerWs.socket = socket;
+
+  socket.on('open', () => {
+    kalshiTickerWs.status = 'connected';
+    kalshiTickerWs.connectedAt = Date.now();
+    socket.send(JSON.stringify({
+      id: kalshiTickerWs.subscriptionId,
+      cmd: 'subscribe',
+      params: {
+        channels: ['ticker'],
+        market_ticker: ticker,
+      },
+    }));
+    kalshiTickerWs.subscriptionId += 1;
+  });
+
+  socket.on('message', (raw) => {
+    kalshiTickerWs.lastMessageAt = Date.now();
+    let data = null;
+    try {
+      data = JSON.parse(String(raw));
+    } catch (error) {
+      return;
+    }
+    if (data.type === 'error') {
+      kalshiTickerWs.status = 'error';
+      kalshiTickerWs.error = data.msg && data.msg.msg ? data.msg.msg : 'Kalshi WebSocket error';
+      return;
+    }
+    if (data.type !== 'ticker' || !data.msg || data.msg.market_ticker !== kalshiTickerWs.ticker) return;
+    const fields = normalizeKalshiQuoteMessage(data.msg);
+    kalshiTickerWs.quote = {
+      fields,
+      quoteUpdatedTime: fields.quoteUpdatedTime,
+      quoteReceivedAt: isoDate(Date.now()),
+    };
+  });
+
+  socket.on('error', (error) => {
+    kalshiTickerWs.status = 'error';
+    kalshiTickerWs.error = error.message;
+  });
+
+  socket.on('close', () => {
+    if (kalshiTickerWs.socket === socket) {
+      kalshiTickerWs.status = 'closed';
+      kalshiTickerWs.socket = null;
+      kalshiTickerWs.reconnectAt = Date.now() + 2_000;
+    }
+  });
+}
+
+async function getFreshKalshiMarket(market) {
+  if (!market || !market.ticker) return market;
+  connectKalshiTickerWebsocket(market.ticker);
+  const wsQuote = currentKalshiWsQuote(market.ticker);
+  const cached = bitcoinCache.marketDetails.get(market.ticker);
+  const nowMs = Date.now();
+  let freshMarket = cached && nowMs - cached.at < MARKET_DETAIL_CACHE_MS ? cached.market : null;
+  if (!freshMarket) {
+    try {
+      const data = await fetchJson(`${KALSHI_API_BASE_URL}/markets/${encodeURIComponent(market.ticker)}`, { timeoutMs: 1_800 });
+      freshMarket = data && data.market ? data.market : market;
+      bitcoinCache.marketDetails.set(market.ticker, { at: Date.now(), market: freshMarket });
+    } catch (error) {
+      freshMarket = cached ? cached.market : market;
+    }
+  }
+  const quoteFields = wsQuote || {
+    quoteSource: 'Kalshi REST market detail',
+    quoteTransport: 'rest',
+    quoteUpdatedTime: isoDate(Date.now()),
+    quoteReceivedAt: isoDate(Date.now()),
+    quoteLatencyMs: 0,
+  };
+  return {
+    ...market,
+    ...freshMarket,
+    ...quoteFields,
+  };
 }
 
 async function getCoinbaseTicker() {
@@ -862,8 +1097,11 @@ function kalshiBitcoinMarketUrl(market) {
 async function scanBitcoin15m(options = {}) {
   const maxCost = clamp(parseNumber(options.maxCost, DEFAULT_MAX_COST), 0.5, 100);
   const minEdge = clamp(parseNumber(options.minEdge, DEFAULT_MIN_EDGE), -0.5, 0.5);
-  const [{ active: market, markets }, ticker, candles] = await Promise.all([
-    getBitcoin15mMarkets(),
+  const marketSet = await getBitcoin15mMarkets();
+  const [{ market, markets }, ticker, candles] = await Promise.all([
+    marketSet.active
+      ? getFreshKalshiMarket(marketSet.active).then((freshMarket) => ({ market: freshMarket, markets: marketSet.markets }))
+      : Promise.resolve({ market: null, markets: marketSet.markets }),
     getBitcoinTicker(),
     getCoinbaseCandles(parseNumber(options.minutes, 180)),
   ]);
@@ -953,6 +1191,11 @@ async function scanBitcoin15m(options = {}) {
       compositeReferenceSource: ticker.compositeReference ? ticker.compositeReference.source : '',
       compositeReferenceDispersionDollars: ticker.compositeReference ? round(Number(ticker.compositeReference.dispersionDollars || 0), 2) : null,
       proxyTime: ticker.time,
+      quoteSource: market.quoteSource || 'Kalshi REST market detail',
+      quoteTransport: market.quoteTransport || 'rest',
+      quoteUpdatedTime: market.quoteUpdatedTime || normalizeTimestamp(market.updated_time || Date.now()),
+      quoteReceivedAt: market.quoteReceivedAt || isoDate(Date.now()),
+      quoteLatencyMs: round(parseNumber(market.quoteLatencyMs, 0), 0),
       openTime: window.openTime,
       closeTime: window.closeTime,
       targetReferenceTime: window.targetReferenceTime,
@@ -1017,15 +1260,20 @@ async function scanBitcoin15m(options = {}) {
 
 function sourceStatus() {
   const cfConfigured = cfBenchmarksConfigured();
+  const wsConfigured = kalshiWebsocketConfigured();
   return {
     kalshiPublicRest: true,
-    kalshiWebsocketConfigured: Boolean(process.env.KALSHI_API_KEY_ID && (process.env.KALSHI_PRIVATE_KEY_PEM || process.env.KALSHI_PRIVATE_KEY_PATH)),
+    kalshiWebsocketConfigured: wsConfigured,
+    kalshiWebsocketStatus: wsConfigured ? kalshiTickerWs.status : 'not-configured',
+    kalshiWebsocketConnected: Boolean(kalshiTickerWs.socket && kalshiTickerWs.socket.readyState === WebSocket.OPEN),
+    kalshiWebsocketLastMessageAt: kalshiTickerWs.lastMessageAt ? isoDate(kalshiTickerWs.lastMessageAt) : '',
+    kalshiWebsocketError: kalshiTickerWs.error || '',
     cfBenchmarksConfigured: cfConfigured,
     settlementSource: 'CF Benchmarks BRTI',
     chartSource: cfConfigured
       ? 'CF Benchmarks BRTI'
       : 'Composite BTC-USD proxy',
-    keyHint: 'Kalshi public REST gives the exact 15-minute target and settlement rules, but not the live BRTI spot. Set licensed CF_BENCHMARKS_USERNAME and CF_BENCHMARKS_API_KEY to use the same CF Benchmarks BRTI spot source Kalshi settles against; otherwise the app clearly labels the Coinbase/Kraken/Bitstamp/Gemini blend as a proxy.',
+    keyHint: 'Kalshi public REST gives the exact 15-minute target and settlement rules, but not the live BRTI spot. Kalshi bid/ask uses authenticated WebSocket ticker updates when KALSHI_API_KEY_ID plus a private key are configured; otherwise it rapid-polls the current market detail endpoint. Set licensed CF_BENCHMARKS_USERNAME and CF_BENCHMARKS_API_KEY to use the same CF Benchmarks BRTI spot source Kalshi settles against.',
   };
 }
 

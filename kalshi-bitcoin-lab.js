@@ -2,6 +2,8 @@
   "use strict";
 
   const PROD_API_BASE = "https://nova-arcade-backend-1000121513328.us-central1.run.app";
+  const LIVE_REFRESH_MS = 300;
+  const FALLBACK_REFRESH_MS = 500;
   const state = {
     scan: null,
     stream: null,
@@ -83,7 +85,7 @@
     source.addEventListener("scan", function (event) {
       try {
         render(JSON.parse(event.data));
-        setStatus("Live stream connected - refreshing about every 0.75s.");
+        setStatus("Live stream connected - quote/spot refresh target about " + (LIVE_REFRESH_MS / 1000).toFixed(1) + "s.");
       } catch (error) {
         setStatus("Live stream returned malformed data.", true);
       }
@@ -92,7 +94,7 @@
       setStatus("Live stream paused; falling back to polling.", true);
       stopStream();
       loadScan();
-      state.fallbackTimer = setInterval(loadScan, 750);
+      state.fallbackTimer = setInterval(loadScan, FALLBACK_REFRESH_MS);
     });
   }
 
@@ -100,7 +102,7 @@
     try {
       setStatus("Refreshing Bitcoin market...");
       render(await fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/scan")));
-      setStatus(streamToggle.checked ? "Polling live every 0.75s." : "Manual refresh complete.");
+      setStatus(streamToggle.checked ? "Polling live every 0.5s." : "Manual refresh complete.");
     } catch (error) {
       setStatus(error.message || "Unable to load Bitcoin scan.", true);
     }
@@ -185,6 +187,8 @@
     keyStatusEl.textContent = [
       source.tickerSummary || "",
       source.tickerMode || "",
+      market.quoteSource ? "Quotes: " + market.quoteSource : "",
+      source.kalshiWebsocketStatus ? "Kalshi WS " + source.kalshiWebsocketStatus : "",
       source.cfBenchmarksConfigured ? "CF key configured" : "CF key not configured",
       source.kalshiWebsocketConfigured ? "Kalshi WS configured" : "Kalshi WS not configured",
     ].filter(Boolean).join(" / ");
@@ -238,6 +242,7 @@
       closeMs,
       settlementStartMs: Number.isFinite(settlementStartMs) && settlementStartMs > openMs ? settlementStartMs : closeMs - 60_000,
       generatedAtMs: new Date(scan.generatedAt || Date.now()).getTime(),
+      clientReceivedAtMs: Date.now(),
     };
     updateMarketClock();
   }
@@ -251,7 +256,11 @@
       return;
     }
     const clock = state.marketClock;
-    const now = Date.now();
+    const generatedAtMs = Number(clock.generatedAtMs);
+    const clientReceivedAtMs = Number(clock.clientReceivedAtMs);
+    const now = Number.isFinite(generatedAtMs) && Number.isFinite(clientReceivedAtMs)
+      ? generatedAtMs + (Date.now() - clientReceivedAtMs)
+      : Date.now();
     const durationMs = Math.max(1, clock.closeMs - clock.openMs);
     const remainingSeconds = Math.max(0, Math.ceil((clock.closeMs - now) / 1000));
     const elapsedPct = clampNumber(((now - clock.openMs) / durationMs) * 100, 0, 100);
@@ -382,6 +391,7 @@
     modelReasonsEl.innerHTML = [
       model.caveat ? "<p><strong>Data caveat:</strong> " + escapeHtml(model.caveat) + "</p>" : "",
       renderKalshiSpotMode(scan),
+      renderQuoteMode(scan),
       "<p><strong>Odds engine:</strong> calibrated YES " + escapeHtml(pct(model.yesProbability)) + ", raw final-average path YES " + escapeHtml(pct(model.rawYesProbability)) + ", Kalshi prior " + escapeHtml(pct(model.marketPriorYes)) + ", shrink " + escapeHtml(pct(model.calibrationWeight)) + ".</p>",
       "<p><strong>Time model:</strong> " + escapeHtml(formatDuration(model.horizonSeconds)) + " to close, " + escapeHtml(formatDuration(model.secondsToAverageStart)) + " until the final average starts, effective variance horizon " + escapeHtml(formatDuration(model.effectiveVarianceSeconds)) + ".</p>",
       "<p><strong>Vol inputs:</strong> 5m " + escapeHtml(tinyPct(model.sigma5)) + ", 15m " + escapeHtml(tinyPct(model.sigma15)) + ", 60m " + escapeHtml(tinyPct(model.sigma60)) + ", EWMA " + escapeHtml(tinyPct(model.sigmaEwma)) + ", range " + escapeHtml(tinyPct(model.sigmaRange)) + " per minute.</p>",
@@ -410,6 +420,18 @@
     const label = source.tickerAuthoritative ? "Kalshi spot mode" : "Proxy mode";
     const cfError = source.tickerCfError ? " CF request note: " + source.tickerCfError : "";
     return "<p><strong>" + escapeHtml(label) + ":</strong> " + escapeHtml(source.tickerMode + cfError) + "</p>";
+  }
+
+  function renderQuoteMode(scan) {
+    const market = scan.market || {};
+    const source = scan.source || {};
+    const parts = [
+      market.quoteSource || "Kalshi quote source unknown",
+      market.quoteUpdatedTime ? "updated " + formatTime(market.quoteUpdatedTime) : "",
+      Number.isFinite(Number(market.quoteLatencyMs)) ? "age " + Number(market.quoteLatencyMs).toFixed(0) + "ms" : "",
+      source.kalshiWebsocketError ? "WS note: " + source.kalshiWebsocketError : "",
+    ].filter(Boolean);
+    return "<p><strong>Kalshi quote stream:</strong> " + escapeHtml(parts.join(" / ")) + "</p>";
   }
 
   function renderRules(scan) {

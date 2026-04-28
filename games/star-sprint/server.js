@@ -469,6 +469,10 @@ async function handleKalshiBitcoinStreamRequest(req, res, requestUrl) {
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+  res.write('retry: 500\n\n');
 
   let closed = false;
   let refreshing = false;
@@ -496,7 +500,7 @@ async function handleKalshiBitcoinStreamRequest(req, res, requestUrl) {
   await sendScan();
   const interval = setInterval(() => {
     sendScan().catch(() => {});
-  }, 750);
+  }, 300);
   req.on('close', () => {
     clearInterval(interval);
   });
