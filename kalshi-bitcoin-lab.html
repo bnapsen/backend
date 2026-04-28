@@ -30,6 +30,10 @@
         <input id="stream-toggle" type="checkbox" checked>
         Live stream
       </label>
+      <label class="check">
+        <input id="sound-toggle" type="checkbox">
+        Sound FX
+      </label>
       <button type="submit">Refresh</button>
     </form>
   </header>
@@ -74,7 +78,7 @@
           <span id="market-settlement-label">Final average --</span>
           <span id="market-close-label">Close --</span>
         </div>
-        <p id="market-clock-note" class="subtext">The model odds use the live seconds-to-close horizon for this exact market.</p>
+        <p id="market-clock-note" class="subtext">Expiry odds use the live seconds-to-close horizon for this exact market.</p>
       </div>
     </section>
 
@@ -82,7 +86,7 @@
       <div class="section-head">
         <div>
           <h2>Execution Plan</h2>
-          <p class="subtext">Exact entry limit, position size, and cash-out levels from the live model and your bankroll settings.</p>
+          <p class="subtext">Entry and exit limits are execution rules; the odds shown are for holding the contract to settlement.</p>
         </div>
         <strong id="strategy-action">Waiting</strong>
       </div>
@@ -142,8 +146,8 @@
     <section class="table-panel">
       <div class="section-head">
         <div>
-          <h2>Model Odds Vs Price</h2>
-          <p class="subtext">Research signal only. The edge is model probability minus fee-adjusted break-even.</p>
+          <h2>Expiry Odds Vs Price</h2>
+          <p class="subtext">Probability that the contract resolves in the money if held to settlement. Edge is expiry odds minus fee-adjusted break-even.</p>
         </div>
         <span id="recommendation-label">Waiting</span>
       </div>
@@ -153,7 +157,7 @@
             <tr>
               <th>Side</th>
               <th>Ask / Bid</th>
-              <th>Model odds</th>
+              <th>Expiry odds</th>
               <th>You pay</th>
               <th>Edge</th>
               <th>EV</th>

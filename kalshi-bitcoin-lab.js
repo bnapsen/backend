@@ -13,6 +13,14 @@
     tradeTicket: null,
     executionPlan: null,
     chartMeta: null,
+    sound: {
+      enabled: false,
+      context: null,
+      lastPrice: null,
+      lastPriceToneAt: 0,
+      lastDecision: "",
+      lastPhase: "",
+    },
     auto: {
       lastTicker: "",
       lastAttemptTicker: "",
@@ -48,6 +56,7 @@
   const maxCostInput = document.querySelector("#max-cost");
   const accessTokenInput = document.querySelector("#access-token");
   const streamToggle = document.querySelector("#stream-toggle");
+  const soundToggle = document.querySelector("#sound-toggle");
   const prepareTicketButton = document.querySelector("#prepare-ticket");
   const openTicketKalshiButton = document.querySelector("#open-ticket-kalshi");
   const placeTicketButton = document.querySelector("#place-ticket");
@@ -82,6 +91,14 @@
     restart();
   });
   streamToggle.addEventListener("change", restart);
+  soundToggle.addEventListener("change", function () {
+    state.sound.enabled = soundToggle.checked;
+    localStorage.setItem("kalshiBtcSoundFx", soundToggle.checked ? "1" : "0");
+    if (soundToggle.checked) {
+      unlockAudio();
+      playSound("arm");
+    }
+  });
   rowsEl.addEventListener("click", function (event) {
     const button = event.target.closest("[data-ticket-side]");
     if (button) {
@@ -97,6 +114,7 @@
   accessTokenInput.addEventListener("input", function () {
     localStorage.setItem("kalshiLabToken", accessTokenInput.value.trim());
   });
+  restoreSoundSettings();
   restoreStrategySettings();
   [
     strategyBankrollInput,
@@ -242,6 +260,7 @@
     renderReasons(scan);
     renderRules(scan);
     evaluateAutoPilot(scan);
+    handleSoundEffects(scan);
   }
 
   function renderSummary(scan) {
@@ -257,7 +276,7 @@
     summaryEl.innerHTML = [
       metric(spotLabel, dollars(market.currentPrice), spotSubtext, "price-metric"),
       metric("Kalshi target", dollars(market.targetPrice), "Distance " + signedDollars(market.distanceDollars)),
-      metric("Calibrated YES", pct(model.yesProbability), "Raw path " + pct(model.rawYesProbability) + " / prior " + pct(model.marketPriorYes)),
+      metric("YES expiry odds", pct(model.yesProbability), "Hold-to-settle raw " + pct(model.rawYesProbability) + " / market prior " + pct(model.marketPriorYes)),
       metric("Best call", callLabel(best.recommendation), best.side ? best.side.toUpperCase() + " edge " + pct(best.edge) : "No candidate"),
     ].join("");
   }
@@ -293,7 +312,7 @@
         "<tr>",
         '<td><span class="side-pill ' + escapeHtml(row.side) + '">' + escapeHtml(String(row.side || "").toUpperCase()) + "</span></td>",
         "<td>" + formatCents(row.askCents) + '<br><span class="subtext">bid ' + formatCents(row.bidCents) + " / spread " + pct(row.spread) + "</span></td>",
-        "<td>" + pct(row.probability) + '<br><span class="subtext">raw ' + pct(row.rawProbability) + " / horizon " + escapeHtml(horizon) + "</span></td>",
+        "<td>" + pct(row.probability) + '<br><span class="subtext">settlement odds / horizon ' + escapeHtml(horizon) + "</span></td>",
         "<td>" + pct(row.breakEven) + '<br><span class="subtext">incl fee</span></td>',
         '<td class="' + edgeClass + '">' + pct(row.edge) + "</td>",
         '<td class="' + (Number(row.expectedProfit || 0) >= 0 ? "pos" : "neg") + '">' + signedDollars(row.expectedProfit) + "</td>",
@@ -303,6 +322,86 @@
         "</tr>",
       ].join("");
     }).join("");
+  }
+
+  function restoreSoundSettings() {
+    state.sound.enabled = localStorage.getItem("kalshiBtcSoundFx") === "1";
+    soundToggle.checked = state.sound.enabled;
+  }
+
+  function unlockAudio() {
+    if (!state.sound.context) {
+      const AudioCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtor) return null;
+      state.sound.context = new AudioCtor();
+    }
+    if (state.sound.context.state === "suspended") {
+      state.sound.context.resume().catch(function () {});
+    }
+    return state.sound.context;
+  }
+
+  function playSound(kind) {
+    if (!state.sound.enabled || !soundToggle.checked) return;
+    const ctx = unlockAudio();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const patterns = {
+      arm: [[520, 0, 0.06], [760, 0.065, 0.08]],
+      up: [[880, 0, 0.045], [1180, 0.045, 0.04]],
+      down: [[520, 0, 0.05], [330, 0.05, 0.06]],
+      buy: [[660, 0, 0.07], [990, 0.075, 0.09], [1320, 0.16, 0.08]],
+      sell: [[740, 0, 0.08], [390, 0.09, 0.13]],
+      wait: [[300, 0, 0.055]],
+      phase: [[620, 0, 0.07], [620, 0.12, 0.07]],
+    };
+    const notes = patterns[kind] || patterns.wait;
+    notes.forEach(function (note) {
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = kind === "phase" ? "triangle" : "sine";
+      oscillator.frequency.setValueAtTime(note[0], now + note[1]);
+      gain.gain.setValueAtTime(0.0001, now + note[1]);
+      gain.gain.exponentialRampToValueAtTime(kind === "sell" ? 0.045 : 0.032, now + note[1] + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + note[1] + note[2]);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start(now + note[1]);
+      oscillator.stop(now + note[1] + note[2] + 0.025);
+    });
+  }
+
+  function handleSoundEffects(scan) {
+    const market = scan.market || {};
+    const price = Number(market.currentPrice);
+    const now = Date.now();
+    if (!state.sound.enabled || !soundToggle.checked) {
+      if (Number.isFinite(price)) state.sound.lastPrice = price;
+      return;
+    }
+
+    if (Number.isFinite(price)) {
+      const previous = Number(state.sound.lastPrice);
+      if (Number.isFinite(previous) && Math.abs(price - previous) >= 0.25 && now - state.sound.lastPriceToneAt > 900) {
+        playSound(price > previous ? "up" : "down");
+        state.sound.lastPriceToneAt = now;
+      }
+      state.sound.lastPrice = price;
+    }
+
+    const plan = state.executionPlan;
+    const decision = plan ? plan.actionLabel : "";
+    if (decision && state.sound.lastDecision && state.sound.lastDecision !== decision) {
+      playSound(plan.actionClass === "buy" ? "buy" : plan.actionClass === "sell" ? "sell" : "wait");
+    }
+    if (decision) state.sound.lastDecision = decision;
+
+    const secondsToAverageStart = Number(scan.model && scan.model.secondsToAverageStart);
+    const phase = Number.isFinite(secondsToAverageStart) && secondsToAverageStart <= 0 ? "final-average" : "trading";
+    if (state.sound.lastPhase && state.sound.lastPhase !== phase) {
+      playSound("phase");
+    }
+    state.sound.lastPhase = phase;
   }
 
   function restoreStrategySettings() {
@@ -349,12 +448,14 @@
     strategyActionEl.className = "strategy-action " + plan.actionClass;
     strategyGridEl.innerHTML = [
       strategyCard("Entry limit", plan.entry.title, plan.entry.detail, plan.entry.ok ? "pos" : "wait"),
+      strategyCard("Expiry odds", plan.expiry.title, plan.expiry.detail, plan.expiry.edgeOk ? "pos" : "wait"),
       strategyCard("Size", plan.size.title, plan.size.detail, plan.size.contracts > 0 ? "pos" : "wait"),
       strategyCard("Cash-out", plan.exit.title, plan.exit.detail, plan.exit.actionClass),
       strategyCard("Timing", plan.timing.title, plan.timing.detail, plan.timing.entryOpen ? "pos" : "wait"),
     ].join("");
     strategyRulesEl.innerHTML = [
       "<p><strong>Buy limit:</strong> " + escapeHtml(plan.rules.entry) + "</p>",
+      "<p><strong>Odds basis:</strong> " + escapeHtml(plan.rules.odds) + "</p>",
       "<p><strong>Profit exit:</strong> " + escapeHtml(plan.rules.profit) + "</p>",
       "<p><strong>Stop/time exit:</strong> " + escapeHtml(plan.rules.stop) + "</p>",
     ].join("");
@@ -452,11 +553,20 @@
         title: entryOk && sized.contracts > 0 ? sized.contracts + " contracts" : "0 contracts",
         detail: "Risk cap " + dollars(riskBudget) + " / " + Math.round(Number(strategyKellyInput.value || 10)) + "% Kelly " + dollars(kellyBudget) + " / ticket cost " + dollars(sized.cost) + ".",
       },
+      expiry: {
+        probability,
+        rawProbability: Number(candidate.rawProbability),
+        edge: Number(candidate.edge),
+        edgeOk,
+        title: side.toUpperCase() + " " + pct(probability),
+        detail: "Hold-to-settlement odds. Stop, take-profit, and cash-out settings are not probability inputs.",
+      },
       exit,
       rules: {
         entry: "Place " + side.toUpperCase() + " only with a buy limit at " + formatCents(entryLimitCents) + " or better; skip if the ask is above " + formatCents(maxEntryCents) + ".",
+        odds: "The " + pct(probability) + " " + side.toUpperCase() + " odds are for expiry/settlement only. Exit limits change realized P&L, not the contract's settlement probability.",
         profit: "After entry around " + formatCents(entryCents) + ", set a sell limit at " + formatCents(exit.sellLimitCents) + "; take posted bids at or above that level.",
-        stop: "Cut if bid trades at or below " + formatCents(exit.stopLimitCents) + ", or exit before the final average if the model odds drop below " + pct(0.55) + ".",
+        stop: "Cut if bid trades at or below " + formatCents(exit.stopLimitCents) + ", or exit before the final average if expiry odds drop below " + pct(0.55) + ".",
       },
     };
   }
@@ -517,7 +627,7 @@
     } else if (nearFinalAverage && Number(options.probability) < 0.55) {
       title = "Time exit";
       sellLimitCents = Math.max(1, Math.floor(bidCents));
-      detail = "Final averaging is close and model odds are under 55%.";
+      detail = "Final averaging is close and expiry odds are under 55%.";
       actionClass = "sell";
     }
 
@@ -670,7 +780,7 @@
       "Contracts: " + ticket.contracts,
       "Limit: " + formatCents(ticket.limitPriceCents),
       "Max cost: " + dollars(ticket.maxCost),
-      "Model odds: " + pct(ticket.modelProbability),
+      "Expiry odds: " + pct(ticket.modelProbability),
       "Break-even: " + pct(ticket.breakEven),
       "Edge: " + pct(ticket.edge),
     ].join("\n");
@@ -702,7 +812,7 @@
       '<div class="ticket-main">',
       '<span class="side-pill ' + escapeHtml(ticket.side) + '">' + escapeHtml(String(ticket.side || "").toUpperCase()) + "</span>",
       "<strong>" + escapeHtml(ticket.contracts + " contracts @ " + formatCents(ticket.limitPriceCents)) + "</strong>",
-      "<small>" + escapeHtml(dollars(ticket.maxCost) + " max / edge " + pct(ticket.edge) + " / model " + pct(ticket.modelProbability) + " vs pay " + pct(ticket.breakEven)) + "</small>",
+      "<small>" + escapeHtml(dollars(ticket.maxCost) + " max / edge " + pct(ticket.edge) + " / expiry " + pct(ticket.modelProbability) + " vs pay " + pct(ticket.breakEven)) + "</small>",
       "</div>",
       '<div class="ticket-facts">',
       ticketLine("Quote", (ticket.quoteSource || "Unknown") + " / " + Math.round(Number(ticket.quoteAgeMs || 0)) + "ms"),
@@ -803,7 +913,7 @@
       const summary = String(ticket.side || "").toUpperCase()
         + " 1 @ " + formatCents(ticket.limitPriceCents)
         + " / edge " + pct(ticket.edge)
-        + " / model " + pct(ticket.modelProbability);
+        + " / expiry " + pct(ticket.modelProbability);
       if (autoModeInput.value === "dry") {
         addAutoLog("Dry run " + ticker, summary + ". No order sent.", false);
         updateAutoStatus("Dry run logged for " + ticker + ".");
@@ -979,6 +1089,12 @@
     const closeX = xForTime(closeTime);
     const latestX = xForTime(latest.timeMs);
     const latestY = yForPrice(latest.close);
+    const previousPoint = points.length > 1 ? points[points.length - 2] : latest;
+    const previousX = xForTime(previousPoint.timeMs);
+    const previousY = yForPrice(previousPoint.close);
+    const planeAngle = Number.isFinite(previousX) && Number.isFinite(previousY)
+      ? Math.atan2(latestY - previousY, latestX - previousX) * 180 / Math.PI
+      : 0;
     const currentLabelY = clampNumber(latestY, pad.top + 24, height - pad.bottom - 10);
     const targetLabelY = clampNumber(targetY, pad.top + 44, height - pad.bottom - 28);
     const aboveTarget = Number(chart.currentPrice) >= Number(chart.targetPrice);
@@ -1002,7 +1118,7 @@
       '<div class="chart-decision-card ' + escapeHtml(plan.actionClass) + '">',
       "<span>" + escapeHtml(plan.actionLabel) + "</span>",
       "<strong>Entry " + escapeHtml(formatCents(plan.entry.limitCents)) + " max " + escapeHtml(formatCents(plan.entry.maxEntryCents)) + "</strong>",
-      "<small>Exit sell " + escapeHtml(formatCents(plan.exit.sellLimitCents)) + " / stop " + escapeHtml(formatCents(plan.exit.stopLimit)) + "</small>",
+      "<small>Expiry " + escapeHtml(pct(plan.expiry.probability)) + " / sell " + escapeHtml(formatCents(plan.exit.sellLimitCents)) + " / stop " + escapeHtml(formatCents(plan.exit.stopLimit)) + "</small>",
       "</div>",
       '<div class="chart-hover-card" hidden></div>',
     ].join("") : '<div class="chart-hover-card" hidden></div>';
@@ -1032,7 +1148,7 @@
       '<text class="line-label target-label" x="' + (width - pad.right + 18) + '" y="' + targetLabelY + '">Target ' + dollars(chart.targetPrice) + "</text>",
       '<path class="price-line" d="' + path + '"></path>',
       '<line class="current-line" x1="' + pad.left + '" x2="' + (width - pad.right) + '" y1="' + latestY + '" y2="' + latestY + '"></line>',
-      '<circle class="current-dot" cx="' + latestX + '" cy="' + latestY + '" r="7"></circle>',
+      '<g class="current-plane" transform="translate(' + latestX + " " + latestY + ') rotate(' + planeAngle.toFixed(2) + ')"><path class="plane-shadow" d="M14 0 L-12 -8 L-6 0 L-12 8 Z"></path><path class="plane-body" d="M14 0 L-12 -8 L-6 0 L-12 8 Z"></path><path class="plane-wing" d="M-6 0 L-12 -8 L-2 -2 Z"></path></g>',
       '<rect class="price-label-bg current-bg" x="' + (width - pad.right + 8) + '" y="' + (currentLabelY - 17) + '" width="142" height="25" rx="7"></rect>',
       '<text class="line-label current-label" x="' + (width - pad.right + 18) + '" y="' + currentLabelY + '">' + dollars(latest.close) + "</text>",
       '<text class="last-price-tag" x="' + Math.min(width - pad.right - 172, latestX + 10) + '" y="' + (latestY - 12) + '">' + dollars(latest.close) + "</text>",
@@ -1106,7 +1222,7 @@
       model.caveat ? "<p><strong>Data caveat:</strong> " + escapeHtml(model.caveat) + "</p>" : "",
       renderKalshiSpotMode(scan),
       renderQuoteMode(scan),
-      "<p><strong>Odds engine:</strong> calibrated YES " + escapeHtml(pct(model.yesProbability)) + ", raw final-average path YES " + escapeHtml(pct(model.rawYesProbability)) + ", Kalshi prior " + escapeHtml(pct(model.marketPriorYes)) + ", shrink " + escapeHtml(pct(model.calibrationWeight)) + ".</p>",
+      "<p><strong>Expiry odds engine:</strong> calibrated YES " + escapeHtml(pct(model.yesProbability)) + ", raw final-average path YES " + escapeHtml(pct(model.rawYesProbability)) + ", Kalshi prior " + escapeHtml(pct(model.marketPriorYes)) + ", shrink " + escapeHtml(pct(model.calibrationWeight)) + ". These are settlement odds, independent of stop-loss or cash-out settings.</p>",
       "<p><strong>Time model:</strong> " + escapeHtml(formatDuration(model.horizonSeconds)) + " to close, " + escapeHtml(formatDuration(model.secondsToAverageStart)) + " until the final average starts, effective variance horizon " + escapeHtml(formatDuration(model.effectiveVarianceSeconds)) + ".</p>",
       "<p><strong>Vol inputs:</strong> 5m " + escapeHtml(tinyPct(model.sigma5)) + ", 15m " + escapeHtml(tinyPct(model.sigma15)) + ", 60m " + escapeHtml(tinyPct(model.sigma60)) + ", EWMA " + escapeHtml(tinyPct(model.sigmaEwma)) + ", range " + escapeHtml(tinyPct(model.sigmaRange)) + " per minute.</p>",
       renderTickerComponents(scan),
