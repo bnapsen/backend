@@ -188,6 +188,7 @@
       source.tickerSummary || "",
       source.tickerMode || "",
       market.quoteSource ? "Quotes: " + market.quoteSource : "",
+      market.clockSource ? "Clock: " + market.clockSource : "",
       source.kalshiWebsocketStatus ? "Kalshi WS " + source.kalshiWebsocketStatus : "",
       source.cfBenchmarksConfigured ? "CF key configured" : "CF key not configured",
       source.kalshiWebsocketConfigured ? "Kalshi WS configured" : "Kalshi WS not configured",
@@ -241,8 +242,10 @@
       openMs,
       closeMs,
       settlementStartMs: Number.isFinite(settlementStartMs) && settlementStartMs > openMs ? settlementStartMs : closeMs - 60_000,
-      generatedAtMs: new Date(scan.generatedAt || Date.now()).getTime(),
+      generatedAtMs: new Date(market.clockTime || (scan.clock && scan.clock.clockTime) || scan.generatedAt || Date.now()).getTime(),
       clientReceivedAtMs: Date.now(),
+      clockSource: market.clockSource || (scan.clock && scan.clock.clockSource) || "server clock",
+      localClockOffsetMs: Number(market.localClockOffsetMs || 0),
     };
     updateMarketClock();
   }
@@ -289,7 +292,7 @@
     eventWindowEl.textContent = remainingSeconds > 0
       ? "Closes " + formatTime(clock.closeMs) + " / " + formatDuration(remainingSeconds) + " left"
       : "Closed; waiting for next market";
-    marketClockNoteEl.textContent = "Odds horizon right now: " + formatDuration(remainingSeconds) + ". The model recomputes as the live stream advances.";
+    marketClockNoteEl.textContent = "Odds horizon right now: " + formatDuration(remainingSeconds) + ". Clock source: " + clock.clockSource + ". Offset vs browser: " + Math.round(clock.localClockOffsetMs || 0) + "ms.";
   }
 
   function renderChart(scan) {
@@ -429,6 +432,8 @@
       market.quoteSource || "Kalshi quote source unknown",
       market.quoteUpdatedTime ? "updated " + formatTime(market.quoteUpdatedTime) : "",
       Number.isFinite(Number(market.quoteLatencyMs)) ? "age " + Number(market.quoteLatencyMs).toFixed(0) + "ms" : "",
+      market.clockSource ? "clock " + market.clockSource : "",
+      Number.isFinite(Number(market.localClockOffsetMs)) ? "browser offset " + Number(market.localClockOffsetMs).toFixed(0) + "ms" : "",
       source.kalshiWebsocketError ? "WS note: " + source.kalshiWebsocketError : "",
     ].filter(Boolean);
     return "<p><strong>Kalshi quote stream:</strong> " + escapeHtml(parts.join(" / ")) + "</p>";

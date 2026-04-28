@@ -50,6 +50,13 @@ const kalshiPrivateKeyCache = {
   source: '',
   value: '',
 };
+const kalshiClockSync = {
+  source: 'local-server-clock',
+  serverTimeMs: 0,
+  localTimeMs: 0,
+  roundTripMs: 0,
+  responseDate: '',
+};
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -137,10 +144,43 @@ function normalizeTimestamp(value) {
   return isoDate(value) || isoDate(Date.now());
 }
 
+function recordKalshiClockSync(url, response, startedAtMs) {
+  if (!String(url).startsWith(KALSHI_API_BASE_URL)) return;
+  const responseDate = response.headers && response.headers.get ? response.headers.get('date') : '';
+  const serverMs = new Date(responseDate || '').getTime();
+  if (!Number.isFinite(serverMs)) return;
+  const receivedAtMs = Date.now();
+  const roundTripMs = Math.max(0, receivedAtMs - Number(startedAtMs || receivedAtMs));
+  kalshiClockSync.source = 'Kalshi API Date header';
+  kalshiClockSync.serverTimeMs = serverMs + roundTripMs / 2;
+  kalshiClockSync.localTimeMs = receivedAtMs;
+  kalshiClockSync.roundTripMs = roundTripMs;
+  kalshiClockSync.responseDate = responseDate;
+}
+
+function kalshiNowMs() {
+  if (kalshiClockSync.serverTimeMs > 0 && kalshiClockSync.localTimeMs > 0) {
+    return kalshiClockSync.serverTimeMs + (Date.now() - kalshiClockSync.localTimeMs);
+  }
+  return Date.now();
+}
+
+function kalshiClockStatus() {
+  const nowMs = kalshiNowMs();
+  return {
+    clockSource: kalshiClockSync.source,
+    clockTime: isoDate(nowMs),
+    kalshiResponseDate: kalshiClockSync.responseDate,
+    kalshiClockRoundTripMs: round(kalshiClockSync.roundTripMs, 0),
+    localClockOffsetMs: round(nowMs - Date.now(), 0),
+  };
+}
+
 async function fetchJson(url, options = {}) {
   const { timeoutMs = 5_000, ...fetchOptions } = options;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const startedAtMs = Date.now();
   const response = await fetch(url, {
     ...fetchOptions,
     signal: fetchOptions.signal || controller.signal,
@@ -155,6 +195,7 @@ async function fetchJson(url, options = {}) {
   if (!response.ok) {
     throw new Error(`Request failed ${response.status}: ${url}`);
   }
+  recordKalshiClockSync(url, response, startedAtMs);
   return response.json();
 }
 
@@ -1098,6 +1139,7 @@ async function scanBitcoin15m(options = {}) {
   const maxCost = clamp(parseNumber(options.maxCost, DEFAULT_MAX_COST), 0.5, 100);
   const minEdge = clamp(parseNumber(options.minEdge, DEFAULT_MIN_EDGE), -0.5, 0.5);
   const marketSet = await getBitcoin15mMarkets();
+  const initialClock = kalshiClockStatus();
   const [{ market, markets }, ticker, candles] = await Promise.all([
     marketSet.active
       ? getFreshKalshiMarket(marketSet.active).then((freshMarket) => ({ market: freshMarket, markets: marketSet.markets }))
@@ -1107,8 +1149,10 @@ async function scanBitcoin15m(options = {}) {
   ]);
 
   if (!market) {
+    const clock = kalshiClockStatus();
     return {
       generatedAt: new Date().toISOString(),
+      clock,
       error: 'No active KXBTC15M market found.',
       candidates: [],
       chart: { points: candles },
@@ -1117,7 +1161,8 @@ async function scanBitcoin15m(options = {}) {
   }
 
   const window = eventWindowFromMarket(market);
-  const now = Date.now();
+  const clock = kalshiClockStatus();
+  const now = kalshiNowMs();
   const secondsToClose = Math.max(0, (window.closeMs - now) / 1000);
   const secondsSinceOpen = Math.max(0, (now - window.openMs) / 1000);
   const targetPrice = Number(market.floor_strike);
@@ -1161,6 +1206,10 @@ async function scanBitcoin15m(options = {}) {
 
   return {
     generatedAt: new Date().toISOString(),
+    clock: {
+      ...clock,
+      initialClockTime: initialClock.clockTime,
+    },
     series: BTC_15M_SERIES,
     title: market.title,
     ticker: market.ticker,
@@ -1196,6 +1245,10 @@ async function scanBitcoin15m(options = {}) {
       quoteUpdatedTime: market.quoteUpdatedTime || normalizeTimestamp(market.updated_time || Date.now()),
       quoteReceivedAt: market.quoteReceivedAt || isoDate(Date.now()),
       quoteLatencyMs: round(parseNumber(market.quoteLatencyMs, 0), 0),
+      clockSource: clock.clockSource,
+      clockTime: clock.clockTime,
+      kalshiClockRoundTripMs: clock.kalshiClockRoundTripMs,
+      localClockOffsetMs: clock.localClockOffsetMs,
       openTime: window.openTime,
       closeTime: window.closeTime,
       targetReferenceTime: window.targetReferenceTime,
