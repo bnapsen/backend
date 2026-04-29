@@ -30,6 +30,7 @@ const MAX_KALSHI_MARKETS = 1_200;
 const MAX_ASSOCIATED_MARKETS = 260;
 const MAX_ODDS_SPORTS = 5;
 const DEFAULT_KALSHI_LIMIT = 320;
+const DEFAULT_MIN_EDGE = 0.015;
 const kalshiPageCache = new Map();
 const kalshiTickerCache = new Map();
 const oddsCache = new Map();
@@ -48,6 +49,17 @@ function round(value, places = 4) {
   if (!Number.isFinite(number)) return 0;
   const factor = 10 ** places;
   return Math.round(number * factor) / factor;
+}
+
+function median(values) {
+  const sorted = values
+    .map(Number)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2) return sorted[mid];
+  return (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 function normalizeCsv(value, fallback, maxItems) {
@@ -438,6 +450,140 @@ function flattenSportsbookEvent(event, sportKey) {
   return rows;
 }
 
+function sportsbookGroupKey(row) {
+  const point = row.marketKey === 'h2h'
+    ? 'main'
+    : row.marketKey === 'spreads'
+      ? String(Math.abs(parseNumber(row.point, 0)))
+      : String(row.point === null || row.point === undefined ? 'main' : row.point);
+  return [
+    row.sportKey,
+    row.eventId,
+    row.marketKey,
+    point,
+  ].join('|');
+}
+
+function sportsbookOutcomeKey(row) {
+  if (row.marketKey === 'totals') {
+    return String(row.outcome || '').toLowerCase() === 'under' ? 'under' : 'over';
+  }
+  return compactText(`${row.outcome || ''}:${row.point === null || row.point === undefined ? '' : row.point}`);
+}
+
+function buildSportsbookConsensus(rows) {
+  const groups = new Map();
+  for (const row of rows || []) {
+    const groupKey = sportsbookGroupKey(row);
+    const outcomeKey = sportsbookOutcomeKey(row);
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, {
+        key: groupKey,
+        sportKey: row.sportKey,
+        sportTitle: row.sportTitle,
+        eventId: row.eventId,
+        game: row.game,
+        commenceTime: row.commenceTime,
+        marketKey: row.marketKey,
+        marketTitle: row.marketTitle,
+        point: row.point,
+        outcomes: new Map(),
+      });
+    }
+    const group = groups.get(groupKey);
+    if (!group.outcomes.has(outcomeKey)) {
+      group.outcomes.set(outcomeKey, {
+        key: outcomeKey,
+        label: row.outcome,
+        point: row.point,
+        rows: [],
+      });
+    }
+    group.outcomes.get(outcomeKey).rows.push(row);
+  }
+
+  const consensus = [];
+  for (const group of groups.values()) {
+    const outcomes = Array.from(group.outcomes.values()).map((outcome) => {
+      const noVigValues = outcome.rows
+        .map((row) => row.noVigProbability)
+        .filter(Number.isFinite);
+      const impliedValues = outcome.rows
+        .map((row) => row.impliedProbability)
+        .filter(Number.isFinite);
+      const best = outcome.rows.reduce((winner, row) => {
+        if (!winner || Number(row.decimalOdds) > Number(winner.decimalOdds)) return row;
+        return winner;
+      }, null);
+      const books = new Set(outcome.rows.map((row) => row.bookmakerKey).filter(Boolean));
+      return {
+        key: outcome.key,
+        label: outcome.label,
+        point: outcome.point,
+        probability: round(median(noVigValues) ?? median(impliedValues) ?? 0, 4),
+        sampleCount: outcome.rows.length,
+        books: Array.from(books),
+        best,
+      };
+    });
+    const probabilitySum = outcomes.reduce((sum, outcome) => sum + (outcome.probability || 0), 0);
+    consensus.push({
+      ...group,
+      outcomes,
+      outcomeCount: outcomes.length,
+      probabilitySum: round(probabilitySum, 4),
+      sampleBooks: Array.from(new Set(outcomes.flatMap((outcome) => outcome.books || []))),
+    });
+  }
+
+  return consensus.sort((a, b) => {
+    const timeDiff = new Date(a.commenceTime).getTime() - new Date(b.commenceTime).getTime();
+    if (Number.isFinite(timeDiff) && timeDiff !== 0) return timeDiff;
+    return String(a.game).localeCompare(String(b.game));
+  });
+}
+
+function buildSportsbookArbitrage(rows) {
+  const consensusGroups = buildSportsbookConsensus(rows);
+  const arbs = [];
+  for (const group of consensusGroups) {
+    if (group.outcomeCount < 2 || group.marketKey === 'spreads' && group.outcomes.length !== 2) continue;
+    if (group.marketKey === 'h2h' && group.outcomes.length > 2) continue;
+    const bestOutcomes = group.outcomes.map((outcome) => {
+      const best = outcome.best;
+      const decimal = best ? Number(best.decimalOdds) : 0;
+      return { outcome, row: best, decimal, implied: decimal > 1 ? 1 / decimal : 1 };
+    }).filter((item) => item.row && item.decimal > 1);
+    if (bestOutcomes.length !== group.outcomes.length) continue;
+    const impliedSum = bestOutcomes.reduce((sum, item) => sum + item.implied, 0);
+    const arbRoi = impliedSum > 0 ? (1 / impliedSum) - 1 : 0;
+    if (arbRoi <= 0) continue;
+    arbs.push({
+      key: group.key,
+      sportTitle: group.sportTitle,
+      game: group.game,
+      marketTitle: group.marketTitle,
+      marketKey: group.marketKey,
+      point: group.point,
+      commenceTime: group.commenceTime,
+      impliedSum: round(impliedSum, 4),
+      arbMargin: round(1 - impliedSum, 4),
+      roi: round(arbRoi, 4),
+      legs: bestOutcomes.map((item) => ({
+        outcome: item.row.outcome,
+        point: item.row.point,
+        bookmakerTitle: item.row.bookmakerTitle,
+        bookmakerKey: item.row.bookmakerKey,
+        americanOdds: item.row.americanOdds,
+        decimalOdds: item.row.decimalOdds,
+        stakeShare: round(item.implied / impliedSum, 4),
+        payoutPerDollar: round((item.implied / impliedSum) * item.decimal, 4),
+      })),
+    });
+  }
+  return arbs.sort((a, b) => b.roi - a.roi).slice(0, 60);
+}
+
 async function fetchSportsbookBoard({ sports, bookmakers }) {
   const selectedSports = normalizeSports(sports);
   const selectedBookmakers = normalizeBookmakers(bookmakers);
@@ -497,18 +643,127 @@ function roughMatchScore(kalshi, sportsbook) {
   let score = 0;
   const rowText = compactText(`${sportsbook.game} ${sportsbook.outcome} ${sportsbook.marketTitle} ${sportsbook.point || ''}`);
   const participantTokens = compactText(leg.participant).split(' ').filter((token) => token.length >= 3);
+  let tokenMatches = 0;
   for (const token of participantTokens) {
-    if (rowText.includes(token)) score += 0.12;
+    if (rowText.includes(token)) {
+      tokenMatches += 1;
+      score += 0.12;
+    }
   }
+  if (participantTokens.length >= 2 && tokenMatches >= 2) score += 0.15;
   if (leg.type === 'total' && sportsbook.marketKey === 'totals') score += 0.35;
   if (leg.type === 'spread' && sportsbook.marketKey === 'spreads') score += 0.35;
   if (leg.type === 'moneyline' && sportsbook.marketKey === 'h2h') score += 0.25;
-  if (leg.point !== null && sportsbook.point !== null && Math.abs(Number(leg.point) - Number(sportsbook.point)) < 0.01) {
-    score += 0.25;
+  if (leg.point !== null && sportsbook.point !== null) {
+    const legPoint = Number(leg.point);
+    const bookPoint = Number(sportsbook.point);
+    const pointMatches = leg.type === 'spread'
+      ? Math.abs(Math.abs(legPoint) - Math.abs(bookPoint)) < 0.01
+      : Math.abs(legPoint - bookPoint) < 0.01;
+    if (pointMatches) score += 0.25;
   }
   const outcomeText = compactText(leg.outcome);
   if (outcomeText && rowText.includes(outcomeText.split(' ')[0] || '')) score += 0.08;
   return clamp(score, 0, 1);
+}
+
+function representativeRowForConsensus(outcome) {
+  return outcome && outcome.best ? outcome.best : null;
+}
+
+function complementaryOutcome(consensus, outcome) {
+  if (!consensus || !outcome || consensus.outcomes.length !== 2) return null;
+  return consensus.outcomes.find((candidate) => candidate.key !== outcome.key) || null;
+}
+
+function outcomePolarity(leg) {
+  if (!leg) return '';
+  if (leg.type === 'total') return String(leg.legSide || 'yes').toLowerCase() === 'no' ? 'under' : 'over';
+  return '';
+}
+
+function scoreConsensusMatch(kalshi, consensus, outcome) {
+  const row = representativeRowForConsensus(outcome);
+  if (!row) return 0;
+  let score = roughMatchScore(kalshi, row);
+  const leg = kalshi.legs && kalshi.legs[0];
+  if (!leg) return score;
+  if (leg.type === 'total' && consensus.marketKey === 'totals') {
+    const polarity = outcomePolarity(leg);
+    if (polarity && outcome.key === polarity) score += 0.18;
+  }
+  if (leg.type === 'spread' && consensus.marketKey === 'spreads') {
+    score += 0.1;
+  }
+  if (leg.type === 'moneyline' && consensus.marketKey === 'h2h') {
+    score += 0.08;
+  }
+  return clamp(score, 0, 1);
+}
+
+function buildKalshiSportsEv(kalshiMarkets, consensusGroups, minEdge) {
+  const threshold = clamp(parseNumber(minEdge, DEFAULT_MIN_EDGE), -0.2, 0.5);
+  const candidates = [];
+  for (const kalshi of kalshiMarkets) {
+    if (!kalshi.legs || kalshi.legs.length !== 1) continue;
+    if (!['clean', 'manual'].includes(kalshi.matchability)) continue;
+    let best = null;
+    for (const consensus of consensusGroups) {
+      for (const outcome of consensus.outcomes || []) {
+        const score = scoreConsensusMatch(kalshi, consensus, outcome);
+        if (score < 0.6) continue;
+        if (!best || score > best.score) {
+          best = { score, consensus, outcome };
+        }
+      }
+    }
+    if (!best) continue;
+    const complement = complementaryOutcome(best.consensus, best.outcome);
+    const yesProbability = best.outcome.probability;
+    const noProbability = complement ? complement.probability : null;
+    const yesEdge = Number.isFinite(yesProbability) ? yesProbability - kalshi.yesAllIn : null;
+    const noEdge = Number.isFinite(noProbability) ? noProbability - kalshi.noAllIn : null;
+    const bestSide = (yesEdge || -99) >= (noEdge || -99) ? 'yes' : 'no';
+    const bestEdge = bestSide === 'yes' ? yesEdge : noEdge;
+    if (!Number.isFinite(bestEdge) || bestEdge < threshold) continue;
+    const price = bestSide === 'yes' ? kalshi.yesAllIn : kalshi.noAllIn;
+    const fairProbability = bestSide === 'yes' ? yesProbability : noProbability;
+    candidates.push({
+      key: `${kalshi.ticker}:${best.consensus.key}:${best.outcome.key}`,
+      validation: best.score >= 0.82 ? 'strong-match' : 'review-match',
+      matchScore: round(best.score, 3),
+      side: bestSide,
+      edge: round(bestEdge, 4),
+      roi: price > 0 ? round(bestEdge / price, 4) : 0,
+      fairProbability: round(fairProbability, 4),
+      allInPrice: round(price, 4),
+      yesProbability: round(yesProbability, 4),
+      noProbability: noProbability === null ? null : round(noProbability, 4),
+      kalshi,
+      consensus: {
+        key: best.consensus.key,
+        sportTitle: best.consensus.sportTitle,
+        game: best.consensus.game,
+        marketTitle: best.consensus.marketTitle,
+        marketKey: best.consensus.marketKey,
+        point: best.consensus.point,
+        commenceTime: best.consensus.commenceTime,
+        sampleBooks: best.consensus.sampleBooks,
+        probabilitySum: best.consensus.probabilitySum,
+      },
+      outcome: best.outcome,
+      complement,
+      riskFlags: [
+        best.score < 0.82 ? 'Needs manual settlement check.' : '',
+        best.consensus.sampleBooks.length < 3 ? 'Thin sportsbook sample.' : '',
+        kalshi.matchability !== 'clean' ? 'Kalshi label was not a clean direct match.' : '',
+      ].filter(Boolean),
+    });
+  }
+
+  return candidates
+    .sort((a, b) => b.edge - a.edge || b.matchScore - a.matchScore)
+    .slice(0, 80);
 }
 
 function buildRoughMatches(kalshiMarkets, sportsbookRows) {
@@ -568,7 +823,12 @@ async function scanSportsbookCrossCheck(options = {}) {
     sports: options.sports,
     bookmakers: options.bookmakers,
   });
+  const sportsbookConsensus = buildSportsbookConsensus(sportsbook.rows || []);
+  const sportsbookArbs = buildSportsbookArbitrage(sportsbook.rows || []);
+  sportsbook.consensus = sportsbookConsensus.slice(0, 400);
+  sportsbook.arbitrage = sportsbookArbs;
   const matches = buildRoughMatches(kalshiMarkets, sportsbook.rows || []);
+  const evCandidates = buildKalshiSportsEv(kalshiMarkets, sportsbookConsensus, options.minEdge);
 
   return {
     ok: true,
@@ -581,10 +841,14 @@ async function scanSportsbookCrossCheck(options = {}) {
     },
     sportsbook,
     matches,
+    evCandidates,
+    arbitrage: sportsbookArbs,
     notes: [
-      'The scanner treats sportsbook odds as reference prices unless an exact same-settlement opposite side is entered in the calculator.',
+      'Positive EV candidates use sportsbook no-vig consensus as the reference probability, then compare it with Kalshi all-in price including estimated Kalshi fees.',
+      'Sportsbook arbitrage scans the selected books for two-way moneyline, spread, and total groups where the best price on each side sums below 100%.',
+      'The scanner treats sportsbook odds as reference prices unless the market wording, line, and settlement rule match exactly.',
       'Kalshi multivariate sports contracts are often parlays. Their legs can be audited, but the full parlay needs sportsbook parlay pricing to call it an arb.',
-      'Featured sportsbook markets are h2h, spreads, and totals because those are the most common, most comparable lines.',
+      'Featured sportsbook markets are h2h, spreads, and totals because those are the most common, most comparable lines exposed by the odds feed.',
     ],
   };
 }

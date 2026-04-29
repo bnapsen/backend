@@ -650,6 +650,7 @@ async function handleKalshiSportsbookScanRequest(req, res, requestUrl) {
       sports: requestUrl.searchParams.get('sports'),
       bookmakers: requestUrl.searchParams.get('bookmakers'),
       kalshiLimit: readFloatParam(requestUrl, 'kalshiLimit', 320),
+      minEdge: readFloatParam(requestUrl, 'minEdge', 0.015),
     }));
   } catch (error) {
     const payload = { error: 'Unable to scan Kalshi sports and sportsbook prices right now.' };

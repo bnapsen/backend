@@ -16,10 +16,15 @@
   const sportsInput = document.querySelector("#sports-input");
   const booksInput = document.querySelector("#books-input");
   const kalshiLimitInput = document.querySelector("#kalshi-limit");
+  const minEdgeInput = document.querySelector("#min-edge");
   const tokenInput = document.querySelector("#access-token");
   const summaryEl = document.querySelector("#summary");
+  const evCandidatesEl = document.querySelector("#ev-candidates");
+  const arbsEl = document.querySelector("#arbs");
   const matchesEl = document.querySelector("#matches");
   const notesEl = document.querySelector("#notes");
+  const evCountEl = document.querySelector("#ev-count");
+  const arbCountEl = document.querySelector("#arb-count");
   const matchCountEl = document.querySelector("#match-count");
   const kalshiCountEl = document.querySelector("#kalshi-count");
   const bookCountEl = document.querySelector("#book-count");
@@ -81,6 +86,7 @@
       if (saved.sports) sportsInput.value = saved.sports;
       if (saved.books) booksInput.value = saved.books;
       if (saved.kalshiLimit) kalshiLimitInput.value = saved.kalshiLimit;
+      if (saved.minEdge) minEdgeInput.value = saved.minEdge;
     } catch (error) {
       // Ignore corrupted local settings.
     }
@@ -93,6 +99,7 @@
       sports: sportsInput.value.trim(),
       books: booksInput.value.trim(),
       kalshiLimit: kalshiLimitInput.value,
+      minEdge: minEdgeInput.value,
     }));
   }
 
@@ -102,6 +109,7 @@
       sports: sportsInput.value.trim(),
       bookmakers: booksInput.value.trim(),
       kalshiLimit: String(Number(kalshiLimitInput.value || 500)),
+      minEdge: String(Number(minEdgeInput.value || 1.5) / 100),
     });
     const token = tokenInput.value.trim();
     const headers = {};
@@ -127,6 +135,8 @@
     const scan = state.scan;
     if (!scan) return;
     renderSummary(scan);
+    renderEvCandidates(scan.evCandidates || []);
+    renderArbs(scan.arbitrage || (scan.sportsbook && scan.sportsbook.arbitrage) || []);
     renderMatches(scan.matches || []);
     renderNotes(scan);
     renderKalshiRows((scan.kalshi && scan.kalshi.markets) || []);
@@ -136,15 +146,87 @@
   function renderSummary(scan) {
     const configured = scan.sportsbook && scan.sportsbook.configured;
     const cards = [
+      ["Positive EV", (scan.evCandidates || []).length, (scan.evCandidates || []).length ? "is-warn" : "is-cold"],
+      ["Book arbs", (scan.arbitrage || []).length, (scan.arbitrage || []).length ? "is-warn" : "is-cold"],
       ["Kalshi legs", ((scan.kalshi && scan.kalshi.markets) || []).length, ""],
       ["Sportsbook rows", ((scan.sportsbook && scan.sportsbook.rows) || []).length, configured ? "" : "is-cold"],
-      ["Rough matches", (scan.matches || []).length, (scan.matches || []).length ? "is-warn" : "is-cold"],
-      ["State", stateSelect.value || "not set", stateSelect.value ? "" : "is-cold"],
       ["Mode", configured ? "Live odds" : "Manual odds", configured ? "" : "is-warn"],
     ];
     summaryEl.innerHTML = cards.map(function (card) {
       return `<article class="summary-card ${card[2]}"><span>${escapeHtml(card[0])}</span><strong>${escapeHtml(card[1])}</strong></article>`;
     }).join("");
+  }
+
+  function renderEvCandidates(candidates) {
+    evCountEl.textContent = String(candidates.length);
+    if (!candidates.length) {
+      evCandidatesEl.innerHTML = `<div class="empty-state">No positive EV candidates above the current threshold. Live sportsbook odds require an odds API key.</div>`;
+      return;
+    }
+    evCandidatesEl.innerHTML = candidates.slice(0, 16).map(function (candidate, index) {
+      const market = candidate.kalshi || {};
+      const consensus = candidate.consensus || {};
+      const outcome = candidate.outcome || {};
+      return `
+        <article class="match-card">
+          <div class="match-meta">
+            <span class="tag hot">${percent(candidate.edge)} edge</span>
+            <span class="tag">${escapeHtml(candidate.side || "").toUpperCase()}</span>
+            <span class="tag ${candidate.validation === "strong-match" ? "clean" : "warn"}">${Math.round((candidate.matchScore || 0) * 100)}% match</span>
+          </div>
+          <h3>${escapeHtml(market.title || "Kalshi market")}</h3>
+          <p>${escapeHtml(consensus.game || "")} ${escapeHtml(consensus.marketTitle || "")}: fair ${percent(candidate.fairProbability)} vs all-in ${price(candidate.allInPrice)}.</p>
+          <p class="small">Consensus outcome: ${escapeHtml(outcome.label || outcome.key || "")}. Books sampled: ${escapeHtml((consensus.sampleBooks || []).join(", ") || "none")}.</p>
+          ${renderRiskFlags(candidate.riskFlags)}
+          <div class="row-actions">
+            <button type="button" data-use-ev="${index}">Use in calculator</button>
+            <button type="button" class="ghost" data-detail-ev="${index}">Details</button>
+            <a class="small-link" href="${escapeHtml(market.url || "#")}" target="_blank" rel="noopener">Kalshi</a>
+          </div>
+        </article>
+      `;
+    }).join("");
+    evCandidatesEl.querySelectorAll("[data-use-ev]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const candidate = candidates[Number(button.dataset.useEv)];
+        fillKalshi(candidate.kalshi);
+      });
+    });
+    evCandidatesEl.querySelectorAll("[data-detail-ev]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        openEvDetail(candidates[Number(button.dataset.detailEv)]);
+      });
+    });
+  }
+
+  function renderArbs(arbs) {
+    arbCountEl.textContent = String(arbs.length);
+    if (!arbs.length) {
+      arbsEl.innerHTML = `<div class="empty-state">No cross-book arbitrage found across selected books.</div>`;
+      return;
+    }
+    arbsEl.innerHTML = arbs.slice(0, 14).map(function (arb, index) {
+      return `
+        <article class="match-card">
+          <div class="match-meta">
+            <span class="tag hot">${percent(arb.roi)} lock ROI</span>
+            <span class="tag">${escapeHtml(arb.sportTitle || "")}</span>
+            <span class="tag">${escapeHtml(arb.marketTitle || "")}</span>
+          </div>
+          <h3>${escapeHtml(arb.game || "Sportsbook arb")}</h3>
+          <p class="small">${formatDateTime(arb.commenceTime)} ${arb.point === null || arb.point === undefined ? "" : "line " + escapeHtml(arb.point)}</p>
+          ${renderArbLegs(arb.legs)}
+          <div class="row-actions">
+            <button type="button" class="ghost" data-detail-arb="${index}">Details</button>
+          </div>
+        </article>
+      `;
+    }).join("");
+    arbsEl.querySelectorAll("[data-detail-arb]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        openArbDetail(arbs[Number(button.dataset.detailArb)]);
+      });
+    });
   }
 
   function renderMatches(matches) {
@@ -338,12 +420,54 @@
     detailDialog.showModal();
   }
 
+  function openEvDetail(candidate) {
+    const market = candidate.kalshi || {};
+    const consensus = candidate.consensus || {};
+    detailTitle.textContent = `${String(candidate.side || "").toUpperCase()} EV candidate`;
+    detailBody.innerHTML = `
+      <div class="detail-grid">
+        <article class="note-card"><strong>EV math</strong><p>Fair probability ${percent(candidate.fairProbability)} minus Kalshi all-in ${price(candidate.allInPrice)} equals ${percent(candidate.edge)} edge. ROI on cost is ${percent(candidate.roi)}.</p></article>
+        <article class="note-card"><strong>Sportsbook consensus</strong><p>${escapeHtml(consensus.game || "")} ${escapeHtml(consensus.marketTitle || "")}. Books: ${escapeHtml((consensus.sampleBooks || []).join(", ") || "none")}.</p></article>
+        <article class="note-card"><strong>Match quality</strong><p>${escapeHtml(candidate.validation || "")}; score ${Math.round((candidate.matchScore || 0) * 100)}%. ${escapeHtml((candidate.riskFlags || []).join(" "))}</p></article>
+        <article class="note-card"><strong>Kalshi</strong><p>${escapeHtml(market.title || "")}</p><a class="small-link" href="${escapeHtml(market.url || "#")}" target="_blank" rel="noopener">Open on Kalshi</a></article>
+      </div>
+    `;
+    detailDialog.showModal();
+  }
+
+  function openArbDetail(arb) {
+    detailTitle.textContent = "Cross-book arbitrage";
+    detailBody.innerHTML = `
+      <div class="detail-grid">
+        <article class="note-card"><strong>Arb math</strong><p>Best-price implied probabilities sum to ${percent(arb.impliedSum)}. Lock ROI is ${percent(arb.roi)} before limits, movement, voids, and rule differences.</p></article>
+        <article class="note-card"><strong>Market</strong><p>${escapeHtml(arb.game || "")} ${escapeHtml(arb.marketTitle || "")} ${arb.point === null || arb.point === undefined ? "" : "line " + escapeHtml(arb.point)}</p></article>
+        <article class="note-card"><strong>Stake split</strong>${renderArbLegs(arb.legs)}</article>
+      </div>
+    `;
+    detailDialog.showModal();
+  }
+
   function renderLegs(legs) {
     if (!legs || !legs.length) return `<span class="small">No parsed legs</span>`;
     return `<ul class="leg-list">${legs.slice(0, 7).map(function (leg) {
       const point = leg.point === null || leg.point === undefined ? "" : ` ${leg.point}`;
       return `<li><span class="tag ${leg.legSide === "no" ? "no" : ""}">${escapeHtml(leg.legSide)}</span> ${escapeHtml(leg.type)}: ${escapeHtml(leg.outcome || leg.description)}${escapeHtml(point)}</li>`;
     }).join("")}${legs.length > 7 ? `<li class="small">+${legs.length - 7} more legs</li>` : ""}</ul>`;
+  }
+
+  function renderRiskFlags(flags) {
+    if (!flags || !flags.length) return "";
+    return `<ul class="leg-list">${flags.map(function (flag) {
+      return `<li><span class="tag warn">check</span> ${escapeHtml(flag)}</li>`;
+    }).join("")}</ul>`;
+  }
+
+  function renderArbLegs(legs) {
+    if (!legs || !legs.length) return `<span class="small">No legs</span>`;
+    return `<ul class="leg-list">${legs.map(function (leg) {
+      const point = leg.point === null || leg.point === undefined ? "" : ` ${leg.point}`;
+      return `<li><span class="tag clean">${escapeHtml(leg.bookmakerTitle || "")}</span> ${escapeHtml(leg.outcome || "")}${escapeHtml(point)} at ${american(leg.americanOdds)} <span class="small">stake ${percent(leg.stakeShare)}</span></li>`;
+    }).join("")}</ul>`;
   }
 
   function setStatus(message, isError) {
