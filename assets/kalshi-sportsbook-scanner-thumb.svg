@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">Kalshi Sportsbook Cross-Check thumbnail</title>
+  <desc id="desc">A dark trading dashboard comparing Kalshi prices to sportsbook lines.</desc>
+  <rect width="960" height="540" fill="#06110f"/>
+  <path d="M0 80C180 10 310 120 480 62s282-20 480 48v430H0Z" fill="#0e1917"/>
+  <path d="M56 80h848v380H56z" fill="#101f1d" stroke="#26433d" stroke-width="3"/>
+  <path d="M96 126h238v72H96zM96 226h238v72H96zM96 326h238v72H96z" fill="#172b27" stroke="#31564d"/>
+  <path d="M390 126h210v272H390z" fill="#132521" stroke="#31564d"/>
+  <path d="M650 126h214v272H650z" fill="#172b27" stroke="#31564d"/>
+  <path d="M420 348 462 268l38 32 46-102 36 150" fill="none" stroke="#34f29d" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M682 184h150M682 242h118M682 300h150M682 358h98" stroke="#65d6ff" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="124" cy="162" r="18" fill="#34f29d"/>
+  <circle cx="124" cy="262" r="18" fill="#ffc75a"/>
+  <circle cx="124" cy="362" r="18" fill="#ff5f7f"/>
+  <text x="168" y="170" fill="#f5fbf8" font-family="Arial, sans-serif" font-size="34" font-weight="700">Kalshi</text>
+  <text x="168" y="270" fill="#f5fbf8" font-family="Arial, sans-serif" font-size="34" font-weight="700">Sportsbook</text>
+  <text x="168" y="370" fill="#f5fbf8" font-family="Arial, sans-serif" font-size="34" font-weight="700">Arb Check</text>
+  <text x="88" y="494" fill="#34f29d" font-family="Arial, sans-serif" font-size="44" font-weight="800">Sportsbook Cross-Check</text>
+</svg>

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kalshi Sportsbook Cross-Check</title>
+  <link rel="stylesheet" href="/kalshi-sportsbook-scanner.css">
+</head>
+<body>
+  <header class="app-topbar">
+    <div>
+      <a class="back-link" href="/">BNAPSN</a>
+      <h1>Kalshi Sportsbook Cross-Check</h1>
+      <p id="status">Ready</p>
+    </div>
+    <form id="scan-form" class="controls">
+      <label>
+        State
+        <select id="state-select">
+          <option value="">Choose state</option>
+          <option>Arizona</option>
+          <option>Colorado</option>
+          <option>Illinois</option>
+          <option>Indiana</option>
+          <option>Iowa</option>
+          <option>Kansas</option>
+          <option>Kentucky</option>
+          <option>Louisiana</option>
+          <option>Maryland</option>
+          <option>Massachusetts</option>
+          <option>Michigan</option>
+          <option>Missouri</option>
+          <option>New Jersey</option>
+          <option>New York</option>
+          <option>North Carolina</option>
+          <option>Ohio</option>
+          <option>Pennsylvania</option>
+          <option>Tennessee</option>
+          <option>Virginia</option>
+          <option>West Virginia</option>
+          <option>Wyoming</option>
+        </select>
+      </label>
+      <label>
+        Sports
+        <input id="sports-input" value="basketball_nba, baseball_mlb, icehockey_nhl">
+      </label>
+      <label>
+        Books
+        <input id="books-input" value="draftkings, fanduel, betmgm, caesars">
+      </label>
+      <label>
+        Kalshi scan
+        <input id="kalshi-limit" type="number" min="50" max="1200" step="50" value="500">
+      </label>
+      <label>
+        Access
+        <input id="access-token" type="password" autocomplete="off" placeholder="optional">
+      </label>
+      <button type="submit">Scan</button>
+    </form>
+  </header>
+
+  <main class="app-shell">
+    <section id="summary" class="summary-grid"></section>
+
+    <section class="manual-panel">
+      <div class="section-head">
+        <div>
+          <h2>Manual Arb Calculator</h2>
+          <p>Use this for the final check before any bet. It separates sportsbook reference edge from actual opposite-side arbitrage.</p>
+        </div>
+        <button id="clear-calculator" type="button" class="ghost">Clear</button>
+      </div>
+      <div class="calc-grid">
+        <label>
+          Outcome label
+          <input id="calc-label" placeholder="Example: Lakers by 9.5+">
+        </label>
+        <label>
+          Kalshi YES cents
+          <input id="calc-yes-price" type="number" min="0" max="100" step="0.1" placeholder="33">
+        </label>
+        <label>
+          Kalshi NO cents
+          <input id="calc-no-price" type="number" min="0" max="100" step="0.1" placeholder="69">
+        </label>
+        <label>
+          Sportsbook YES odds
+          <input id="calc-book-yes" type="number" step="1" placeholder="-145">
+        </label>
+        <label>
+          Sportsbook NO odds
+          <input id="calc-book-no" type="number" step="1" placeholder="+125">
+        </label>
+      </div>
+      <div id="calc-result" class="calc-result"></div>
+    </section>
+
+    <section class="split">
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Closest Cross-Checks</h2>
+            <p>Rough matches only. Use the calculator before treating one as actionable.</p>
+          </div>
+          <span id="match-count">0</span>
+        </div>
+        <div id="matches" class="card-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Audit Notes</h2>
+            <p>What the scanner is willing to believe.</p>
+          </div>
+        </div>
+        <div id="notes" class="note-list"></div>
+      </section>
+    </section>
+
+    <section class="table-panel">
+      <div class="section-head">
+        <div>
+          <h2>Kalshi Sports Legs</h2>
+          <p>Underlying markets are pulled from Kalshi multivariate sports contracts when possible.</p>
+        </div>
+        <span id="kalshi-count">0</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Market</th>
+              <th>Type</th>
+              <th>YES ask</th>
+              <th>NO ask</th>
+              <th>All-in</th>
+              <th>Legs</th>
+              <th>Settle</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="kalshi-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="table-panel">
+      <div class="section-head">
+        <div>
+          <h2>Sportsbook Board</h2>
+          <p>Live board appears when the backend has THE_ODDS_API_KEY or ODDS_API_KEY configured.</p>
+        </div>
+        <span id="book-count">0</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Game</th>
+              <th>Book</th>
+              <th>Market</th>
+              <th>Outcome</th>
+              <th>Odds</th>
+              <th>No-vig</th>
+              <th>Hold</th>
+              <th>Starts</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="book-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="detail-dialog">
+    <div class="dialog-head">
+      <h2 id="detail-title">Market</h2>
+      <button id="detail-close" type="button">Close</button>
+    </div>
+    <div id="detail-body"></div>
+  </dialog>
+
+  <script src="/kalshi-sportsbook-scanner.js"></script>
+</body>
+</html>

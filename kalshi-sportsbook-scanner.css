@@ -1,0 +1,437 @@
+:root {
+  color-scheme: dark;
+  --bg: #06110f;
+  --panel: #0e1917;
+  --panel-strong: #14211f;
+  --line: rgba(218, 255, 239, 0.14);
+  --text: #f5fbf8;
+  --muted: #9ab0a7;
+  --green: #34f29d;
+  --cyan: #65d6ff;
+  --amber: #ffc75a;
+  --red: #ff5f7f;
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    linear-gradient(135deg, rgba(52, 242, 157, 0.09), transparent 28%),
+    linear-gradient(315deg, rgba(101, 214, 255, 0.08), transparent 34%),
+    var(--bg);
+  color: var(--text);
+  font-family: "Space Grotesk", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-topbar,
+.app-shell {
+  width: min(1540px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+.app-topbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 18px;
+  align-items: end;
+  padding: 24px 0 18px;
+}
+
+.back-link {
+  display: inline-flex;
+  color: var(--green);
+  text-decoration: none;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+h1,
+h2,
+strong {
+  font-family: "Oxanium", system-ui, sans-serif;
+}
+
+h1 {
+  margin: 8px 0 0;
+  font-size: clamp(2rem, 4vw, 4rem);
+  line-height: 1;
+}
+
+h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+p {
+  margin: 6px 0 0;
+}
+
+#status,
+p,
+.muted,
+.note-list,
+.leg-list,
+.small {
+  color: var(--muted);
+}
+
+.controls,
+.calc-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.controls {
+  justify-content: flex-end;
+  align-items: end;
+}
+
+label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+input,
+select,
+button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+input,
+select {
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--text);
+  padding: 9px 11px;
+  outline: none;
+}
+
+input:focus,
+select:focus {
+  border-color: rgba(101, 214, 255, 0.65);
+  box-shadow: 0 0 0 3px rgba(101, 214, 255, 0.13);
+}
+
+#sports-input,
+#books-input {
+  width: min(360px, 72vw);
+}
+
+input[type="number"] {
+  width: 120px;
+}
+
+button {
+  padding: 9px 14px;
+  background: linear-gradient(135deg, var(--green), var(--cyan));
+  color: #03100d;
+  font-weight: 950;
+}
+
+button.ghost {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.summary-card,
+.manual-panel,
+.panel,
+.table-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(14, 25, 23, 0.9);
+  box-shadow: var(--shadow);
+}
+
+.summary-card {
+  padding: 14px;
+}
+
+.summary-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.summary-card strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--green);
+  font-size: clamp(1.2rem, 2vw, 2rem);
+}
+
+.summary-card.is-warn strong {
+  color: var(--amber);
+}
+
+.summary-card.is-cold strong {
+  color: var(--muted);
+}
+
+.manual-panel,
+.panel,
+.table-panel {
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.section-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.calc-grid label {
+  min-width: 155px;
+}
+
+#calc-label {
+  width: min(340px, 80vw);
+}
+
+.calc-result {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.metric-card,
+.match-card,
+.note-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.metric-card span,
+.tag {
+  display: inline-flex;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 1.35rem;
+}
+
+.money-positive {
+  color: var(--green);
+}
+
+.money-negative {
+  color: var(--red);
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.55fr);
+  gap: 14px;
+}
+
+.card-list,
+.note-list {
+  display: grid;
+  gap: 10px;
+}
+
+.match-card {
+  display: grid;
+  gap: 9px;
+}
+
+.match-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.match-meta,
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.tag {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tag.clean,
+.tag.hot {
+  color: var(--green);
+  border-color: rgba(52, 242, 157, 0.35);
+}
+
+.tag.parlay,
+.tag.warn {
+  color: var(--amber);
+  border-color: rgba(255, 199, 90, 0.35);
+}
+
+.tag.no {
+  color: var(--red);
+  border-color: rgba(255, 95, 127, 0.35);
+}
+
+.table-wrap {
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 11px 10px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+td {
+  font-size: 0.92rem;
+}
+
+.market-title {
+  display: grid;
+  gap: 4px;
+}
+
+.leg-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.small-link {
+  color: var(--cyan);
+  text-decoration: none;
+  font-weight: 900;
+}
+
+.empty-state {
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+dialog {
+  width: min(820px, calc(100% - 24px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.68);
+}
+
+.dialog-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.detail-grid {
+  display: grid;
+  gap: 10px;
+}
+
+@media (max-width: 1050px) {
+  .app-topbar,
+  .split {
+    grid-template-columns: 1fr;
+  }
+
+  .controls {
+    justify-content: flex-start;
+  }
+
+  .summary-grid,
+  .calc-result {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .app-topbar,
+  .app-shell {
+    width: min(100% - 20px, 1540px);
+  }
+
+  .summary-grid,
+  .calc-result {
+    grid-template-columns: 1fr;
+  }
+
+  input,
+  select,
+  button,
+  #sports-input,
+  #books-input,
+  #calc-label {
+    width: 100%;
+  }
+}
