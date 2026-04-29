@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nova Live | BNAPSEN</title>
+    <meta name="description" content="Create and watch browser live stream rooms on BNAPSEN." />
+    <link rel="canonical" href="https://bnapsen.com/nova-live.html" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Nova Live | BNAPSEN" />
+    <meta property="og:description" content="Create and watch browser live stream rooms on BNAPSEN." />
+    <meta property="og:url" content="https://bnapsen.com/nova-live.html" />
+    <meta property="og:image" content="https://bnapsen.com/nova-live-cover.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Nova Live | BNAPSEN" />
+    <meta name="twitter:description" content="Create and watch browser live stream rooms on BNAPSEN." />
+    <meta name="twitter:image" content="https://bnapsen.com/nova-live-cover.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="nova-live.css?v=20260429a">
+</head>
+<body>
+    <div class="live-shell">
+        <header class="live-topbar">
+            <a class="brand-lockup" href="index.html" aria-label="Back to Nova Arcade">
+                <span class="brand-mark">N</span>
+                <span>
+                    <strong>Nova Live</strong>
+                    <small>BNAPSEN stream rooms</small>
+                </span>
+            </a>
+            <div class="topbar-actions">
+                <span class="connection-pill" id="connectionPill">Offline</span>
+                <a class="ghost-link" href="index.html">Arcade</a>
+            </div>
+        </header>
+
+        <main class="live-workspace">
+            <section class="stage-panel" aria-label="Live stream stage">
+                <div class="stage-toolbar">
+                    <div>
+                        <p class="eyebrow">Control room</p>
+                        <h1 id="stageTitle">Nova Live</h1>
+                    </div>
+                    <div class="stage-meter">
+                        <span id="roleBadge">Host</span>
+                        <strong id="viewerCount">0 viewers</strong>
+                    </div>
+                </div>
+
+                <div class="video-frame" id="videoFrame">
+                    <video id="localVideo" class="stream-video is-visible" autoplay playsinline muted></video>
+                    <video id="remoteVideo" class="stream-video" autoplay playsinline controls></video>
+                    <div class="video-empty" id="videoEmpty">
+                        <strong>No stream active</strong>
+                        <span id="emptyHint">Start camera preview or join a room.</span>
+                    </div>
+                    <div class="on-air-badge" id="onAirBadge">Standby</div>
+                </div>
+
+                <div class="stream-strip" aria-label="Stream details">
+                    <article>
+                        <span>Status</span>
+                        <strong id="streamStatus">Ready</strong>
+                    </article>
+                    <article>
+                        <span>Room</span>
+                        <strong id="roomReadout">None</strong>
+                    </article>
+                    <article>
+                        <span>Media</span>
+                        <strong id="mediaReadout">No camera</strong>
+                    </article>
+                    <article>
+                        <span>Signal</span>
+                        <strong id="signalReadout">Idle</strong>
+                    </article>
+                </div>
+            </section>
+
+            <aside class="control-panel" aria-label="Live stream controls">
+                <div class="mode-tabs" role="tablist" aria-label="Choose stream mode">
+                    <button class="mode-tab is-active" type="button" data-mode="host" id="hostModeButton">Go Live</button>
+                    <button class="mode-tab" type="button" data-mode="viewer" id="viewerModeButton">Watch</button>
+                </div>
+
+                <section class="mode-panel is-active" id="hostPanel" aria-labelledby="hostModeButton">
+                    <label class="field-label" for="hostName">Name</label>
+                    <input id="hostName" class="text-field" autocomplete="name" maxlength="40" value="Nova Host">
+
+                    <label class="field-label" for="streamTitle">Stream title</label>
+                    <input id="streamTitle" class="text-field" maxlength="70" value="Live from BNAPSEN">
+
+                    <div class="button-grid">
+                        <button class="action-button primary" type="button" id="cameraButton">Start Camera</button>
+                        <button class="action-button primary" type="button" id="goLiveButton" disabled>Go Live</button>
+                        <button class="action-button" type="button" id="muteButton" disabled>Mute Mic</button>
+                        <button class="action-button" type="button" id="cameraToggleButton" disabled>Camera Off</button>
+                    </div>
+
+                    <div class="room-card">
+                        <span class="field-label">Room code</span>
+                        <div class="room-code" id="hostRoomCode">------</div>
+                        <input id="shareLink" class="text-field share-field" readonly value="">
+                        <div class="button-grid compact">
+                            <button class="action-button" type="button" id="copyLinkButton" disabled>Copy Link</button>
+                            <button class="action-button danger" type="button" id="stopLiveButton" disabled>Stop Live</button>
+                        </div>
+                    </div>
+
+                    <div class="viewer-list-card">
+                        <div class="panel-heading-row">
+                            <h2>Viewers</h2>
+                            <span id="viewerListCount">0</span>
+                        </div>
+                        <ul class="viewer-list" id="viewerList">
+                            <li>No viewers connected.</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section class="mode-panel" id="viewerPanel" aria-labelledby="viewerModeButton">
+                    <label class="field-label" for="viewerName">Name</label>
+                    <input id="viewerName" class="text-field" autocomplete="name" maxlength="40" value="Viewer">
+
+                    <label class="field-label" for="joinRoomCode">Room code</label>
+                    <input id="joinRoomCode" class="text-field code-field" maxlength="10" placeholder="ABC123">
+
+                    <div class="button-grid">
+                        <button class="action-button primary" type="button" id="joinButton">Join Stream</button>
+                        <button class="action-button danger" type="button" id="leaveButton" disabled>Leave</button>
+                    </div>
+
+                    <div class="room-card">
+                        <span class="field-label">Active room</span>
+                        <div class="room-code" id="viewerRoomCode">------</div>
+                        <p class="host-line" id="hostLine">No host connected.</p>
+                    </div>
+                </section>
+
+                <section class="signal-card" aria-label="Connection log">
+                    <div class="panel-heading-row">
+                        <h2>Signal Log</h2>
+                        <button class="small-button" type="button" id="clearLogButton">Clear</button>
+                    </div>
+                    <ol class="signal-log" id="signalLog"></ol>
+                </section>
+            </aside>
+        </main>
+    </div>
+
+    <script src="nova-live.js?v=20260429a" defer></script>
+</body>
+</html>

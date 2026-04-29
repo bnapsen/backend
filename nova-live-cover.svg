@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">Nova Live cover</title>
+  <desc id="desc">A neon live streaming control room thumbnail with camera, waveform, and room code panels.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#05130f"/>
+      <stop offset="0.52" stop-color="#102426"/>
+      <stop offset="1" stop-color="#241c10"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#29f2a6"/>
+      <stop offset="1" stop-color="#64d8ff"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feColorMatrix in="blur" values="0 0 0 0 0.16 0 0 0 0 0.95 0 0 0 0 0.65 0 0 0 0.55 0"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="960" height="540" fill="url(#bg)"/>
+  <path d="M0 430 C160 356 260 468 420 392 S720 342 960 410 L960 540 L0 540 Z" fill="#07100f" opacity=".74"/>
+  <g opacity=".18" stroke="#d1fff1" stroke-width="2">
+    <path d="M0 90H960M0 180H960M0 270H960M0 360H960M0 450H960"/>
+    <path d="M120 0V540M240 0V540M360 0V540M480 0V540M600 0V540M720 0V540M840 0V540"/>
+  </g>
+  <g transform="translate(78 82)">
+    <rect width="804" height="376" rx="18" fill="#101819" stroke="#d1fff1" stroke-opacity=".22"/>
+    <rect x="28" y="30" width="504" height="282" rx="12" fill="#020706" stroke="#64d8ff" stroke-opacity=".36"/>
+    <rect x="560" y="30" width="216" height="78" rx="10" fill="#152223" stroke="#29f2a6" stroke-opacity=".42"/>
+    <rect x="560" y="128" width="216" height="184" rx="10" fill="#152223" stroke="#d1fff1" stroke-opacity=".18"/>
+    <rect x="28" y="330" width="748" height="22" rx="11" fill="#152223"/>
+  </g>
+  <g filter="url(#glow)">
+    <circle cx="330" cy="224" r="82" fill="none" stroke="url(#accent)" stroke-width="12"/>
+    <path d="M306 188 L388 224 L306 260 Z" fill="url(#accent)"/>
+    <rect x="650" y="135" width="126" height="28" rx="14" fill="#29f2a6"/>
+    <text x="713" y="156" text-anchor="middle" font-family="Oxanium, Arial, sans-serif" font-size="16" font-weight="800" fill="#03100d">ON AIR</text>
+  </g>
+  <g stroke-linecap="round" fill="none">
+    <path d="M658 252 L672 220 L692 270 L712 190 L736 286 L754 236" stroke="#64d8ff" stroke-width="8"/>
+    <path d="M130 414 H828" stroke="url(#accent)" stroke-width="8"/>
+    <path d="M150 414 H380" stroke="#ffc857" stroke-width="8"/>
+  </g>
+  <text x="116" y="104" font-family="Oxanium, Arial, sans-serif" font-size="44" font-weight="800" fill="#f4fbf8">NOVA LIVE</text>
+  <text x="116" y="146" font-family="Space Grotesk, Arial, sans-serif" font-size="22" fill="#93a7a2">Browser stream rooms</text>
+</svg>

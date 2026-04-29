@@ -99,6 +99,10 @@ const MAX_CITY_RAID_LOBBIES = 120;
 const CITY_RAID_ROOM_CODE_LENGTH = 5;
 const CITY_RAID_DEFAULT_PORT = 7777;
 const CITY_RAID_LOBBY_TTL_MS = 2 * 60 * 1000;
+const LIVE_ROOM_CODE_LENGTH = 6;
+const MAX_LIVE_ROOMS = 60;
+const MAX_LIVE_VIEWERS = 24;
+const LIVE_ROOM_TTL_MS = 4 * 60 * 60 * 1000;
 const SEEDED_SONGS = Object.freeze([
   {
     id: 'seed-sude',
@@ -119,6 +123,7 @@ const RETIRED_SONG_IDS = new Set([
 ]);
 const rooms = new Map();
 const cityRaidLobbies = new Map();
+const liveRooms = new Map();
 const arcadeChatStore = createArcadeChatStore();
 const reviewsStore = createReviewsStore({
   dataDir: DATA_DIR,
@@ -4179,6 +4184,283 @@ function handleVoiceSignal(socket, payload) {
   });
 }
 
+function sanitizeLiveText(value, fallback, maxLength) {
+  const cleaned = String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+  return cleaned || fallback;
+}
+
+function normalizeLiveRoomCode(value) {
+  return String(value || '')
+    .replace(/[^a-z0-9]/gi, '')
+    .toUpperCase()
+    .slice(0, LIVE_ROOM_CODE_LENGTH);
+}
+
+function generateLiveRoomCode() {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    let code = '';
+    for (let index = 0; index < LIVE_ROOM_CODE_LENGTH; index += 1) {
+      code += ROOM_CHARS[Math.floor(Math.random() * ROOM_CHARS.length)];
+    }
+    if (!liveRooms.has(code)) {
+      return code;
+    }
+  }
+  return crypto.randomUUID().replace(/-/g, '').slice(0, LIVE_ROOM_CODE_LENGTH).toUpperCase();
+}
+
+function liveViewerList(room) {
+  return Array.from(room.viewers.values()).map((viewer) => ({
+    id: viewer.id,
+    name: viewer.name,
+    joinedAt: viewer.joinedAt,
+  }));
+}
+
+function clearStaleLiveRooms() {
+  const now = Date.now();
+  for (const [roomCode, room] of liveRooms.entries()) {
+    if (!room.hostSocket || room.hostSocket.readyState !== 1 || now - room.createdAt > LIVE_ROOM_TTL_MS) {
+      closeLiveRoom(roomCode, 'stale');
+    }
+  }
+}
+
+function closeLiveRoom(roomCode, reason) {
+  const room = liveRooms.get(roomCode);
+  if (!room) {
+    return;
+  }
+
+  for (const viewer of room.viewers.values()) {
+    send(viewer.socket, {
+      type: 'live-ended',
+      action: 'live-ended',
+      roomCode,
+      reason,
+    });
+    delete viewer.socket.liveRole;
+    delete viewer.socket.liveRoomCode;
+    delete viewer.socket.liveId;
+  }
+
+  if (room.hostSocket) {
+    delete room.hostSocket.liveRole;
+    delete room.hostSocket.liveRoomCode;
+    delete room.hostSocket.liveId;
+  }
+
+  liveRooms.delete(roomCode);
+}
+
+function sendLiveViewerList(room) {
+  if (!room || !room.hostSocket) {
+    return;
+  }
+  send(room.hostSocket, {
+    type: 'live-viewer-list',
+    action: 'live-viewer-list',
+    roomCode: room.code,
+    viewers: liveViewerList(room),
+  });
+  for (const viewer of room.viewers.values()) {
+    send(viewer.socket, {
+      type: 'live-viewer-count',
+      action: 'live-viewer-count',
+      roomCode: room.code,
+      count: room.viewers.size,
+    });
+  }
+}
+
+function cleanupLiveSocket(socket, reason = 'leave') {
+  const roomCode = normalizeLiveRoomCode(socket.liveRoomCode || '');
+  const liveId = String(socket.liveId || '');
+  const role = String(socket.liveRole || '');
+  if (!roomCode || !liveId || !role) {
+    return;
+  }
+
+  const room = liveRooms.get(roomCode);
+  delete socket.liveRole;
+  delete socket.liveRoomCode;
+  delete socket.liveId;
+
+  if (!room) {
+    return;
+  }
+
+  if (role === 'host' && room.hostId === liveId) {
+    closeLiveRoom(roomCode, reason);
+    return;
+  }
+
+  if (role === 'viewer' && room.viewers.has(liveId)) {
+    const viewer = room.viewers.get(liveId);
+    room.viewers.delete(liveId);
+    send(room.hostSocket, {
+      type: 'live-viewer-left',
+      action: 'live-viewer-left',
+      roomCode,
+      viewerId: liveId,
+      viewerName: viewer ? viewer.name : 'Viewer',
+    });
+    sendLiveViewerList(room);
+  }
+}
+
+function handleLiveHost(socket, payload) {
+  clearStaleLiveRooms();
+  cleanupLiveSocket(socket, 'replace');
+
+  if (liveRooms.size >= MAX_LIVE_ROOMS) {
+    sendError(socket, 'Live rooms are full right now.');
+    return;
+  }
+
+  let roomCode = normalizeLiveRoomCode(payload && payload.roomCode);
+  if (!roomCode) {
+    roomCode = generateLiveRoomCode();
+  }
+  if (liveRooms.has(roomCode)) {
+    sendError(socket, 'That live room code is already on air.');
+    return;
+  }
+
+  const hostId = crypto.randomUUID();
+  const room = {
+    code: roomCode,
+    hostId,
+    hostName: sanitizeLiveText(payload && payload.name, 'Nova Host', 40),
+    title: sanitizeLiveText(payload && payload.title, 'Live from BNAPSEN', 70),
+    hostSocket: socket,
+    viewers: new Map(),
+    createdAt: Date.now(),
+  };
+
+  liveRooms.set(roomCode, room);
+  socket.liveRole = 'host';
+  socket.liveRoomCode = roomCode;
+  socket.liveId = hostId;
+
+  send(socket, {
+    type: 'live-ready',
+    action: 'live-ready',
+    role: 'host',
+    roomCode,
+    hostId,
+    hostName: room.hostName,
+    title: room.title,
+    viewers: [],
+  });
+}
+
+function handleLiveViewer(socket, payload) {
+  clearStaleLiveRooms();
+  cleanupLiveSocket(socket, 'replace');
+
+  const roomCode = normalizeLiveRoomCode(payload && payload.roomCode);
+  if (!roomCode) {
+    sendError(socket, 'A live room code is required.');
+    return;
+  }
+
+  const room = liveRooms.get(roomCode);
+  if (!room || !room.hostSocket || room.hostSocket.readyState !== 1) {
+    sendError(socket, 'That live room is not on air.');
+    return;
+  }
+  if (room.viewers.size >= MAX_LIVE_VIEWERS) {
+    sendError(socket, 'That live room is full.');
+    return;
+  }
+
+  const viewer = {
+    id: crypto.randomUUID(),
+    name: sanitizeLiveText(payload && payload.name, 'Viewer', 40),
+    socket,
+    joinedAt: new Date().toISOString(),
+  };
+
+  room.viewers.set(viewer.id, viewer);
+  socket.liveRole = 'viewer';
+  socket.liveRoomCode = roomCode;
+  socket.liveId = viewer.id;
+
+  send(socket, {
+    type: 'live-ready',
+    action: 'live-ready',
+    role: 'viewer',
+    roomCode,
+    viewerId: viewer.id,
+    hostId: room.hostId,
+    hostName: room.hostName,
+    title: room.title,
+    count: room.viewers.size,
+  });
+
+  send(room.hostSocket, {
+    type: 'live-viewer-joined',
+    action: 'live-viewer-joined',
+    roomCode,
+    viewer: {
+      id: viewer.id,
+      name: viewer.name,
+      joinedAt: viewer.joinedAt,
+    },
+  });
+  sendLiveViewerList(room);
+}
+
+function handleLiveSignal(socket, payload) {
+  const roomCode = normalizeLiveRoomCode(socket.liveRoomCode || payload && payload.roomCode);
+  const liveId = String(socket.liveId || '');
+  const role = String(socket.liveRole || '');
+  const signal = payload && payload.signal;
+  const targetId = String(payload && (payload.targetId || payload.toId) || '').trim();
+
+  if (!roomCode || !liveId || !role || !signal || typeof signal !== 'object') {
+    return;
+  }
+
+  const room = liveRooms.get(roomCode);
+  if (!room) {
+    return;
+  }
+
+  if (role === 'host') {
+    const viewer = room.viewers.get(targetId);
+    if (!viewer) {
+      return;
+    }
+    send(viewer.socket, {
+      type: 'live-signal',
+      action: 'live-signal',
+      roomCode,
+      fromId: liveId,
+      fromName: room.hostName,
+      signal,
+    });
+    return;
+  }
+
+  if (role === 'viewer' && targetId === room.hostId) {
+    const viewer = room.viewers.get(liveId);
+    send(room.hostSocket, {
+      type: 'live-signal',
+      action: 'live-signal',
+      roomCode,
+      fromId: liveId,
+      fromName: viewer ? viewer.name : 'Viewer',
+      signal,
+    });
+  }
+}
+
+function handleLiveLeave(socket) {
+  cleanupLiveSocket(socket, 'leave');
+}
+
 function handleInput(socket, payload) {
   const context = requirePlayer(socket);
   if (!context) {
@@ -4504,6 +4786,7 @@ const server = http.createServer(async (req, res) => {
       service: 'nova-arcade-realtime',
       games: Object.keys(GAME_DEFS),
       rooms: rooms.size,
+      liveRooms: liveRooms.size,
     });
     return;
   }
@@ -4696,7 +4979,8 @@ wss.on('connection', (socket) => {
       return;
     }
 
-    switch (payload.action) {
+    const action = payload.action || payload.type;
+    switch (action) {
       case 'join':
         handleJoin(socket, payload);
         break;
@@ -4720,6 +5004,18 @@ wss.on('connection', (socket) => {
         break;
       case 'voice-style':
         handleVoiceStyle(socket, payload);
+        break;
+      case 'live-host':
+        handleLiveHost(socket, payload);
+        break;
+      case 'live-viewer':
+        handleLiveViewer(socket, payload);
+        break;
+      case 'live-signal':
+        handleLiveSignal(socket, payload);
+        break;
+      case 'live-leave':
+        handleLiveLeave(socket);
         break;
       case 'shoot':
         handleShot(socket, payload);
@@ -4761,10 +5057,12 @@ wss.on('connection', (socket) => {
   });
 
   socket.on('close', () => {
+    cleanupLiveSocket(socket, 'disconnect');
     handleDisconnect(socket);
   });
 
   socket.on('error', () => {
+    cleanupLiveSocket(socket, 'error');
     handleDisconnect(socket);
   });
 });

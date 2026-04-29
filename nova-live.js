@@ -1,0 +1,726 @@
+'use strict';
+
+const BACKEND_WS_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.app';
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+const state = {
+  mode: 'host',
+  socket: null,
+  role: 'host',
+  roomCode: '',
+  localStream: null,
+  hostId: '',
+  viewerId: '',
+  peers: new Map(),
+  viewerPeer: null,
+  pendingHostCandidates: new Map(),
+  pendingViewerCandidates: [],
+  viewers: [],
+  mediaMuted: false,
+  cameraOff: false,
+};
+
+const els = {};
+
+document.addEventListener('DOMContentLoaded', () => {
+  bindElements();
+  bindEvents();
+  hydrateRoomFromQuery();
+  setMode(els.joinRoomCode.value ? 'viewer' : 'host');
+  refreshStage();
+  logEvent('Ready.');
+});
+
+function bindElements() {
+  [
+    'connectionPill',
+    'roleBadge',
+    'viewerCount',
+    'stageTitle',
+    'localVideo',
+    'remoteVideo',
+    'videoEmpty',
+    'emptyHint',
+    'onAirBadge',
+    'streamStatus',
+    'roomReadout',
+    'mediaReadout',
+    'signalReadout',
+    'hostModeButton',
+    'viewerModeButton',
+    'hostPanel',
+    'viewerPanel',
+    'hostName',
+    'streamTitle',
+    'cameraButton',
+    'goLiveButton',
+    'muteButton',
+    'cameraToggleButton',
+    'hostRoomCode',
+    'shareLink',
+    'copyLinkButton',
+    'stopLiveButton',
+    'viewerListCount',
+    'viewerList',
+    'viewerName',
+    'joinRoomCode',
+    'joinButton',
+    'leaveButton',
+    'viewerRoomCode',
+    'hostLine',
+    'signalLog',
+    'clearLogButton',
+  ].forEach((id) => {
+    els[id] = document.getElementById(id);
+  });
+}
+
+function bindEvents() {
+  document.querySelectorAll('.mode-tab').forEach((button) => {
+    button.addEventListener('click', () => setMode(button.dataset.mode));
+  });
+
+  els.cameraButton.addEventListener('click', startCamera);
+  els.goLiveButton.addEventListener('click', goLive);
+  els.muteButton.addEventListener('click', toggleMute);
+  els.cameraToggleButton.addEventListener('click', toggleCamera);
+  els.copyLinkButton.addEventListener('click', copyShareLink);
+  els.stopLiveButton.addEventListener('click', stopLive);
+  els.joinButton.addEventListener('click', joinStream);
+  els.leaveButton.addEventListener('click', leaveStream);
+  els.clearLogButton.addEventListener('click', () => {
+    els.signalLog.innerHTML = '';
+  });
+  els.joinRoomCode.addEventListener('input', () => {
+    els.joinRoomCode.value = normalizeRoomCode(els.joinRoomCode.value);
+  });
+}
+
+function hydrateRoomFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const room = normalizeRoomCode(params.get('room') || '');
+  if (room) {
+    els.joinRoomCode.value = room;
+  }
+}
+
+function websocketUrl() {
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.run.app')) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}`;
+  }
+  return BACKEND_WS_URL;
+}
+
+function setMode(mode) {
+  state.mode = mode === 'viewer' ? 'viewer' : 'host';
+  if (!state.roomCode) {
+    state.role = state.mode;
+  }
+  els.hostModeButton.classList.toggle('is-active', state.mode === 'host');
+  els.viewerModeButton.classList.toggle('is-active', state.mode === 'viewer');
+  els.hostPanel.classList.toggle('is-active', state.mode === 'host');
+  els.viewerPanel.classList.toggle('is-active', state.mode === 'viewer');
+  refreshStage();
+}
+
+async function startCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setConnection('Camera unavailable', 'error');
+    logEvent('This browser does not expose camera capture.');
+    return;
+  }
+
+  try {
+    state.localStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30, max: 60 },
+      },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    els.localVideo.srcObject = state.localStream;
+    els.cameraButton.textContent = 'Camera Ready';
+    els.goLiveButton.disabled = false;
+    els.muteButton.disabled = false;
+    els.cameraToggleButton.disabled = false;
+    state.mediaMuted = false;
+    state.cameraOff = false;
+    logEvent('Camera preview started.');
+    refreshStage();
+  } catch (error) {
+    setConnection('Camera blocked', 'error');
+    logEvent(`Camera failed: ${error.message || 'permission denied'}.`);
+  }
+}
+
+function connectSocket() {
+  if (state.socket && state.socket.readyState <= 1) {
+    return state.socket;
+  }
+
+  const socket = new WebSocket(websocketUrl());
+  state.socket = socket;
+  setConnection('Connecting');
+  setSignal('Opening');
+
+  socket.addEventListener('open', () => {
+    setConnection('Connected', 'live');
+    setSignal('Connected');
+    logEvent('Signal connected.');
+  });
+
+  socket.addEventListener('message', (event) => {
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch (error) {
+      logEvent('Skipped malformed signal.');
+      return;
+    }
+    handleSocketMessage(message);
+  });
+
+  socket.addEventListener('close', () => {
+    setConnection('Offline');
+    setSignal('Closed');
+    logEvent('Signal closed.');
+    if (state.role === 'viewer') {
+      closeViewerPeer();
+    }
+  });
+
+  socket.addEventListener('error', () => {
+    setConnection('Signal error', 'error');
+    setSignal('Error');
+    logEvent('Signal error.');
+  });
+
+  return socket;
+}
+
+function sendSignal(payload) {
+  const socket = connectSocket();
+  const message = JSON.stringify(payload);
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.send(message);
+    return;
+  }
+  socket.addEventListener('open', () => socket.send(message), { once: true });
+}
+
+function goLive() {
+  if (!state.localStream) {
+    startCamera();
+    return;
+  }
+
+  state.role = 'host';
+  sendSignal({
+    action: 'live-host',
+    name: cleanText(els.hostName.value, 'Nova Host', 40),
+    title: cleanText(els.streamTitle.value, 'Live from BNAPSEN', 70),
+  });
+  els.goLiveButton.disabled = true;
+  els.stopLiveButton.disabled = false;
+  setSignal('Creating room');
+}
+
+function joinStream() {
+  const roomCode = normalizeRoomCode(els.joinRoomCode.value);
+  if (!roomCode) {
+    logEvent('Room code is required.');
+    els.joinRoomCode.focus();
+    return;
+  }
+
+  setMode('viewer');
+  state.role = 'viewer';
+  state.roomCode = roomCode;
+  sendSignal({
+    action: 'live-viewer',
+    roomCode,
+    name: cleanText(els.viewerName.value, 'Viewer', 40),
+  });
+  els.joinButton.disabled = true;
+  els.leaveButton.disabled = false;
+  setSignal('Joining');
+  refreshStage();
+}
+
+function handleSocketMessage(message) {
+  const type = message.type || message.action;
+  if (type === 'error') {
+    setConnection('Signal error', 'error');
+    logEvent(message.message || 'Unknown error.');
+    els.joinButton.disabled = false;
+    els.goLiveButton.disabled = !state.localStream;
+    return;
+  }
+
+  if (type === 'live-ready') {
+    handleLiveReady(message);
+    return;
+  }
+
+  if (type === 'live-viewer-joined') {
+    handleViewerJoined(message.viewer);
+    return;
+  }
+
+  if (type === 'live-viewer-left') {
+    removeHostPeer(message.viewerId);
+    state.viewers = state.viewers.filter((viewer) => viewer.id !== message.viewerId);
+    renderViewers();
+    refreshStage();
+    logEvent(`${message.viewerName || 'Viewer'} left.`);
+    return;
+  }
+
+  if (type === 'live-viewer-list') {
+    state.viewers = Array.isArray(message.viewers) ? message.viewers : [];
+    renderViewers();
+    refreshStage();
+    return;
+  }
+
+  if (type === 'live-viewer-count') {
+    state.viewers = new Array(Number(message.count || 0)).fill(null).map((_, index) => ({
+      id: `viewer-${index}`,
+      name: 'Viewer',
+    }));
+    refreshStage();
+    return;
+  }
+
+  if (type === 'live-signal') {
+    handlePeerSignal(message);
+    return;
+  }
+
+  if (type === 'live-ended') {
+    logEvent('Host ended the stream.');
+    leaveStream(false);
+  }
+}
+
+function handleLiveReady(message) {
+  state.roomCode = normalizeRoomCode(message.roomCode || '');
+  state.hostId = message.hostId || '';
+  state.viewerId = message.viewerId || '';
+  state.role = message.role || state.role;
+  state.viewers = Array.isArray(message.viewers) ? message.viewers : [];
+
+  const shareUrl = `${window.location.origin}${window.location.pathname}?room=${state.roomCode}`;
+  els.shareLink.value = shareUrl;
+  els.hostRoomCode.textContent = state.roomCode || '------';
+  els.viewerRoomCode.textContent = state.roomCode || '------';
+  els.joinRoomCode.value = state.roomCode || els.joinRoomCode.value;
+  els.copyLinkButton.disabled = !state.roomCode;
+
+  if (message.role === 'host') {
+    setMode('host');
+    els.stopLiveButton.disabled = false;
+    setSignal('On air');
+    logEvent(`Room ${state.roomCode} is live.`);
+  } else {
+    setMode('viewer');
+    els.hostLine.textContent = `${message.hostName || 'Host'} - ${message.title || 'Live stream'}`;
+    setSignal('Waiting for video');
+    logEvent(`Joined room ${state.roomCode}.`);
+  }
+
+  renderViewers();
+  refreshStage();
+}
+
+async function handleViewerJoined(viewer) {
+  if (!viewer || !viewer.id || !state.localStream) {
+    return;
+  }
+  state.viewers = uniqueViewers([...state.viewers, viewer]);
+  renderViewers();
+  refreshStage();
+  logEvent(`${viewer.name || 'Viewer'} joined.`);
+
+  const peer = createPeerConnection(viewer.id);
+  state.localStream.getTracks().forEach((track) => {
+    peer.addTrack(track, state.localStream);
+  });
+
+  try {
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    sendSignal({
+      action: 'live-signal',
+      roomCode: state.roomCode,
+      targetId: viewer.id,
+      signal: { description: peer.localDescription },
+    });
+    setSignal('Offer sent');
+  } catch (error) {
+    logEvent(`Offer failed: ${error.message || 'unknown error'}.`);
+  }
+}
+
+function createPeerConnection(viewerId) {
+  removeHostPeer(viewerId);
+  const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  state.peers.set(viewerId, peer);
+
+  peer.addEventListener('icecandidate', (event) => {
+    if (!event.candidate) {
+      return;
+    }
+    sendSignal({
+      action: 'live-signal',
+      roomCode: state.roomCode,
+      targetId: viewerId,
+      signal: { candidate: event.candidate },
+    });
+  });
+
+  peer.addEventListener('connectionstatechange', () => {
+    setSignal(peer.connectionState || 'Peer update');
+  });
+
+  return peer;
+}
+
+function createViewerPeer() {
+  closeViewerPeer();
+  const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  state.viewerPeer = peer;
+
+  peer.addEventListener('track', (event) => {
+    const [stream] = event.streams;
+    if (stream) {
+      els.remoteVideo.srcObject = stream;
+      setSignal('Video live');
+      logEvent('Video connected.');
+      refreshStage();
+    }
+  });
+
+  peer.addEventListener('icecandidate', (event) => {
+    if (!event.candidate) {
+      return;
+    }
+    sendSignal({
+      action: 'live-signal',
+      roomCode: state.roomCode,
+      targetId: state.hostId,
+      signal: { candidate: event.candidate },
+    });
+  });
+
+  peer.addEventListener('connectionstatechange', () => {
+    setSignal(peer.connectionState || 'Peer update');
+  });
+
+  return peer;
+}
+
+async function handlePeerSignal(message) {
+  const signal = message.signal || {};
+
+  if (state.role === 'host') {
+    const peer = state.peers.get(message.fromId);
+    if (!peer) {
+      return;
+    }
+    try {
+      if (signal.description) {
+        await peer.setRemoteDescription(signal.description);
+        await flushHostCandidateQueue(message.fromId, peer);
+        setSignal('Answer received');
+      }
+      if (signal.candidate) {
+        await addOrQueueHostCandidate(message.fromId, peer, signal.candidate);
+      }
+    } catch (error) {
+      logEvent(`Host signal failed: ${error.message || 'unknown error'}.`);
+    }
+    return;
+  }
+
+  const peer = state.viewerPeer || createViewerPeer();
+  try {
+    if (signal.description) {
+      await peer.setRemoteDescription(signal.description);
+      await flushViewerCandidateQueue(peer);
+      if (signal.description.type === 'offer') {
+        const answer = await peer.createAnswer();
+        await peer.setLocalDescription(answer);
+        sendSignal({
+          action: 'live-signal',
+          roomCode: state.roomCode,
+          targetId: state.hostId || message.fromId,
+          signal: { description: peer.localDescription },
+        });
+        setSignal('Answer sent');
+      }
+    }
+    if (signal.candidate) {
+      await addOrQueueViewerCandidate(peer, signal.candidate);
+    }
+  } catch (error) {
+    logEvent(`Viewer signal failed: ${error.message || 'unknown error'}.`);
+  }
+}
+
+async function addOrQueueHostCandidate(viewerId, peer, candidate) {
+  if (peer.remoteDescription) {
+    await peer.addIceCandidate(candidate);
+    return;
+  }
+  const queue = state.pendingHostCandidates.get(viewerId) || [];
+  queue.push(candidate);
+  state.pendingHostCandidates.set(viewerId, queue);
+}
+
+async function flushHostCandidateQueue(viewerId, peer) {
+  const queue = state.pendingHostCandidates.get(viewerId) || [];
+  state.pendingHostCandidates.delete(viewerId);
+  for (const candidate of queue) {
+    await peer.addIceCandidate(candidate);
+  }
+}
+
+async function addOrQueueViewerCandidate(peer, candidate) {
+  if (peer.remoteDescription) {
+    await peer.addIceCandidate(candidate);
+    return;
+  }
+  state.pendingViewerCandidates.push(candidate);
+}
+
+async function flushViewerCandidateQueue(peer) {
+  const queue = state.pendingViewerCandidates.splice(0);
+  for (const candidate of queue) {
+    await peer.addIceCandidate(candidate);
+  }
+}
+
+function toggleMute() {
+  if (!state.localStream) {
+    return;
+  }
+  state.mediaMuted = !state.mediaMuted;
+  state.localStream.getAudioTracks().forEach((track) => {
+    track.enabled = !state.mediaMuted;
+  });
+  els.muteButton.textContent = state.mediaMuted ? 'Unmute Mic' : 'Mute Mic';
+  refreshStage();
+}
+
+function toggleCamera() {
+  if (!state.localStream) {
+    return;
+  }
+  state.cameraOff = !state.cameraOff;
+  state.localStream.getVideoTracks().forEach((track) => {
+    track.enabled = !state.cameraOff;
+  });
+  els.cameraToggleButton.textContent = state.cameraOff ? 'Camera On' : 'Camera Off';
+  refreshStage();
+}
+
+async function copyShareLink() {
+  if (!els.shareLink.value) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(els.shareLink.value);
+    logEvent('Share link copied.');
+  } catch (error) {
+    els.shareLink.select();
+    document.execCommand('copy');
+    logEvent('Share link selected.');
+  }
+}
+
+function stopLive() {
+  sendSignal({ action: 'live-leave', roomCode: state.roomCode });
+  closeAllHostPeers();
+  stopLocalStream();
+  resetLiveState();
+  setMode('host');
+  logEvent('Stream stopped.');
+}
+
+function leaveStream(sendLeave = true) {
+  if (sendLeave) {
+    sendSignal({ action: 'live-leave', roomCode: state.roomCode });
+  }
+  closeViewerPeer();
+  state.roomCode = '';
+  state.viewerId = '';
+  state.hostId = '';
+  state.viewers = [];
+  els.joinButton.disabled = false;
+  els.leaveButton.disabled = true;
+  els.viewerRoomCode.textContent = '------';
+  els.hostLine.textContent = 'No host connected.';
+  els.remoteVideo.srcObject = null;
+  refreshStage();
+}
+
+function resetLiveState() {
+  state.roomCode = '';
+  state.hostId = '';
+  state.viewerId = '';
+  state.viewers = [];
+  state.mediaMuted = false;
+  state.cameraOff = false;
+  els.hostRoomCode.textContent = '------';
+  els.viewerRoomCode.textContent = '------';
+  els.shareLink.value = '';
+  els.goLiveButton.disabled = !state.localStream;
+  els.stopLiveButton.disabled = true;
+  els.copyLinkButton.disabled = true;
+  els.cameraButton.textContent = 'Start Camera';
+  els.muteButton.textContent = 'Mute Mic';
+  els.cameraToggleButton.textContent = 'Camera Off';
+  els.muteButton.disabled = true;
+  els.cameraToggleButton.disabled = true;
+  renderViewers();
+  refreshStage();
+}
+
+function stopLocalStream() {
+  if (!state.localStream) {
+    return;
+  }
+  state.localStream.getTracks().forEach((track) => track.stop());
+  state.localStream = null;
+  els.localVideo.srcObject = null;
+}
+
+function closeAllHostPeers() {
+  state.peers.forEach((peer) => peer.close());
+  state.peers.clear();
+}
+
+function removeHostPeer(viewerId) {
+  const peer = state.peers.get(viewerId);
+  if (peer) {
+    peer.close();
+  }
+  state.peers.delete(viewerId);
+  state.pendingHostCandidates.delete(viewerId);
+}
+
+function closeViewerPeer() {
+  if (state.viewerPeer) {
+    state.viewerPeer.close();
+  }
+  state.viewerPeer = null;
+  state.pendingViewerCandidates = [];
+}
+
+function renderViewers() {
+  const viewers = uniqueViewers(state.viewers);
+  state.viewers = viewers;
+  els.viewerListCount.textContent = String(viewers.length);
+  els.viewerList.innerHTML = '';
+
+  if (!viewers.length) {
+    const item = document.createElement('li');
+    item.textContent = 'No viewers connected.';
+    els.viewerList.appendChild(item);
+    return;
+  }
+
+  viewers.forEach((viewer) => {
+    const item = document.createElement('li');
+    const strong = document.createElement('strong');
+    strong.textContent = viewer.name || 'Viewer';
+    item.append(strong, document.createTextNode(` ${viewer.id ? viewer.id.slice(0, 8) : ''}`));
+    els.viewerList.appendChild(item);
+  });
+}
+
+function refreshStage() {
+  const isHost = state.mode === 'host';
+  const hasRemote = Boolean(els.remoteVideo.srcObject);
+  const hasLocal = Boolean(state.localStream);
+  const isLive = Boolean(state.roomCode && (state.role === 'host' || hasRemote));
+  const title = isHost ? cleanText(els.streamTitle.value, 'Nova Live', 70) : 'Watching Nova Live';
+
+  els.roleBadge.textContent = isHost ? 'Host' : 'Viewer';
+  els.stageTitle.textContent = title;
+  els.viewerCount.textContent = `${state.viewers.length} viewer${state.viewers.length === 1 ? '' : 's'}`;
+  els.roomReadout.textContent = state.roomCode || 'None';
+  els.mediaReadout.textContent = isHost
+    ? (hasLocal ? `${state.cameraOff ? 'Camera off' : 'Camera on'} / ${state.mediaMuted ? 'Muted' : 'Mic on'}` : 'No camera')
+    : (hasRemote ? 'Receiving' : 'No video');
+  els.streamStatus.textContent = isLive ? 'Live' : (hasLocal ? 'Preview' : 'Ready');
+  els.onAirBadge.textContent = isLive ? 'On Air' : (hasLocal ? 'Preview' : 'Standby');
+  els.onAirBadge.classList.toggle('is-live', isLive);
+  els.hostRoomCode.textContent = state.roomCode || '------';
+  els.viewerRoomCode.textContent = state.roomCode || '------';
+
+  els.localVideo.classList.toggle('is-visible', isHost && hasLocal);
+  els.remoteVideo.classList.toggle('is-visible', !isHost && hasRemote);
+  els.videoEmpty.classList.toggle('is-visible', (isHost && !hasLocal) || (!isHost && !hasRemote));
+  els.emptyHint.textContent = isHost ? 'Camera preview will appear here.' : 'The stream will appear here.';
+}
+
+function setConnection(text, tone) {
+  els.connectionPill.textContent = text;
+  els.connectionPill.classList.toggle('is-live', tone === 'live');
+  els.connectionPill.classList.toggle('is-error', tone === 'error');
+}
+
+function setSignal(text) {
+  els.signalReadout.textContent = text;
+}
+
+function logEvent(text) {
+  const item = document.createElement('li');
+  const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  item.innerHTML = `<strong>${time}</strong> ${escapeHtml(text)}`;
+  els.signalLog.prepend(item);
+  while (els.signalLog.children.length > 14) {
+    els.signalLog.lastElementChild.remove();
+  }
+}
+
+function cleanText(value, fallback, maxLength) {
+  const next = String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+  return next || fallback;
+}
+
+function normalizeRoomCode(value) {
+  return String(value || '').replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 6);
+}
+
+function uniqueViewers(viewers) {
+  const seen = new Set();
+  return viewers.filter((viewer) => {
+    if (!viewer || !viewer.id || seen.has(viewer.id)) {
+      return false;
+    }
+    seen.add(viewer.id);
+    return true;
+  });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
