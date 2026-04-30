@@ -216,6 +216,10 @@ button:disabled {
   background: #020706;
 }
 
+.stream-video.is-screen {
+  object-fit: contain;
+}
+
 .stream-video.is-visible {
   display: block;
 }
@@ -357,10 +361,16 @@ button:disabled {
   letter-spacing: 0.16em;
 }
 
-.button-grid {
+.button-grid,
+.source-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.source-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 10px;
 }
 
 .button-grid.compact {
@@ -502,7 +512,8 @@ button:disabled {
   }
 
   .stream-strip,
-  .button-grid {
+  .button-grid,
+  .source-grid {
     grid-template-columns: 1fr;
   }
 }

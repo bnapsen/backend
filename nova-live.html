@@ -19,7 +19,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="nova-live.css?v=20260429a">
+    <link rel="stylesheet" href="nova-live.css?v=20260429b">
 </head>
 <body>
     <div class="live-shell">
@@ -93,11 +93,18 @@
                     <label class="field-label" for="streamTitle">Stream title</label>
                     <input id="streamTitle" class="text-field" maxlength="70" value="Live from BNAPSEN">
 
+                    <span class="field-label">Stream source</span>
+                    <div class="source-grid">
+                        <button class="action-button primary" type="button" id="cameraButton">Camera + Mic</button>
+                        <button class="action-button primary" type="button" id="screenButton">Desktop + Mic</button>
+                        <button class="action-button" type="button" id="screenOnlyButton">Desktop Only</button>
+                    </div>
+
                     <div class="button-grid">
-                        <button class="action-button primary" type="button" id="cameraButton">Start Camera</button>
                         <button class="action-button primary" type="button" id="goLiveButton" disabled>Go Live</button>
-                        <button class="action-button" type="button" id="muteButton" disabled>Mute Mic</button>
-                        <button class="action-button" type="button" id="cameraToggleButton" disabled>Camera Off</button>
+                        <button class="action-button" type="button" id="muteButton" disabled>Mute Audio</button>
+                        <button class="action-button" type="button" id="cameraToggleButton" disabled>Video Off</button>
+                        <button class="action-button" type="button" id="stopPreviewButton" disabled>Stop Preview</button>
                     </div>
 
                     <div class="room-card">
@@ -151,6 +158,6 @@
         </main>
     </div>
 
-    <script src="nova-live.js?v=20260429a" defer></script>
+    <script src="nova-live.js?v=20260429b" defer></script>
 </body>
 </html>

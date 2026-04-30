@@ -12,6 +12,8 @@ const state = {
   role: 'host',
   roomCode: '',
   localStream: null,
+  sourceType: '',
+  sourceLabel: '',
   hostId: '',
   viewerId: '',
   peers: new Map(),
@@ -21,6 +23,7 @@ const state = {
   viewers: [],
   mediaMuted: false,
   cameraOff: false,
+  stoppingTracks: false,
 };
 
 const els = {};
@@ -56,9 +59,12 @@ function bindElements() {
     'hostName',
     'streamTitle',
     'cameraButton',
+    'screenButton',
+    'screenOnlyButton',
     'goLiveButton',
     'muteButton',
     'cameraToggleButton',
+    'stopPreviewButton',
     'hostRoomCode',
     'shareLink',
     'copyLinkButton',
@@ -84,9 +90,12 @@ function bindEvents() {
   });
 
   els.cameraButton.addEventListener('click', startCamera);
+  els.screenButton.addEventListener('click', () => startScreenShare({ includeMic: true }));
+  els.screenOnlyButton.addEventListener('click', () => startScreenShare({ includeMic: false }));
   els.goLiveButton.addEventListener('click', goLive);
   els.muteButton.addEventListener('click', toggleMute);
   els.cameraToggleButton.addEventListener('click', toggleCamera);
+  els.stopPreviewButton.addEventListener('click', stopPreview);
   els.copyLinkButton.addEventListener('click', copyShareLink);
   els.stopLiveButton.addEventListener('click', stopLive);
   els.joinButton.addEventListener('click', joinStream);
@@ -136,7 +145,7 @@ async function startCamera() {
   }
 
   try {
-    state.localStream = await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       video: {
         width: { ideal: 1280 },
         height: { ideal: 720 },
@@ -148,19 +157,157 @@ async function startCamera() {
         autoGainControl: true,
       },
     });
-    els.localVideo.srcObject = state.localStream;
-    els.cameraButton.textContent = 'Camera Ready';
-    els.goLiveButton.disabled = false;
-    els.muteButton.disabled = false;
-    els.cameraToggleButton.disabled = false;
-    state.mediaMuted = false;
-    state.cameraOff = false;
-    logEvent('Camera preview started.');
-    refreshStage();
+    await setLocalStream(stream, {
+      sourceType: 'camera',
+      sourceLabel: 'Camera + Mic',
+      readyText: 'Camera Ready',
+      logText: 'Camera preview started.',
+    });
   } catch (error) {
     setConnection('Camera blocked', 'error');
     logEvent(`Camera failed: ${error.message || 'permission denied'}.`);
   }
+}
+
+async function startScreenShare(options = {}) {
+  const includeMic = Boolean(options.includeMic);
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    setConnection('Desktop unavailable', 'error');
+    logEvent('This browser does not expose desktop capture.');
+    return;
+  }
+
+  let displayStream;
+  try {
+    displayStream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30, max: 60 },
+      },
+      audio: includeMic,
+    });
+  } catch (error) {
+    setConnection('Desktop blocked', 'error');
+    logEvent(`Desktop capture failed: ${error.message || 'permission denied'}.`);
+    return;
+  }
+
+  const tracks = [...displayStream.getVideoTracks(), ...displayStream.getAudioTracks()];
+  if (includeMic && navigator.mediaDevices.getUserMedia) {
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({
+        video: false,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      tracks.push(...micStream.getAudioTracks());
+    } catch (error) {
+      logEvent('Mic was not added; desktop capture will continue without microphone audio.');
+    }
+  }
+
+  const stream = new MediaStream(tracks);
+  await setLocalStream(stream, {
+    sourceType: includeMic ? 'screen-mic' : 'screen-only',
+    sourceLabel: includeMic ? 'Desktop + Mic' : 'Desktop Only',
+    readyText: includeMic ? 'Desktop Ready' : 'Desktop Only Ready',
+    logText: includeMic ? 'Desktop preview started with audio controls.' : 'Desktop-only preview started.',
+  });
+}
+
+async function setLocalStream(stream, options = {}) {
+  const previousStream = state.localStream;
+  state.localStream = stream;
+  state.sourceType = options.sourceType || 'custom';
+  state.sourceLabel = options.sourceLabel || 'Stream';
+  state.mediaMuted = false;
+  state.cameraOff = false;
+
+  els.localVideo.srcObject = state.localStream;
+  els.localVideo.classList.toggle('is-screen', state.sourceType.startsWith('screen'));
+  updateCaptureButtons(options.readyText || 'Source Ready');
+  attachLocalTrackHandlers(stream);
+
+  if (state.roomCode && state.role === 'host' && state.peers.size) {
+    await replaceTracksForLivePeers(stream);
+  }
+  if (previousStream && previousStream !== stream) {
+    stopStreamTracks(previousStream);
+  }
+
+  logEvent(options.logText || 'Preview started.');
+  refreshStage();
+}
+
+function updateCaptureButtons(activeText) {
+  els.cameraButton.textContent = state.sourceType === 'camera' ? activeText : 'Camera + Mic';
+  els.screenButton.textContent = state.sourceType === 'screen-mic' ? activeText : 'Desktop + Mic';
+  els.screenOnlyButton.textContent = state.sourceType === 'screen-only' ? activeText : 'Desktop Only';
+  els.goLiveButton.disabled = !state.localStream || Boolean(state.roomCode);
+  els.stopPreviewButton.disabled = !state.localStream || Boolean(state.roomCode);
+  updateMediaButtons();
+}
+
+function updateMediaButtons() {
+  const hasLocal = Boolean(state.localStream);
+  const audioTracks = hasLocal ? state.localStream.getAudioTracks() : [];
+  const videoTracks = hasLocal ? state.localStream.getVideoTracks() : [];
+  els.muteButton.disabled = !audioTracks.length;
+  els.muteButton.textContent = !audioTracks.length
+    ? 'No Audio'
+    : (state.mediaMuted ? 'Unmute Audio' : 'Mute Audio');
+  els.cameraToggleButton.disabled = !videoTracks.length;
+  els.cameraToggleButton.textContent = state.cameraOff ? 'Video On' : 'Video Off';
+}
+
+function attachLocalTrackHandlers(stream) {
+  stream.getVideoTracks().forEach((track) => {
+    track.addEventListener('ended', () => {
+      if (state.stoppingTracks) {
+        return;
+      }
+      logEvent(state.sourceType.startsWith('screen') ? 'Desktop sharing ended.' : 'Video source ended.');
+      if (state.role === 'host' && state.roomCode) {
+        stopLive();
+      } else {
+        stopPreview();
+      }
+    }, { once: true });
+  });
+}
+
+async function replaceTracksForLivePeers(stream) {
+  const tracks = stream.getTracks();
+  await Promise.all(Array.from(state.peers.entries()).map(async ([viewerId, peer]) => {
+    const usedTrackIds = new Set();
+    const senders = peer.getSenders().filter((sender) => sender.track);
+    for (const sender of senders) {
+      const replacement = tracks.find((track) => track.kind === sender.track.kind && !usedTrackIds.has(track.id));
+      await sender.replaceTrack(replacement || null);
+      if (replacement) {
+        usedTrackIds.add(replacement.id);
+      }
+    }
+    tracks
+      .filter((track) => !usedTrackIds.has(track.id))
+      .forEach((track) => peer.addTrack(track, stream));
+    try {
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      sendSignal({
+        action: 'live-signal',
+        roomCode: state.roomCode,
+        targetId: viewerId,
+        signal: { description: peer.localDescription },
+      });
+    } catch (error) {
+      logEvent(`Source switch failed for a viewer: ${error.message || 'unknown error'}.`);
+    }
+  }));
 }
 
 function connectSocket() {
@@ -220,7 +367,7 @@ function sendSignal(payload) {
 
 function goLive() {
   if (!state.localStream) {
-    startCamera();
+    logEvent('Choose Camera + Mic, Desktop + Mic, or Desktop Only before going live.');
     return;
   }
 
@@ -519,7 +666,7 @@ function toggleMute() {
   state.localStream.getAudioTracks().forEach((track) => {
     track.enabled = !state.mediaMuted;
   });
-  els.muteButton.textContent = state.mediaMuted ? 'Unmute Mic' : 'Mute Mic';
+  updateMediaButtons();
   refreshStage();
 }
 
@@ -531,7 +678,7 @@ function toggleCamera() {
   state.localStream.getVideoTracks().forEach((track) => {
     track.enabled = !state.cameraOff;
   });
-  els.cameraToggleButton.textContent = state.cameraOff ? 'Camera On' : 'Camera Off';
+  updateMediaButtons();
   refreshStage();
 }
 
@@ -558,6 +705,15 @@ function stopLive() {
   logEvent('Stream stopped.');
 }
 
+function stopPreview() {
+  if (state.roomCode) {
+    return;
+  }
+  stopLocalStream();
+  resetLiveState();
+  logEvent('Preview stopped.');
+}
+
 function leaveStream(sendLeave = true) {
   if (sendLeave) {
     sendSignal({ action: 'live-leave', roomCode: state.roomCode });
@@ -582,17 +738,19 @@ function resetLiveState() {
   state.viewers = [];
   state.mediaMuted = false;
   state.cameraOff = false;
+  state.sourceType = state.localStream ? state.sourceType : '';
+  state.sourceLabel = state.localStream ? state.sourceLabel : '';
   els.hostRoomCode.textContent = '------';
   els.viewerRoomCode.textContent = '------';
   els.shareLink.value = '';
   els.goLiveButton.disabled = !state.localStream;
   els.stopLiveButton.disabled = true;
   els.copyLinkButton.disabled = true;
-  els.cameraButton.textContent = 'Start Camera';
-  els.muteButton.textContent = 'Mute Mic';
-  els.cameraToggleButton.textContent = 'Camera Off';
-  els.muteButton.disabled = true;
-  els.cameraToggleButton.disabled = true;
+  els.cameraButton.textContent = 'Camera + Mic';
+  els.screenButton.textContent = 'Desktop + Mic';
+  els.screenOnlyButton.textContent = 'Desktop Only';
+  els.stopPreviewButton.disabled = !state.localStream;
+  updateMediaButtons();
   renderViewers();
   refreshStage();
 }
@@ -601,9 +759,23 @@ function stopLocalStream() {
   if (!state.localStream) {
     return;
   }
-  state.localStream.getTracks().forEach((track) => track.stop());
+  stopStreamTracks(state.localStream);
   state.localStream = null;
+  state.sourceType = '';
+  state.sourceLabel = '';
+  state.mediaMuted = false;
+  state.cameraOff = false;
   els.localVideo.srcObject = null;
+  els.localVideo.classList.remove('is-screen');
+  updateCaptureButtons('Source Ready');
+}
+
+function stopStreamTracks(stream) {
+  state.stoppingTracks = true;
+  stream.getTracks().forEach((track) => track.stop());
+  window.setTimeout(() => {
+    state.stoppingTracks = false;
+  }, 0);
 }
 
 function closeAllHostPeers() {
@@ -656,24 +828,30 @@ function refreshStage() {
   const hasLocal = Boolean(state.localStream);
   const isLive = Boolean(state.roomCode && (state.role === 'host' || hasRemote));
   const title = isHost ? cleanText(els.streamTitle.value, 'Nova Live', 70) : 'Watching Nova Live';
+  const audioTracks = hasLocal ? state.localStream.getAudioTracks() : [];
+  const videoTracks = hasLocal ? state.localStream.getVideoTracks() : [];
+  const audioState = audioTracks.length ? (state.mediaMuted ? 'Muted' : 'Audio on') : 'No audio';
+  const videoState = videoTracks.length ? (state.cameraOff ? 'Video off' : 'Video on') : 'No video';
 
   els.roleBadge.textContent = isHost ? 'Host' : 'Viewer';
   els.stageTitle.textContent = title;
   els.viewerCount.textContent = `${state.viewers.length} viewer${state.viewers.length === 1 ? '' : 's'}`;
   els.roomReadout.textContent = state.roomCode || 'None';
   els.mediaReadout.textContent = isHost
-    ? (hasLocal ? `${state.cameraOff ? 'Camera off' : 'Camera on'} / ${state.mediaMuted ? 'Muted' : 'Mic on'}` : 'No camera')
+    ? (hasLocal ? `${state.sourceLabel || 'Stream'} / ${videoState} / ${audioState}` : 'No source')
     : (hasRemote ? 'Receiving' : 'No video');
   els.streamStatus.textContent = isLive ? 'Live' : (hasLocal ? 'Preview' : 'Ready');
   els.onAirBadge.textContent = isLive ? 'On Air' : (hasLocal ? 'Preview' : 'Standby');
   els.onAirBadge.classList.toggle('is-live', isLive);
   els.hostRoomCode.textContent = state.roomCode || '------';
   els.viewerRoomCode.textContent = state.roomCode || '------';
+  els.stopPreviewButton.disabled = !hasLocal || Boolean(state.roomCode);
+  updateMediaButtons();
 
   els.localVideo.classList.toggle('is-visible', isHost && hasLocal);
   els.remoteVideo.classList.toggle('is-visible', !isHost && hasRemote);
   els.videoEmpty.classList.toggle('is-visible', (isHost && !hasLocal) || (!isHost && !hasRemote));
-  els.emptyHint.textContent = isHost ? 'Camera preview will appear here.' : 'The stream will appear here.';
+  els.emptyHint.textContent = isHost ? 'Choose camera or desktop capture to preview.' : 'The stream will appear here.';
 }
 
 function setConnection(text, tone) {
