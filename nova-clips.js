@@ -1,6 +1,6 @@
 const PROD_CLIPS_API_BASE = "https://nova-arcade-backend-1000121513328.us-central1.run.app";
 const CLIP_OWNERSHIP_STORAGE_KEY = "nova-clips:owned-uploads";
-const MAX_CLIP_DURATION_SECONDS = 10 * 60;
+const MAX_CLIP_DURATION_SECONDS = 20 * 60;
 const MAX_CLIP_UPLOAD_BYTES = 300 * 1024 * 1024;
 const CLIP_REPORTER_STORAGE_KEY = "nova-clips:reporter-id";
 const CLIP_VIEWER_STORAGE_KEY = "nova-clips:viewer-id";
@@ -1948,12 +1948,12 @@ async function handleClipSelection(file) {
         }
 
         if (metadata.duration > MAX_CLIP_DURATION_SECONDS + 0.4) {
-            throw new Error("Videos must be 10 minutes or shorter.");
+            throw new Error("Videos must be 20 minutes or shorter.");
         }
 
         showLocalPreview(file, metadata, "Looks good");
     } catch (error) {
-        if (/10 minutes|60 seconds/i.test(String(error && error.message || ""))) {
+        if (/20 minutes|10 minutes|60 seconds/i.test(String(error && error.message || ""))) {
             state.selectedFile = null;
             releasePreviewUrl();
             previewPanel.classList.add("hidden");

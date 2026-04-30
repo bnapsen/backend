@@ -21,9 +21,9 @@ const { Storage } = require('@google-cloud/storage');
 
 const execFile = promisify(childProcess.execFile);
 const pipeline = promisify(stream.pipeline);
-const CLIP_MAX_DURATION_SECONDS = 10 * 60;
+const CLIP_MAX_DURATION_SECONDS = 20 * 60;
 const CLIP_MAX_DURATION_GRACE_SECONDS = 0.4;
-const CLIP_MAX_DURATION_LABEL = '10 minutes';
+const CLIP_MAX_DURATION_LABEL = '20 minutes';
 
 const VIDEO_EXTENSION_TO_MIME = new Map([
   ['.mp4', 'video/mp4'],
