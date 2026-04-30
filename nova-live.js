@@ -2,6 +2,8 @@
 
 const BACKEND_WS_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.app';
 const BACKEND_HTTP_URL = 'https://nova-arcade-backend-1000121513328.us-central1.run.app';
+const SIGNAL_RECONNECT_BASE_MS = 1000;
+const SIGNAL_RECONNECT_MAX_MS = 10000;
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -29,6 +31,9 @@ const state = {
   liveRoomsLoading: false,
   liveRoomsError: '',
   liveRoomsTimer: null,
+  socketReconnectTimer: null,
+  socketReconnectAttempts: 0,
+  intentionalDisconnect: false,
 };
 
 const els = {};
@@ -457,12 +462,15 @@ function connectSocket() {
     return state.socket;
   }
 
+  clearSignalReconnectTimer();
   const socket = new WebSocket(websocketUrl());
   state.socket = socket;
   setConnection('Connecting');
   setSignal('Opening');
 
   socket.addEventListener('open', () => {
+    state.socketReconnectAttempts = 0;
+    state.intentionalDisconnect = false;
     setConnection('Connected', 'live');
     setSignal('Connected');
     logEvent('Signal connected.');
@@ -480,11 +488,15 @@ function connectSocket() {
   });
 
   socket.addEventListener('close', () => {
+    if (state.socket === socket) {
+      state.socket = null;
+    }
+    const shouldReconnect = Boolean(state.roomCode && !state.intentionalDisconnect);
     setConnection('Offline');
-    setSignal('Closed');
-    logEvent('Signal closed.');
-    if (state.role === 'viewer') {
-      closeViewerPeer();
+    setSignal(shouldReconnect ? 'Reconnecting' : 'Closed');
+    logEvent(shouldReconnect ? 'Signal closed; reconnecting.' : 'Signal closed.');
+    if (shouldReconnect) {
+      scheduleSignalReconnect();
     }
   });
 
@@ -495,6 +507,54 @@ function connectSocket() {
   });
 
   return socket;
+}
+
+function clearSignalReconnectTimer() {
+  if (state.socketReconnectTimer) {
+    window.clearTimeout(state.socketReconnectTimer);
+    state.socketReconnectTimer = null;
+  }
+}
+
+function scheduleSignalReconnect() {
+  if (state.socketReconnectTimer || !state.roomCode) {
+    return;
+  }
+
+  state.socketReconnectAttempts += 1;
+  const delay = Math.min(
+    SIGNAL_RECONNECT_MAX_MS,
+    SIGNAL_RECONNECT_BASE_MS * state.socketReconnectAttempts,
+  );
+  state.socketReconnectTimer = window.setTimeout(() => {
+    state.socketReconnectTimer = null;
+    reconnectLiveSignal();
+  }, delay);
+}
+
+function reconnectLiveSignal() {
+  if (!state.roomCode || state.intentionalDisconnect) {
+    return;
+  }
+
+  setSignal('Reconnecting');
+  if (state.role === 'host' && state.localStream) {
+    sendSignal({
+      action: 'live-host',
+      roomCode: state.roomCode,
+      name: cleanText(els.hostName.value, 'Nova Host', 40),
+      title: cleanText(els.streamTitle.value, 'Live from BNAPSEN', 70),
+    });
+    return;
+  }
+
+  if (state.role === 'viewer') {
+    sendSignal({
+      action: 'live-viewer',
+      roomCode: state.roomCode,
+      name: cleanText(els.viewerName.value, 'Viewer', 40),
+    });
+  }
 }
 
 function sendSignal(payload) {
@@ -514,6 +574,7 @@ function goLive() {
   }
 
   state.role = 'host';
+  state.intentionalDisconnect = false;
   sendSignal({
     action: 'live-host',
     name: cleanText(els.hostName.value, 'Nova Host', 40),
@@ -535,6 +596,7 @@ function joinStream() {
   setMode('viewer');
   state.role = 'viewer';
   state.roomCode = roomCode;
+  state.intentionalDisconnect = false;
   sendSignal({
     action: 'live-viewer',
     roomCode,
@@ -550,9 +612,13 @@ function handleSocketMessage(message) {
   const type = message.type || message.action;
   if (type === 'error') {
     setConnection('Signal error', 'error');
-    logEvent(message.message || 'Unknown error.');
+    const errorMessage = message.message || 'Unknown error.';
+    logEvent(errorMessage);
     els.joinButton.disabled = false;
     els.goLiveButton.disabled = !state.localStream;
+    if (state.roomCode && /already on air/i.test(errorMessage)) {
+      scheduleSignalReconnect();
+    }
     return;
   }
 
@@ -591,6 +657,20 @@ function handleSocketMessage(message) {
     return;
   }
 
+  if (type === 'live-host-reconnecting') {
+    setSignal('Host reconnecting');
+    logEvent('Host signal is reconnecting; keeping the stream open.');
+    return;
+  }
+
+  if (type === 'live-host-resumed') {
+    state.hostId = message.hostId || state.hostId;
+    els.hostLine.textContent = `${message.hostName || 'Host'} - ${message.title || 'Live stream'}`;
+    setSignal('Host resumed');
+    logEvent('Host signal resumed.');
+    return;
+  }
+
   if (type === 'live-signal') {
     handlePeerSignal(message);
     return;
@@ -603,6 +683,8 @@ function handleSocketMessage(message) {
 }
 
 function handleLiveReady(message) {
+  clearSignalReconnectTimer();
+  state.intentionalDisconnect = false;
   state.roomCode = normalizeRoomCode(message.roomCode || '');
   state.hostId = message.hostId || '';
   state.viewerId = message.viewerId || '';
@@ -620,7 +702,7 @@ function handleLiveReady(message) {
     setMode('host');
     els.stopLiveButton.disabled = false;
     setSignal('On air');
-    logEvent(`Room ${state.roomCode} is live.`);
+    logEvent(message.resumed ? `Room ${state.roomCode} reconnected.` : `Room ${state.roomCode} is live.`);
   } else {
     setMode('viewer');
     els.hostLine.textContent = `${message.hostName || 'Host'} - ${message.title || 'Live stream'}`;
@@ -840,6 +922,8 @@ async function copyShareLink() {
 }
 
 function stopLive() {
+  state.intentionalDisconnect = true;
+  clearSignalReconnectTimer();
   sendSignal({ action: 'live-leave', roomCode: state.roomCode });
   closeAllHostPeers();
   stopLocalStream();
@@ -859,6 +943,8 @@ function stopPreview() {
 }
 
 function leaveStream(sendLeave = true) {
+  state.intentionalDisconnect = true;
+  clearSignalReconnectTimer();
   if (sendLeave) {
     sendSignal({ action: 'live-leave', roomCode: state.roomCode });
   }
@@ -877,12 +963,14 @@ function leaveStream(sendLeave = true) {
 }
 
 function resetLiveState() {
+  clearSignalReconnectTimer();
   state.roomCode = '';
   state.hostId = '';
   state.viewerId = '';
   state.viewers = [];
   state.mediaMuted = false;
   state.cameraOff = false;
+  state.socketReconnectAttempts = 0;
   state.sourceType = state.localStream ? state.sourceType : '';
   state.sourceLabel = state.localStream ? state.sourceLabel : '';
   els.hostRoomCode.textContent = '------';

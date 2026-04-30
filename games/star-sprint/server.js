@@ -109,6 +109,8 @@ const LIVE_ROOM_CODE_LENGTH = 6;
 const MAX_LIVE_ROOMS = 60;
 const MAX_LIVE_VIEWERS = 24;
 const LIVE_ROOM_TTL_MS = 4 * 60 * 60 * 1000;
+const LIVE_HOST_RECONNECT_GRACE_MS = 2 * 60 * 1000;
+const WS_HEARTBEAT_INTERVAL_MS = 25 * 1000;
 const SEEDED_SONGS = Object.freeze([
   {
     id: 'seed-sude',
@@ -4274,10 +4276,38 @@ function liveViewerList(room) {
   }));
 }
 
+function hasActiveLiveHost(room) {
+  return Boolean(room && room.hostSocket && room.hostSocket.readyState === 1);
+}
+
+function clearLiveHostReconnectTimer(room) {
+  if (room && room.hostReconnectTimer) {
+    clearTimeout(room.hostReconnectTimer);
+    delete room.hostReconnectTimer;
+  }
+}
+
+function sendLiveViewers(room, payload) {
+  if (!room || !room.viewers) {
+    return;
+  }
+  for (const viewer of room.viewers.values()) {
+    send(viewer.socket, payload);
+  }
+}
+
 function clearStaleLiveRooms() {
   const now = Date.now();
   for (const [roomCode, room] of liveRooms.entries()) {
-    if (!room.hostSocket || room.hostSocket.readyState !== 1 || now - room.createdAt > LIVE_ROOM_TTL_MS) {
+    if (now - room.createdAt > LIVE_ROOM_TTL_MS) {
+      closeLiveRoom(roomCode, 'stale');
+      continue;
+    }
+    if (!hasActiveLiveHost(room)) {
+      const disconnectedAt = Number(room.hostDisconnectedAt || 0);
+      if (disconnectedAt && now - disconnectedAt <= LIVE_HOST_RECONNECT_GRACE_MS) {
+        continue;
+      }
       closeLiveRoom(roomCode, 'stale');
     }
   }
@@ -4288,6 +4318,8 @@ function closeLiveRoom(roomCode, reason) {
   if (!room) {
     return;
   }
+
+  clearLiveHostReconnectTimer(room);
 
   for (const viewer of room.viewers.values()) {
     send(viewer.socket, {
@@ -4308,6 +4340,36 @@ function closeLiveRoom(roomCode, reason) {
   }
 
   liveRooms.delete(roomCode);
+}
+
+function markLiveHostDisconnected(roomCode, room, reason) {
+  if (!room) {
+    return;
+  }
+
+  clearLiveHostReconnectTimer(room);
+  if (room.hostSocket) {
+    delete room.hostSocket.liveRole;
+    delete room.hostSocket.liveRoomCode;
+    delete room.hostSocket.liveId;
+  }
+
+  room.hostSocket = null;
+  room.hostDisconnectedAt = Date.now();
+  sendLiveViewers(room, {
+    type: 'live-host-reconnecting',
+    action: 'live-host-reconnecting',
+    roomCode,
+    reason,
+    graceMs: LIVE_HOST_RECONNECT_GRACE_MS,
+  });
+
+  room.hostReconnectTimer = setTimeout(() => {
+    const latestRoom = liveRooms.get(roomCode);
+    if (latestRoom && !hasActiveLiveHost(latestRoom)) {
+      closeLiveRoom(roomCode, 'host-timeout');
+    }
+  }, LIVE_HOST_RECONNECT_GRACE_MS);
 }
 
 function sendLiveViewerList(room) {
@@ -4344,7 +4406,7 @@ function publicLiveRoom(room) {
 function liveRoomDirectory() {
   clearStaleLiveRooms();
   return Array.from(liveRooms.values())
-    .filter((room) => room && room.hostSocket && room.hostSocket.readyState === 1)
+    .filter((room) => hasActiveLiveHost(room))
     .sort((left, right) => (right.createdAt || 0) - (left.createdAt || 0))
     .map(publicLiveRoom);
 }
@@ -4392,7 +4454,11 @@ function cleanupLiveSocket(socket, reason = 'leave') {
   }
 
   if (role === 'host' && room.hostId === liveId) {
-    closeLiveRoom(roomCode, reason);
+    if (reason === 'leave' || reason === 'replace') {
+      closeLiveRoom(roomCode, reason);
+      return;
+    }
+    markLiveHostDisconnected(roomCode, room, reason);
     return;
   }
 
@@ -4414,17 +4480,52 @@ function handleLiveHost(socket, payload) {
   clearStaleLiveRooms();
   cleanupLiveSocket(socket, 'replace');
 
-  if (liveRooms.size >= MAX_LIVE_ROOMS) {
-    sendError(socket, 'Live rooms are full right now.');
-    return;
-  }
-
   let roomCode = normalizeLiveRoomCode(payload && payload.roomCode);
   if (!roomCode) {
     roomCode = generateLiveRoomCode();
   }
-  if (liveRooms.has(roomCode)) {
-    sendError(socket, 'That live room code is already on air.');
+
+  const existingRoom = liveRooms.get(roomCode);
+  if (existingRoom) {
+    if (hasActiveLiveHost(existingRoom)) {
+      sendError(socket, 'That live room code is already on air.');
+      return;
+    }
+
+    clearLiveHostReconnectTimer(existingRoom);
+    existingRoom.hostSocket = socket;
+    existingRoom.hostName = sanitizeLiveText(payload && payload.name, existingRoom.hostName || 'Nova Host', 40);
+    existingRoom.title = sanitizeLiveText(payload && payload.title, existingRoom.title || 'Live from BNAPSEN', 70);
+    existingRoom.hostDisconnectedAt = 0;
+
+    socket.liveRole = 'host';
+    socket.liveRoomCode = roomCode;
+    socket.liveId = existingRoom.hostId;
+
+    send(socket, {
+      type: 'live-ready',
+      action: 'live-ready',
+      role: 'host',
+      roomCode,
+      hostId: existingRoom.hostId,
+      hostName: existingRoom.hostName,
+      title: existingRoom.title,
+      viewers: liveViewerList(existingRoom),
+      resumed: true,
+    });
+    sendLiveViewers(existingRoom, {
+      type: 'live-host-resumed',
+      action: 'live-host-resumed',
+      roomCode,
+      hostId: existingRoom.hostId,
+      hostName: existingRoom.hostName,
+      title: existingRoom.title,
+    });
+    return;
+  }
+
+  if (liveRooms.size >= MAX_LIVE_ROOMS) {
+    sendError(socket, 'Live rooms are full right now.');
     return;
   }
 
@@ -4800,6 +4901,15 @@ function handleDisconnect(socket) {
   }
 }
 
+function cleanupDisconnectedSocket(socket, reason) {
+  if (socket.didDisconnectCleanup) {
+    return;
+  }
+  socket.didDisconnectCleanup = true;
+  cleanupLiveSocket(socket, reason);
+  handleDisconnect(socket);
+}
+
 function tickRealtimeRooms() {
   const now = Date.now();
   for (const room of rooms.values()) {
@@ -5089,6 +5199,11 @@ const server = http.createServer(async (req, res) => {
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (socket) => {
+  socket.isAlive = true;
+  socket.on('pong', () => {
+    socket.isAlive = true;
+  });
+
   socket.on('message', (buffer) => {
     let payload;
     try {
@@ -5176,14 +5291,33 @@ wss.on('connection', (socket) => {
   });
 
   socket.on('close', () => {
-    cleanupLiveSocket(socket, 'disconnect');
-    handleDisconnect(socket);
+    cleanupDisconnectedSocket(socket, 'disconnect');
   });
 
   socket.on('error', () => {
-    cleanupLiveSocket(socket, 'error');
-    handleDisconnect(socket);
+    cleanupDisconnectedSocket(socket, 'error');
   });
+});
+
+const wsHeartbeatTimer = setInterval(() => {
+  for (const socket of wss.clients) {
+    if (socket.isAlive === false) {
+      cleanupDisconnectedSocket(socket, 'heartbeat-timeout');
+      socket.terminate();
+      continue;
+    }
+    socket.isAlive = false;
+    try {
+      socket.ping();
+    } catch (error) {
+      cleanupDisconnectedSocket(socket, 'heartbeat-error');
+      socket.terminate();
+    }
+  }
+}, WS_HEARTBEAT_INTERVAL_MS);
+
+wss.on('close', () => {
+  clearInterval(wsHeartbeatTimer);
 });
 
 setInterval(tickRealtimeRooms, TICK_MS);
