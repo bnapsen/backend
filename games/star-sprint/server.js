@@ -744,6 +744,11 @@ function sanitizeClipField(raw, maxLength) {
     .slice(0, maxLength);
 }
 
+function normalizeClipOrigin(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  return value === 'nova-live' || value === 'nova-clips' ? value : '';
+}
+
 function sanitizeClipEmoji(raw) {
   return String(raw || '')
     .trim()
@@ -1262,6 +1267,7 @@ function publicClipEntry(clip) {
     title: String(clip.title || ''),
     caption: String(clip.caption || ''),
     uploaderName: String(clip.uploaderName || ''),
+    origin: normalizeClipOrigin(clip.origin || clip.sourceOrigin || clip.sourceContext),
     createdAt: String(clip.createdAt || ''),
     durationSeconds: Number(clip.durationSeconds || 0),
     sizeBytes: Number(clip.sizeBytes || 0),
@@ -1703,6 +1709,7 @@ async function handleClipUploadSessionRequest(req, res) {
   const uploaderName = sanitizeClipField(body.uploaderName, 48) || 'Guest uploader';
   const title = sanitizeClipField(body.title, 80) || inferClipTitle(originalFileName);
   const caption = sanitizeClipField(body.caption, 240);
+  const origin = normalizeClipOrigin(body.origin || body.sourceOrigin || body.sourceContext);
 
   if (!originalFileName || !normalizedUpload) {
     sendJsonResponse(req, res, 400, {
@@ -1737,6 +1744,7 @@ async function handleClipUploadSessionRequest(req, res) {
     uploaderName,
     title,
     caption,
+    origin,
     issuedAt: Date.now(),
     expiresAt: Date.now() + CLIP_DIRECT_UPLOAD_TTL_MS,
   };
@@ -1824,6 +1832,7 @@ async function handleClipUploadFinalizeRequest(req, res) {
       title: sanitizeClipField(uploadPayload.title, 80) || inferClipTitle(uploadPayload.originalFileName),
       caption: sanitizeClipField(uploadPayload.caption, 240),
       uploaderName: sanitizeClipField(uploadPayload.uploaderName, 48) || 'Guest uploader',
+      origin: normalizeClipOrigin(uploadPayload.origin),
       createdAt: new Date().toISOString(),
       durationSeconds: processedClip.durationSeconds,
       sizeBytes: processedClip.sizeBytes,
@@ -2329,6 +2338,7 @@ async function handleClipsRequest(req, res) {
   const title = sanitizeClipField(upload.fields.title, 80) || inferClipTitle(upload.file.originalFileName);
   const caption = sanitizeClipField(upload.fields.caption, 240);
   const uploaderName = sanitizeClipField(upload.fields.uploaderName, 48) || 'Guest uploader';
+  const origin = normalizeClipOrigin(upload.fields.origin || upload.fields.sourceOrigin || upload.fields.sourceContext);
 
   let storedClip = null;
   let processedClip = null;
@@ -2340,6 +2350,7 @@ async function handleClipsRequest(req, res) {
       title,
       caption,
       uploaderName,
+      origin,
       createdAt: new Date().toISOString(),
       durationSeconds: processedClip.durationSeconds,
       sizeBytes: processedClip.sizeBytes,

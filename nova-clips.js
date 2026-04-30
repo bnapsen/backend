@@ -1979,6 +1979,7 @@ async function requestDirectClipUploadSession(file) {
             uploaderName: uploaderNameInput.value.trim(),
             title: titleInput.value.trim(),
             caption: captionInput.value.trim(),
+            origin: "nova-clips",
         }),
     });
     const payload = await response.json();
@@ -2033,6 +2034,7 @@ async function finalizeDirectClipUpload(rawUploadKey, uploadToken) {
 async function uploadClipLegacy(file) {
     const formData = new FormData();
     formData.append("clipFile", file);
+    formData.append("origin", "nova-clips");
     if (uploaderNameInput.value.trim()) {
         formData.append("uploaderName", uploaderNameInput.value.trim());
     }

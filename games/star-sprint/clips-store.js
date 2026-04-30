@@ -96,6 +96,7 @@ function clipRecord(record) {
     title: String(record.title || ''),
     caption: String(record.caption || ''),
     uploaderName: String(record.uploaderName || ''),
+    origin: String(record.origin || record.sourceOrigin || record.source_context || ''),
     createdAt: String(record.createdAt || ''),
     durationSeconds: Number(record.durationSeconds || 0),
     sizeBytes: Number(record.sizeBytes || 0),

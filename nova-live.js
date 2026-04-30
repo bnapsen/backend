@@ -40,6 +40,9 @@ const state = {
   liveRoomsLoading: false,
   liveRoomsError: '',
   liveRoomsTimer: null,
+  replays: [],
+  replaysLoading: false,
+  replaysError: '',
   socketReconnectTimer: null,
   socketReconnectAttempts: 0,
   intentionalDisconnect: false,
@@ -71,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshStage();
   renderChat();
   loadLiveRooms();
+  loadReplays();
   startLiveRoomPolling();
   logEvent('Ready.');
 });
@@ -97,6 +101,9 @@ function bindElements() {
     'viewerModeButton',
     'liveRoomsList',
     'refreshLiveRoomsButton',
+    'refreshReplaysButton',
+    'replayStatus',
+    'replayGrid',
     'hostPanel',
     'viewerPanel',
     'hostName',
@@ -180,6 +187,7 @@ function bindEvents() {
     button.addEventListener('click', () => insertChatEmoji(button.dataset.emoji || button.textContent || ''));
   });
   els.refreshLiveRoomsButton.addEventListener('click', () => loadLiveRooms({ announce: true }));
+  els.refreshReplaysButton.addEventListener('click', () => loadReplays({ announce: true }));
   els.liveRoomsList.addEventListener('click', (event) => {
     const button = event.target.closest('[data-room-code]');
     if (!button || button.disabled) {
@@ -342,6 +350,227 @@ function liveRoomEmptyItem(text) {
   item.className = 'live-room-empty';
   item.textContent = text;
   return item;
+}
+
+async function loadReplays(options = {}) {
+  if (!els.replayGrid) {
+    return;
+  }
+
+  state.replaysLoading = true;
+  renderReplays();
+
+  try {
+    const response = await fetch(clipsEndpoint(), { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`Replay list returned ${response.status}`);
+    }
+    const data = await response.json();
+    const clips = Array.isArray(data.clips) ? data.clips : [];
+    const serverReplays = clips
+      .filter(isLiveReplayClip)
+      .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
+    const serverReplayIds = new Set(serverReplays.map((clip) => clip.id));
+    const localReplays = state.replays
+      .filter((clip) => isLiveReplayClip(clip) && !serverReplayIds.has(clip.id));
+    state.replays = [...localReplays, ...serverReplays]
+      .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
+      .slice(0, 12);
+    state.replaysError = '';
+    if (options.announce) {
+      logEvent('Replay library refreshed.');
+    }
+  } catch (error) {
+    state.replaysError = 'Replay library unavailable.';
+    if (options.announce) {
+      logEvent(`Replay library failed: ${error.message || 'network error'}.`);
+    }
+  } finally {
+    state.replaysLoading = false;
+    renderReplays(options.focusClipId || '');
+  }
+}
+
+function isLiveReplayClip(clip) {
+  if (!clip) {
+    return false;
+  }
+  const origin = String(clip.origin || clip.sourceContext || '').toLowerCase();
+  if (origin === 'nova-live') {
+    return true;
+  }
+  if (origin === 'nova-clips') {
+    return false;
+  }
+  const text = `${clip.title || ''} ${clip.caption || ''}`.toLowerCase();
+  return text.includes('nova live') || /\breplay\b/.test(text);
+}
+
+function upsertReplayClip(clip) {
+  if (!clip || !clip.id || !isLiveReplayClip(clip)) {
+    return;
+  }
+  state.replays = [
+    clip,
+    ...state.replays.filter((entry) => entry && entry.id !== clip.id),
+  ].slice(0, 12);
+}
+
+function renderReplays(focusClipId = '') {
+  if (!els.replayGrid || !els.replayStatus) {
+    return;
+  }
+
+  els.replayGrid.innerHTML = '';
+  els.replayStatus.classList.toggle('is-error', Boolean(state.replaysError));
+
+  if (state.replaysLoading && !state.replays.length) {
+    els.replayStatus.textContent = 'Loading Nova Live replays...';
+    return;
+  }
+
+  if (state.replaysError && !state.replays.length) {
+    els.replayStatus.textContent = state.replaysError;
+    return;
+  }
+
+  if (!state.replays.length) {
+    els.replayStatus.textContent = 'No Nova Live replays posted yet.';
+    return;
+  }
+
+  els.replayStatus.textContent = `${state.replays.length} replay${state.replays.length === 1 ? '' : 's'} on Nova Live.`;
+  const ownedUploads = readOwnedUploads();
+  state.replays.forEach((clip) => {
+    els.replayGrid.appendChild(createReplayCard(clip, ownedUploads, clip.id === focusClipId));
+  });
+
+  if (focusClipId) {
+    const focusedCard = document.getElementById(`replay-${focusClipId}`);
+    if (focusedCard) {
+      window.setTimeout(() => focusedCard.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 80);
+    }
+  }
+}
+
+function createReplayCard(clip, ownedUploads, isNew = false) {
+  const article = document.createElement('article');
+  article.className = `replay-card${isNew ? ' is-new' : ''}`;
+  article.id = `replay-${clip.id}`;
+
+  const video = document.createElement('video');
+  video.controls = true;
+  video.playsInline = true;
+  video.preload = 'metadata';
+  video.src = resolveClipMediaUrl(clip.videoPath);
+  const posterUrl = resolveClipMediaUrl(clip.posterPath);
+  if (posterUrl) {
+    video.poster = posterUrl;
+  }
+  article.appendChild(video);
+
+  const body = document.createElement('div');
+  body.className = 'replay-card-body';
+
+  const title = document.createElement('h3');
+  title.textContent = clip.title || 'Nova Live replay';
+  body.appendChild(title);
+
+  const meta = document.createElement('p');
+  meta.className = 'replay-meta';
+  meta.textContent = [
+    formatReplayDuration(clip.durationSeconds),
+    formatReplayDate(clip.createdAt),
+    clip.uploaderName || 'Nova Host',
+  ].filter(Boolean).join(' - ');
+  body.appendChild(meta);
+
+  if (clip.caption) {
+    const caption = document.createElement('p');
+    caption.className = 'replay-caption';
+    caption.textContent = clip.caption;
+    body.appendChild(caption);
+  }
+
+  const footer = document.createElement('div');
+  footer.className = 'replay-card-footer';
+
+  const stats = document.createElement('p');
+  stats.className = 'replay-stats';
+  stats.textContent = formatReplayStats(clip);
+  footer.appendChild(stats);
+
+  const deleteToken = ownedUploads[clip.id];
+  if (deleteToken) {
+    const deleteButton = document.createElement('button');
+    deleteButton.className = 'small-button replay-delete-button';
+    deleteButton.type = 'button';
+    deleteButton.textContent = 'Delete';
+    deleteButton.addEventListener('click', async () => {
+      if (!window.confirm('Delete this replay from Nova Live?')) {
+        return;
+      }
+      deleteButton.disabled = true;
+      try {
+        await requestClipDelete(clip.id, deleteToken);
+        forgetOwnedUpload(clip.id);
+        state.replays = state.replays.filter((entry) => entry.id !== clip.id);
+        renderReplays();
+        logEvent('Replay deleted from Nova Live.');
+      } catch (error) {
+        deleteButton.disabled = false;
+        logEvent(`Replay delete failed: ${error.message || 'network error'}.`);
+      }
+    });
+    footer.appendChild(deleteButton);
+  }
+
+  body.appendChild(footer);
+  article.appendChild(body);
+  return article;
+}
+
+function resolveClipMediaUrl(value) {
+  const pathValue = String(value || '').trim();
+  if (!pathValue) {
+    return '';
+  }
+  if (/^(https?:|data:|blob:)/i.test(pathValue)) {
+    return pathValue;
+  }
+  return pathValue.startsWith('/')
+    ? `${apiBaseUrl()}${pathValue}`
+    : `${apiBaseUrl()}/${pathValue.replace(/^\/+/, '')}`;
+}
+
+function formatReplayDuration(seconds) {
+  const totalSeconds = Math.max(0, Math.round(Number(seconds || 0)));
+  if (!totalSeconds) {
+    return 'processing';
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function formatReplayDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'just now';
+  }
+  return date.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatReplayStats(clip) {
+  const views = Number(clip.viewCount || 0);
+  const reactions = Number(clip.likeCount || 0) + Number(clip.dislikeCount || 0);
+  const comments = Number(clip.commentCount || 0);
+  return `${views} view${views === 1 ? '' : 's'} - ${reactions} reaction${reactions === 1 ? '' : 's'} - ${comments} comment${comments === 1 ? '' : 's'}`;
 }
 
 function formatViewerCount(count) {
@@ -1391,7 +1620,7 @@ function finishReplayRecording() {
   els.recordingPreview.classList.add('is-visible');
   els.recordingPostLink.classList.add('hidden');
   updateRecordingTimer();
-  setRecordingStatus(`Replay saved (${formatFileSize(blob.size)}). Review it, then post to Nova Clips.`, 'ready');
+  setRecordingStatus(`Replay saved (${formatFileSize(blob.size)}). Review it, then post to Nova Live.`, 'ready');
   updateRecordingControls();
   logEvent('Replay recording saved.');
 }
@@ -1417,7 +1646,7 @@ function resetReplayRecording(options = {}) {
   state.recording.postedDeleteToken = '';
   releaseRecordingPreview();
   els.recordingPostLink.classList.add('hidden');
-  els.recordingPostLink.href = 'nova-clips.html';
+  els.recordingPostLink.href = '#liveReplays';
   els.deleteRecordingButton.classList.add('hidden');
   if (!options.keepStatus) {
     setRecordingStatus(state.localStream
@@ -1526,7 +1755,7 @@ async function postReplayRecording() {
         const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((loaded / total) * 100))) : 0;
         setRecordingStatus(`Uploading replay to cloud storage... ${percent}%`, 'ready');
       }, session.uploadContentType || session.mimeType || '');
-      setRecordingStatus('Processing replay for Nova Clips...', 'ready');
+      setRecordingStatus('Processing replay for Nova Live...', 'ready');
       payload = await finalizeReplayUpload(session.rawUploadKey, session.uploadToken);
     } catch (error) {
       if (file.size > LEGACY_REPLAY_UPLOAD_MAX_BYTES) {
@@ -1541,17 +1770,22 @@ async function postReplayRecording() {
       state.recording.postedClipId = payload.clip.id;
       state.recording.postedDeleteToken = payload.deleteToken;
     }
+    if (payload.clip) {
+      upsertReplayClip(payload.clip);
+      renderReplays(payload.clip.id);
+    }
     els.recordingPostLink.href = payload.clip && payload.clip.id
-      ? `nova-clips.html?clip=${encodeURIComponent(payload.clip.id)}`
-      : 'nova-clips.html';
+      ? `#replay-${encodeURIComponent(payload.clip.id)}`
+      : '#liveReplays';
     els.recordingPostLink.classList.remove('hidden');
     els.deleteRecordingButton.classList.toggle('hidden', !state.recording.postedClipId);
     state.recording.blob = null;
     state.recording.posted = true;
     setRecordingStatus(payload.clip && payload.clip.status === 'active'
-      ? 'Replay posted to Nova Clips.'
+      ? 'Replay posted to Nova Live.'
       : 'Replay uploaded and sent to moderation.', 'ready');
-    logEvent('Replay posted to Nova Clips.');
+    logEvent('Replay posted to Nova Live.');
+    loadReplays({ focusClipId: payload.clip && payload.clip.id ? payload.clip.id : '' });
   } catch (error) {
     setRecordingStatus(`Replay upload failed: ${error.message || 'network error'}.`, 'error');
     logEvent(`Replay upload failed: ${error.message || 'network error'}.`);
@@ -1574,6 +1808,7 @@ async function requestReplayUploadSession(file, title, caption, uploaderName) {
       uploaderName,
       title,
       caption,
+      origin: 'nova-live',
     }),
   });
   const payload = await response.json();
@@ -1630,6 +1865,7 @@ async function uploadReplayLegacy(file, title, caption, uploaderName) {
   formData.append('clipFile', file, file.name);
   formData.append('uploaderName', uploaderName);
   formData.append('title', title);
+  formData.append('origin', 'nova-live');
   if (caption) {
     formData.append('caption', caption);
   }
@@ -1732,6 +1968,24 @@ function forgetOwnedUpload(clipId) {
   writeOwnedUploads(ownedUploads);
 }
 
+async function requestClipDelete(clipId, deleteToken) {
+  const response = await fetch(clipDeleteEndpoint(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      clipId,
+      deleteToken,
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || 'Unable to delete that replay.');
+  }
+  return payload;
+}
+
 async function deletePostedReplay() {
   const clipId = state.recording.postedClipId;
   const deleteToken = state.recording.postedDeleteToken;
@@ -1739,7 +1993,7 @@ async function deletePostedReplay() {
     return;
   }
 
-  if (!window.confirm('Delete this posted replay from Nova Clips?')) {
+  if (!window.confirm('Delete this posted replay from Nova Live?')) {
     return;
   }
 
@@ -1748,30 +2002,19 @@ async function deletePostedReplay() {
   setRecordingStatus('Deleting replay...', 'ready');
 
   try {
-    const response = await fetch(clipDeleteEndpoint(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        clipId,
-        deleteToken,
-      }),
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.error || 'Unable to delete that replay.');
-    }
-
+    await requestClipDelete(clipId, deleteToken);
     forgetOwnedUpload(clipId);
     state.recording.postedClipId = '';
     state.recording.postedDeleteToken = '';
     state.recording.posted = false;
+    state.replays = state.replays.filter((clip) => clip.id !== clipId);
     els.recordingPostLink.classList.add('hidden');
-    els.recordingPostLink.href = 'nova-clips.html';
+    els.recordingPostLink.href = '#liveReplays';
     els.deleteRecordingButton.classList.add('hidden');
-    setRecordingStatus('Replay deleted from Nova Clips.', 'ready');
-    logEvent('Replay deleted from Nova Clips.');
+    renderReplays();
+    loadReplays();
+    setRecordingStatus('Replay deleted from Nova Live.', 'ready');
+    logEvent('Replay deleted from Nova Live.');
   } catch (error) {
     setRecordingStatus(`Replay delete failed: ${error.message || 'network error'}.`, 'error');
     logEvent(`Replay delete failed: ${error.message || 'network error'}.`);
