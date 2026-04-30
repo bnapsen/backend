@@ -41,6 +41,11 @@ const VIDEO_MIME_TO_EXTENSION = new Map([
   ['video/3gpp', '.3gp'],
   ['video/3gp', '.3gp'],
 ]);
+const GENERIC_UPLOAD_MIME_TYPES = new Set([
+  'application/octet-stream',
+  'binary/octet-stream',
+  'application/x-binary',
+]);
 
 function ensureDirectory(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -77,7 +82,11 @@ function normalizeClipUploadType(fileName, mimeType) {
     return null;
   }
 
-  if (!normalizedMimeType || normalizedMimeType.startsWith('video/')) {
+  if (
+    !normalizedMimeType ||
+    normalizedMimeType.startsWith('video/') ||
+    GENERIC_UPLOAD_MIME_TYPES.has(normalizedMimeType)
+  ) {
     return {
       extension: inferredExtension,
       mimeType: allowedMimeType,
