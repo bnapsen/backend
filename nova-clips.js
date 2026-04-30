@@ -1988,11 +1988,11 @@ async function requestDirectClipUploadSession(file) {
     return payload;
 }
 
-function uploadFileToCloudSession(uploadUrl, file, onProgress) {
+function uploadFileToCloudSession(uploadUrl, file, onProgress, uploadContentType = "") {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", uploadUrl, true);
-        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.setRequestHeader("Content-Type", uploadContentType || file.type || "application/octet-stream");
         xhr.upload.onprogress = (event) => {
             if (!event.lengthComputable || typeof onProgress !== "function") {
                 return;
@@ -2074,7 +2074,7 @@ async function uploadClip(file) {
             await uploadFileToCloudSession(session.uploadUrl, file, (loaded, total) => {
                 const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((loaded / total) * 100))) : 0;
                 setUploadStatus(`Uploading clip directly to cloud storage... ${percent}%`);
-            });
+            }, session.uploadContentType || session.mimeType || "");
             setUploadStatus("Processing clip for the live feed...");
             payload = await finalizeDirectClipUpload(session.rawUploadKey, session.uploadToken);
         } catch (error) {

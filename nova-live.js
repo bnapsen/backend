@@ -1525,7 +1525,7 @@ async function postReplayRecording() {
       await uploadFileToCloudSession(session.uploadUrl, file, (loaded, total) => {
         const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((loaded / total) * 100))) : 0;
         setRecordingStatus(`Uploading replay to cloud storage... ${percent}%`, 'ready');
-      });
+      }, session.uploadContentType || session.mimeType || '');
       setRecordingStatus('Processing replay for Nova Clips...', 'ready');
       payload = await finalizeReplayUpload(session.rawUploadKey, session.uploadToken);
     } catch (error) {
@@ -1583,11 +1583,11 @@ async function requestReplayUploadSession(file, title, caption, uploaderName) {
   return payload;
 }
 
-function uploadFileToCloudSession(uploadUrl, file, onProgress) {
+function uploadFileToCloudSession(uploadUrl, file, onProgress, uploadContentType = '') {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', uploadUrl, true);
-    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('Content-Type', uploadContentType || file.type || 'application/octet-stream');
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable || typeof onProgress !== 'function') {
         return;

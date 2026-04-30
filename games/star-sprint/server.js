@@ -1753,6 +1753,7 @@ async function handleClipUploadSessionRequest(req, res) {
       ok: true,
       uploadUrl: session.uploadUrl,
       uploadMethod: 'PUT',
+      uploadContentType: normalizedUpload.mimeType,
       rawUploadKey,
       uploadToken: createClipUploadToken(uploadTokenPayload),
       uploadLimitBytes: MAX_DIRECT_CLIP_UPLOAD_BYTES,
