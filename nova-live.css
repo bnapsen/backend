@@ -134,6 +134,7 @@ button:disabled {
 
 .stage-panel,
 .control-panel,
+.live-directory-card,
 .room-card,
 .viewer-list-card,
 .signal-card {
@@ -301,6 +302,105 @@ button:disabled {
 
 .control-panel {
   padding: 14px;
+}
+
+.live-directory-card {
+  padding: 14px;
+  margin-bottom: 14px;
+  box-shadow: none;
+}
+
+.live-room-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.live-room-card,
+.live-room-empty {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.live-room-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+}
+
+.live-room-card.is-current {
+  border-color: rgba(41, 242, 166, 0.45);
+  background: rgba(41, 242, 166, 0.08);
+}
+
+.live-room-main {
+  min-width: 0;
+}
+
+.live-room-main strong,
+.live-room-main p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-room-main strong {
+  display: block;
+}
+
+.live-room-main p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.live-room-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--green);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.live-room-status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 14px rgba(41, 242, 166, 0.9);
+}
+
+.live-room-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.live-room-code {
+  border: 1px solid rgba(100, 216, 255, 0.28);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--cyan);
+  font-family: "Oxanium", system-ui, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.live-room-join:disabled {
+  opacity: 0.55;
+}
+
+.live-room-empty {
+  padding: 14px;
+  color: var(--muted);
 }
 
 .mode-tabs {
@@ -515,5 +615,19 @@ button:disabled {
   .button-grid,
   .source-grid {
     grid-template-columns: 1fr;
+  }
+
+  .live-room-card {
+    grid-template-columns: 1fr;
+  }
+
+  .live-room-actions {
+    justify-items: stretch;
+  }
+
+  .live-room-code,
+  .live-room-join {
+    width: 100%;
+    text-align: center;
   }
 }

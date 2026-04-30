@@ -1,6 +1,7 @@
 'use strict';
 
 const BACKEND_WS_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.app';
+const BACKEND_HTTP_URL = 'https://nova-arcade-backend-1000121513328.us-central1.run.app';
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -24,6 +25,10 @@ const state = {
   mediaMuted: false,
   cameraOff: false,
   stoppingTracks: false,
+  liveRooms: [],
+  liveRoomsLoading: false,
+  liveRoomsError: '',
+  liveRoomsTimer: null,
 };
 
 const els = {};
@@ -34,6 +39,8 @@ document.addEventListener('DOMContentLoaded', () => {
   hydrateRoomFromQuery();
   setMode(els.joinRoomCode.value ? 'viewer' : 'host');
   refreshStage();
+  loadLiveRooms();
+  startLiveRoomPolling();
   logEvent('Ready.');
 });
 
@@ -54,6 +61,8 @@ function bindElements() {
     'signalReadout',
     'hostModeButton',
     'viewerModeButton',
+    'liveRoomsList',
+    'refreshLiveRoomsButton',
     'hostPanel',
     'viewerPanel',
     'hostName',
@@ -100,6 +109,14 @@ function bindEvents() {
   els.stopLiveButton.addEventListener('click', stopLive);
   els.joinButton.addEventListener('click', joinStream);
   els.leaveButton.addEventListener('click', leaveStream);
+  els.refreshLiveRoomsButton.addEventListener('click', () => loadLiveRooms({ announce: true }));
+  els.liveRoomsList.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-room-code]');
+    if (!button || button.disabled) {
+      return;
+    }
+    joinListedRoom(button.dataset.roomCode);
+  });
   els.clearLogButton.addEventListener('click', () => {
     els.signalLog.innerHTML = '';
   });
@@ -125,6 +142,14 @@ function websocketUrl() {
   return BACKEND_WS_URL;
 }
 
+function apiBaseUrl() {
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.run.app')) {
+    return `${window.location.protocol}//${window.location.host}`;
+  }
+  return BACKEND_HTTP_URL;
+}
+
 function setMode(mode) {
   state.mode = mode === 'viewer' ? 'viewer' : 'host';
   if (!state.roomCode) {
@@ -135,6 +160,123 @@ function setMode(mode) {
   els.hostPanel.classList.toggle('is-active', state.mode === 'host');
   els.viewerPanel.classList.toggle('is-active', state.mode === 'viewer');
   refreshStage();
+  renderLiveRooms();
+}
+
+function startLiveRoomPolling() {
+  if (state.liveRoomsTimer) {
+    return;
+  }
+  state.liveRoomsTimer = window.setInterval(() => loadLiveRooms(), 8000);
+}
+
+async function loadLiveRooms(options = {}) {
+  if (!els.liveRoomsList) {
+    return;
+  }
+
+  state.liveRoomsLoading = true;
+  renderLiveRooms();
+
+  try {
+    const response = await fetch(`${apiBaseUrl()}/api/live/rooms`, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`Live rooms returned ${response.status}`);
+    }
+    const data = await response.json();
+    state.liveRooms = Array.isArray(data.rooms) ? data.rooms : [];
+    state.liveRoomsError = '';
+    if (options.announce) {
+      logEvent('Live list refreshed.');
+    }
+  } catch (error) {
+    state.liveRoomsError = 'Live list unavailable.';
+    if (options.announce) {
+      logEvent(`Live list failed: ${error.message || 'network error'}.`);
+    }
+  } finally {
+    state.liveRoomsLoading = false;
+    renderLiveRooms();
+  }
+}
+
+function renderLiveRooms() {
+  if (!els.liveRoomsList) {
+    return;
+  }
+
+  els.liveRoomsList.innerHTML = '';
+
+  if (state.liveRoomsLoading && !state.liveRooms.length) {
+    els.liveRoomsList.appendChild(liveRoomEmptyItem('Checking live streams...'));
+    return;
+  }
+
+  if (state.liveRoomsError && !state.liveRooms.length) {
+    els.liveRoomsList.appendChild(liveRoomEmptyItem(state.liveRoomsError));
+    return;
+  }
+
+  if (!state.liveRooms.length) {
+    els.liveRoomsList.appendChild(liveRoomEmptyItem('No live streams right now.'));
+    return;
+  }
+
+  const isHosting = state.role === 'host' && Boolean(state.roomCode);
+  state.liveRooms.forEach((room) => {
+    const roomCode = normalizeRoomCode(room.roomCode);
+    if (!roomCode) {
+      return;
+    }
+    const isCurrentRoom = state.roomCode === roomCode;
+    const isCurrentHost = isCurrentRoom && state.role === 'host';
+    const isCurrentViewer = isCurrentRoom && state.role === 'viewer';
+    const buttonDisabled = isCurrentRoom || isHosting;
+    const buttonText = isCurrentHost ? 'On Air' : isCurrentViewer ? 'Watching' : 'Watch';
+    const article = document.createElement('article');
+    article.className = `live-room-card${isCurrentRoom ? ' is-current' : ''}`;
+    article.innerHTML = `
+      <div class="live-room-main">
+        <span class="live-room-status"><i></i>Live</span>
+        <strong>${escapeHtml(room.title || 'Live stream')}</strong>
+        <p>${escapeHtml(room.hostName || 'Host')} &middot; ${formatViewerCount(room.viewerCount)} &middot; ${escapeHtml(formatStartedAt(room.createdAt))}</p>
+      </div>
+      <div class="live-room-actions">
+        <span class="live-room-code">${escapeHtml(roomCode)}</span>
+        <button class="small-button live-room-join" type="button" data-room-code="${escapeHtml(roomCode)}" ${buttonDisabled ? 'disabled' : ''} aria-label="Watch ${escapeHtml(room.title || 'live stream')}">${buttonText}</button>
+      </div>
+    `;
+    els.liveRoomsList.appendChild(article);
+  });
+}
+
+function liveRoomEmptyItem(text) {
+  const item = document.createElement('article');
+  item.className = 'live-room-empty';
+  item.textContent = text;
+  return item;
+}
+
+function formatViewerCount(count) {
+  const viewers = Number(count || 0);
+  return `${viewers} viewer${viewers === 1 ? '' : 's'}`;
+}
+
+function formatStartedAt(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'just started';
+  }
+  return `started ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+function joinListedRoom(roomCode) {
+  const nextRoomCode = normalizeRoomCode(roomCode);
+  if (!nextRoomCode) {
+    return;
+  }
+  els.joinRoomCode.value = nextRoomCode;
+  joinStream();
 }
 
 async function startCamera() {
@@ -488,6 +630,7 @@ function handleLiveReady(message) {
 
   renderViewers();
   refreshStage();
+  loadLiveRooms();
 }
 
 async function handleViewerJoined(viewer) {
@@ -702,6 +845,7 @@ function stopLive() {
   stopLocalStream();
   resetLiveState();
   setMode('host');
+  loadLiveRooms();
   logEvent('Stream stopped.');
 }
 
@@ -729,6 +873,7 @@ function leaveStream(sendLeave = true) {
   els.hostLine.textContent = 'No host connected.';
   els.remoteVideo.srcObject = null;
   refreshStage();
+  loadLiveRooms();
 }
 
 function resetLiveState() {

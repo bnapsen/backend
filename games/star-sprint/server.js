@@ -4330,6 +4330,50 @@ function sendLiveViewerList(room) {
   }
 }
 
+function publicLiveRoom(room) {
+  return {
+    roomCode: room.code,
+    hostName: room.hostName,
+    title: room.title,
+    viewerCount: room.viewers ? room.viewers.size : 0,
+    createdAt: new Date(room.createdAt || Date.now()).toISOString(),
+    sharePath: `/nova-live.html?room=${encodeURIComponent(room.code)}`,
+  };
+}
+
+function liveRoomDirectory() {
+  clearStaleLiveRooms();
+  return Array.from(liveRooms.values())
+    .filter((room) => room && room.hostSocket && room.hostSocket.readyState === 1)
+    .sort((left, right) => (right.createdAt || 0) - (left.createdAt || 0))
+    .map(publicLiveRoom);
+}
+
+async function handleLiveRoomsRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  sendJsonResponse(req, res, 200, {
+    ok: true,
+    rooms: liveRoomDirectory(),
+    maxRooms: MAX_LIVE_ROOMS,
+    maxViewers: MAX_LIVE_VIEWERS,
+    asOf: new Date().toISOString(),
+  });
+}
+
 function cleanupLiveSocket(socket, reason = 'leave') {
   const roomCode = normalizeLiveRoomCode(socket.liveRoomCode || '');
   const liveId = String(socket.liveId || '');
@@ -4863,6 +4907,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/live/rooms') {
+    await handleLiveRoomsRequest(req, res);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/kalshi/weather/locations') {
     await handleKalshiWeatherLocationsRequest(req, res, requestUrl);
     return;
@@ -5029,6 +5078,7 @@ const server = http.createServer(async (req, res) => {
     reviewsApi: '/api/reviews',
     songsApi: '/api/songs',
     clipsApi: '/api/clips',
+    liveRoomsApi: '/api/live/rooms',
     kalshiWeatherApi: '/api/kalshi/weather/scan',
     kalshiBitcoinApi: '/api/kalshi/bitcoin/scan',
     kalshiEvScannerApi: '/api/kalshi/ev/scan',

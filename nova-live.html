@@ -19,7 +19,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="nova-live.css?v=20260429b">
+    <link rel="stylesheet" href="nova-live.css?v=20260429c">
 </head>
 <body>
     <div class="live-shell">
@@ -81,6 +81,16 @@
             </section>
 
             <aside class="control-panel" aria-label="Live stream controls">
+                <section class="live-directory-card" aria-label="Live streams">
+                    <div class="panel-heading-row">
+                        <h2>Live Now</h2>
+                        <button class="small-button" type="button" id="refreshLiveRoomsButton">Refresh</button>
+                    </div>
+                    <div class="live-room-list" id="liveRoomsList">
+                        <article class="live-room-empty">No live streams right now.</article>
+                    </div>
+                </section>
+
                 <div class="mode-tabs" role="tablist" aria-label="Choose stream mode">
                     <button class="mode-tab is-active" type="button" data-mode="host" id="hostModeButton">Go Live</button>
                     <button class="mode-tab" type="button" data-mode="viewer" id="viewerModeButton">Watch</button>
@@ -158,6 +168,6 @@
         </main>
     </div>
 
-    <script src="nova-live.js?v=20260429b" defer></script>
+    <script src="nova-live.js?v=20260429c" defer></script>
 </body>
 </html>
