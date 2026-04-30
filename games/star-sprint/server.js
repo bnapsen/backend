@@ -108,6 +108,8 @@ const CITY_RAID_LOBBY_TTL_MS = 2 * 60 * 1000;
 const LIVE_ROOM_CODE_LENGTH = 6;
 const MAX_LIVE_ROOMS = 60;
 const MAX_LIVE_VIEWERS = 24;
+const MAX_LIVE_CHAT_MESSAGES = 80;
+const MAX_LIVE_CHAT_LENGTH = 240;
 const LIVE_ROOM_TTL_MS = 4 * 60 * 60 * 1000;
 const LIVE_HOST_RECONNECT_GRACE_MS = 2 * 60 * 1000;
 const WS_HEARTBEAT_INTERVAL_MS = 25 * 1000;
@@ -4248,6 +4250,10 @@ function sanitizeLiveText(value, fallback, maxLength) {
   return cleaned || fallback;
 }
 
+function sanitizeLiveChatText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, MAX_LIVE_CHAT_LENGTH);
+}
+
 function normalizeLiveRoomCode(value) {
   return String(value || '')
     .replace(/[^a-z0-9]/gi, '')
@@ -4276,6 +4282,10 @@ function liveViewerList(room) {
   }));
 }
 
+function liveChatHistory(room) {
+  return Array.isArray(room.chatMessages) ? room.chatMessages.slice(-MAX_LIVE_CHAT_MESSAGES) : [];
+}
+
 function hasActiveLiveHost(room) {
   return Boolean(room && room.hostSocket && room.hostSocket.readyState === 1);
 }
@@ -4294,6 +4304,14 @@ function sendLiveViewers(room, payload) {
   for (const viewer of room.viewers.values()) {
     send(viewer.socket, payload);
   }
+}
+
+function sendLiveRoomMembers(room, payload) {
+  if (!room) {
+    return;
+  }
+  send(room.hostSocket, payload);
+  sendLiveViewers(room, payload);
 }
 
 function clearStaleLiveRooms() {
@@ -4511,6 +4529,7 @@ function handleLiveHost(socket, payload) {
       hostName: existingRoom.hostName,
       title: existingRoom.title,
       viewers: liveViewerList(existingRoom),
+      chatMessages: liveChatHistory(existingRoom),
       resumed: true,
     });
     sendLiveViewers(existingRoom, {
@@ -4537,6 +4556,7 @@ function handleLiveHost(socket, payload) {
     title: sanitizeLiveText(payload && payload.title, 'Live from BNAPSEN', 70),
     hostSocket: socket,
     viewers: new Map(),
+    chatMessages: [],
     createdAt: Date.now(),
   };
 
@@ -4554,6 +4574,7 @@ function handleLiveHost(socket, payload) {
     hostName: room.hostName,
     title: room.title,
     viewers: [],
+    chatMessages: [],
   });
 }
 
@@ -4599,6 +4620,7 @@ function handleLiveViewer(socket, payload) {
     hostName: room.hostName,
     title: room.title,
     count: room.viewers.size,
+    chatMessages: liveChatHistory(room),
   });
 
   send(room.hostSocket, {
@@ -4657,6 +4679,64 @@ function handleLiveSignal(socket, payload) {
       signal,
     });
   }
+}
+
+function handleLiveChat(socket, payload) {
+  const roomCode = normalizeLiveRoomCode(socket.liveRoomCode || payload && payload.roomCode);
+  const liveId = String(socket.liveId || '');
+  const role = String(socket.liveRole || '');
+  if (!roomCode || !liveId || !role) {
+    sendError(socket, 'Join a live room before chatting.');
+    return;
+  }
+
+  const room = liveRooms.get(roomCode);
+  if (!room) {
+    sendError(socket, 'That live room is not on air.');
+    return;
+  }
+
+  let senderName = '';
+  if (role === 'host' && room.hostId === liveId) {
+    senderName = room.hostName;
+  } else if (role === 'viewer' && room.viewers.has(liveId)) {
+    senderName = room.viewers.get(liveId).name;
+  }
+
+  if (!senderName) {
+    sendError(socket, 'Join a live room before chatting.');
+    return;
+  }
+
+  const text = sanitizeLiveChatText(payload && payload.message);
+  if (!text) {
+    return;
+  }
+
+  const chatMessage = {
+    id: crypto.randomUUID(),
+    roomCode,
+    senderId: liveId,
+    senderName,
+    senderRole: role,
+    message: text,
+    createdAt: new Date().toISOString(),
+  };
+
+  if (!Array.isArray(room.chatMessages)) {
+    room.chatMessages = [];
+  }
+  room.chatMessages.push(chatMessage);
+  if (room.chatMessages.length > MAX_LIVE_CHAT_MESSAGES) {
+    room.chatMessages.splice(0, room.chatMessages.length - MAX_LIVE_CHAT_MESSAGES);
+  }
+
+  sendLiveRoomMembers(room, {
+    type: 'live-chat',
+    action: 'live-chat',
+    roomCode,
+    message: chatMessage,
+  });
 }
 
 function handleLiveLeave(socket) {
@@ -5247,6 +5327,9 @@ wss.on('connection', (socket) => {
         break;
       case 'live-signal':
         handleLiveSignal(socket, payload);
+        break;
+      case 'live-chat':
+        handleLiveChat(socket, payload);
         break;
       case 'live-leave':
         handleLiveLeave(socket);

@@ -24,6 +24,7 @@ const state = {
   pendingHostCandidates: new Map(),
   pendingViewerCandidates: [],
   viewers: [],
+  chatMessages: [],
   mediaMuted: false,
   cameraOff: false,
   stoppingTracks: false,
@@ -44,6 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
   hydrateRoomFromQuery();
   setMode(els.joinRoomCode.value ? 'viewer' : 'host');
   refreshStage();
+  renderChat();
   loadLiveRooms();
   startLiveRoomPolling();
   logEvent('Ready.');
@@ -91,6 +93,10 @@ function bindElements() {
     'leaveButton',
     'viewerRoomCode',
     'hostLine',
+    'chatRoomLabel',
+    'chatList',
+    'chatInput',
+    'sendChatButton',
     'signalLog',
     'clearLogButton',
   ].forEach((id) => {
@@ -114,6 +120,16 @@ function bindEvents() {
   els.stopLiveButton.addEventListener('click', stopLive);
   els.joinButton.addEventListener('click', joinStream);
   els.leaveButton.addEventListener('click', leaveStream);
+  els.sendChatButton.addEventListener('click', sendChatMessage);
+  els.chatInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendChatMessage();
+    }
+  });
+  document.querySelectorAll('.emoji-button').forEach((button) => {
+    button.addEventListener('click', () => insertChatEmoji(button.dataset.emoji || button.textContent || ''));
+  });
   els.refreshLiveRoomsButton.addEventListener('click', () => loadLiveRooms({ announce: true }));
   els.liveRoomsList.addEventListener('click', (event) => {
     const button = event.target.closest('[data-room-code]');
@@ -282,6 +298,23 @@ function joinListedRoom(roomCode) {
   }
   els.joinRoomCode.value = nextRoomCode;
   joinStream();
+}
+
+function insertChatEmoji(emoji) {
+  if (!emoji || els.chatInput.disabled) {
+    return;
+  }
+  const input = els.chatInput;
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  const prefix = input.value.slice(0, start);
+  const suffix = input.value.slice(end);
+  const spacer = prefix && !/\s$/.test(prefix) ? ' ' : '';
+  const nextValue = `${prefix}${spacer}${emoji}${suffix}`.slice(0, Number(input.maxLength || 240));
+  input.value = nextValue;
+  const nextPosition = Math.min((prefix + spacer + emoji).length, input.value.length);
+  input.focus();
+  input.setSelectionRange(nextPosition, nextPosition);
 }
 
 async function startCamera() {
@@ -608,6 +641,25 @@ function joinStream() {
   refreshStage();
 }
 
+function sendChatMessage() {
+  const message = cleanText(els.chatInput.value, '', 240);
+  if (!message) {
+    return;
+  }
+  if (!state.roomCode) {
+    logEvent('Join or start a stream before chatting.');
+    return;
+  }
+
+  sendSignal({
+    action: 'live-chat',
+    roomCode: state.roomCode,
+    message,
+  });
+  els.chatInput.value = '';
+  els.chatInput.focus();
+}
+
 function handleSocketMessage(message) {
   const type = message.type || message.action;
   if (type === 'error') {
@@ -671,6 +723,11 @@ function handleSocketMessage(message) {
     return;
   }
 
+  if (type === 'live-chat') {
+    addChatMessage(message.message);
+    return;
+  }
+
   if (type === 'live-signal') {
     handlePeerSignal(message);
     return;
@@ -690,6 +747,7 @@ function handleLiveReady(message) {
   state.viewerId = message.viewerId || '';
   state.role = message.role || state.role;
   state.viewers = Array.isArray(message.viewers) ? message.viewers : [];
+  state.chatMessages = Array.isArray(message.chatMessages) ? message.chatMessages : [];
 
   const shareUrl = `${window.location.origin}${window.location.pathname}?room=${state.roomCode}`;
   els.shareLink.value = shareUrl;
@@ -711,6 +769,7 @@ function handleLiveReady(message) {
   }
 
   renderViewers();
+  renderChat();
   refreshStage();
   loadLiveRooms();
 }
@@ -953,11 +1012,14 @@ function leaveStream(sendLeave = true) {
   state.viewerId = '';
   state.hostId = '';
   state.viewers = [];
+  state.chatMessages = [];
   els.joinButton.disabled = false;
   els.leaveButton.disabled = true;
   els.viewerRoomCode.textContent = '------';
   els.hostLine.textContent = 'No host connected.';
+  els.chatInput.value = '';
   els.remoteVideo.srcObject = null;
+  renderChat();
   refreshStage();
   loadLiveRooms();
 }
@@ -968,6 +1030,7 @@ function resetLiveState() {
   state.hostId = '';
   state.viewerId = '';
   state.viewers = [];
+  state.chatMessages = [];
   state.mediaMuted = false;
   state.cameraOff = false;
   state.socketReconnectAttempts = 0;
@@ -982,9 +1045,11 @@ function resetLiveState() {
   els.cameraButton.textContent = 'Camera + Mic';
   els.screenButton.textContent = 'Desktop + Mic';
   els.screenOnlyButton.textContent = 'Desktop Only';
+  els.chatInput.value = '';
   els.stopPreviewButton.disabled = !state.localStream;
   updateMediaButtons();
   renderViewers();
+  renderChat();
   refreshStage();
 }
 
@@ -1055,6 +1120,70 @@ function renderViewers() {
   });
 }
 
+function addChatMessage(message) {
+  if (!message || !message.id) {
+    return;
+  }
+  const exists = state.chatMessages.some((item) => item.id === message.id);
+  if (!exists) {
+    state.chatMessages.push(message);
+    state.chatMessages = state.chatMessages.slice(-80);
+  }
+  renderChat();
+}
+
+function renderChat() {
+  els.chatList.innerHTML = '';
+
+  if (!state.chatMessages.length) {
+    const item = document.createElement('li');
+    item.className = 'chat-empty';
+    item.textContent = state.roomCode ? 'No chat messages yet.' : 'Join or start a stream to chat.';
+    els.chatList.appendChild(item);
+    updateChatControls();
+    return;
+  }
+
+  state.chatMessages.forEach((message) => {
+    const item = document.createElement('li');
+    const meta = document.createElement('div');
+    meta.className = 'chat-meta';
+    const name = document.createElement('span');
+    name.className = 'chat-name';
+    name.textContent = message.senderName || 'Viewer';
+    const role = document.createElement('span');
+    role.className = 'chat-role';
+    role.textContent = message.senderRole === 'host' ? 'Host' : formatChatTime(message.createdAt);
+    meta.append(name, role);
+
+    const body = document.createElement('div');
+    body.className = 'chat-message';
+    body.textContent = message.message || '';
+    item.append(meta, body);
+    els.chatList.appendChild(item);
+  });
+  els.chatList.scrollTop = els.chatList.scrollHeight;
+  updateChatControls();
+}
+
+function updateChatControls() {
+  const canChat = Boolean(state.roomCode && (state.role === 'host' || state.role === 'viewer'));
+  els.chatInput.disabled = !canChat;
+  els.sendChatButton.disabled = !canChat;
+  els.chatRoomLabel.textContent = canChat ? state.roomCode : 'Offline';
+  document.querySelectorAll('.emoji-button').forEach((button) => {
+    button.disabled = !canChat;
+  });
+}
+
+function formatChatTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'Now';
+  }
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 function refreshStage() {
   const isHost = state.mode === 'host';
   const hasRemote = Boolean(els.remoteVideo.srcObject);
@@ -1085,6 +1214,7 @@ function refreshStage() {
   els.remoteVideo.classList.toggle('is-visible', !isHost && hasRemote);
   els.videoEmpty.classList.toggle('is-visible', (isHost && !hasLocal) || (!isHost && !hasRemote));
   els.emptyHint.textContent = isHost ? 'Choose camera or desktop capture to preview.' : 'The stream will appear here.';
+  updateChatControls();
 }
 
 function setConnection(text, tone) {

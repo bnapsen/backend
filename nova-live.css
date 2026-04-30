@@ -137,6 +137,7 @@ button:disabled {
 .live-directory-card,
 .room-card,
 .viewer-list-card,
+.chat-card,
 .signal-card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -489,6 +490,7 @@ button:disabled {
 
 .room-card,
 .viewer-list-card,
+.chat-card,
 .signal-card {
   margin-top: 14px;
   padding: 14px;
@@ -532,6 +534,7 @@ button:disabled {
 }
 
 .viewer-list,
+.chat-list,
 .signal-log {
   margin: 12px 0 0;
   padding: 0;
@@ -553,6 +556,77 @@ button:disabled {
 .viewer-list strong,
 .signal-log strong {
   color: var(--text);
+}
+
+.chat-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.chat-list li {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.chat-empty {
+  color: var(--muted);
+}
+
+.chat-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.chat-name {
+  color: var(--green);
+  font-weight: 800;
+}
+
+.chat-role {
+  color: var(--amber);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.chat-message {
+  overflow-wrap: anywhere;
+}
+
+.emoji-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.emoji-button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 1.15rem;
+}
+
+.chat-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chat-input {
+  margin-bottom: 0;
 }
 
 .signal-log {
@@ -613,7 +687,9 @@ button:disabled {
 
   .stream-strip,
   .button-grid,
-  .source-grid {
+  .source-grid,
+  .emoji-row,
+  .chat-compose {
     grid-template-columns: 1fr;
   }
 

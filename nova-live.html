@@ -19,7 +19,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="nova-live.css?v=20260429d">
+    <link rel="stylesheet" href="nova-live.css?v=20260429e">
 </head>
 <body>
     <div class="live-shell">
@@ -157,6 +157,28 @@
                     </div>
                 </section>
 
+                <section class="chat-card" aria-label="Live chat">
+                    <div class="panel-heading-row">
+                        <h2>Live Chat</h2>
+                        <span id="chatRoomLabel">Offline</span>
+                    </div>
+                    <ol class="chat-list" id="chatList">
+                        <li class="chat-empty">Join or start a stream to chat.</li>
+                    </ol>
+                    <div class="emoji-row" aria-label="Emoji shortcuts">
+                        <button class="emoji-button" type="button" data-emoji="&#128075;" aria-label="Wave">&#128075;</button>
+                        <button class="emoji-button" type="button" data-emoji="&#128293;" aria-label="Fire">&#128293;</button>
+                        <button class="emoji-button" type="button" data-emoji="&#128514;" aria-label="Laugh">&#128514;</button>
+                        <button class="emoji-button" type="button" data-emoji="&#128079;" aria-label="Clap">&#128079;</button>
+                        <button class="emoji-button" type="button" data-emoji="&#10084;&#65039;" aria-label="Heart">&#10084;&#65039;</button>
+                        <button class="emoji-button" type="button" data-emoji="&#11088;" aria-label="Star">&#11088;</button>
+                    </div>
+                    <div class="chat-compose">
+                        <input id="chatInput" class="text-field chat-input" maxlength="240" placeholder="Say something live..." disabled>
+                        <button class="action-button primary" type="button" id="sendChatButton" disabled>Send</button>
+                    </div>
+                </section>
+
                 <section class="signal-card" aria-label="Connection log">
                     <div class="panel-heading-row">
                         <h2>Signal Log</h2>
@@ -168,6 +190,6 @@
         </main>
     </div>
 
-    <script src="nova-live.js?v=20260429d" defer></script>
+    <script src="nova-live.js?v=20260429e" defer></script>
 </body>
 </html>
