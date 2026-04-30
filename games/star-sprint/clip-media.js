@@ -21,6 +21,9 @@ const { Storage } = require('@google-cloud/storage');
 
 const execFile = promisify(childProcess.execFile);
 const pipeline = promisify(stream.pipeline);
+const CLIP_MAX_DURATION_SECONDS = 10 * 60;
+const CLIP_MAX_DURATION_GRACE_SECONDS = 0.4;
+const CLIP_MAX_DURATION_LABEL = '10 minutes';
 
 const VIDEO_EXTENSION_TO_MIME = new Map([
   ['.mp4', 'video/mp4'],
@@ -259,7 +262,7 @@ function createClipMediaManager({ dataDir }) {
       '-b:a', '128k',
       '-ac', '2',
       '-ar', '48000',
-        '-t', '60',
+      '-t', String(CLIP_MAX_DURATION_SECONDS),
       outputPath,
     ]);
   }
@@ -355,8 +358,8 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     let measured = null;
     try {
       measured = await probeVideoFile(tempInputPath);
-      if (measured.durationSeconds > 60.4) {
-        throw new Error('Videos must be 60 seconds or shorter.');
+      if (measured.durationSeconds > CLIP_MAX_DURATION_SECONDS + CLIP_MAX_DURATION_GRACE_SECONDS) {
+        throw new Error(`Videos must be ${CLIP_MAX_DURATION_LABEL} or shorter.`);
       }
 
       await transcodeVideoToMp4(tempInputPath, tempVideoOutputPath);
@@ -632,6 +635,8 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
 }
 
 module.exports = {
+  CLIP_MAX_DURATION_SECONDS,
+  CLIP_MAX_DURATION_LABEL,
   createClipMediaManager,
   sanitizeClipFileName,
   inferClipTitle,

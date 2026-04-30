@@ -27,6 +27,8 @@ const {
 } = require('./song-media.js');
 const { createClipsStore } = require('./clips-store.js');
 const {
+  CLIP_MAX_DURATION_SECONDS,
+  CLIP_MAX_DURATION_LABEL,
   createClipMediaManager,
   sanitizeClipFileName,
   inferClipTitle,
@@ -84,7 +86,8 @@ const MAX_SONG_UPLOAD_BYTES = 24 * 1024 * 1024;
 const MAX_CLIPS = 0;
 const MAX_VISIBLE_CLIPS = 60;
 const MAX_CLIP_UPLOAD_BYTES = 30 * 1024 * 1024;
-const MAX_DIRECT_CLIP_UPLOAD_BYTES = 200 * 1024 * 1024;
+const MAX_DIRECT_CLIP_UPLOAD_BYTES = 300 * 1024 * 1024;
+const MAX_DIRECT_CLIP_UPLOAD_MB = Math.round(MAX_DIRECT_CLIP_UPLOAD_BYTES / (1024 * 1024));
 const CLIP_DIRECT_UPLOAD_TTL_MS = 2 * 60 * 60 * 1000;
 const GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES = 5 * 1024 * 1024 * 1024;
 const CLIP_ADMIN_TOKEN = String(process.env.CLIP_ADMIN_TOKEN || '').trim();
@@ -1720,7 +1723,7 @@ async function handleClipUploadSessionRequest(req, res) {
   if (sizeBytes > MAX_DIRECT_CLIP_UPLOAD_BYTES) {
     sendJsonResponse(req, res, 413, {
       ok: false,
-      error: 'Videos must be 200 MB or smaller.',
+      error: `Videos must be ${MAX_DIRECT_CLIP_UPLOAD_MB} MB or smaller.`,
     });
     return;
   }
@@ -1753,7 +1756,8 @@ async function handleClipUploadSessionRequest(req, res) {
       rawUploadKey,
       uploadToken: createClipUploadToken(uploadTokenPayload),
       uploadLimitBytes: MAX_DIRECT_CLIP_UPLOAD_BYTES,
-      maxDurationSeconds: 60,
+      maxDurationSeconds: CLIP_MAX_DURATION_SECONDS,
+      maxDurationLabel: CLIP_MAX_DURATION_LABEL,
     });
   } catch (error) {
     console.error('Failed to create direct clip upload session:', error.message);
@@ -1809,7 +1813,7 @@ async function handleClipUploadFinalizeRequest(req, res) {
   try {
     const uploadedAsset = await clipMediaManager.inspectRawUpload(rawUploadKey);
     if (!uploadedAsset.sizeBytes || uploadedAsset.sizeBytes > MAX_DIRECT_CLIP_UPLOAD_BYTES) {
-      throw new Error('Videos must be 200 MB or smaller.');
+      throw new Error(`Videos must be ${MAX_DIRECT_CLIP_UPLOAD_MB} MB or smaller.`);
     }
 
     const processedClip = await clipMediaManager.processRawUpload(rawUploadKey, uploadPayload.originalFileName);
@@ -1851,7 +1855,7 @@ async function handleClipUploadFinalizeRequest(req, res) {
     });
   } catch (error) {
     console.error('Failed to finalize direct clip upload:', error.message);
-    const statusCode = /60 seconds|200 MB|supported video file|could not be measured|readable video stream/i.test(String(error.message || ''))
+    const statusCode = /seconds|minutes|200 MB|300 MB|supported video file|could not be measured|readable video stream/i.test(String(error.message || ''))
       ? 400
       : 500;
     sendJsonResponse(req, res, statusCode, {
@@ -1972,6 +1976,8 @@ async function handleClipStorageStatsRequest(req, res) {
         storedClipCap: MAX_CLIPS > 0 ? MAX_CLIPS : null,
         visibleFeedCap: MAX_VISIBLE_CLIPS > 0 ? MAX_VISIBLE_CLIPS : null,
         uploadLimitBytes: MAX_DIRECT_CLIP_UPLOAD_BYTES,
+        maxDurationSeconds: CLIP_MAX_DURATION_SECONDS,
+        maxDurationLabel: CLIP_MAX_DURATION_LABEL,
         freeTierStorageBytes: GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES,
       },
     });

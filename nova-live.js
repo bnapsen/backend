@@ -5,9 +5,11 @@ const BACKEND_HTTP_URL = 'https://nova-arcade-backend-1000121513328.us-central1.
 const SIGNAL_RECONNECT_BASE_MS = 1000;
 const SIGNAL_RECONNECT_MAX_MS = 10000;
 const CLIP_OWNERSHIP_STORAGE_KEY = 'nova-clips:owned-uploads';
-const MAX_REPLAY_RECORDING_MS = 60 * 1000;
-const MAX_REPLAY_UPLOAD_BYTES = 200 * 1024 * 1024;
+const MAX_REPLAY_RECORDING_MS = 10 * 60 * 1000;
+const MAX_REPLAY_UPLOAD_BYTES = 300 * 1024 * 1024;
 const LEGACY_REPLAY_UPLOAD_MAX_BYTES = 30 * 1024 * 1024;
+const REPLAY_VIDEO_BITS_PER_SECOND = 1800000;
+const REPLAY_AUDIO_BITS_PER_SECOND = 128000;
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -1060,6 +1062,12 @@ function startReplayRecording() {
   resetReplayRecording({ keepStatus: true });
   const mimeType = preferredRecordingMimeType();
   const options = mimeType ? { mimeType } : {};
+  if (state.localStream.getVideoTracks().length) {
+    options.videoBitsPerSecond = REPLAY_VIDEO_BITS_PER_SECOND;
+  }
+  if (state.localStream.getAudioTracks().length) {
+    options.audioBitsPerSecond = REPLAY_AUDIO_BITS_PER_SECOND;
+  }
   let recorder;
   try {
     recorder = new MediaRecorder(state.localStream, options);
@@ -1102,7 +1110,7 @@ function startReplayRecording() {
   state.recording.timer = window.setInterval(() => {
     updateRecordingTimer();
     if (Date.now() - state.recording.startedAt >= MAX_REPLAY_RECORDING_MS) {
-      stopReplayRecording('Recording reached the 60-second clip limit.');
+      stopReplayRecording('Recording reached the 10-minute replay limit.');
     }
   }, 250);
   updateRecordingControls();
@@ -1148,7 +1156,7 @@ function finishReplayRecording() {
   if (blob.size > MAX_REPLAY_UPLOAD_BYTES) {
     state.recording.blob = null;
     state.recording.finalizing = false;
-    setRecordingStatus('Replay is larger than the 200 MB upload limit.', 'error');
+    setRecordingStatus('Replay is larger than the 300 MB upload limit.', 'error');
     updateRecordingControls();
     return;
   }
@@ -1188,8 +1196,8 @@ function resetReplayRecording(options = {}) {
   els.recordingPostLink.href = 'nova-clips.html';
   if (!options.keepStatus) {
     setRecordingStatus(state.localStream
-      ? 'Ready to record a 60-second replay clip.'
-      : 'Choose a stream source to record a replay clip.');
+      ? 'Ready to record a 10-minute replay.'
+      : 'Choose a stream source to record up to 10 minutes.');
   }
   updateRecordingTimer();
   updateRecordingControls();
@@ -1242,8 +1250,8 @@ function updateRecordingControls() {
       setRecordingStatus('This browser does not support live replay recording.', 'error');
     } else {
       setRecordingStatus(hasSource
-        ? 'Ready to record a 60-second replay clip.'
-        : 'Choose a stream source to record a replay clip.');
+        ? 'Ready to record a 10-minute replay.'
+        : 'Choose a stream source to record up to 10 minutes.');
     }
   }
 }

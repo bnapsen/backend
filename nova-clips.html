@@ -25,7 +25,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="nova-clips.css?v=20260417a">
+    <link rel="stylesheet" href="nova-clips.css?v=20260430a">
 </head>
 <body class="clips-body">
     <div class="clips-shell">
@@ -36,13 +36,13 @@
                 <p class="eyebrow">Short video app</p>
                 <h1>Nova Clips</h1>
                 <p class="clips-lede">
-                    Upload up to 60 seconds, keep it live on the site, and scroll the community feed.
+                    Upload up to 10 minutes, keep it live on the site, and scroll the community feed.
                 </p>
 
                 <div class="clips-highlights" aria-label="Nova Clips highlights">
                     <article class="clips-stat">
-                        <strong>60 sec</strong>
-                        <span>hard clip duration cap</span>
+                        <strong>10 min</strong>
+                        <span>replay duration cap</span>
                     </article>
                     <article class="clips-stat">
                         <strong>Persistent</strong>
@@ -71,7 +71,7 @@
 
                     <div id="clip-drop-zone" class="clip-drop-zone" tabindex="0" role="button" aria-describedby="clip-drop-help clip-upload-status">
                         <p class="clip-drop-kicker">Drop a clip here</p>
-                        <h3>Choose a 60-second video</h3>
+                        <h3>Choose a video up to 10 minutes</h3>
                         <p id="clip-drop-help">Tap or click here, or drag a file in. MP4, WEBM, MOV, M4V, and 3GP supported.</p>
                         <button id="clip-pick-button" class="btn btn-primary clip-pick-button" type="button">Choose Video</button>
                     </div>
@@ -105,9 +105,9 @@
                     </div>
 
                     <div class="clips-upload-note">
-                        The backend enforces a 60-second limit and generates a poster image for the feed.
+                        The backend enforces a 10-minute limit and generates a poster image for the feed.
                         If your device cannot preview a clip locally, you can still upload it and let the server validate and convert it.
-                        One-minute clips can now upload directly to cloud storage, and the current raw upload ceiling is 200 MB before processing.
+                        Longer clips can upload directly to cloud storage, and the current raw upload ceiling is 300 MB before processing.
                     </div>
                     <p id="clip-upload-status" class="form-status" aria-live="polite"></p>
                     <button id="clip-submit-button" class="btn btn-primary clip-submit-button" type="button">Upload Clip</button>
@@ -187,6 +187,6 @@
         </main>
     </div>
 
-    <script src="nova-clips.js?v=20260417a" defer></script>
+    <script src="nova-clips.js?v=20260430a" defer></script>
 </body>
 </html>
