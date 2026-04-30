@@ -70,6 +70,76 @@ function inferClipTitle(fileName) {
     .slice(0, 80) || 'Untitled Clip';
 }
 
+function positiveNumber(raw) {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function parseFraction(raw) {
+  const value = String(raw || '').trim();
+  if (!value) {
+    return 0;
+  }
+  const [numerator, denominator] = value.split('/').map((part) => Number(part));
+  if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator > 0) {
+    return numerator / denominator;
+  }
+  return positiveNumber(value);
+}
+
+function parseDurationText(raw) {
+  const value = String(raw || '').trim();
+  const numeric = positiveNumber(value);
+  if (numeric) {
+    return numeric;
+  }
+
+  const match = value.match(/^(\d+):([0-5]?\d):([0-5]?\d(?:\.\d+)?)$/);
+  if (!match) {
+    return 0;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3]);
+  if (![hours, minutes, seconds].every(Number.isFinite)) {
+    return 0;
+  }
+
+  return (hours * 3600) + (minutes * 60) + seconds;
+}
+
+function durationFromProbeData(parsed, videoStream) {
+  const streamTags = videoStream && typeof videoStream.tags === 'object' ? videoStream.tags : {};
+  const formatTags = parsed && parsed.format && typeof parsed.format.tags === 'object' ? parsed.format.tags : {};
+  const directCandidates = [
+    videoStream && videoStream.duration,
+    parsed && parsed.format && parsed.format.duration,
+    streamTags.DURATION,
+    streamTags.duration,
+    formatTags.DURATION,
+    formatTags.duration,
+  ];
+
+  for (const candidate of directCandidates) {
+    const duration = parseDurationText(candidate);
+    if (duration) {
+      return duration;
+    }
+  }
+
+  const timeBaseDuration = positiveNumber(videoStream && videoStream.duration_ts)
+    * parseFraction(videoStream && videoStream.time_base);
+  if (timeBaseDuration) {
+    return timeBaseDuration;
+  }
+
+  const frameRate = parseFraction(videoStream && videoStream.avg_frame_rate);
+  const frameCount = positiveNumber(videoStream && videoStream.nb_frames)
+    || positiveNumber(videoStream && videoStream.nb_read_frames);
+  return frameRate && frameCount ? frameCount / frameRate : 0;
+}
+
 function normalizeClipUploadType(fileName, mimeType) {
   const normalizedMimeType = String(mimeType || '').toLowerCase();
   const extension = path.extname(String(fileName || '')).toLowerCase();
@@ -227,7 +297,7 @@ function createClipMediaManager({ dataDir }) {
     }
   }
 
-  async function probeVideoFile(filePath) {
+  async function probeVideoFile(filePath, options = {}) {
     const { stdout } = await runMediaTool(ffprobePath, [
       '-v', 'error',
       '-print_format', 'json',
@@ -245,13 +315,14 @@ function createClipMediaManager({ dataDir }) {
       throw new Error('That upload does not contain a readable video stream.');
     }
 
-    const durationSeconds = Number(videoStream.duration || (parsed.format && parsed.format.duration) || 0);
-    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    const durationSeconds = durationFromProbeData(parsed, videoStream);
+    if (!durationSeconds && !options.allowMissingDuration) {
       throw new Error('That video could not be measured.');
     }
 
     return {
       durationSeconds,
+      durationMeasured: durationSeconds > 0,
       width: Number(videoStream.width || 0),
       height: Number(videoStream.height || 0),
     };
@@ -260,6 +331,7 @@ function createClipMediaManager({ dataDir }) {
   async function transcodeVideoToMp4(inputPath, outputPath) {
     await runMediaTool(ffmpegPath, [
       '-y',
+      '-fflags', '+genpts',
       '-i', inputPath,
       '-vf', 'scale=720:1280:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=30',
       '-c:v', 'libx264',
@@ -366,8 +438,11 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
 
     let measured = null;
     try {
-      measured = await probeVideoFile(tempInputPath);
-      if (measured.durationSeconds > CLIP_MAX_DURATION_SECONDS + CLIP_MAX_DURATION_GRACE_SECONDS) {
+      measured = await probeVideoFile(tempInputPath, { allowMissingDuration: true });
+      if (
+        measured.durationMeasured &&
+        measured.durationSeconds > CLIP_MAX_DURATION_SECONDS + CLIP_MAX_DURATION_GRACE_SECONDS
+      ) {
         throw new Error(`Videos must be ${CLIP_MAX_DURATION_LABEL} or shorter.`);
       }
 

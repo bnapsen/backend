@@ -1856,6 +1856,7 @@ async function handleClipUploadFinalizeRequest(req, res) {
     });
   } catch (error) {
     console.error('Failed to finalize direct clip upload:', error.message);
+    await clipMediaManager.deleteRawUpload(rawUploadKey).catch(() => {});
     const statusCode = /seconds|minutes|200 MB|300 MB|supported video file|could not be measured|readable video stream/i.test(String(error.message || ''))
       ? 400
       : 500;
