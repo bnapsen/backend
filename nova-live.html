@@ -19,7 +19,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="nova-live.css?v=20260430a">
+    <link rel="stylesheet" href="nova-live.css?v=20260430b">
 </head>
 <body>
     <div class="live-shell">
@@ -58,6 +58,16 @@
                         <span id="emptyHint">Start camera preview or join a room.</span>
                     </div>
                     <div class="on-air-badge" id="onAirBadge">Standby</div>
+                </div>
+
+                <div class="co-stream-panel" id="coStreamPanel" aria-label="Co-stream guests">
+                    <div class="panel-heading-row">
+                        <h2>Co-stream</h2>
+                        <span id="coStreamCount">0 guests</span>
+                    </div>
+                    <div class="co-stream-grid" id="coStreamGrid">
+                        <article class="co-stream-empty">Guests who share back will appear here.</article>
+                    </div>
                 </div>
 
                 <div class="stream-strip" aria-label="Stream details">
@@ -155,6 +165,7 @@
                         <div class="button-grid compact">
                             <button class="action-button primary" type="button" id="postRecordingButton" disabled>Post Replay</button>
                             <a class="action-link recording-link hidden" id="recordingPostLink" href="nova-clips.html">Open Clips</a>
+                            <button class="action-button danger hidden" type="button" id="deleteRecordingButton" disabled>Delete Replay</button>
                         </div>
                     </div>
                 </section>
@@ -175,6 +186,20 @@
                         <span class="field-label">Active room</span>
                         <div class="room-code" id="viewerRoomCode">------</div>
                         <p class="host-line" id="hostLine">No host connected.</p>
+                    </div>
+
+                    <div class="viewer-share-card">
+                        <div class="panel-heading-row">
+                            <h2>Co-stream Back</h2>
+                            <span id="viewerShareStatus">Offline</span>
+                        </div>
+                        <p class="viewer-share-note">Share camera or desktop back to the host for a two-way working session.</p>
+                        <video id="viewerPreviewVideo" class="viewer-preview-video" autoplay playsinline muted></video>
+                        <div class="button-grid compact">
+                            <button class="action-button primary" type="button" id="viewerCameraButton" disabled>Share Camera</button>
+                            <button class="action-button primary" type="button" id="viewerScreenButton" disabled>Share Desktop</button>
+                            <button class="action-button danger" type="button" id="viewerStopShareButton" disabled>Stop Share</button>
+                        </div>
                     </div>
                 </section>
 
@@ -211,6 +236,6 @@
         </main>
     </div>
 
-    <script src="nova-live.js?v=20260430a" defer></script>
+    <script src="nova-live.js?v=20260430b" defer></script>
 </body>
 </html>

@@ -27,6 +27,8 @@ const state = {
   viewerId: '',
   peers: new Map(),
   viewerPeer: null,
+  coStreams: new Map(),
+  coStreamNames: new Map(),
   pendingHostCandidates: new Map(),
   pendingViewerCandidates: [],
   viewers: [],
@@ -53,6 +55,9 @@ const state = {
     uploadInFlight: false,
     posted: false,
     finalizing: false,
+    deleteInFlight: false,
+    postedClipId: '',
+    postedDeleteToken: '',
   },
 };
 
@@ -78,6 +83,9 @@ function bindElements() {
     'stageTitle',
     'localVideo',
     'remoteVideo',
+    'coStreamPanel',
+    'coStreamCount',
+    'coStreamGrid',
     'videoEmpty',
     'emptyHint',
     'onAirBadge',
@@ -115,12 +123,18 @@ function bindElements() {
     'recordingCaption',
     'postRecordingButton',
     'recordingPostLink',
+    'deleteRecordingButton',
     'viewerName',
     'joinRoomCode',
     'joinButton',
     'leaveButton',
     'viewerRoomCode',
     'hostLine',
+    'viewerShareStatus',
+    'viewerPreviewVideo',
+    'viewerCameraButton',
+    'viewerScreenButton',
+    'viewerStopShareButton',
     'chatRoomLabel',
     'chatList',
     'chatInput',
@@ -149,8 +163,12 @@ function bindEvents() {
   els.startRecordingButton.addEventListener('click', startReplayRecording);
   els.stopRecordingButton.addEventListener('click', () => stopReplayRecording('Recording stopped. Preparing replay clip...'));
   els.postRecordingButton.addEventListener('click', postReplayRecording);
+  els.deleteRecordingButton.addEventListener('click', deletePostedReplay);
   els.joinButton.addEventListener('click', joinStream);
   els.leaveButton.addEventListener('click', leaveStream);
+  els.viewerCameraButton.addEventListener('click', startViewerCameraShare);
+  els.viewerScreenButton.addEventListener('click', startViewerScreenShare);
+  els.viewerStopShareButton.addEventListener('click', stopCoStream);
   els.sendChatButton.addEventListener('click', sendChatMessage);
   els.chatInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -206,6 +224,10 @@ function clipsEndpoint() {
   return `${apiBaseUrl()}/api/clips`;
 }
 
+function clipDeleteEndpoint() {
+  return `${apiBaseUrl()}/api/clips/delete`;
+}
+
 function clipUploadSessionEndpoint() {
   return `${apiBaseUrl()}/api/clips/upload-session`;
 }
@@ -224,6 +246,7 @@ function setMode(mode) {
   els.hostPanel.classList.toggle('is-active', state.mode === 'host');
   els.viewerPanel.classList.toggle('is-active', state.mode === 'viewer');
   refreshStage();
+  renderCoStreams();
   renderLiveRooms();
 }
 
@@ -442,6 +465,91 @@ async function startScreenShare(options = {}) {
   });
 }
 
+async function startViewerCameraShare() {
+  if (!canViewerCoStream()) {
+    logEvent('Join a live room before sharing back.');
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setViewerShareStatus('Camera unavailable', 'error');
+    logEvent('This browser does not expose camera capture.');
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30, max: 60 },
+      },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    await setLocalStream(stream, {
+      sourceType: 'viewer-camera',
+      sourceLabel: 'Camera co-stream',
+      readyText: 'Camera Sharing',
+      logText: 'Camera co-stream started.',
+    });
+  } catch (error) {
+    setViewerShareStatus('Camera blocked', 'error');
+    logEvent(`Camera co-stream failed: ${error.message || 'permission denied'}.`);
+  }
+}
+
+async function startViewerScreenShare() {
+  if (!canViewerCoStream()) {
+    logEvent('Join a live room before sharing back.');
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    setViewerShareStatus('Desktop unavailable', 'error');
+    logEvent('This browser does not expose desktop capture.');
+    return;
+  }
+
+  try {
+    const displayStream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30, max: 60 },
+      },
+      audio: true,
+    });
+    const tracks = [...displayStream.getVideoTracks(), ...displayStream.getAudioTracks()];
+    if (navigator.mediaDevices.getUserMedia) {
+      try {
+        const micStream = await navigator.mediaDevices.getUserMedia({
+          video: false,
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        tracks.push(...micStream.getAudioTracks());
+      } catch (error) {
+        logEvent('Mic was not added to the co-stream desktop share.');
+      }
+    }
+    const stream = new MediaStream(tracks);
+    await setLocalStream(stream, {
+      sourceType: 'viewer-screen',
+      sourceLabel: 'Desktop co-stream',
+      readyText: 'Desktop Sharing',
+      logText: 'Desktop co-stream started.',
+    });
+  } catch (error) {
+    setViewerShareStatus('Desktop blocked', 'error');
+    logEvent(`Desktop co-stream failed: ${error.message || 'permission denied'}.`);
+  }
+}
+
 async function setLocalStream(stream, options = {}) {
   if (isReplayRecording()) {
     stopReplayRecording('Recording stopped before the source changed.');
@@ -455,12 +563,20 @@ async function setLocalStream(stream, options = {}) {
   state.cameraOff = false;
 
   els.localVideo.srcObject = state.localStream;
+  if (els.viewerPreviewVideo) {
+    els.viewerPreviewVideo.srcObject = state.role === 'viewer' ? state.localStream : null;
+  }
   els.localVideo.classList.toggle('is-screen', state.sourceType.startsWith('screen'));
+  els.viewerPreviewVideo.classList.toggle('is-visible', state.role === 'viewer');
+  els.viewerPreviewVideo.classList.toggle('is-screen', state.sourceType.includes('screen'));
   updateCaptureButtons(options.readyText || 'Source Ready');
   attachLocalTrackHandlers(stream);
 
   if (state.roomCode && state.role === 'host' && state.peers.size) {
     await replaceTracksForLivePeers(stream);
+  }
+  if (state.roomCode && state.role === 'viewer') {
+    await shareViewerStreamWithHost(stream);
   }
   if (previousStream && previousStream !== stream) {
     stopStreamTracks(previousStream);
@@ -499,6 +615,10 @@ function attachLocalTrackHandlers(stream) {
         return;
       }
       logEvent(state.sourceType.startsWith('screen') ? 'Desktop sharing ended.' : 'Video source ended.');
+      if (state.role === 'viewer' && state.roomCode) {
+        stopCoStream();
+        return;
+      }
       if (state.role === 'host' && state.roomCode) {
         stopLive();
       } else {
@@ -536,6 +656,82 @@ async function replaceTracksForLivePeers(stream) {
       logEvent(`Source switch failed for a viewer: ${error.message || 'unknown error'}.`);
     }
   }));
+}
+
+async function addOrReplaceLocalTracks(peer, stream) {
+  if (!peer || !stream) {
+    return;
+  }
+
+  const tracks = stream.getTracks();
+  const usedTrackIds = new Set();
+  const senders = peer.getSenders().filter((sender) => sender.track);
+  for (const sender of senders) {
+    const replacement = tracks.find((track) => track.kind === sender.track.kind && !usedTrackIds.has(track.id));
+    if (replacement) {
+      await sender.replaceTrack(replacement);
+      usedTrackIds.add(replacement.id);
+    } else {
+      peer.removeTrack(sender);
+    }
+  }
+  tracks
+    .filter((track) => !usedTrackIds.has(track.id))
+    .forEach((track) => peer.addTrack(track, stream));
+}
+
+async function shareViewerStreamWithHost(stream) {
+  if (!canViewerCoStream() || !stream) {
+    return;
+  }
+  const peer = state.viewerPeer || createViewerPeer();
+  try {
+    await addOrReplaceLocalTracks(peer, stream);
+  } catch (error) {
+    setViewerShareStatus('Share failed', 'error');
+    logEvent(`Co-stream tracks failed: ${error.message || 'unknown error'}.`);
+    return;
+  }
+  setViewerShareStatus('Sharing');
+  sendSignal({
+    action: 'live-signal',
+    roomCode: state.roomCode,
+    targetId: state.hostId,
+    signal: { coStream: true },
+  });
+
+  if (!peer.remoteDescription || peer.signalingState !== 'stable') {
+    setSignal('Co-stream ready');
+    updateViewerShareControls();
+    return;
+  }
+
+  await renegotiateViewerPeer('Co-stream offer sent');
+}
+
+async function renegotiateViewerPeer(successText = 'Offer sent') {
+  const peer = state.viewerPeer;
+  if (!peer || !state.roomCode || !state.hostId || !peer.remoteDescription) {
+    return;
+  }
+  if (peer.signalingState !== 'stable') {
+    logEvent('Co-stream will renegotiate after the current signal settles.');
+    return;
+  }
+
+  try {
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    sendSignal({
+      action: 'live-signal',
+      roomCode: state.roomCode,
+      targetId: state.hostId,
+      signal: { description: peer.localDescription },
+    });
+    setSignal(successText);
+  } catch (error) {
+    logEvent(`Co-stream negotiation failed: ${error.message || 'unknown error'}.`);
+  }
 }
 
 function connectSocket() {
@@ -856,6 +1052,14 @@ function createPeerConnection(viewerId) {
   const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
   state.peers.set(viewerId, peer);
 
+  peer.addEventListener('track', (event) => {
+    const [stream] = event.streams;
+    if (stream) {
+      setCoStream(viewerId, stream);
+      setSignal('Co-stream live');
+    }
+  });
+
   peer.addEventListener('icecandidate', (event) => {
     if (!event.candidate) {
       return;
@@ -879,6 +1083,9 @@ function createViewerPeer() {
   closeViewerPeer();
   const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
   state.viewerPeer = peer;
+  if (state.localStream) {
+    addOrReplaceLocalTracks(peer, state.localStream);
+  }
 
   peer.addEventListener('track', (event) => {
     const [stream] = event.streams;
@@ -918,10 +1125,25 @@ async function handlePeerSignal(message) {
       return;
     }
     try {
+      if (signal.coStream === false) {
+        removeCoStream(message.fromId);
+      }
       if (signal.description) {
         await peer.setRemoteDescription(signal.description);
         await flushHostCandidateQueue(message.fromId, peer);
-        setSignal('Answer received');
+        if (signal.description.type === 'offer') {
+          const answer = await peer.createAnswer();
+          await peer.setLocalDescription(answer);
+          sendSignal({
+            action: 'live-signal',
+            roomCode: state.roomCode,
+            targetId: message.fromId,
+            signal: { description: peer.localDescription },
+          });
+          setSignal('Co-stream answer sent');
+        } else {
+          setSignal('Answer received');
+        }
       }
       if (signal.candidate) {
         await addOrQueueHostCandidate(message.fromId, peer, signal.candidate);
@@ -1191,9 +1413,12 @@ function resetReplayRecording(options = {}) {
   state.recording.durationMs = 0;
   state.recording.posted = false;
   state.recording.finalizing = false;
+  state.recording.postedClipId = '';
+  state.recording.postedDeleteToken = '';
   releaseRecordingPreview();
   els.recordingPostLink.classList.add('hidden');
   els.recordingPostLink.href = 'nova-clips.html';
+  els.deleteRecordingButton.classList.add('hidden');
   if (!options.keepStatus) {
     setRecordingStatus(state.localStream
       ? 'Ready to record a 10-minute replay.'
@@ -1240,10 +1465,14 @@ function updateRecordingControls() {
   const hasSource = Boolean(state.localStream);
   const recording = isReplayRecording();
   const supportsRecorder = Boolean(window.MediaRecorder);
-  const busy = recording || state.recording.finalizing || state.recording.uploadInFlight;
+  const busy = recording || state.recording.finalizing || state.recording.uploadInFlight || state.recording.deleteInFlight;
   els.startRecordingButton.disabled = !hasSource || busy || !supportsRecorder;
   els.stopRecordingButton.disabled = !recording;
   els.postRecordingButton.disabled = !state.recording.blob || busy;
+  els.deleteRecordingButton.disabled = !state.recording.postedClipId
+    || !state.recording.postedDeleteToken
+    || state.recording.deleteInFlight
+    || state.recording.uploadInFlight;
 
   if (!state.recording.blob && !state.recording.posted && !busy) {
     if (!supportsRecorder) {
@@ -1309,11 +1538,14 @@ async function postReplayRecording() {
 
     if (payload.clip && payload.deleteToken) {
       rememberOwnedUpload(payload.clip.id, payload.deleteToken);
+      state.recording.postedClipId = payload.clip.id;
+      state.recording.postedDeleteToken = payload.deleteToken;
     }
     els.recordingPostLink.href = payload.clip && payload.clip.id
       ? `nova-clips.html?clip=${encodeURIComponent(payload.clip.id)}`
       : 'nova-clips.html';
     els.recordingPostLink.classList.remove('hidden');
+    els.deleteRecordingButton.classList.toggle('hidden', !state.recording.postedClipId);
     state.recording.blob = null;
     state.recording.posted = true;
     setRecordingStatus(payload.clip && payload.clip.status === 'active'
@@ -1491,6 +1723,64 @@ function rememberOwnedUpload(clipId, deleteToken) {
   writeOwnedUploads(ownedUploads);
 }
 
+function forgetOwnedUpload(clipId) {
+  if (!clipId) {
+    return;
+  }
+  const ownedUploads = readOwnedUploads();
+  delete ownedUploads[clipId];
+  writeOwnedUploads(ownedUploads);
+}
+
+async function deletePostedReplay() {
+  const clipId = state.recording.postedClipId;
+  const deleteToken = state.recording.postedDeleteToken;
+  if (!clipId || !deleteToken || state.recording.deleteInFlight) {
+    return;
+  }
+
+  if (!window.confirm('Delete this posted replay from Nova Clips?')) {
+    return;
+  }
+
+  state.recording.deleteInFlight = true;
+  updateRecordingControls();
+  setRecordingStatus('Deleting replay...', 'ready');
+
+  try {
+    const response = await fetch(clipDeleteEndpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        clipId,
+        deleteToken,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error || 'Unable to delete that replay.');
+    }
+
+    forgetOwnedUpload(clipId);
+    state.recording.postedClipId = '';
+    state.recording.postedDeleteToken = '';
+    state.recording.posted = false;
+    els.recordingPostLink.classList.add('hidden');
+    els.recordingPostLink.href = 'nova-clips.html';
+    els.deleteRecordingButton.classList.add('hidden');
+    setRecordingStatus('Replay deleted from Nova Clips.', 'ready');
+    logEvent('Replay deleted from Nova Clips.');
+  } catch (error) {
+    setRecordingStatus(`Replay delete failed: ${error.message || 'network error'}.`, 'error');
+    logEvent(`Replay delete failed: ${error.message || 'network error'}.`);
+  } finally {
+    state.recording.deleteInFlight = false;
+    updateRecordingControls();
+  }
+}
+
 function stopLive() {
   state.intentionalDisconnect = true;
   clearSignalReconnectTimer();
@@ -1518,6 +1808,9 @@ function leaveStream(sendLeave = true) {
   if (sendLeave) {
     sendSignal({ action: 'live-leave', roomCode: state.roomCode });
   }
+  if (state.role === 'viewer' && state.localStream) {
+    stopLocalStream();
+  }
   closeViewerPeer();
   state.roomCode = '';
   state.viewerId = '';
@@ -1530,6 +1823,10 @@ function leaveStream(sendLeave = true) {
   els.hostLine.textContent = 'No host connected.';
   els.chatInput.value = '';
   els.remoteVideo.srcObject = null;
+  if (els.viewerPreviewVideo) {
+    els.viewerPreviewVideo.srcObject = null;
+    els.viewerPreviewVideo.classList.remove('is-visible', 'is-screen');
+  }
   renderChat();
   refreshStage();
   loadLiveRooms();
@@ -1545,6 +1842,9 @@ function resetLiveState() {
   state.mediaMuted = false;
   state.cameraOff = false;
   state.socketReconnectAttempts = 0;
+  if (state.role === 'host') {
+    clearCoStreams();
+  }
   state.sourceType = state.localStream ? state.sourceType : '';
   state.sourceLabel = state.localStream ? state.sourceLabel : '';
   els.hostRoomCode.textContent = '------';
@@ -1579,7 +1879,12 @@ function stopLocalStream() {
   state.cameraOff = false;
   els.localVideo.srcObject = null;
   els.localVideo.classList.remove('is-screen');
+  if (els.viewerPreviewVideo) {
+    els.viewerPreviewVideo.srcObject = null;
+    els.viewerPreviewVideo.classList.remove('is-visible', 'is-screen');
+  }
   updateCaptureButtons('Source Ready');
+  updateViewerShareControls();
 }
 
 function stopStreamTracks(stream) {
@@ -1593,6 +1898,7 @@ function stopStreamTracks(stream) {
 function closeAllHostPeers() {
   state.peers.forEach((peer) => peer.close());
   state.peers.clear();
+  clearCoStreams();
 }
 
 function removeHostPeer(viewerId) {
@@ -1602,6 +1908,7 @@ function removeHostPeer(viewerId) {
   }
   state.peers.delete(viewerId);
   state.pendingHostCandidates.delete(viewerId);
+  removeCoStream(viewerId);
 }
 
 function closeViewerPeer() {
@@ -1612,9 +1919,148 @@ function closeViewerPeer() {
   state.pendingViewerCandidates = [];
 }
 
+function canViewerCoStream() {
+  return state.role === 'viewer' && Boolean(state.roomCode && state.hostId);
+}
+
+function setViewerShareStatus(text, tone = '') {
+  if (!els.viewerShareStatus) {
+    return;
+  }
+  els.viewerShareStatus.textContent = text;
+  els.viewerShareStatus.classList.toggle('is-error', tone === 'error');
+}
+
+function updateViewerShareControls() {
+  if (!els.viewerCameraButton) {
+    return;
+  }
+  const canShare = canViewerCoStream();
+  const sharing = Boolean(state.role === 'viewer' && state.localStream);
+  els.viewerCameraButton.disabled = !canShare || sharing;
+  els.viewerScreenButton.disabled = !canShare || sharing;
+  els.viewerStopShareButton.disabled = !sharing;
+  els.viewerPreviewVideo.classList.toggle('is-visible', sharing);
+  if (!sharing && els.viewerPreviewVideo.srcObject) {
+    els.viewerPreviewVideo.srcObject = null;
+  }
+  if (sharing) {
+    setViewerShareStatus('Sharing');
+  } else if (canShare) {
+    setViewerShareStatus('Ready');
+  } else {
+    setViewerShareStatus('Offline');
+  }
+}
+
+async function stopCoStream() {
+  if (state.role !== 'viewer' || !state.localStream) {
+    updateViewerShareControls();
+    return;
+  }
+
+  const stream = state.localStream;
+  const streamTrackIds = new Set(stream.getTracks().map((track) => track.id));
+  const peer = state.viewerPeer;
+  const canRenegotiate = Boolean(peer && peer.remoteDescription);
+  if (peer) {
+    peer.getSenders().forEach((sender) => {
+      if (sender.track && streamTrackIds.has(sender.track.id)) {
+        try {
+          peer.removeTrack(sender);
+        } catch (error) {
+          logEvent(`Co-stream sender cleanup failed: ${error.message || 'unknown error'}.`);
+        }
+      }
+    });
+  }
+
+  sendSignal({
+    action: 'live-signal',
+    roomCode: state.roomCode,
+    targetId: state.hostId,
+    signal: { coStream: false },
+  });
+
+  stopStreamTracks(stream);
+  state.localStream = null;
+  state.sourceType = '';
+  state.sourceLabel = '';
+  state.mediaMuted = false;
+  state.cameraOff = false;
+  els.localVideo.srcObject = null;
+  els.localVideo.classList.remove('is-screen');
+  els.viewerPreviewVideo.srcObject = null;
+  els.viewerPreviewVideo.classList.remove('is-visible', 'is-screen');
+  setViewerShareStatus('Ready');
+  updateCaptureButtons('Source Ready');
+  updateViewerShareControls();
+  refreshStage();
+  logEvent('Co-stream stopped.');
+
+  if (canRenegotiate) {
+    await renegotiateViewerPeer('Co-stream stopped');
+  }
+}
+
+function setCoStream(viewerId, stream) {
+  const safeViewerId = String(viewerId || '').trim();
+  if (!safeViewerId || !stream) {
+    return;
+  }
+  state.coStreams.set(safeViewerId, stream);
+  renderCoStreams();
+}
+
+function removeCoStream(viewerId) {
+  const safeViewerId = String(viewerId || '').trim();
+  if (!safeViewerId) {
+    return;
+  }
+  state.coStreams.delete(safeViewerId);
+  renderCoStreams();
+}
+
+function clearCoStreams() {
+  state.coStreams.clear();
+  renderCoStreams();
+}
+
+function renderCoStreams() {
+  if (!els.coStreamGrid || !els.coStreamPanel) {
+    return;
+  }
+  const streams = Array.from(state.coStreams.entries());
+  els.coStreamPanel.classList.toggle('is-visible', state.mode === 'host' && streams.length > 0);
+  els.coStreamCount.textContent = `${streams.length} guest${streams.length === 1 ? '' : 's'}`;
+  els.coStreamGrid.innerHTML = '';
+  if (!streams.length) {
+    const empty = document.createElement('article');
+    empty.className = 'co-stream-empty';
+    empty.textContent = 'Guests who share back will appear here.';
+    els.coStreamGrid.appendChild(empty);
+    return;
+  }
+
+  streams.forEach(([viewerId, stream]) => {
+    const article = document.createElement('article');
+    article.className = 'co-stream-card';
+    const video = document.createElement('video');
+    video.autoplay = true;
+    video.playsInline = true;
+    video.controls = true;
+    video.srcObject = stream;
+    const label = document.createElement('strong');
+    label.textContent = state.coStreamNames.get(viewerId) || `Guest ${viewerId.slice(0, 8)}`;
+    article.append(video, label);
+    els.coStreamGrid.appendChild(article);
+  });
+}
+
 function renderViewers() {
   const viewers = uniqueViewers(state.viewers);
   state.viewers = viewers;
+  state.coStreamNames.clear();
   els.viewerListCount.textContent = String(viewers.length);
   els.viewerList.innerHTML = '';
 
@@ -1626,6 +2072,7 @@ function renderViewers() {
   }
 
   viewers.forEach((viewer) => {
+    state.coStreamNames.set(viewer.id, viewer.name || 'Viewer');
     const item = document.createElement('li');
     const strong = document.createElement('strong');
     strong.textContent = viewer.name || 'Viewer';
@@ -1730,6 +2177,8 @@ function refreshStage() {
   els.emptyHint.textContent = isHost ? 'Choose camera or desktop capture to preview.' : 'The stream will appear here.';
   updateChatControls();
   updateRecordingControls();
+  updateViewerShareControls();
+  renderCoStreams();
 }
 
 function setConnection(text, tone) {
