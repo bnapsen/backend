@@ -31,7 +31,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -137,6 +138,7 @@ button:disabled {
 .live-directory-card,
 .room-card,
 .viewer-list-card,
+.recording-card,
 .chat-card,
 .signal-card {
   border: 1px solid var(--line);
@@ -413,6 +415,7 @@ button:disabled {
 
 .mode-tab,
 .action-button,
+.action-link,
 .small-button {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -426,7 +429,8 @@ button:disabled {
 }
 
 .mode-tab.is-active,
-.action-button.primary {
+.action-button.primary,
+.action-link.primary {
   border-color: rgba(41, 242, 166, 0.62);
   background: linear-gradient(135deg, rgba(41, 242, 166, 0.9), rgba(100, 216, 255, 0.9));
   color: var(--ink);
@@ -483,6 +487,16 @@ button:disabled {
   padding: 10px 12px;
 }
 
+.action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 12px;
+  text-align: center;
+  text-decoration: none;
+}
+
 .action-button.danger {
   border-color: rgba(255, 93, 125, 0.42);
   color: var(--red);
@@ -490,11 +504,55 @@ button:disabled {
 
 .room-card,
 .viewer-list-card,
+.recording-card,
 .chat-card,
 .signal-card {
   margin-top: 14px;
   padding: 14px;
   box-shadow: none;
+}
+
+.recording-status {
+  min-height: 22px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.recording-status.is-recording {
+  color: var(--red);
+}
+
+.recording-status.is-ready {
+  color: var(--green);
+}
+
+.recording-status.is-error {
+  color: var(--red);
+}
+
+.recording-preview {
+  display: none;
+  width: 100%;
+  margin: 12px 0;
+  border: 1px solid rgba(100, 216, 255, 0.22);
+  border-radius: var(--radius);
+  background: #020706;
+  aspect-ratio: 16 / 9;
+}
+
+.recording-preview.is-visible {
+  display: block;
+}
+
+.recording-caption {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.recording-link.hidden,
+.hidden {
+  display: none;
 }
 
 .room-code {

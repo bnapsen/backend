@@ -4,6 +4,10 @@ const BACKEND_WS_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.
 const BACKEND_HTTP_URL = 'https://nova-arcade-backend-1000121513328.us-central1.run.app';
 const SIGNAL_RECONNECT_BASE_MS = 1000;
 const SIGNAL_RECONNECT_MAX_MS = 10000;
+const CLIP_OWNERSHIP_STORAGE_KEY = 'nova-clips:owned-uploads';
+const MAX_REPLAY_RECORDING_MS = 60 * 1000;
+const MAX_REPLAY_UPLOAD_BYTES = 200 * 1024 * 1024;
+const LEGACY_REPLAY_UPLOAD_MAX_BYTES = 30 * 1024 * 1024;
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -35,6 +39,19 @@ const state = {
   socketReconnectTimer: null,
   socketReconnectAttempts: 0,
   intentionalDisconnect: false,
+  recording: {
+    recorder: null,
+    chunks: [],
+    blob: null,
+    mimeType: '',
+    previewUrl: '',
+    startedAt: 0,
+    durationMs: 0,
+    timer: null,
+    uploadInFlight: false,
+    posted: false,
+    finalizing: false,
+  },
 };
 
 const els = {};
@@ -87,6 +104,15 @@ function bindElements() {
     'stopLiveButton',
     'viewerListCount',
     'viewerList',
+    'recordingTimer',
+    'recordingStatus',
+    'startRecordingButton',
+    'stopRecordingButton',
+    'recordingPreview',
+    'recordingTitle',
+    'recordingCaption',
+    'postRecordingButton',
+    'recordingPostLink',
     'viewerName',
     'joinRoomCode',
     'joinButton',
@@ -118,6 +144,9 @@ function bindEvents() {
   els.stopPreviewButton.addEventListener('click', stopPreview);
   els.copyLinkButton.addEventListener('click', copyShareLink);
   els.stopLiveButton.addEventListener('click', stopLive);
+  els.startRecordingButton.addEventListener('click', startReplayRecording);
+  els.stopRecordingButton.addEventListener('click', () => stopReplayRecording('Recording stopped. Preparing replay clip...'));
+  els.postRecordingButton.addEventListener('click', postReplayRecording);
   els.joinButton.addEventListener('click', joinStream);
   els.leaveButton.addEventListener('click', leaveStream);
   els.sendChatButton.addEventListener('click', sendChatMessage);
@@ -169,6 +198,18 @@ function apiBaseUrl() {
     return `${window.location.protocol}//${window.location.host}`;
   }
   return BACKEND_HTTP_URL;
+}
+
+function clipsEndpoint() {
+  return `${apiBaseUrl()}/api/clips`;
+}
+
+function clipUploadSessionEndpoint() {
+  return `${apiBaseUrl()}/api/clips/upload-session`;
+}
+
+function clipFinalizeUploadEndpoint() {
+  return `${apiBaseUrl()}/api/clips/finalize-upload`;
 }
 
 function setMode(mode) {
@@ -400,6 +441,10 @@ async function startScreenShare(options = {}) {
 }
 
 async function setLocalStream(stream, options = {}) {
+  if (isReplayRecording()) {
+    stopReplayRecording('Recording stopped before the source changed.');
+  }
+
   const previousStream = state.localStream;
   state.localStream = stream;
   state.sourceType = options.sourceType || 'custom';
@@ -430,6 +475,7 @@ function updateCaptureButtons(activeText) {
   els.goLiveButton.disabled = !state.localStream || Boolean(state.roomCode);
   els.stopPreviewButton.disabled = !state.localStream || Boolean(state.roomCode);
   updateMediaButtons();
+  updateRecordingControls();
 }
 
 function updateMediaButtons() {
@@ -980,6 +1026,463 @@ async function copyShareLink() {
   }
 }
 
+function isReplayRecording() {
+  return Boolean(state.recording.recorder && state.recording.recorder.state === 'recording');
+}
+
+function preferredRecordingMimeType() {
+  if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return '';
+  }
+
+  return [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=h264,opus',
+    'video/webm',
+    'video/mp4',
+  ].find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) || '';
+}
+
+function startReplayRecording() {
+  if (!state.localStream) {
+    setRecordingStatus('Choose Camera + Mic, Desktop + Mic, or Desktop Only before recording.', 'error');
+    return;
+  }
+  if (!window.MediaRecorder) {
+    setRecordingStatus('This browser does not support recording live streams.', 'error');
+    return;
+  }
+  if (isReplayRecording()) {
+    return;
+  }
+
+  resetReplayRecording({ keepStatus: true });
+  const mimeType = preferredRecordingMimeType();
+  const options = mimeType ? { mimeType } : {};
+  let recorder;
+  try {
+    recorder = new MediaRecorder(state.localStream, options);
+  } catch (error) {
+    setRecordingStatus(`Recording could not start: ${error.message || 'browser error'}.`, 'error');
+    return;
+  }
+
+  state.recording.recorder = recorder;
+  state.recording.chunks = [];
+  state.recording.blob = null;
+  state.recording.mimeType = recorder.mimeType || mimeType || 'video/webm';
+  state.recording.startedAt = Date.now();
+  state.recording.durationMs = 0;
+  state.recording.posted = false;
+  state.recording.finalizing = false;
+
+  recorder.addEventListener('dataavailable', (event) => {
+    if (event.data && event.data.size > 0) {
+      state.recording.chunks.push(event.data);
+    }
+  });
+  recorder.addEventListener('stop', finishReplayRecording, { once: true });
+  recorder.addEventListener('error', (event) => {
+    const message = event.error && event.error.message ? event.error.message : 'unknown recorder error';
+    setRecordingStatus(`Recording error: ${message}.`, 'error');
+    stopReplayRecording();
+  });
+
+  try {
+    recorder.start(1000);
+  } catch (error) {
+    state.recording.recorder = null;
+    setRecordingStatus(`Recording could not start: ${error.message || 'browser error'}.`, 'error');
+    return;
+  }
+
+  setRecordingStatus('Recording replay clip...', 'recording');
+  updateRecordingTimer();
+  state.recording.timer = window.setInterval(() => {
+    updateRecordingTimer();
+    if (Date.now() - state.recording.startedAt >= MAX_REPLAY_RECORDING_MS) {
+      stopReplayRecording('Recording reached the 60-second clip limit.');
+    }
+  }, 250);
+  updateRecordingControls();
+  logEvent('Replay recording started.');
+}
+
+function stopReplayRecording(statusText = '') {
+  if (!isReplayRecording()) {
+    return;
+  }
+
+  const recorder = state.recording.recorder;
+  clearRecordingTimer();
+  state.recording.finalizing = true;
+  if (statusText) {
+    setRecordingStatus(statusText, 'ready');
+  }
+  try {
+    recorder.stop();
+  } catch (error) {
+    state.recording.recorder = null;
+    state.recording.finalizing = false;
+    setRecordingStatus(`Recording could not stop cleanly: ${error.message || 'browser error'}.`, 'error');
+  }
+  updateRecordingControls();
+}
+
+function finishReplayRecording() {
+  clearRecordingTimer();
+  state.recording.durationMs = Math.max(0, Date.now() - state.recording.startedAt);
+  state.recording.recorder = null;
+  state.recording.finalizing = false;
+  const chunks = state.recording.chunks.splice(0);
+  const blob = new Blob(chunks, { type: state.recording.mimeType || 'video/webm' });
+
+  if (!blob.size) {
+    state.recording.blob = null;
+    state.recording.finalizing = false;
+    setRecordingStatus('No replay data was captured. Try recording again.', 'error');
+    updateRecordingControls();
+    return;
+  }
+  if (blob.size > MAX_REPLAY_UPLOAD_BYTES) {
+    state.recording.blob = null;
+    state.recording.finalizing = false;
+    setRecordingStatus('Replay is larger than the 200 MB upload limit.', 'error');
+    updateRecordingControls();
+    return;
+  }
+
+  state.recording.blob = blob;
+  state.recording.posted = false;
+  releaseRecordingPreview();
+  state.recording.previewUrl = URL.createObjectURL(blob);
+  els.recordingPreview.src = state.recording.previewUrl;
+  els.recordingPreview.classList.add('is-visible');
+  els.recordingPostLink.classList.add('hidden');
+  updateRecordingTimer();
+  setRecordingStatus(`Replay saved (${formatFileSize(blob.size)}). Review it, then post to Nova Clips.`, 'ready');
+  updateRecordingControls();
+  logEvent('Replay recording saved.');
+}
+
+function resetReplayRecording(options = {}) {
+  clearRecordingTimer();
+  if (state.recording.recorder && state.recording.recorder.state !== 'inactive') {
+    try {
+      state.recording.recorder.stop();
+    } catch {
+      // Ignore recorder cleanup errors while replacing a draft replay.
+    }
+  }
+  state.recording.recorder = null;
+  state.recording.chunks = [];
+  state.recording.blob = null;
+  state.recording.mimeType = '';
+  state.recording.startedAt = 0;
+  state.recording.durationMs = 0;
+  state.recording.posted = false;
+  state.recording.finalizing = false;
+  releaseRecordingPreview();
+  els.recordingPostLink.classList.add('hidden');
+  els.recordingPostLink.href = 'nova-clips.html';
+  if (!options.keepStatus) {
+    setRecordingStatus(state.localStream
+      ? 'Ready to record a 60-second replay clip.'
+      : 'Choose a stream source to record a replay clip.');
+  }
+  updateRecordingTimer();
+  updateRecordingControls();
+}
+
+function releaseRecordingPreview() {
+  if (state.recording.previewUrl) {
+    URL.revokeObjectURL(state.recording.previewUrl);
+    state.recording.previewUrl = '';
+  }
+  if (els.recordingPreview) {
+    els.recordingPreview.removeAttribute('src');
+    els.recordingPreview.classList.remove('is-visible');
+    els.recordingPreview.load();
+  }
+}
+
+function clearRecordingTimer() {
+  if (state.recording.timer) {
+    window.clearInterval(state.recording.timer);
+    state.recording.timer = null;
+  }
+}
+
+function updateRecordingTimer() {
+  if (!els.recordingTimer) {
+    return;
+  }
+  const elapsedMs = isReplayRecording()
+    ? Date.now() - state.recording.startedAt
+    : state.recording.durationMs;
+  els.recordingTimer.textContent = formatRecordingTime(elapsedMs);
+}
+
+function updateRecordingControls() {
+  if (!els.startRecordingButton) {
+    return;
+  }
+
+  const hasSource = Boolean(state.localStream);
+  const recording = isReplayRecording();
+  const supportsRecorder = Boolean(window.MediaRecorder);
+  const busy = recording || state.recording.finalizing || state.recording.uploadInFlight;
+  els.startRecordingButton.disabled = !hasSource || busy || !supportsRecorder;
+  els.stopRecordingButton.disabled = !recording;
+  els.postRecordingButton.disabled = !state.recording.blob || busy;
+
+  if (!state.recording.blob && !state.recording.posted && !busy) {
+    if (!supportsRecorder) {
+      setRecordingStatus('This browser does not support live replay recording.', 'error');
+    } else {
+      setRecordingStatus(hasSource
+        ? 'Ready to record a 60-second replay clip.'
+        : 'Choose a stream source to record a replay clip.');
+    }
+  }
+}
+
+function setRecordingStatus(text, tone = '') {
+  if (!els.recordingStatus) {
+    return;
+  }
+  els.recordingStatus.textContent = text;
+  els.recordingStatus.classList.toggle('is-recording', tone === 'recording');
+  els.recordingStatus.classList.toggle('is-ready', tone === 'ready');
+  els.recordingStatus.classList.toggle('is-error', tone === 'error');
+}
+
+async function postReplayRecording() {
+  if (!state.recording.blob || state.recording.uploadInFlight) {
+    return;
+  }
+  if (isReplayRecording()) {
+    setRecordingStatus('Stop the recording before posting it.', 'error');
+    return;
+  }
+
+  const title = cleanText(
+    els.recordingTitle.value,
+    `${cleanText(els.streamTitle.value, 'Nova Live', 70)} replay`,
+    80,
+  );
+  const caption = cleanOptionalText(els.recordingCaption.value, 240);
+  const uploaderName = cleanText(els.hostName.value, 'Nova Host', 48);
+  const file = makeReplayFile(state.recording.blob, title);
+
+  state.recording.uploadInFlight = true;
+  updateRecordingControls();
+  setRecordingStatus('Preparing replay upload...', 'ready');
+
+  try {
+    let payload;
+    try {
+      const session = await requestReplayUploadSession(file, title, caption, uploaderName);
+      setRecordingStatus('Uploading replay to cloud storage... 0%', 'ready');
+      await uploadFileToCloudSession(session.uploadUrl, file, (loaded, total) => {
+        const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((loaded / total) * 100))) : 0;
+        setRecordingStatus(`Uploading replay to cloud storage... ${percent}%`, 'ready');
+      });
+      setRecordingStatus('Processing replay for Nova Clips...', 'ready');
+      payload = await finalizeReplayUpload(session.rawUploadKey, session.uploadToken);
+    } catch (error) {
+      if (file.size > LEGACY_REPLAY_UPLOAD_MAX_BYTES) {
+        throw error;
+      }
+      setRecordingStatus('Direct upload paused. Trying legacy upload...', 'ready');
+      payload = await uploadReplayLegacy(file, title, caption, uploaderName);
+    }
+
+    if (payload.clip && payload.deleteToken) {
+      rememberOwnedUpload(payload.clip.id, payload.deleteToken);
+    }
+    els.recordingPostLink.href = payload.clip && payload.clip.id
+      ? `nova-clips.html?clip=${encodeURIComponent(payload.clip.id)}`
+      : 'nova-clips.html';
+    els.recordingPostLink.classList.remove('hidden');
+    state.recording.blob = null;
+    state.recording.posted = true;
+    setRecordingStatus(payload.clip && payload.clip.status === 'active'
+      ? 'Replay posted to Nova Clips.'
+      : 'Replay uploaded and sent to moderation.', 'ready');
+    logEvent('Replay posted to Nova Clips.');
+  } catch (error) {
+    setRecordingStatus(`Replay upload failed: ${error.message || 'network error'}.`, 'error');
+    logEvent(`Replay upload failed: ${error.message || 'network error'}.`);
+  } finally {
+    state.recording.uploadInFlight = false;
+    updateRecordingControls();
+  }
+}
+
+async function requestReplayUploadSession(file, title, caption, uploaderName) {
+  const response = await fetch(clipUploadSessionEndpoint(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      fileName: file.name,
+      mimeType: file.type || '',
+      sizeBytes: file.size,
+      uploaderName,
+      title,
+      caption,
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || 'Unable to start a replay upload.');
+  }
+  return payload;
+}
+
+function uploadFileToCloudSession(uploadUrl, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl, true);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || typeof onProgress !== 'function') {
+        return;
+      }
+      onProgress(event.loaded, event.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      reject(new Error(xhr.responseText || 'Direct upload failed.'));
+    };
+    xhr.onerror = () => reject(new Error('Direct upload failed.'));
+    xhr.onabort = () => reject(new Error('Direct upload was canceled.'));
+    xhr.send(file);
+  });
+}
+
+async function finalizeReplayUpload(rawUploadKey, uploadToken) {
+  const response = await fetch(clipFinalizeUploadEndpoint(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      rawUploadKey,
+      uploadToken,
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || 'Unable to finish processing that replay.');
+  }
+  return payload;
+}
+
+async function uploadReplayLegacy(file, title, caption, uploaderName) {
+  const formData = new FormData();
+  formData.append('clipFile', file, file.name);
+  formData.append('uploaderName', uploaderName);
+  formData.append('title', title);
+  if (caption) {
+    formData.append('caption', caption);
+  }
+
+  const response = await fetch(clipsEndpoint(), {
+    method: 'POST',
+    body: formData,
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || 'Unable to save that replay right now.');
+  }
+  return payload;
+}
+
+function makeReplayFile(blob, title) {
+  const extension = replayFileExtension(blob.type);
+  const name = `${slugifyFileName(title) || 'nova-live-replay'}-${Date.now()}${extension}`;
+  if (typeof File === 'function') {
+    return new File([blob], name, {
+      type: blob.type || 'video/webm',
+      lastModified: Date.now(),
+    });
+  }
+  const file = new Blob([blob], { type: blob.type || 'video/webm' });
+  file.name = name;
+  file.lastModified = Date.now();
+  return file;
+}
+
+function replayFileExtension(mimeType = '') {
+  if (/mp4/i.test(mimeType)) {
+    return '.mp4';
+  }
+  if (/quicktime/i.test(mimeType)) {
+    return '.mov';
+  }
+  return '.webm';
+}
+
+function slugifyFileName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
+
+function formatRecordingTime(ms) {
+  const totalSeconds = Math.max(0, Math.min(Math.floor(ms / 1000), Math.ceil(MAX_REPLAY_RECORDING_MS / 1000)));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0);
+  if (size >= 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${Math.max(1, Math.round(size / 1024))} KB`;
+}
+
+function readOwnedUploads() {
+  try {
+    const raw = window.localStorage.getItem(CLIP_OWNERSHIP_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeOwnedUploads(ownedUploads) {
+  try {
+    window.localStorage.setItem(CLIP_OWNERSHIP_STORAGE_KEY, JSON.stringify(ownedUploads));
+  } catch {
+    // Ignore storage failures in restrictive browsers.
+  }
+}
+
+function rememberOwnedUpload(clipId, deleteToken) {
+  if (!clipId || !deleteToken) {
+    return;
+  }
+  const ownedUploads = readOwnedUploads();
+  ownedUploads[clipId] = deleteToken;
+  writeOwnedUploads(ownedUploads);
+}
+
 function stopLive() {
   state.intentionalDisconnect = true;
   clearSignalReconnectTimer();
@@ -1056,6 +1559,9 @@ function resetLiveState() {
 function stopLocalStream() {
   if (!state.localStream) {
     return;
+  }
+  if (isReplayRecording()) {
+    stopReplayRecording('Recording stopped with the stream.');
   }
   stopStreamTracks(state.localStream);
   state.localStream = null;
@@ -1215,6 +1721,7 @@ function refreshStage() {
   els.videoEmpty.classList.toggle('is-visible', (isHost && !hasLocal) || (!isHost && !hasRemote));
   els.emptyHint.textContent = isHost ? 'Choose camera or desktop capture to preview.' : 'The stream will appear here.';
   updateChatControls();
+  updateRecordingControls();
 }
 
 function setConnection(text, tone) {
@@ -1240,6 +1747,10 @@ function logEvent(text) {
 function cleanText(value, fallback, maxLength) {
   const next = String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
   return next || fallback;
+}
+
+function cleanOptionalText(value, maxLength) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
 function normalizeRoomCode(value) {

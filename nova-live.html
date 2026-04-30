@@ -19,7 +19,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="nova-live.css?v=20260429e">
+    <link rel="stylesheet" href="nova-live.css?v=20260429f">
 </head>
 <body>
     <div class="live-shell">
@@ -136,6 +136,27 @@
                             <li>No viewers connected.</li>
                         </ul>
                     </div>
+
+                    <div class="recording-card">
+                        <div class="panel-heading-row">
+                            <h2>Replay Recorder</h2>
+                            <span id="recordingTimer">00:00</span>
+                        </div>
+                        <p class="recording-status" id="recordingStatus">Choose a stream source to record a replay clip.</p>
+                        <div class="button-grid compact">
+                            <button class="action-button primary" type="button" id="startRecordingButton" disabled>Record</button>
+                            <button class="action-button danger" type="button" id="stopRecordingButton" disabled>Stop</button>
+                        </div>
+                        <video id="recordingPreview" class="recording-preview" controls playsinline preload="metadata"></video>
+                        <label class="field-label" for="recordingTitle">Replay title</label>
+                        <input id="recordingTitle" class="text-field" maxlength="80" value="Nova Live replay">
+                        <label class="field-label" for="recordingCaption">Caption</label>
+                        <textarea id="recordingCaption" class="text-field recording-caption" maxlength="240" rows="2" placeholder="Optional note for Nova Clips"></textarea>
+                        <div class="button-grid compact">
+                            <button class="action-button primary" type="button" id="postRecordingButton" disabled>Post Replay</button>
+                            <a class="action-link recording-link hidden" id="recordingPostLink" href="nova-clips.html">Open Clips</a>
+                        </div>
+                    </div>
                 </section>
 
                 <section class="mode-panel" id="viewerPanel" aria-labelledby="viewerModeButton">
@@ -190,6 +211,6 @@
         </main>
     </div>
 
-    <script src="nova-live.js?v=20260429e" defer></script>
+    <script src="nova-live.js?v=20260429f" defer></script>
 </body>
 </html>
