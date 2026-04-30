@@ -19,7 +19,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="nova-live.css?v=20260430e">
+    <link rel="stylesheet" href="nova-live.css?v=20260430f">
 </head>
 <body>
     <div class="live-shell">
@@ -248,6 +248,22 @@
         </main>
     </div>
 
-    <script src="nova-live.js?v=20260430e" defer></script>
+    <div class="replay-modal hidden" id="replayModal" role="dialog" aria-modal="true" aria-labelledby="replayModalTitle">
+        <button class="replay-modal-backdrop" type="button" id="replayModalBackdrop" aria-label="Close replay"></button>
+        <section class="replay-modal-card" aria-label="Replay player">
+            <div class="panel-heading-row replay-modal-head">
+                <div>
+                    <p class="eyebrow">Replay</p>
+                    <h2 id="replayModalTitle">Nova Live replay</h2>
+                </div>
+                <button class="small-button" type="button" id="replayModalClose">Close</button>
+            </div>
+            <video id="replayModalVideo" class="replay-modal-video" controls playsinline preload="metadata"></video>
+            <p class="replay-modal-meta" id="replayModalMeta"></p>
+            <p class="replay-modal-caption" id="replayModalCaption"></p>
+        </section>
+    </div>
+
+    <script src="nova-live.js?v=20260430f" defer></script>
 </body>
 </html>

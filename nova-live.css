@@ -30,6 +30,10 @@ body {
   font-family: "Space Grotesk", system-ui, sans-serif;
 }
 
+body.modal-open {
+  overflow: hidden;
+}
+
 button,
 input,
 textarea {
@@ -384,13 +388,17 @@ button:disabled {
 
 .replay-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(168px, 220px));
   gap: 12px;
+  justify-content: start;
+  align-items: start;
   margin-top: 12px;
 }
 
 .replay-card {
   min-width: 0;
+  width: 100%;
+  max-width: 220px;
   overflow: hidden;
   border: 1px solid rgba(100, 216, 255, 0.2);
   border-radius: var(--radius);
@@ -402,25 +410,99 @@ button:disabled {
   box-shadow: 0 0 0 1px rgba(41, 242, 166, 0.2), 0 18px 42px rgba(41, 242, 166, 0.12);
 }
 
-.replay-card video {
+.replay-thumb-button {
+  position: relative;
   display: block;
   width: 100%;
+  margin: 0;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
   background: #020706;
+  color: var(--text);
   aspect-ratio: 16 / 9;
+}
+
+.replay-thumb-button:focus-visible {
+  outline: 3px solid rgba(100, 216, 255, 0.7);
+  outline-offset: 2px;
+}
+
+.replay-thumb-media,
+.replay-thumb-fallback {
+  width: 100%;
+  height: 100%;
+}
+
+.replay-thumb-media {
+  display: block;
   object-fit: cover;
+  transition: transform 160ms ease;
+}
+
+.replay-thumb-button:hover .replay-thumb-media {
+  transform: scale(1.04);
+}
+
+.replay-thumb-fallback {
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    #06100f;
+  background-size: 20px 20px;
+  color: var(--cyan);
+  font-family: "Oxanium", system-ui, sans-serif;
+  font-weight: 800;
+}
+
+.replay-play-badge {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  transform: translate(-50%, -50%);
+}
+
+.replay-play-badge::before {
+  width: 0;
+  height: 0;
+  margin-left: 3px;
+  border-top: 9px solid transparent;
+  border-bottom: 9px solid transparent;
+  border-left: 14px solid var(--green);
+  content: "";
+}
+
+.replay-duration-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  border-radius: 4px;
+  padding: 3px 6px;
+  background: rgba(0, 0, 0, 0.74);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .replay-card-body {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: 6px;
+  padding: 10px;
 }
 
 .replay-card h3 {
   margin: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 1rem;
+  font-size: 0.92rem;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -431,10 +513,11 @@ button:disabled {
 .replay-stats {
   margin: 0;
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: 0.78rem;
 }
 
 .replay-caption {
+  display: none;
   overflow-wrap: anywhere;
 }
 
@@ -447,6 +530,71 @@ button:disabled {
 
 .replay-delete-button {
   min-width: 76px;
+}
+
+.replay-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.replay-modal.hidden {
+  display: none;
+}
+
+.replay-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.replay-modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(980px, 100%);
+  max-height: min(92vh, 820px);
+  overflow: auto;
+  border: 1px solid rgba(100, 216, 255, 0.28);
+  border-radius: var(--radius);
+  background: rgba(10, 17, 18, 0.98);
+  box-shadow: 0 30px 120px rgba(0, 0, 0, 0.64);
+  padding: 16px;
+}
+
+.replay-modal-head {
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.replay-modal-head h2 {
+  margin: 0;
+  font-family: "Oxanium", system-ui, sans-serif;
+  font-size: clamp(1.25rem, 2.4vw, 2rem);
+  line-height: 1.12;
+}
+
+.replay-modal-video {
+  display: block;
+  width: 100%;
+  max-height: 68vh;
+  border: 1px solid rgba(100, 216, 255, 0.22);
+  border-radius: var(--radius);
+  background: #020706;
+  aspect-ratio: 16 / 9;
+}
+
+.replay-modal-meta,
+.replay-modal-caption {
+  margin: 12px 0 0;
+  color: var(--muted);
+}
+
+.replay-modal-caption {
+  overflow-wrap: anywhere;
 }
 
 .control-panel {
@@ -885,7 +1033,7 @@ button:disabled {
   }
 
   .replay-grid {
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(160px, 210px));
   }
 }
 
@@ -924,12 +1072,27 @@ button:disabled {
   }
 
   .stream-strip,
-  .replay-grid,
   .button-grid,
   .source-grid,
   .emoji-row,
   .chat-compose {
     grid-template-columns: 1fr;
+  }
+
+  .replay-grid {
+    grid-template-columns: repeat(auto-fill, minmax(142px, 1fr));
+  }
+
+  .replay-card {
+    max-width: none;
+  }
+
+  .replay-modal {
+    padding: 10px;
+  }
+
+  .replay-modal-card {
+    padding: 12px;
   }
 
   .live-room-card {

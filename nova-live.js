@@ -104,6 +104,13 @@ function bindElements() {
     'refreshReplaysButton',
     'replayStatus',
     'replayGrid',
+    'replayModal',
+    'replayModalBackdrop',
+    'replayModalClose',
+    'replayModalVideo',
+    'replayModalTitle',
+    'replayModalMeta',
+    'replayModalCaption',
     'hostPanel',
     'viewerPanel',
     'hostName',
@@ -171,6 +178,7 @@ function bindEvents() {
   els.stopRecordingButton.addEventListener('click', () => stopReplayRecording('Recording stopped. Preparing replay clip...'));
   els.postRecordingButton.addEventListener('click', postReplayRecording);
   els.deleteRecordingButton.addEventListener('click', deletePostedReplay);
+  els.recordingPostLink.addEventListener('click', openPostedReplayLink);
   els.joinButton.addEventListener('click', joinStream);
   els.leaveButton.addEventListener('click', leaveStream);
   els.viewerCameraButton.addEventListener('click', startViewerCameraShare);
@@ -188,6 +196,13 @@ function bindEvents() {
   });
   els.refreshLiveRoomsButton.addEventListener('click', () => loadLiveRooms({ announce: true }));
   els.refreshReplaysButton.addEventListener('click', () => loadReplays({ announce: true }));
+  els.replayModalBackdrop.addEventListener('click', closeReplayModal);
+  els.replayModalClose.addEventListener('click', closeReplayModal);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !els.replayModal.classList.contains('hidden')) {
+      closeReplayModal();
+    }
+  });
   els.liveRoomsList.addEventListener('click', (event) => {
     const button = event.target.closest('[data-room-code]');
     if (!button || button.disabled) {
@@ -458,16 +473,37 @@ function createReplayCard(clip, ownedUploads, isNew = false) {
   article.className = `replay-card${isNew ? ' is-new' : ''}`;
   article.id = `replay-${clip.id}`;
 
-  const video = document.createElement('video');
-  video.controls = true;
-  video.playsInline = true;
-  video.preload = 'metadata';
-  video.src = resolveClipMediaUrl(clip.videoPath);
   const posterUrl = resolveClipMediaUrl(clip.posterPath);
+  const thumbnailButton = document.createElement('button');
+  thumbnailButton.className = 'replay-thumb-button';
+  thumbnailButton.type = 'button';
+  thumbnailButton.setAttribute('aria-label', `Play ${clip.title || 'Nova Live replay'}`);
   if (posterUrl) {
-    video.poster = posterUrl;
+    const image = document.createElement('img');
+    image.className = 'replay-thumb-media';
+    image.src = posterUrl;
+    image.alt = '';
+    image.loading = 'lazy';
+    thumbnailButton.appendChild(image);
+  } else {
+    const fallback = document.createElement('div');
+    fallback.className = 'replay-thumb-fallback';
+    fallback.textContent = 'NOVA';
+    thumbnailButton.appendChild(fallback);
   }
-  article.appendChild(video);
+
+  const playBadge = document.createElement('span');
+  playBadge.className = 'replay-play-badge';
+  playBadge.setAttribute('aria-hidden', 'true');
+  thumbnailButton.appendChild(playBadge);
+
+  const durationBadge = document.createElement('span');
+  durationBadge.className = 'replay-duration-badge';
+  durationBadge.textContent = formatReplayDuration(clip.durationSeconds);
+  thumbnailButton.appendChild(durationBadge);
+
+  thumbnailButton.addEventListener('click', () => openReplayModal(clip));
+  article.appendChild(thumbnailButton);
 
   const body = document.createElement('div');
   body.className = 'replay-card-body';
@@ -479,7 +515,6 @@ function createReplayCard(clip, ownedUploads, isNew = false) {
   const meta = document.createElement('p');
   meta.className = 'replay-meta';
   meta.textContent = [
-    formatReplayDuration(clip.durationSeconds),
     formatReplayDate(clip.createdAt),
     clip.uploaderName || 'Nova Host',
   ].filter(Boolean).join(' - ');
@@ -528,6 +563,65 @@ function createReplayCard(clip, ownedUploads, isNew = false) {
   body.appendChild(footer);
   article.appendChild(body);
   return article;
+}
+
+function openReplayModal(clip) {
+  if (!clip || !els.replayModal || !els.replayModalVideo) {
+    return;
+  }
+
+  const videoUrl = resolveClipMediaUrl(clip.videoPath);
+  if (!videoUrl) {
+    logEvent('Replay video is not available yet.');
+    return;
+  }
+
+  const posterUrl = resolveClipMediaUrl(clip.posterPath);
+  els.replayModalTitle.textContent = clip.title || 'Nova Live replay';
+  els.replayModalMeta.textContent = [
+    formatReplayDuration(clip.durationSeconds),
+    formatReplayDate(clip.createdAt),
+    clip.uploaderName || 'Nova Host',
+    formatReplayStats(clip),
+  ].filter(Boolean).join(' - ');
+  els.replayModalCaption.textContent = clip.caption || '';
+  els.replayModalCaption.classList.toggle('hidden', !clip.caption);
+  els.replayModalVideo.pause();
+  els.replayModalVideo.src = videoUrl;
+  if (posterUrl) {
+    els.replayModalVideo.poster = posterUrl;
+  } else {
+    els.replayModalVideo.removeAttribute('poster');
+  }
+  els.replayModal.classList.remove('hidden');
+  document.body.classList.add('modal-open');
+  els.replayModalClose.focus();
+  els.replayModalVideo.load();
+  els.replayModalVideo.play().catch(() => {
+    // Some browsers require pressing play even after opening from a thumbnail.
+  });
+}
+
+function closeReplayModal() {
+  if (!els.replayModal || els.replayModal.classList.contains('hidden')) {
+    return;
+  }
+  els.replayModalVideo.pause();
+  els.replayModalVideo.removeAttribute('src');
+  els.replayModalVideo.removeAttribute('poster');
+  els.replayModalVideo.load();
+  els.replayModal.classList.add('hidden');
+  document.body.classList.remove('modal-open');
+}
+
+function openPostedReplayLink(event) {
+  const clipId = state.recording.postedClipId;
+  const clip = state.replays.find((entry) => entry.id === clipId);
+  if (!clip) {
+    return;
+  }
+  event.preventDefault();
+  openReplayModal(clip);
 }
 
 function resolveClipMediaUrl(value) {
