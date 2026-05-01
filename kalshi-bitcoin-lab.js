@@ -33,9 +33,17 @@
       currency: "SIM",
       startingBankroll: 1000,
       cash: 1000,
+      orders: [],
       positions: [],
       history: [],
+      layout: {
+        floating: false,
+        x: null,
+        y: null,
+      },
     },
+    paperDrag: null,
+    paperTicketPositionId: "",
   };
 
   const form = document.querySelector("#scan-form");
@@ -88,15 +96,23 @@
   const strategyTakeProfitInput = document.querySelector("#strategy-take-profit");
   const strategyStopLossInput = document.querySelector("#strategy-stop-loss");
   const strategyExitBufferInput = document.querySelector("#strategy-exit-buffer");
+  const paperPanelEl = document.querySelector("#paper-panel");
   const paperStatusEl = document.querySelector("#paper-status");
   const paperCurrencyInput = document.querySelector("#paper-currency");
   const paperStartingBankrollInput = document.querySelector("#paper-starting-bankroll");
+  const paperOrderActionInput = document.querySelector("#paper-order-action");
+  const paperOrderSideInput = document.querySelector("#paper-order-side");
+  const paperLimitCentsInput = document.querySelector("#paper-limit-cents");
   const paperContractsInput = document.querySelector("#paper-contracts");
+  const paperUsePlanButton = document.querySelector("#paper-use-plan");
   const paperBuyBestButton = document.querySelector("#paper-buy-best");
+  const paperFloatButton = document.querySelector("#paper-float");
+  const paperDockButton = document.querySelector("#paper-dock");
   const paperSyncBankrollButton = document.querySelector("#paper-sync-bankroll");
   const paperResetButton = document.querySelector("#paper-reset");
   const paperSummaryEl = document.querySelector("#paper-summary");
   const paperPositionsEl = document.querySelector("#paper-positions");
+  const paperOrdersEl = document.querySelector("#paper-orders");
   const paperHistoryEl = document.querySelector("#paper-history");
 
   kalshiLinkEl.addEventListener("click", function (event) {
@@ -128,7 +144,10 @@
   });
   openTicketKalshiButton.addEventListener("click", openPreparedTicketOnKalshi);
   placeTicketButton.addEventListener("click", placePreparedTicket);
+  paperUsePlanButton.addEventListener("click", fillPaperTicketFromPlan);
   paperBuyBestButton.addEventListener("click", paperBuyPlan);
+  paperFloatButton.addEventListener("click", floatPaperPanel);
+  paperDockButton.addEventListener("click", dockPaperPanel);
   paperSyncBankrollButton.addEventListener("click", syncPaperBankrollToKelly);
   paperResetButton.addEventListener("click", resetPaperLedger);
   [paperCurrencyInput, paperStartingBankrollInput].forEach(function (input) {
@@ -142,7 +161,18 @@
     const action = button.getAttribute("data-paper-action");
     if (action === "sell") paperSellPosition(id);
     if (action === "settle") paperSettlePosition(id);
+    if (action === "ticket") fillPaperSellTicket(id);
   });
+  paperOrdersEl.addEventListener("click", function (event) {
+    const button = event.target.closest("[data-paper-order-action]");
+    if (!button) return;
+    if (button.getAttribute("data-paper-order-action") === "cancel") {
+      cancelPaperOrder(button.getAttribute("data-paper-order-id"));
+    }
+  });
+  paperPanelEl.addEventListener("pointerdown", beginPaperDrag);
+  window.addEventListener("pointermove", movePaperPanel);
+  window.addEventListener("pointerup", endPaperDrag);
   accessTokenInput.value = localStorage.getItem("kalshiLabToken") || "";
   accessTokenInput.addEventListener("input", function () {
     localStorage.setItem("kalshiLabToken", accessTokenInput.value.trim());
@@ -889,11 +919,14 @@
       currency: cleanPaperCurrency(saved.currency || "SIM"),
       startingBankroll,
       cash: Number.isFinite(Number(saved.cash)) ? Number(saved.cash) : startingBankroll,
+      orders: Array.isArray(saved.orders) ? saved.orders.filter(function (item) { return item && item.status === "open"; }) : [],
       positions: Array.isArray(saved.positions) ? saved.positions.filter(function (item) { return item && item.status === "open"; }) : [],
-      history: Array.isArray(saved.history) ? saved.history.slice(0, 80) : [],
+      history: Array.isArray(saved.history) ? saved.history.slice(0, 100) : [],
+      layout: normalizePaperLayout(saved.layout),
     };
     paperCurrencyInput.value = state.paper.currency;
     paperStartingBankrollInput.value = String(state.paper.startingBankroll);
+    applyPaperLayout();
     renderPaperBankroll();
   }
 
@@ -905,6 +938,7 @@
     const previousStarting = Number(state.paper.startingBankroll || 1000);
     const nextStarting = Math.max(1, Number(paperStartingBankrollInput.value || previousStarting));
     const untouched = !state.paper.positions.length
+      && !state.paper.orders.length
       && !state.paper.history.length
       && Math.abs(Number(state.paper.cash || 0) - previousStarting) < 0.01;
     state.paper.currency = cleanPaperCurrency(paperCurrencyInput.value || "SIM");
@@ -915,57 +949,160 @@
     renderPaperBankroll();
   }
 
-  function paperBuyPlan() {
+  function fillPaperTicketFromPlan() {
     const plan = state.executionPlan;
+    if (!plan || !plan.candidate) {
+      setPaperStatus("No active plan to copy into the paper ticket.", true);
+      return;
+    }
+    paperOrderActionInput.value = "buy";
+    state.paperTicketPositionId = "";
+    paperOrderSideInput.value = plan.side || "yes";
+    paperLimitCentsInput.value = centsInputValue(plan.entry.limitCents || plan.entry.askCents);
+    paperContractsInput.value = plan.size.contracts > 0 ? String(plan.size.contracts) : "1";
+    setPaperStatus("Paper ticket loaded: " + String(plan.side || "yes").toUpperCase() + " limit " + formatCents(plan.entry.limitCents || plan.entry.askCents) + ".", false);
+  }
+
+  function paperBuyPlan() {
+    const order = paperTicketOrder();
+    if (!order) return;
+    const quote = getCurrentPaperQuote(order.side);
+    if (!quote) {
+      setPaperStatus("No paper order: live quote is unavailable for " + order.side.toUpperCase() + ".", true);
+      return;
+    }
+    order.lastBidCents = quote.bidCents;
+    order.lastAskCents = quote.askCents;
+    order.lastModelProbability = quote.probability;
+
+    if (order.action === "buy") {
+      const maxContracts = maxPaperContracts(paperAvailableCash(), order.limitCents);
+      order.contracts = Math.min(order.contracts, maxContracts);
+      if (order.contracts <= 0) {
+        setPaperStatus("No paper buy: fake cash is tied up or below this limit cost.", true);
+        return;
+      }
+      if (Number(quote.askCents) <= order.limitCents) {
+        fillPaperBuy(order, quote.askCents, "Marketable limit buy filled immediately");
+      } else {
+        queuePaperOrder(order, "Waiting for ask <= " + formatCents(order.limitCents));
+      }
+      return;
+    }
+
+    const availableContracts = paperAvailableContractsForSell(order.ticker, order.side);
+    order.contracts = Math.min(order.contracts, availableContracts);
+    if (order.contracts <= 0) {
+      setPaperStatus("No paper sell: no unreserved open " + order.side.toUpperCase() + " contracts.", true);
+      return;
+    }
+    if (Number(quote.bidCents) >= order.limitCents) {
+      paperSellContracts(order.ticker, order.side, order.contracts, quote.bidCents, "Marketable limit sell filled immediately");
+    } else {
+      queuePaperOrder(order, "Waiting for bid >= " + formatCents(order.limitCents));
+    }
+  }
+
+  function paperTicketOrder() {
     const scan = state.scan || {};
     const market = scan.market || {};
-    if (!plan || !plan.candidate) {
-      setPaperStatus("No paper buy: no active plan.", true);
-      return;
+    const plan = state.executionPlan || {};
+    const action = paperOrderActionInput.value === "sell" ? "sell" : "buy";
+    const side = paperOrderSideInput.value === "no" ? "no" : "yes";
+    const sourcePosition = action === "sell" ? findPaperPosition(state.paperTicketPositionId) : null;
+    const ticker = sourcePosition && sourcePosition.side === side ? sourcePosition.ticker : (scan.ticker || "KXBTC15M");
+    const quote = getCurrentPaperQuote(side);
+    const fallbackLimit = action === "buy"
+      ? Number(plan.entry && plan.side === side ? plan.entry.limitCents : quote && quote.askCents)
+      : Number(plan.exit && plan.side === side ? plan.exit.sellLimitCents : quote && quote.bidCents);
+    const rawLimitCents = Number(paperLimitCentsInput.value || fallbackLimit);
+    if (!Number.isFinite(rawLimitCents) || rawLimitCents <= 0) {
+      setPaperStatus("No paper order: enter a limit price in cents.", true);
+      return null;
     }
-    if (!plan.entry.ok) {
-      setPaperStatus("No paper buy: plan is not inside the entry guardrails.", true);
-      return;
-    }
-
-    const requestedContracts = Math.floor(Number(paperContractsInput.value || 0));
-    let contracts = requestedContracts > 0 ? requestedContracts : Math.floor(Number(plan.size.contracts || 0));
-    const entryCents = Number(plan.entry.askCents);
-    if (!Number.isFinite(entryCents) || entryCents <= 0) {
-      setPaperStatus("No paper buy: live ask is unavailable.", true);
-      return;
-    }
-    const maxAffordable = maxPaperContracts(state.paper.cash, entryCents);
-    contracts = Math.min(Math.max(0, contracts), maxAffordable);
+    const limitCents = clampNumber(rawLimitCents, 1, 99);
+    let contracts = Math.floor(Number(paperContractsInput.value || 0));
+    if (contracts <= 0 && action === "buy") contracts = Math.max(1, Math.floor(Number(plan.size && plan.size.contracts || 1)));
+    if (contracts <= 0 && action === "sell") contracts = paperAvailableContractsForSell(ticker, side);
+    contracts = Math.min(1000, Math.max(0, contracts));
     if (contracts <= 0) {
-      setPaperStatus("No paper buy: simulated cash cannot cover this fill.", true);
-      return;
+      setPaperStatus("No paper order: enter at least 1 contract.", true);
+      return null;
     }
-
-    const entryPrice = entryCents / 100;
-    const entryFee = kalshiFeeDollars(contracts, entryPrice);
-    const entryCost = contracts * entryPrice + entryFee;
-    const position = {
-      id: "paper-" + Date.now() + "-" + Math.floor(Math.random() * 100000),
+    return {
+      id: "paper-order-" + Date.now() + "-" + Math.floor(Math.random() * 100000),
       status: "open",
-      ticker: scan.ticker || "KXBTC15M",
-      side: plan.side,
+      action,
+      side,
       contracts,
-      entryCents,
-      entryFee,
-      entryCost,
-      openedAt: new Date().toISOString(),
+      limitCents,
+      ticker,
+      createdAt: new Date().toISOString(),
       closeTime: market.closeTime || "",
       targetPrice: Number(market.targetPrice),
       entrySpot: Number(market.currentPrice),
-      entryProbability: Number(plan.expiry.probability),
-      entryEdge: Number(plan.expiry.edge),
-      lastBidCents: Number(plan.entry.bidCents),
-      lastAskCents: entryCents,
       lastSpot: Number(market.currentPrice),
-      lastModelProbability: Number(plan.expiry.probability),
       lastMarkedAt: scan.generatedAt || new Date().toISOString(),
     };
+  }
+
+  function queuePaperOrder(order, detail) {
+    state.paper.orders.unshift(order);
+    addPaperHistory({
+      type: "LIMIT",
+      ticker: order.ticker,
+      side: order.side,
+      contracts: order.contracts,
+      priceCents: order.limitCents,
+      pnl: 0,
+      detail: order.action.toUpperCase() + " " + detail,
+    });
+    savePaperLedger();
+    renderPaperBankroll();
+    setPaperStatus("Paper limit resting: " + order.action.toUpperCase() + " " + order.contracts + " " + order.side.toUpperCase() + " @ " + formatCents(order.limitCents) + ".", false);
+  }
+
+  function fillPaperBuy(order, fillCents, detail) {
+    const entryCents = clampNumber(Number(fillCents), 1, 99);
+    const maxContracts = maxPaperContracts(state.paper.cash, entryCents);
+    const contracts = Math.min(Math.floor(Number(order.contracts || 0)), maxContracts);
+    if (contracts <= 0) {
+      if (order.id) removePaperOrder(order.id);
+      setPaperStatus("Paper buy could not fill: fake cash no longer covers it.", true);
+      savePaperLedger();
+      renderPaperBankroll();
+      return;
+    }
+    const scan = state.scan || {};
+    const market = scan.market || {};
+    const price = entryCents / 100;
+    const entryFee = kalshiFeeDollars(contracts, price);
+    const entryCost = contracts * price + entryFee;
+    const probability = Number(order.lastModelProbability || (state.executionPlan && state.executionPlan.expiry && state.executionPlan.expiry.probability));
+    const edge = Number((state.executionPlan && state.executionPlan.side === order.side && state.executionPlan.expiry && state.executionPlan.expiry.edge) || 0);
+    const position = {
+      id: "paper-" + Date.now() + "-" + Math.floor(Math.random() * 100000),
+      status: "open",
+      ticker: order.ticker || scan.ticker || "KXBTC15M",
+      side: order.side,
+      contracts,
+      entryCents,
+      entryLimitCents: Number(order.limitCents),
+      entryFee,
+      entryCost,
+      openedAt: new Date().toISOString(),
+      closeTime: order.closeTime || market.closeTime || "",
+      targetPrice: Number(order.targetPrice || market.targetPrice),
+      entrySpot: Number(order.entrySpot || market.currentPrice),
+      entryProbability: probability,
+      entryEdge: edge,
+      lastBidCents: Number(order.lastBidCents),
+      lastAskCents: Number(order.lastAskCents || fillCents),
+      lastSpot: Number(order.lastSpot || market.currentPrice),
+      lastModelProbability: probability,
+      lastMarkedAt: scan.generatedAt || new Date().toISOString(),
+    };
+    if (order.id) removePaperOrder(order.id);
     state.paper.cash -= entryCost;
     state.paper.positions.unshift(position);
     addPaperHistory({
@@ -975,11 +1112,11 @@
       contracts,
       priceCents: entryCents,
       pnl: 0,
-      detail: "Entry edge " + pct(position.entryEdge) + " / expiry " + pct(position.entryProbability),
+      detail: (detail || "Paper limit buy") + " / limit " + formatCents(position.entryLimitCents),
     });
     savePaperLedger();
     renderPaperBankroll();
-    setPaperStatus("Paper bought " + contracts + " " + String(plan.side).toUpperCase() + " @ " + formatCents(entryCents) + ".", false, "pos");
+    setPaperStatus("Paper bought " + contracts + " " + String(order.side).toUpperCase() + " @ " + formatCents(entryCents) + ".", false, "pos");
   }
 
   function paperSellPosition(id) {
@@ -990,24 +1127,58 @@
       setPaperStatus("No paper sell: current bid is unavailable.", true);
       return;
     }
-    const exitPrice = bidCents / 100;
-    const exitFee = kalshiFeeDollars(position.contracts, exitPrice);
-    const proceeds = position.contracts * exitPrice - exitFee;
-    const pnl = proceeds - Number(position.entryCost || 0);
+    paperSellContracts(position.ticker, position.side, position.contracts, bidCents, "Bid-side exit before settlement");
+  }
+
+  function paperSellContracts(ticker, side, requestedContracts, exitCents, detail, orderId) {
+    const priceCents = clampNumber(Number(exitCents), 1, 99);
+    const price = priceCents / 100;
+    let remaining = Math.floor(Number(requestedContracts || 0));
+    let soldContracts = 0;
+    let entryCost = 0;
+    const positions = state.paper.positions
+      .filter(function (position) { return position.ticker === ticker && position.side === side; })
+      .sort(function (a, b) { return new Date(a.openedAt || 0).getTime() - new Date(b.openedAt || 0).getTime(); });
+    if (orderId) removePaperOrder(orderId);
+    positions.forEach(function (position) {
+      if (remaining <= 0) return;
+      const openContracts = Math.floor(Number(position.contracts || 0));
+      const take = Math.min(openContracts, remaining);
+      const ratio = openContracts > 0 ? take / openContracts : 0;
+      const costSlice = Number(position.entryCost || 0) * ratio;
+      entryCost += costSlice;
+      soldContracts += take;
+      remaining -= take;
+      if (take >= openContracts) {
+        removePaperPosition(position.id);
+      } else {
+        position.contracts = openContracts - take;
+        position.entryCost = Number(position.entryCost || 0) - costSlice;
+        position.entryFee = Number(position.entryFee || 0) * (1 - ratio);
+      }
+    });
+    if (soldContracts <= 0) {
+      setPaperStatus("No paper sell: no matching open contracts.", true);
+      savePaperLedger();
+      renderPaperBankroll();
+      return;
+    }
+    const exitFee = kalshiFeeDollars(soldContracts, price);
+    const proceeds = soldContracts * price - exitFee;
+    const pnl = proceeds - entryCost;
     state.paper.cash += proceeds;
-    removePaperPosition(id);
     addPaperHistory({
       type: "SELL",
-      ticker: position.ticker,
-      side: position.side,
-      contracts: position.contracts,
-      priceCents: bidCents,
+      ticker,
+      side,
+      contracts: soldContracts,
+      priceCents,
       pnl,
-      detail: "Scalp exit before settlement",
+      detail: detail || "Limit exit before settlement",
     });
     savePaperLedger();
     renderPaperBankroll();
-    setPaperStatus("Paper sold " + position.contracts + " " + String(position.side).toUpperCase() + " @ " + formatCents(bidCents) + " for " + signedPaperMoney(pnl) + ".", pnl < 0, pnl >= 0 ? "pos" : "neg");
+    setPaperStatus("Paper sold " + soldContracts + " " + String(side).toUpperCase() + " @ " + formatCents(priceCents) + " for " + signedPaperMoney(pnl) + ".", pnl < 0, pnl >= 0 ? "pos" : "neg");
   }
 
   function paperSettlePosition(id, options) {
@@ -1040,6 +1211,19 @@
     }
   }
 
+  function fillPaperSellTicket(id) {
+    const position = findPaperPosition(id);
+    if (!position) return;
+    state.paperTicketPositionId = id;
+    paperOrderActionInput.value = "sell";
+    paperOrderSideInput.value = position.side || "yes";
+    paperContractsInput.value = String(position.contracts || 1);
+    const plan = state.executionPlan;
+    const planSell = plan && plan.side === position.side && plan.exit ? Number(plan.exit.sellLimitCents) : NaN;
+    paperLimitCentsInput.value = centsInputValue(Number.isFinite(planSell) ? planSell : position.lastBidCents);
+    setPaperStatus("Paper sell ticket loaded for " + String(position.side || "yes").toUpperCase() + ".", false);
+  }
+
   function syncPaperBankrollToKelly() {
     const equity = paperEquity();
     strategyBankrollInput.value = String(Math.max(1, Math.round(equity)));
@@ -1048,7 +1232,7 @@
   }
 
   function resetPaperLedger() {
-    if (!window.confirm("Reset the paper bankroll, open paper positions, and local paper history?")) {
+    if (!window.confirm("Reset the paper bankroll, open paper positions, pending limits, and local paper history?")) {
       return;
     }
     const startingBankroll = Math.max(1, Number(paperStartingBankrollInput.value || 1000));
@@ -1056,8 +1240,10 @@
       currency: cleanPaperCurrency(paperCurrencyInput.value || "SIM"),
       startingBankroll,
       cash: startingBankroll,
+      orders: [],
       positions: [],
       history: [],
+      layout: normalizePaperLayout(state.paper.layout),
     };
     savePaperLedger();
     renderPaperBankroll();
@@ -1069,6 +1255,7 @@
     const ticker = scan.ticker || "";
     const candidates = Array.isArray(scan.candidates) ? scan.candidates : [];
     const clockMs = new Date(market.clockTime || scan.generatedAt || Date.now()).getTime();
+    let changed = false;
     state.paper.positions.slice().forEach(function (position) {
       if (position.status !== "open") return;
       if (ticker && position.ticker === ticker) {
@@ -1082,35 +1269,63 @@
         position.targetPrice = Number(market.targetPrice);
         position.closeTime = market.closeTime || position.closeTime;
         position.lastMarkedAt = scan.generatedAt || new Date().toISOString();
+        changed = true;
       }
       const closeMs = new Date(position.closeTime || 0).getTime();
       if (Number.isFinite(closeMs) && closeMs > 0 && Number.isFinite(clockMs) && clockMs >= closeMs && Number.isFinite(Number(position.lastSpot))) {
         paperSettlePosition(position.id, { silent: true });
+        changed = true;
       }
     });
+    state.paper.orders.slice().forEach(function (order) {
+      if (order.status !== "open" || !ticker || order.ticker !== ticker) return;
+      const candidate = candidates.find(function (row) { return row.side === order.side; });
+      if (candidate) {
+        order.lastBidCents = Number(candidate.bidCents);
+        order.lastAskCents = Number(candidate.askCents);
+        order.lastModelProbability = Number(candidate.probability);
+      }
+      order.lastSpot = Number(market.currentPrice);
+      order.targetPrice = Number(market.targetPrice);
+      order.closeTime = market.closeTime || order.closeTime;
+      order.lastMarkedAt = scan.generatedAt || new Date().toISOString();
+      changed = true;
+      if (order.action === "buy" && Number(order.lastAskCents) <= Number(order.limitCents)) {
+        fillPaperBuy(order, Number(order.lastAskCents), "Resting limit buy filled");
+      } else if (order.action === "sell" && Number(order.lastBidCents) >= Number(order.limitCents)) {
+        paperSellContracts(order.ticker, order.side, order.contracts, Number(order.lastBidCents), "Resting limit sell filled", order.id);
+      }
+    });
+    if (changed) savePaperLedger();
   }
 
   function renderPaperBankroll() {
-    if (!paperSummaryEl || !paperPositionsEl || !paperHistoryEl) return;
+    if (!paperSummaryEl || !paperPositionsEl || !paperOrdersEl || !paperHistoryEl) return;
     const openValue = paperOpenValue();
+    const reserved = paperReservedCash();
+    const buyOrderCount = state.paper.orders.filter(function (order) { return order.action === "buy"; }).length;
     const equity = Number(state.paper.cash || 0) + openValue;
     const pnl = equity - Number(state.paper.startingBankroll || 0);
     const openRisk = state.paper.positions.reduce(function (sum, position) {
       return sum + Number(position.entryCost || 0);
     }, 0);
     paperSummaryEl.innerHTML = [
-      paperMetric("Cash", paperMoney(state.paper.cash), "Available fake bankroll"),
+      paperMetric("Cash", paperMoney(state.paper.cash), paperMoney(paperAvailableCash()) + " free after limits"),
+      paperMetric("Reserved", paperMoney(reserved), buyOrderCount + " buy limit" + (buyOrderCount === 1 ? "" : "s")),
       paperMetric("Open mark", paperMoney(openValue), "Bid-side value after estimated exit fees"),
       paperMetric("Equity", paperMoney(equity), "Cash plus open mark", pnl >= 0 ? "pos" : "neg"),
       paperMetric("Total P/L", signedPaperMoney(pnl), "Versus starting paper bankroll", pnl >= 0 ? "pos" : "neg"),
+      paperMetric("Open avg", formatCents(paperOpenAverageCents()), "Weighted average entry on open contracts"),
+      paperMetric("Avg bought", formatCents(paperAverageBuyCents()), "Weighted average of every paper buy"),
       paperMetric("Open risk", paperMoney(openRisk), state.paper.positions.length + " open position" + (state.paper.positions.length === 1 ? "" : "s")),
     ].join("");
 
     if (!state.paper.positions.length) {
-      paperPositionsEl.innerHTML = '<tr><td colspan="7" class="subtext">No open paper positions. Use Paper Buy Plan when the execution plan is green.</td></tr>';
+      paperPositionsEl.innerHTML = '<tr><td colspan="7" class="subtext">No open paper positions. Place a paper limit when the execution plan is green.</td></tr>';
     } else {
       paperPositionsEl.innerHTML = state.paper.positions.map(renderPaperPositionRow).join("");
     }
+    renderPaperOrders();
     renderPaperHistory();
   }
 
@@ -1124,11 +1339,34 @@
       "<td><strong>" + escapeHtml(position.ticker || "KXBTC15M") + '</strong><br><span class="subtext">Close ' + escapeHtml(formatTime(position.closeTime)) + "</span></td>",
       '<td><span class="side-pill ' + escapeHtml(position.side) + '">' + escapeHtml(String(position.side || "").toUpperCase()) + "</span></td>",
       "<td>" + escapeHtml(String(position.contracts || 0)) + '<br><span class="subtext">cost ' + escapeHtml(paperMoney(position.entryCost)) + "</span></td>",
-      "<td>" + escapeHtml(formatCents(position.entryCents)) + '<br><span class="subtext">edge ' + escapeHtml(pct(position.entryEdge)) + "</span></td>",
+      "<td>" + escapeHtml(formatCents(position.entryCents)) + '<br><span class="subtext">limit ' + escapeHtml(formatCents(position.entryLimitCents || position.entryCents)) + "</span></td>",
       "<td>" + escapeHtml(formatCents(position.lastBidCents)) + '<br><span class="subtext">spot ' + escapeHtml(dollars(position.lastSpot)) + "</span></td>",
       '<td class="' + pnlClass + '">' + escapeHtml(signedPaperMoney(mark.pnl)) + '<br><span class="subtext">' + escapeHtml(paperMoney(mark.value)) + " value</span></td>",
-      '<td><button class="mini-button" type="button" data-paper-action="sell" data-paper-id="' + escapeHtml(position.id) + '">Sell</button> <button class="mini-button ghost-button" type="button" data-paper-action="settle" data-paper-id="' + escapeHtml(position.id) + '"' + (canSettle ? "" : " disabled") + ">Settle</button></td>",
+      '<td><button class="mini-button" type="button" data-paper-action="sell" data-paper-id="' + escapeHtml(position.id) + '">Sell @ Bid</button> <button class="mini-button ghost-button" type="button" data-paper-action="ticket" data-paper-id="' + escapeHtml(position.id) + '">Limit</button> <button class="mini-button ghost-button" type="button" data-paper-action="settle" data-paper-id="' + escapeHtml(position.id) + '"' + (canSettle ? "" : " disabled") + ">Settle</button></td>",
       "</tr>",
+    ].join("");
+  }
+
+  function renderPaperOrders() {
+    if (!state.paper.orders.length) {
+      paperOrdersEl.innerHTML = '<h3>Pending paper limits</h3><p class="subtext">No resting paper limit orders.</p>';
+      return;
+    }
+    paperOrdersEl.innerHTML = [
+      "<h3>Pending paper limits</h3>",
+      '<div class="paper-order-list">',
+      state.paper.orders.map(function (order) {
+        const quote = order.action === "buy" ? "ask " + formatCents(order.lastAskCents) : "bid " + formatCents(order.lastBidCents);
+        const condition = order.action === "buy" ? "fills at ask <= " : "fills at bid >= ";
+        return [
+          '<div class="paper-order-item">',
+          "<div><strong>" + escapeHtml(order.action.toUpperCase() + " " + String(order.side || "").toUpperCase() + " " + order.contracts + " @ " + formatCents(order.limitCents)) + "</strong>",
+          '<small class="subtext">' + escapeHtml((order.ticker || "KXBTC15M") + " / " + condition + formatCents(order.limitCents) + " / " + quote + " / " + formatTime(order.createdAt)) + "</small></div>",
+          '<button class="mini-button ghost-button" type="button" data-paper-order-action="cancel" data-paper-order-id="' + escapeHtml(order.id) + '">Cancel</button>',
+          "</div>",
+        ].join("");
+      }).join(""),
+      "</div>",
     ].join("");
   }
 
@@ -1140,7 +1378,7 @@
     paperHistoryEl.innerHTML = [
       "<h3>Recent paper trades</h3>",
       '<div class="paper-history-list">',
-      state.paper.history.slice(0, 14).map(function (entry) {
+      state.paper.history.slice(0, 18).map(function (entry) {
         const pnl = Number(entry.pnl || 0);
         return [
           '<div class="paper-history-item">',
@@ -1178,6 +1416,53 @@
     return Number(state.paper.cash || 0) + paperOpenValue();
   }
 
+  function paperReservedCash() {
+    return state.paper.orders.reduce(function (sum, order) {
+      if (order.action !== "buy") return sum;
+      const price = clampNumber(order.limitCents, 1, 99) / 100;
+      return sum + Number(order.contracts || 0) * price + kalshiFeeDollars(order.contracts, price);
+    }, 0);
+  }
+
+  function paperAvailableCash() {
+    return Math.max(0, Number(state.paper.cash || 0) - paperReservedCash());
+  }
+
+  function paperOpenAverageCents() {
+    const totals = state.paper.positions.reduce(function (acc, position) {
+      const contracts = Number(position.contracts || 0);
+      acc.contracts += contracts;
+      acc.cents += contracts * Number(position.entryCents || 0);
+      return acc;
+    }, { contracts: 0, cents: 0 });
+    return totals.contracts > 0 ? totals.cents / totals.contracts : NaN;
+  }
+
+  function paperAverageBuyCents() {
+    const totals = state.paper.history.reduce(function (acc, entry) {
+      if (entry.type !== "BUY") return acc;
+      const contracts = Number(entry.contracts || 0);
+      acc.contracts += contracts;
+      acc.cents += contracts * Number(entry.priceCents || 0);
+      return acc;
+    }, { contracts: 0, cents: 0 });
+    return totals.contracts > 0 ? totals.cents / totals.contracts : NaN;
+  }
+
+  function paperAvailableContractsForSell(ticker, side) {
+    const open = paperOpenContracts(ticker, side);
+    const reserved = state.paper.orders.reduce(function (sum, order) {
+      return sum + (order.action === "sell" && order.ticker === ticker && order.side === side ? Number(order.contracts || 0) : 0);
+    }, 0);
+    return Math.max(0, open - reserved);
+  }
+
+  function paperOpenContracts(ticker, side) {
+    return state.paper.positions.reduce(function (sum, position) {
+      return sum + (position.ticker === ticker && position.side === side ? Number(position.contracts || 0) : 0);
+    }, 0);
+  }
+
   function maxPaperContracts(cash, entryCents) {
     const price = clampNumber(entryCents, 1, 99) / 100;
     let contracts = Math.floor(Number(cash || 0) / price);
@@ -1190,6 +1475,19 @@
     return 0;
   }
 
+  function getCurrentPaperQuote(side) {
+    const scan = state.scan || {};
+    const rows = Array.isArray(scan.candidates) ? scan.candidates : [];
+    const row = rows.find(function (candidate) { return candidate.side === side; });
+    if (!row) return null;
+    return {
+      side,
+      askCents: Number(row.askCents),
+      bidCents: Number(row.bidCents),
+      probability: Number(row.probability),
+    };
+  }
+
   function findPaperPosition(id) {
     return state.paper.positions.find(function (position) { return position.id === id; });
   }
@@ -1198,12 +1496,34 @@
     state.paper.positions = state.paper.positions.filter(function (position) { return position.id !== id; });
   }
 
+  function removePaperOrder(id) {
+    state.paper.orders = state.paper.orders.filter(function (order) { return order.id !== id; });
+  }
+
+  function cancelPaperOrder(id) {
+    const order = state.paper.orders.find(function (item) { return item.id === id; });
+    if (!order) return;
+    removePaperOrder(id);
+    addPaperHistory({
+      type: "CANCEL",
+      ticker: order.ticker,
+      side: order.side,
+      contracts: order.contracts,
+      priceCents: order.limitCents,
+      pnl: 0,
+      detail: order.action.toUpperCase() + " paper limit canceled",
+    });
+    savePaperLedger();
+    renderPaperBankroll();
+    setPaperStatus("Paper limit canceled.", false);
+  }
+
   function addPaperHistory(entry) {
     state.paper.history.unshift({
       ...entry,
       time: new Date().toISOString(),
     });
-    state.paper.history = state.paper.history.slice(0, 80);
+    state.paper.history = state.paper.history.slice(0, 100);
   }
 
   function setPaperStatus(message, error, tone) {
@@ -1215,6 +1535,11 @@
     return String(value || "SIM").replace(/[^a-z0-9_$.-]/gi, "").toUpperCase().slice(0, 12) || "SIM";
   }
 
+  function centsInputValue(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? String(Math.round(number * 10) / 10) : "";
+  }
+
   function paperMoney(value) {
     const number = Number(value || 0);
     return number.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + state.paper.currency;
@@ -1224,6 +1549,88 @@
     const number = Number(value || 0);
     const sign = number > 0 ? "+" : number < 0 ? "-" : "";
     return sign + paperMoney(Math.abs(number));
+  }
+
+  function normalizePaperLayout(layout) {
+    const saved = layout || {};
+    return {
+      floating: saved.floating === true,
+      x: Number.isFinite(Number(saved.x)) ? Number(saved.x) : null,
+      y: Number.isFinite(Number(saved.y)) ? Number(saved.y) : null,
+    };
+  }
+
+  function floatPaperPanel() {
+    const rect = paperPanelEl.getBoundingClientRect();
+    state.paper.layout.floating = true;
+    state.paper.layout.x = Number.isFinite(Number(state.paper.layout.x)) ? Number(state.paper.layout.x) : Math.max(12, window.innerWidth - Math.min(720, rect.width || 720) - 22);
+    state.paper.layout.y = Number.isFinite(Number(state.paper.layout.y)) ? Number(state.paper.layout.y) : 86;
+    applyPaperLayout();
+    savePaperLedger();
+  }
+
+  function dockPaperPanel() {
+    state.paper.layout.floating = false;
+    applyPaperLayout();
+    savePaperLedger();
+  }
+
+  function applyPaperLayout() {
+    paperPanelEl.classList.toggle("paper-floating", state.paper.layout.floating === true);
+    if (!state.paper.layout.floating) {
+      paperPanelEl.style.left = "";
+      paperPanelEl.style.top = "";
+      paperPanelEl.style.right = "";
+      return;
+    }
+    const coords = boundedPaperCoords(state.paper.layout.x, state.paper.layout.y);
+    state.paper.layout.x = coords.x;
+    state.paper.layout.y = coords.y;
+    paperPanelEl.style.left = coords.x + "px";
+    paperPanelEl.style.top = coords.y + "px";
+    paperPanelEl.style.right = "auto";
+  }
+
+  function beginPaperDrag(event) {
+    if (!state.paper.layout.floating || !event.target.closest(".paper-drag-handle")) return;
+    if (event.target.closest("button,input,select,a")) return;
+    const rect = paperPanelEl.getBoundingClientRect();
+    state.paperDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+    };
+    paperPanelEl.setPointerCapture(event.pointerId);
+  }
+
+  function movePaperPanel(event) {
+    if (!state.paperDrag || state.paperDrag.pointerId !== event.pointerId) return;
+    const next = boundedPaperCoords(
+      state.paperDrag.originX + event.clientX - state.paperDrag.startX,
+      state.paperDrag.originY + event.clientY - state.paperDrag.startY
+    );
+    state.paper.layout.x = next.x;
+    state.paper.layout.y = next.y;
+    paperPanelEl.style.left = next.x + "px";
+    paperPanelEl.style.top = next.y + "px";
+  }
+
+  function endPaperDrag(event) {
+    if (!state.paperDrag || state.paperDrag.pointerId !== event.pointerId) return;
+    state.paperDrag = null;
+    savePaperLedger();
+  }
+
+  function boundedPaperCoords(x, y) {
+    const rect = paperPanelEl.getBoundingClientRect();
+    const width = Math.min(rect.width || 720, window.innerWidth - 24);
+    const height = Math.min(rect.height || 520, window.innerHeight - 24);
+    return {
+      x: clampNumber(Number(x), 12, Math.max(12, window.innerWidth - width - 12)),
+      y: clampNumber(Number(y), 12, Math.max(12, window.innerHeight - Math.min(height, 220) - 12)),
+    };
   }
 
   function restoreAutoSettings() {
