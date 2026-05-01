@@ -102,8 +102,17 @@
   const paperStartingBankrollInput = document.querySelector("#paper-starting-bankroll");
   const paperOrderActionInput = document.querySelector("#paper-order-action");
   const paperOrderSideInput = document.querySelector("#paper-order-side");
+  const paperActionBuyButton = document.querySelector("#paper-action-buy");
+  const paperActionSellButton = document.querySelector("#paper-action-sell");
+  const paperSideYesButton = document.querySelector("#paper-side-yes");
+  const paperSideNoButton = document.querySelector("#paper-side-no");
+  const paperYesQuoteEl = document.querySelector("#paper-yes-quote");
+  const paperYesSubquoteEl = document.querySelector("#paper-yes-subquote");
+  const paperNoQuoteEl = document.querySelector("#paper-no-quote");
+  const paperNoSubquoteEl = document.querySelector("#paper-no-subquote");
   const paperLimitCentsInput = document.querySelector("#paper-limit-cents");
   const paperContractsInput = document.querySelector("#paper-contracts");
+  const paperFillLimitButton = document.querySelector("#paper-fill-limit");
   const paperUsePlanButton = document.querySelector("#paper-use-plan");
   const paperBuyBestButton = document.querySelector("#paper-buy-best");
   const paperFloatButton = document.querySelector("#paper-float");
@@ -111,6 +120,7 @@
   const paperSyncBankrollButton = document.querySelector("#paper-sync-bankroll");
   const paperResetButton = document.querySelector("#paper-reset");
   const paperSummaryEl = document.querySelector("#paper-summary");
+  const paperTicketPreviewEl = document.querySelector("#paper-ticket-preview");
   const paperPositionsEl = document.querySelector("#paper-positions");
   const paperOrdersEl = document.querySelector("#paper-orders");
   const paperHistoryEl = document.querySelector("#paper-history");
@@ -144,6 +154,11 @@
   });
   openTicketKalshiButton.addEventListener("click", openPreparedTicketOnKalshi);
   placeTicketButton.addEventListener("click", placePreparedTicket);
+  paperActionBuyButton.addEventListener("click", function () { setPaperAction("buy"); });
+  paperActionSellButton.addEventListener("click", function () { setPaperAction("sell"); });
+  paperSideYesButton.addEventListener("click", function () { setPaperSide("yes"); });
+  paperSideNoButton.addEventListener("click", function () { setPaperSide("no"); });
+  paperFillLimitButton.addEventListener("click", fillPaperLimitFromMarket);
   paperUsePlanButton.addEventListener("click", fillPaperTicketFromPlan);
   paperBuyBestButton.addEventListener("click", paperBuyPlan);
   paperFloatButton.addEventListener("click", floatPaperPanel);
@@ -153,6 +168,10 @@
   [paperCurrencyInput, paperStartingBankrollInput].forEach(function (input) {
     input.addEventListener("input", updatePaperSettings);
     input.addEventListener("change", updatePaperSettings);
+  });
+  [paperOrderActionInput, paperOrderSideInput, paperLimitCentsInput, paperContractsInput].forEach(function (input) {
+    input.addEventListener("input", renderPaperTicket);
+    input.addEventListener("change", renderPaperTicket);
   });
   paperPositionsEl.addEventListener("click", function (event) {
     const button = event.target.closest("[data-paper-action]");
@@ -320,6 +339,7 @@
     renderMarketStrip(scan);
     renderCandidates(scan);
     renderExecutionPlan(scan);
+    renderPaperTicket();
     markPaperLedger(scan);
     renderPaperBankroll();
     renderChart(scan);
@@ -949,6 +969,86 @@
     renderPaperBankroll();
   }
 
+  function setPaperAction(action) {
+    paperOrderActionInput.value = action === "sell" ? "sell" : "buy";
+    state.paperTicketPositionId = "";
+    renderPaperTicket();
+  }
+
+  function setPaperSide(side) {
+    paperOrderSideInput.value = side === "no" ? "no" : "yes";
+    state.paperTicketPositionId = "";
+    renderPaperTicket();
+  }
+
+  function fillPaperLimitFromMarket() {
+    const action = paperOrderActionInput.value === "sell" ? "sell" : "buy";
+    const side = paperOrderSideInput.value === "no" ? "no" : "yes";
+    const quote = getCurrentPaperQuote(side);
+    const priceCents = quote ? Number(action === "buy" ? quote.askCents : quote.bidCents) : NaN;
+    if (!Number.isFinite(priceCents) || priceCents <= 0) {
+      setPaperStatus("No live " + (action === "buy" ? "ask" : "bid") + " available to auto-fill.", true);
+      return;
+    }
+    paperLimitCentsInput.value = centsInputValue(priceCents);
+    renderPaperTicket();
+    setPaperStatus("Limit price auto-filled from current " + (action === "buy" ? "ask" : "bid") + " at " + formatCents(priceCents) + ".", false);
+  }
+
+  function renderPaperTicket() {
+    if (!paperTicketPreviewEl) return;
+    const action = paperOrderActionInput.value === "sell" ? "sell" : "buy";
+    const side = paperOrderSideInput.value === "no" ? "no" : "yes";
+    const yesQuote = getCurrentPaperQuote("yes");
+    const noQuote = getCurrentPaperQuote("no");
+    paperActionBuyButton.classList.toggle("active", action === "buy");
+    paperActionSellButton.classList.toggle("active", action === "sell");
+    paperSideYesButton.classList.toggle("active", side === "yes");
+    paperSideNoButton.classList.toggle("active", side === "no");
+    renderPaperQuoteButton("yes", yesQuote, action);
+    renderPaperQuoteButton("no", noQuote, action);
+
+    const quote = side === "yes" ? yesQuote : noQuote;
+    const quotePrice = quote ? Number(action === "buy" ? quote.askCents : quote.bidCents) : NaN;
+    const limitCents = Number(paperLimitCentsInput.value || quotePrice);
+    const rawContracts = Math.floor(Number(paperContractsInput.value || 0));
+    const contracts = Math.max(0, rawContracts || (action === "buy" && state.executionPlan && state.executionPlan.size ? Number(state.executionPlan.size.contracts || 1) : 1));
+    const price = Number.isFinite(limitCents) ? clampNumber(limitCents, 1, 99) / 100 : NaN;
+    const fee = Number.isFinite(price) ? kalshiFeeDollars(contracts, price) : NaN;
+    const gross = Number.isFinite(price) ? contracts * price : NaN;
+    const total = action === "buy" ? gross + fee : Math.max(0, gross - fee);
+    const marketable = action === "buy"
+      ? quote && Number(quote.askCents) <= limitCents
+      : quote && Number(quote.bidCents) >= limitCents;
+    const hasTradableQuote = quote && Number.isFinite(quotePrice) && Number.isFinite(limitCents);
+    const statusTitle = hasTradableQuote ? (marketable ? "Fills now" : "Rests") : "Waiting";
+    const statusDetail = hasTradableQuote
+      ? (marketable ? "Limit crosses the live quote" : "Limit waits in paper order book")
+      : "Need a live quote and limit price";
+    const currentLabel = action === "buy" ? "Current ask" : "Current bid";
+    const totalLabel = action === "buy" ? "Est. cost" : "Est. proceeds";
+    paperFillLimitButton.textContent = action === "buy" ? "Ask" : "Bid";
+    paperBuyBestButton.textContent = action === "buy" ? "Place Buy Limit" : "Place Sell Limit";
+    paperTicketPreviewEl.innerHTML = [
+      paperTicketMetric(currentLabel, formatCents(quotePrice), quote ? "Bid " + formatCents(quote.bidCents) + " / Ask " + formatCents(quote.askCents) : "Waiting for quote"),
+      paperTicketMetric(totalLabel, paperMoney(total), contracts + " contract" + (contracts === 1 ? "" : "s") + " incl est. fee " + paperMoney(fee)),
+      paperTicketMetric("Status", statusTitle, statusDetail, marketable ? "pos" : "wait"),
+    ].join("");
+  }
+
+  function renderPaperQuoteButton(side, quote, action) {
+    const main = quote ? Number(action === "buy" ? quote.askCents : quote.bidCents) : NaN;
+    const sub = quote ? (action === "buy" ? "bid " + formatCents(quote.bidCents) : "ask " + formatCents(quote.askCents)) : "waiting";
+    const quoteEl = side === "yes" ? paperYesQuoteEl : paperNoQuoteEl;
+    const subEl = side === "yes" ? paperYesSubquoteEl : paperNoSubquoteEl;
+    quoteEl.textContent = formatCents(main);
+    subEl.textContent = sub;
+  }
+
+  function paperTicketMetric(label, value, detail, className) {
+    return '<div class="' + escapeHtml(className || "") + '"><span>' + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong><small>" + escapeHtml(detail || "") + "</small></div>";
+  }
+
   function fillPaperTicketFromPlan() {
     const plan = state.executionPlan;
     if (!plan || !plan.candidate) {
@@ -960,6 +1060,7 @@
     paperOrderSideInput.value = plan.side || "yes";
     paperLimitCentsInput.value = centsInputValue(plan.entry.limitCents || plan.entry.askCents);
     paperContractsInput.value = plan.size.contracts > 0 ? String(plan.size.contracts) : "1";
+    renderPaperTicket();
     setPaperStatus("Paper ticket loaded: " + String(plan.side || "yes").toUpperCase() + " limit " + formatCents(plan.entry.limitCents || plan.entry.askCents) + ".", false);
   }
 
@@ -1221,6 +1322,7 @@
     const plan = state.executionPlan;
     const planSell = plan && plan.side === position.side && plan.exit ? Number(plan.exit.sellLimitCents) : NaN;
     paperLimitCentsInput.value = centsInputValue(Number.isFinite(planSell) ? planSell : position.lastBidCents);
+    renderPaperTicket();
     setPaperStatus("Paper sell ticket loaded for " + String(position.side || "yes").toUpperCase() + ".", false);
   }
 
@@ -1325,6 +1427,7 @@
     } else {
       paperPositionsEl.innerHTML = state.paper.positions.map(renderPaperPositionRow).join("");
     }
+    renderPaperTicket();
     renderPaperOrders();
     renderPaperHistory();
   }
@@ -1541,7 +1644,8 @@
   }
 
   function paperMoney(value) {
-    const number = Number(value || 0);
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "n/a";
     return number.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + state.paper.currency;
   }
 

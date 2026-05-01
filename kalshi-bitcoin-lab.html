@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kalshi Bitcoin 15m Lab</title>
-  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501b">
+  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501c">
 </head>
 <body>
   <header class="lab-topbar">
@@ -144,7 +144,7 @@
           <button id="paper-dock" class="ghost-button" type="button">Dock</button>
         </div>
       </div>
-      <div class="paper-controls">
+      <div class="paper-settings-row">
         <label>
           Currency
           <input id="paper-currency" type="text" maxlength="12" value="SIM">
@@ -153,32 +153,54 @@
           Starting roll
           <input id="paper-starting-bankroll" type="number" min="1" max="1000000" step="10" value="1000">
         </label>
-        <label>
-          Action
+        <button id="paper-sync-bankroll" class="ghost-button" type="button">Use Equity For Kelly</button>
+        <button id="paper-reset" class="danger-button" type="button">Reset Paper</button>
+      </div>
+      <div class="paper-ticket">
+        <div class="paper-hidden-selects">
           <select id="paper-order-action">
             <option value="buy">Buy</option>
             <option value="sell">Sell</option>
           </select>
-        </label>
-        <label>
-          Side
           <select id="paper-order-side">
             <option value="yes">YES</option>
             <option value="no">NO</option>
           </select>
-        </label>
-        <label>
-          Limit price
-          <input id="paper-limit-cents" type="number" min="1" max="99" step="0.1" placeholder="cents">
-        </label>
-        <label>
-          Contracts
-          <input id="paper-contracts" type="number" min="1" max="1000" step="1" placeholder="auto">
-        </label>
-        <button id="paper-use-plan" class="ghost-button" type="button">Use Plan</button>
-        <button id="paper-buy-best" type="button">Place Paper Limit</button>
-        <button id="paper-sync-bankroll" class="ghost-button" type="button">Use Equity For Kelly</button>
-        <button id="paper-reset" class="danger-button" type="button">Reset Paper</button>
+        </div>
+        <div class="paper-action-tabs" role="group" aria-label="Paper order action">
+          <button id="paper-action-buy" class="paper-tab active" type="button">Buy</button>
+          <button id="paper-action-sell" class="paper-tab sell" type="button">Sell</button>
+        </div>
+        <div class="paper-side-grid" role="group" aria-label="Contract side">
+          <button id="paper-side-yes" class="paper-side-button yes active" type="button">
+            <span>YES</span>
+            <strong id="paper-yes-quote">--</strong>
+            <small id="paper-yes-subquote">bid --</small>
+          </button>
+          <button id="paper-side-no" class="paper-side-button no" type="button">
+            <span>NO</span>
+            <strong id="paper-no-quote">--</strong>
+            <small id="paper-no-subquote">bid --</small>
+          </button>
+        </div>
+        <div class="paper-ticket-fields">
+          <label>
+            Contracts
+            <input id="paper-contracts" type="number" min="1" max="1000" step="1" placeholder="auto">
+          </label>
+          <label>
+            Limit price
+            <span class="paper-price-input">
+              <input id="paper-limit-cents" type="number" min="1" max="99" step="0.1" placeholder="cents">
+              <button id="paper-fill-limit" class="mini-button ghost-button" type="button">Auto</button>
+            </span>
+          </label>
+        </div>
+        <div id="paper-ticket-preview" class="paper-ticket-preview"></div>
+        <div class="paper-ticket-actions">
+          <button id="paper-use-plan" class="ghost-button" type="button">Use Plan</button>
+          <button id="paper-buy-best" type="button">Place Paper Limit</button>
+        </div>
       </div>
       <div id="paper-summary" class="paper-summary"></div>
       <div class="paper-table-wrap">
@@ -315,6 +337,6 @@
     </section>
   </main>
 
-  <script src="/kalshi-bitcoin-lab.js?v=20260501b"></script>
+  <script src="/kalshi-bitcoin-lab.js?v=20260501c"></script>
 </body>
 </html>
