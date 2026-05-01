@@ -182,6 +182,7 @@ button:disabled {
 .strategy-panel,
 .chart-panel,
 .table-panel,
+.paper-panel,
 .trade-panel,
 .auto-panel,
 .panel {
@@ -408,6 +409,115 @@ button:disabled {
   background: var(--panel-2);
   color: var(--muted);
   line-height: 1.45;
+}
+
+.paper-panel {
+  margin-bottom: 14px;
+}
+
+#paper-status {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(96, 165, 250, 0.12);
+  color: var(--blue);
+  font-size: 13px;
+}
+
+#paper-status.pos {
+  background: rgba(41, 245, 178, 0.14);
+  color: var(--green);
+}
+
+#paper-status.neg {
+  background: rgba(255, 82, 119, 0.14);
+  color: var(--red);
+}
+
+.paper-controls {
+  display: grid;
+  grid-template-columns: minmax(110px, 140px) minmax(130px, 160px) minmax(100px, 130px) repeat(3, max-content);
+  gap: 10px;
+  align-items: end;
+  padding: 14px;
+  border-bottom: 1px solid rgba(237, 244, 241, 0.08);
+}
+
+.paper-controls input {
+  width: 100%;
+}
+
+.paper-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: 10px;
+  padding: 14px;
+}
+
+.paper-metric {
+  display: grid;
+  gap: 5px;
+  min-height: 84px;
+  padding: 12px;
+  border: 1px solid rgba(237, 244, 241, 0.1);
+  border-radius: 8px;
+  background: #0d141b;
+}
+
+.paper-metric span,
+.paper-history h3 {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.paper-metric strong {
+  font-size: 22px;
+}
+
+.paper-metric small {
+  line-height: 1.35;
+}
+
+.paper-table-wrap {
+  overflow: auto;
+  border-top: 1px solid rgba(237, 244, 241, 0.08);
+}
+
+.paper-table-wrap table {
+  min-width: 920px;
+}
+
+.paper-history {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-top: 1px solid rgba(237, 244, 241, 0.08);
+}
+
+.paper-history-list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.paper-history-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid rgba(237, 244, 241, 0.1);
+  border-radius: 8px;
+  background: #0d141b;
+}
+
+.paper-history-item strong {
+  font-size: 13px;
+}
+
+.paper-history-item small {
+  text-align: right;
 }
 
 .chart-stage {
@@ -858,6 +968,8 @@ th {
   .clock-panel,
   .strategy-controls,
   .strategy-grid,
+  .paper-controls,
+  .paper-summary,
   .trade-grid,
   .auto-grid,
   .split {
@@ -866,6 +978,15 @@ th {
 
   .ticket-facts {
     grid-template-columns: 1fr;
+  }
+
+  .paper-history-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .paper-history-item small {
+    text-align: left;
   }
 
   input,

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kalshi Bitcoin 15m Lab</title>
-  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css">
+  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501a">
 </head>
 <body>
   <header class="lab-topbar">
@@ -132,6 +132,51 @@
       <div id="strategy-rules" class="strategy-rules"></div>
     </section>
 
+    <section class="paper-panel">
+      <div class="section-head">
+        <div>
+          <h2>Paper Bankroll</h2>
+          <p class="subtext">Simulated contracts use the same 1.00 payout structure, local quotes, and local browser storage.</p>
+        </div>
+        <strong id="paper-status">Paper ready</strong>
+      </div>
+      <div class="paper-controls">
+        <label>
+          Currency
+          <input id="paper-currency" type="text" maxlength="12" value="SIM">
+        </label>
+        <label>
+          Starting roll
+          <input id="paper-starting-bankroll" type="number" min="1" max="1000000" step="10" value="1000">
+        </label>
+        <label>
+          Contracts
+          <input id="paper-contracts" type="number" min="1" max="1000" step="1" placeholder="auto">
+        </label>
+        <button id="paper-buy-best" type="button">Paper Buy Plan</button>
+        <button id="paper-sync-bankroll" class="ghost-button" type="button">Use Equity For Kelly</button>
+        <button id="paper-reset" class="danger-button" type="button">Reset Paper</button>
+      </div>
+      <div id="paper-summary" class="paper-summary"></div>
+      <div class="paper-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Market</th>
+              <th>Side</th>
+              <th>Contracts</th>
+              <th>Entry</th>
+              <th>Mark</th>
+              <th>P/L</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="paper-positions"></tbody>
+        </table>
+      </div>
+      <div id="paper-history" class="paper-history"></div>
+    </section>
+
     <section class="chart-panel">
       <div class="section-head">
         <div>
@@ -246,6 +291,6 @@
     </section>
   </main>
 
-  <script src="/kalshi-bitcoin-lab.js"></script>
+  <script src="/kalshi-bitcoin-lab.js?v=20260501a"></script>
 </body>
 </html>
