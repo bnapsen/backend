@@ -7,7 +7,7 @@
   const PAPER_STORAGE_KEY = "kalshiBtcPaperLedger";
   const PAPER_AUTO_STORAGE_KEY = "kalshiBtcPaperBots";
   const PAPER_AUTO_CONTRACTS = 10;
-  const PAPER_AUTO_MAX_ENTRIES_PER_TICKER = 2;
+  const PAPER_AUTO_MAX_ENTRIES_PER_TICKER = 10;
   const PAPER_AUTO_COOLDOWN_MS = 15000;
   const PAPER_SCALP_TARGET_CENTS = 10;
   const state = {
@@ -1562,7 +1562,7 @@
     const active = [];
     if (state.paperAuto.completion) active.push("completion");
     if (state.paperAuto.scalp) active.push("scalp");
-    paperAutoStatusEl.textContent = message || (active.length ? "Paper bots armed: " + active.join(" + ") + ". Each fill buys 10 contracts only on a green model entry, shared max 2 fills per market." : "Paper bots are off.");
+    paperAutoStatusEl.textContent = message || (active.length ? "Paper bots armed: " + active.join(" + ") + ". Each fill buys exactly 10 contracts on a green model entry, up to 10 auto buys per market." : "Paper bots are off.");
     paperAutoStatusEl.className = "paper-auto-status " + (tone || "");
   }
 
