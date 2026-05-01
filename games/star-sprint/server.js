@@ -86,8 +86,8 @@ const MAX_SONG_UPLOAD_BYTES = 24 * 1024 * 1024;
 const MAX_CLIPS = 0;
 const MAX_VISIBLE_CLIPS = 60;
 const MAX_CLIP_UPLOAD_BYTES = 30 * 1024 * 1024;
-const MAX_DIRECT_CLIP_UPLOAD_BYTES = 300 * 1024 * 1024;
-const MAX_DIRECT_CLIP_UPLOAD_MB = Math.round(MAX_DIRECT_CLIP_UPLOAD_BYTES / (1024 * 1024));
+const MAX_DIRECT_CLIP_UPLOAD_BYTES = 1536 * 1024 * 1024;
+const MAX_DIRECT_CLIP_UPLOAD_LABEL = formatUploadLimit(MAX_DIRECT_CLIP_UPLOAD_BYTES);
 const CLIP_DIRECT_UPLOAD_TTL_MS = 2 * 60 * 60 * 1000;
 const GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES = 5 * 1024 * 1024 * 1024;
 const CLIP_ADMIN_TOKEN = String(process.env.CLIP_ADMIN_TOKEN || '').trim();
@@ -761,6 +761,17 @@ function normalizeClipReactionType(raw) {
   return value === 'like' || value === 'dislike' || value === 'emoji'
     ? value
     : '';
+}
+
+function formatUploadLimit(bytes) {
+  const size = Number(bytes || 0);
+  if (size >= 1024 * 1024 * 1024) {
+    return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+  if (size >= 1024 * 1024) {
+    return `${Math.round(size / (1024 * 1024))} MB`;
+  }
+  return `${Math.max(1, Math.round(size / 1024))} KB`;
 }
 
 function normalizeDeleteToken(raw) {
@@ -1730,7 +1741,7 @@ async function handleClipUploadSessionRequest(req, res) {
   if (sizeBytes > MAX_DIRECT_CLIP_UPLOAD_BYTES) {
     sendJsonResponse(req, res, 413, {
       ok: false,
-      error: `Videos must be ${MAX_DIRECT_CLIP_UPLOAD_MB} MB or smaller.`,
+      error: `Videos must be ${MAX_DIRECT_CLIP_UPLOAD_LABEL} or smaller.`,
     });
     return;
   }
@@ -1822,7 +1833,7 @@ async function handleClipUploadFinalizeRequest(req, res) {
   try {
     const uploadedAsset = await clipMediaManager.inspectRawUpload(rawUploadKey);
     if (!uploadedAsset.sizeBytes || uploadedAsset.sizeBytes > MAX_DIRECT_CLIP_UPLOAD_BYTES) {
-      throw new Error(`Videos must be ${MAX_DIRECT_CLIP_UPLOAD_MB} MB or smaller.`);
+      throw new Error(`Videos must be ${MAX_DIRECT_CLIP_UPLOAD_LABEL} or smaller.`);
     }
 
     const processedClip = await clipMediaManager.processRawUpload(rawUploadKey, uploadPayload.originalFileName);
@@ -1866,7 +1877,7 @@ async function handleClipUploadFinalizeRequest(req, res) {
   } catch (error) {
     console.error('Failed to finalize direct clip upload:', error.message);
     await clipMediaManager.deleteRawUpload(rawUploadKey).catch(() => {});
-    const statusCode = /seconds|minutes|200 MB|300 MB|supported video file|could not be measured|readable video stream/i.test(String(error.message || ''))
+    const statusCode = /seconds|minutes|GB|MB or smaller|supported video file|could not be measured|readable video stream/i.test(String(error.message || ''))
       ? 400
       : 500;
     sendJsonResponse(req, res, statusCode, {

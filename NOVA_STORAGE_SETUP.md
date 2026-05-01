@@ -94,5 +94,6 @@ After deploy, verify:
 
 ## Important Cloud Run note
 
-Cloud Run has a hard request-body limit, so the site now treats song and clip
-uploads as `24 MB` max to avoid raw `413 Request Entity Too Large` failures.
+Cloud Run has a hard request-body limit, so the legacy multipart path stays
+small. Larger Nova Clips and Nova Live replay uploads use signed direct cloud
+uploads instead; the current raw clip ceiling is `1.5 GB` before processing.

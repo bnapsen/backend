@@ -24,6 +24,7 @@ const pipeline = promisify(stream.pipeline);
 const CLIP_MAX_DURATION_SECONDS = 20 * 60;
 const CLIP_MAX_DURATION_GRACE_SECONDS = 0.4;
 const CLIP_MAX_DURATION_LABEL = '20 minutes';
+const DIRECT_UPLOAD_URL_TTL_MS = 2 * 60 * 60 * 1000;
 
 const VIDEO_EXTENSION_TO_MIME = new Map([
   ['.mp4', 'video/mp4'],
@@ -333,14 +334,14 @@ function createClipMediaManager({ dataDir }) {
       '-y',
       '-fflags', '+genpts',
       '-i', inputPath,
-      '-vf', 'scale=720:1280:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=30',
+      '-vf', "scale='min(1920,iw)':'min(1920,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,fps=30",
       '-c:v', 'libx264',
       '-preset', 'veryfast',
-      '-crf', '28',
+      '-crf', '22',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       '-c:a', 'aac',
-      '-b:a', '128k',
+      '-b:a', '192k',
       '-ac', '2',
       '-ar', '48000',
       '-t', String(CLIP_MAX_DURATION_SECONDS),
@@ -502,7 +503,7 @@ async function writeAssetFromTemp(tempPath, assetType, key, contentType) {
     }
     const objectName = prefixedKey('raw', safeKeyName);
     const fileHandle = storageClient.bucket(rawClipBucket).file(objectName);
-    const expiresAt = Date.now() + (15 * 60 * 1000);
+    const expiresAt = Date.now() + DIRECT_UPLOAD_URL_TTL_MS;
     const [uploadUrl] = await fileHandle.getSignedUrl({
       version: 'v4',
       action: 'write',

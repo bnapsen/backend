@@ -6,10 +6,26 @@ const SIGNAL_RECONNECT_BASE_MS = 1000;
 const SIGNAL_RECONNECT_MAX_MS = 10000;
 const CLIP_OWNERSHIP_STORAGE_KEY = 'nova-clips:owned-uploads';
 const MAX_REPLAY_RECORDING_MS = 20 * 60 * 1000;
-const MAX_REPLAY_UPLOAD_BYTES = 300 * 1024 * 1024;
+const MAX_REPLAY_UPLOAD_BYTES = 1536 * 1024 * 1024;
 const LEGACY_REPLAY_UPLOAD_MAX_BYTES = 30 * 1024 * 1024;
-const REPLAY_VIDEO_BITS_PER_SECOND = 1200000;
-const REPLAY_AUDIO_BITS_PER_SECOND = 96000;
+const DEFAULT_REPLAY_QUALITY = 'high';
+const REPLAY_QUALITY_PROFILES = Object.freeze({
+  standard: {
+    label: 'Standard',
+    videoBitsPerSecond: 2500000,
+    audioBitsPerSecond: 128000,
+  },
+  high: {
+    label: 'High',
+    videoBitsPerSecond: 6000000,
+    audioBitsPerSecond: 192000,
+  },
+  studio: {
+    label: 'Studio',
+    videoBitsPerSecond: 10000000,
+    audioBitsPerSecond: 256000,
+  },
+});
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -52,14 +68,19 @@ const state = {
     recorder: null,
     chunks: [],
     blob: null,
+    originalBlob: null,
     mimeType: '',
     previewUrl: '',
     startedAt: 0,
     durationMs: 0,
+    originalDurationMs: 0,
     timer: null,
     uploadInFlight: false,
     posted: false,
     finalizing: false,
+    editInFlight: false,
+    edited: false,
+    quality: DEFAULT_REPLAY_QUALITY,
     deleteInFlight: false,
     postedClipId: '',
     postedDeleteToken: '',
@@ -141,7 +162,14 @@ function bindElements() {
     'recordingStatus',
     'startRecordingButton',
     'stopRecordingButton',
+    'recordingQuality',
     'recordingPreview',
+    'recordingEditor',
+    'recordingEditStatus',
+    'recordingTrimStart',
+    'recordingTrimEnd',
+    'applyRecordingTrimButton',
+    'resetRecordingEditButton',
     'recordingTitle',
     'recordingCaption',
     'postRecordingButton',
@@ -187,6 +215,9 @@ function bindEvents() {
   els.stopLiveButton.addEventListener('click', stopLive);
   els.startRecordingButton.addEventListener('click', startReplayRecording);
   els.stopRecordingButton.addEventListener('click', () => stopReplayRecording('Recording stopped. Preparing replay clip...'));
+  els.recordingQuality.addEventListener('change', updateReplayQuality);
+  els.applyRecordingTrimButton.addEventListener('click', applyRecordingTrim);
+  els.resetRecordingEditButton.addEventListener('click', resetRecordingEdit);
   els.postRecordingButton.addEventListener('click', postReplayRecording);
   els.deleteRecordingButton.addEventListener('click', deletePostedReplay);
   els.recordingPostLink.addEventListener('click', openPostedReplayLink);
@@ -1747,6 +1778,39 @@ function preferredRecordingMimeType() {
   ].find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) || '';
 }
 
+function selectedReplayQualityProfile() {
+  const quality = String(els.recordingQuality && els.recordingQuality.value || state.recording.quality || DEFAULT_REPLAY_QUALITY);
+  return REPLAY_QUALITY_PROFILES[quality] || REPLAY_QUALITY_PROFILES[DEFAULT_REPLAY_QUALITY];
+}
+
+function replayRecorderOptions(stream, preferredMimeType = '') {
+  const mimeType = preferredMimeType || preferredRecordingMimeType();
+  const options = mimeType ? { mimeType } : {};
+  const profile = selectedReplayQualityProfile();
+  if (stream && stream.getVideoTracks().length) {
+    options.videoBitsPerSecond = profile.videoBitsPerSecond;
+  }
+  if (stream && stream.getAudioTracks().length) {
+    options.audioBitsPerSecond = profile.audioBitsPerSecond;
+  }
+  return options;
+}
+
+function updateReplayQuality() {
+  state.recording.quality = String(els.recordingQuality.value || DEFAULT_REPLAY_QUALITY);
+  if (!state.recording.blob && !isReplayRecording()) {
+    const profile = selectedReplayQualityProfile();
+    setRecordingStatus(state.localStream
+      ? `Ready to record a 20-minute replay at ${profile.label} quality.`
+      : 'Choose a stream source to record up to 20 minutes.');
+  }
+}
+
+function supportsReplayTrimRendering() {
+  const video = document.createElement('video');
+  return Boolean(window.MediaRecorder && (video.captureStream || video.mozCaptureStream));
+}
+
 function startReplayRecording() {
   if (!state.localStream) {
     setRecordingStatus('Choose Camera + Mic, Desktop + Mic, or Desktop Only before recording.', 'error');
@@ -1761,14 +1825,7 @@ function startReplayRecording() {
   }
 
   resetReplayRecording({ keepStatus: true });
-  const mimeType = preferredRecordingMimeType();
-  const options = mimeType ? { mimeType } : {};
-  if (state.localStream.getVideoTracks().length) {
-    options.videoBitsPerSecond = REPLAY_VIDEO_BITS_PER_SECOND;
-  }
-  if (state.localStream.getAudioTracks().length) {
-    options.audioBitsPerSecond = REPLAY_AUDIO_BITS_PER_SECOND;
-  }
+  const options = replayRecorderOptions(state.localStream);
   let recorder;
   try {
     recorder = new MediaRecorder(state.localStream, options);
@@ -1780,11 +1837,14 @@ function startReplayRecording() {
   state.recording.recorder = recorder;
   state.recording.chunks = [];
   state.recording.blob = null;
-  state.recording.mimeType = recorder.mimeType || mimeType || 'video/webm';
+  state.recording.originalBlob = null;
+  state.recording.mimeType = recorder.mimeType || options.mimeType || 'video/webm';
   state.recording.startedAt = Date.now();
   state.recording.durationMs = 0;
+  state.recording.originalDurationMs = 0;
   state.recording.posted = false;
   state.recording.finalizing = false;
+  state.recording.edited = false;
 
   recorder.addEventListener('dataavailable', (event) => {
     if (event.data && event.data.size > 0) {
@@ -1806,7 +1866,7 @@ function startReplayRecording() {
     return;
   }
 
-  setRecordingStatus('Recording replay clip...', 'recording');
+  setRecordingStatus(`Recording replay clip at ${selectedReplayQualityProfile().label} quality...`, 'recording');
   updateRecordingTimer();
   state.recording.timer = window.setInterval(() => {
     updateRecordingTimer();
@@ -1857,18 +1917,22 @@ function finishReplayRecording() {
   if (blob.size > MAX_REPLAY_UPLOAD_BYTES) {
     state.recording.blob = null;
     state.recording.finalizing = false;
-    setRecordingStatus('Replay is larger than the 300 MB upload limit.', 'error');
+    setRecordingStatus(`Replay is larger than the ${formatFileSize(MAX_REPLAY_UPLOAD_BYTES)} upload limit.`, 'error');
     updateRecordingControls();
     return;
   }
 
   state.recording.blob = blob;
+  state.recording.originalBlob = blob;
+  state.recording.originalDurationMs = state.recording.durationMs;
+  state.recording.edited = false;
   state.recording.posted = false;
   releaseRecordingPreview();
   state.recording.previewUrl = URL.createObjectURL(blob);
   els.recordingPreview.src = state.recording.previewUrl;
   els.recordingPreview.classList.add('is-visible');
   els.recordingPostLink.classList.add('hidden');
+  syncRecordingEditor({ resetRange: true });
   updateRecordingTimer();
   setRecordingStatus(`Replay saved (${formatFileSize(blob.size)}). Review it, then post to Nova Live.`, 'ready');
   updateRecordingControls();
@@ -1887,14 +1951,19 @@ function resetReplayRecording(options = {}) {
   state.recording.recorder = null;
   state.recording.chunks = [];
   state.recording.blob = null;
+  state.recording.originalBlob = null;
   state.recording.mimeType = '';
   state.recording.startedAt = 0;
   state.recording.durationMs = 0;
+  state.recording.originalDurationMs = 0;
   state.recording.posted = false;
   state.recording.finalizing = false;
+  state.recording.editInFlight = false;
+  state.recording.edited = false;
   state.recording.postedClipId = '';
   state.recording.postedDeleteToken = '';
   releaseRecordingPreview();
+  syncRecordingEditor();
   els.recordingPostLink.classList.add('hidden');
   els.recordingPostLink.href = '#liveReplays';
   els.deleteRecordingButton.classList.add('hidden');
@@ -1916,6 +1985,50 @@ function releaseRecordingPreview() {
     els.recordingPreview.removeAttribute('src');
     els.recordingPreview.classList.remove('is-visible');
     els.recordingPreview.load();
+  }
+}
+
+function syncRecordingEditor({ resetRange = false } = {}) {
+  if (!els.recordingEditor) {
+    return;
+  }
+
+  const hasDraft = Boolean(state.recording.blob);
+  els.recordingEditor.classList.toggle('hidden', !hasDraft);
+  if (!hasDraft) {
+    if (els.recordingTrimStart) {
+      els.recordingTrimStart.value = '0';
+      els.recordingTrimStart.removeAttribute('max');
+    }
+    if (els.recordingTrimEnd) {
+      els.recordingTrimEnd.value = '';
+      els.recordingTrimEnd.removeAttribute('max');
+    }
+    if (els.recordingEditStatus) {
+      els.recordingEditStatus.textContent = 'Original';
+    }
+    return;
+  }
+
+  const sourceDurationMs = state.recording.originalDurationMs || state.recording.durationMs || 0;
+  const sourceSeconds = Math.max(0, sourceDurationMs / 1000);
+  const currentSeconds = Math.max(0, (state.recording.durationMs || sourceDurationMs) / 1000);
+  const maxValue = sourceSeconds ? sourceSeconds.toFixed(1) : '';
+  if (els.recordingTrimStart) {
+    els.recordingTrimStart.max = maxValue;
+    if (resetRange || !els.recordingTrimStart.value) {
+      els.recordingTrimStart.value = '0';
+    }
+  }
+  if (els.recordingTrimEnd) {
+    els.recordingTrimEnd.max = maxValue;
+    if (resetRange || !els.recordingTrimEnd.value) {
+      els.recordingTrimEnd.value = maxValue;
+    }
+  }
+  if (els.recordingEditStatus) {
+    const prefix = state.recording.edited ? 'Trimmed' : 'Original';
+    els.recordingEditStatus.textContent = `${prefix} ${formatRecordingTime(currentSeconds * 1000)}`;
   }
 }
 
@@ -1944,10 +2057,17 @@ function updateRecordingControls() {
   const hasSource = Boolean(state.localStream);
   const recording = isReplayRecording();
   const supportsRecorder = Boolean(window.MediaRecorder);
-  const busy = recording || state.recording.finalizing || state.recording.uploadInFlight || state.recording.deleteInFlight;
+  const busy = recording
+    || state.recording.finalizing
+    || state.recording.uploadInFlight
+    || state.recording.deleteInFlight
+    || state.recording.editInFlight;
   els.startRecordingButton.disabled = !hasSource || busy || !supportsRecorder;
   els.stopRecordingButton.disabled = !recording;
   els.postRecordingButton.disabled = !state.recording.blob || busy;
+  els.recordingQuality.disabled = busy;
+  els.applyRecordingTrimButton.disabled = !state.recording.blob || busy || !supportsReplayTrimRendering();
+  els.resetRecordingEditButton.disabled = !state.recording.blob || busy || !state.recording.edited;
   els.deleteRecordingButton.disabled = !state.recording.postedClipId
     || !state.recording.postedDeleteToken
     || state.recording.deleteInFlight
@@ -1972,6 +2092,240 @@ function setRecordingStatus(text, tone = '') {
   els.recordingStatus.classList.toggle('is-recording', tone === 'recording');
   els.recordingStatus.classList.toggle('is-ready', tone === 'ready');
   els.recordingStatus.classList.toggle('is-error', tone === 'error');
+}
+
+function recordingTrimRange() {
+  const sourceDurationMs = state.recording.originalDurationMs || state.recording.durationMs || 0;
+  const sourceSeconds = Math.max(0, sourceDurationMs / 1000);
+  const rawStart = Number(els.recordingTrimStart.value);
+  const rawEnd = Number(els.recordingTrimEnd.value);
+  const start = Math.max(0, Math.min(Number.isFinite(rawStart) ? rawStart : 0, Math.max(0, sourceSeconds - 0.25)));
+  const end = Math.max(
+    start + 0.25,
+    Math.min(Number.isFinite(rawEnd) && rawEnd > 0 ? rawEnd : sourceSeconds, sourceSeconds),
+  );
+  if (!sourceSeconds || end - start < 0.5) {
+    throw new Error('Choose at least a half-second of replay to keep.');
+  }
+  return {
+    start,
+    end,
+    durationMs: Math.max(0, (end - start) * 1000),
+    sourceDurationMs,
+  };
+}
+
+function waitForMediaEvent(target, eventName) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      target.removeEventListener(eventName, handleEvent);
+      target.removeEventListener('error', handleError);
+    };
+    const handleEvent = () => {
+      cleanup();
+      resolve();
+    };
+    const handleError = () => {
+      cleanup();
+      reject(new Error('The replay could not be read for editing.'));
+    };
+    target.addEventListener(eventName, handleEvent, { once: true });
+    target.addEventListener('error', handleError, { once: true });
+  });
+}
+
+async function loadReplayVideo(video) {
+  if (video.readyState >= 1) {
+    return;
+  }
+  await waitForMediaEvent(video, 'loadedmetadata');
+}
+
+async function seekReplayVideo(video, seconds) {
+  const target = Math.max(0, seconds);
+  if (Math.abs(video.currentTime - target) < 0.04) {
+    return;
+  }
+  const settled = waitForMediaEvent(video, 'seeked');
+  video.currentTime = target;
+  await settled;
+}
+
+function stopStreamTracks(stream) {
+  if (!stream) {
+    return;
+  }
+  stream.getTracks().forEach((track) => track.stop());
+}
+
+function renderTrimmedReplay(sourceBlob, trim) {
+  return new Promise(async (resolve, reject) => {
+    const sourceUrl = URL.createObjectURL(sourceBlob);
+    const video = document.createElement('video');
+    let stream = null;
+    let recorder = null;
+    let stopTimer = null;
+    let settled = false;
+    const chunks = [];
+
+    const finish = (error = null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(stopTimer);
+      video.pause();
+      video.remove();
+      stopStreamTracks(stream);
+      URL.revokeObjectURL(sourceUrl);
+      if (error) {
+        reject(error);
+      }
+    };
+
+    try {
+      video.src = sourceUrl;
+      video.preload = 'auto';
+      video.playsInline = true;
+      video.volume = 0;
+      video.style.position = 'fixed';
+      video.style.left = '-9999px';
+      video.style.top = '-9999px';
+      video.style.width = '1px';
+      video.style.height = '1px';
+      document.body.appendChild(video);
+      await loadReplayVideo(video);
+      await seekReplayVideo(video, trim.start);
+
+      const captureStream = video.captureStream || video.mozCaptureStream;
+      if (!captureStream) {
+        throw new Error('This browser cannot render trimmed video clips yet.');
+      }
+      stream = captureStream.call(video);
+      if (!stream || !stream.getTracks().length) {
+        throw new Error('The browser did not expose a replay stream for trimming.');
+      }
+
+      const options = replayRecorderOptions(stream, state.recording.mimeType);
+      recorder = new MediaRecorder(stream, options);
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      });
+      recorder.addEventListener('error', (event) => {
+        const message = event.error && event.error.message ? event.error.message : 'trim render error';
+        finish(new Error(message));
+      });
+      recorder.addEventListener('stop', () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(stopTimer);
+        video.pause();
+        video.remove();
+        stopStreamTracks(stream);
+        URL.revokeObjectURL(sourceUrl);
+        resolve(new Blob(chunks, { type: recorder.mimeType || state.recording.mimeType || 'video/webm' }));
+      }, { once: true });
+
+      const stopRecorder = () => {
+        if (recorder && recorder.state === 'recording') {
+          recorder.stop();
+        }
+      };
+      video.addEventListener('timeupdate', () => {
+        if (video.currentTime >= trim.end - 0.03) {
+          stopRecorder();
+        }
+      });
+      video.addEventListener('ended', stopRecorder, { once: true });
+
+      recorder.start(500);
+      stopTimer = window.setTimeout(stopRecorder, trim.durationMs + 900);
+      await video.play();
+    } catch (error) {
+      if (recorder && recorder.state === 'recording') {
+        try {
+          recorder.stop();
+        } catch {
+          finish(error);
+        }
+        return;
+      }
+      finish(error);
+    }
+  });
+}
+
+async function applyRecordingTrim() {
+  if (!state.recording.blob || state.recording.editInFlight) {
+    return;
+  }
+  if (!supportsReplayTrimRendering()) {
+    setRecordingStatus('This browser cannot apply replay trims. You can still post the original replay.', 'error');
+    return;
+  }
+
+  let trim;
+  try {
+    trim = recordingTrimRange();
+  } catch (error) {
+    setRecordingStatus(error.message, 'error');
+    return;
+  }
+
+  const sourceBlob = state.recording.originalBlob || state.recording.blob;
+  state.recording.editInFlight = true;
+  updateRecordingControls();
+  setRecordingStatus('Rendering trimmed replay...', 'ready');
+
+  try {
+    const editedBlob = await renderTrimmedReplay(sourceBlob, trim);
+    if (!editedBlob.size) {
+      throw new Error('The trim did not produce a video. Try a wider trim range.');
+    }
+    if (editedBlob.size > MAX_REPLAY_UPLOAD_BYTES) {
+      throw new Error(`Trimmed replay is larger than the ${formatFileSize(MAX_REPLAY_UPLOAD_BYTES)} upload limit.`);
+    }
+
+    state.recording.blob = editedBlob;
+    state.recording.mimeType = editedBlob.type || state.recording.mimeType || 'video/webm';
+    state.recording.durationMs = trim.durationMs;
+    state.recording.edited = true;
+    state.recording.posted = false;
+    releaseRecordingPreview();
+    state.recording.previewUrl = URL.createObjectURL(editedBlob);
+    els.recordingPreview.src = state.recording.previewUrl;
+    els.recordingPreview.classList.add('is-visible');
+    syncRecordingEditor();
+    updateRecordingTimer();
+    setRecordingStatus(`Trim applied (${formatFileSize(editedBlob.size)}). Review it, then post to Nova Live.`, 'ready');
+  } catch (error) {
+    setRecordingStatus(`Trim failed: ${error.message || 'browser error'}.`, 'error');
+  } finally {
+    state.recording.editInFlight = false;
+    updateRecordingControls();
+  }
+}
+
+function resetRecordingEdit() {
+  if (!state.recording.originalBlob || state.recording.editInFlight) {
+    return;
+  }
+  state.recording.blob = state.recording.originalBlob;
+  state.recording.durationMs = state.recording.originalDurationMs || state.recording.durationMs;
+  state.recording.mimeType = state.recording.originalBlob.type || state.recording.mimeType || 'video/webm';
+  state.recording.edited = false;
+  releaseRecordingPreview();
+  state.recording.previewUrl = URL.createObjectURL(state.recording.blob);
+  els.recordingPreview.src = state.recording.previewUrl;
+  els.recordingPreview.classList.add('is-visible');
+  syncRecordingEditor({ resetRange: true });
+  updateRecordingTimer();
+  updateRecordingControls();
+  setRecordingStatus(`Original replay restored (${formatFileSize(state.recording.blob.size)}).`, 'ready');
 }
 
 async function postReplayRecording() {
@@ -2030,7 +2384,11 @@ async function postReplayRecording() {
     els.recordingPostLink.classList.remove('hidden');
     els.deleteRecordingButton.classList.toggle('hidden', !state.recording.postedClipId);
     state.recording.blob = null;
+    state.recording.originalBlob = null;
+    state.recording.edited = false;
     state.recording.posted = true;
+    releaseRecordingPreview();
+    syncRecordingEditor();
     setRecordingStatus(payload.clip && payload.clip.status === 'active'
       ? 'Replay posted to Nova Live.'
       : 'Replay uploaded and sent to moderation.', 'ready');
@@ -2173,6 +2531,9 @@ function formatRecordingTime(ms) {
 
 function formatFileSize(bytes) {
   const size = Number(bytes || 0);
+  if (size >= 1024 * 1024 * 1024) {
+    return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
   if (size >= 1024 * 1024) {
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   }

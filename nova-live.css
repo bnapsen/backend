@@ -931,6 +931,17 @@ button:disabled {
   color: var(--red);
 }
 
+.recording-quality {
+  margin-top: 8px;
+}
+
+.recording-help {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .recording-preview {
   display: none;
   width: 100%;
@@ -943,6 +954,53 @@ button:disabled {
 
 .recording-preview.is-visible {
   display: block;
+}
+
+.recording-editor {
+  margin: 12px 0;
+  border: 1px solid rgba(100, 216, 255, 0.18);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: rgba(3, 13, 18, 0.72);
+}
+
+.recording-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.recording-editor-head h3 {
+  margin: 0;
+  font-size: 0.96rem;
+}
+
+.recording-editor-head span {
+  color: var(--cyan);
+  font-family: "Oxanium", system-ui, sans-serif;
+  font-size: 0.82rem;
+  text-align: right;
+}
+
+.recording-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.recording-edit-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.recording-edit-field .text-field {
+  margin: 0;
 }
 
 .recording-caption {
@@ -1180,7 +1238,8 @@ button:disabled {
   .button-grid,
   .source-grid,
   .emoji-row,
-  .chat-compose {
+  .chat-compose,
+  .recording-editor-grid {
     grid-template-columns: 1fr;
   }
 

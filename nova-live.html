@@ -19,7 +19,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="nova-live.css?v=20260430h">
+    <link rel="stylesheet" href="nova-live.css?v=20260501a">
 </head>
 <body>
     <div class="live-shell">
@@ -186,11 +186,38 @@
                             <span id="recordingTimer">00:00</span>
                         </div>
                         <p class="recording-status" id="recordingStatus">Choose a stream source to record up to 20 minutes.</p>
+                        <label class="field-label" for="recordingQuality">Recording quality</label>
+                        <select id="recordingQuality" class="text-field recording-quality">
+                            <option value="standard">Standard - 2.5 Mbps video</option>
+                            <option value="high" selected>High - 6 Mbps video</option>
+                            <option value="studio">Studio - 10 Mbps video</option>
+                        </select>
+                        <p class="recording-help">Higher quality uses more upload time and storage. Replays can now upload up to 1.5 GB before processing.</p>
                         <div class="button-grid compact">
                             <button class="action-button primary" type="button" id="startRecordingButton" disabled>Record</button>
                             <button class="action-button danger" type="button" id="stopRecordingButton" disabled>Stop</button>
                         </div>
                         <video id="recordingPreview" class="recording-preview" controls playsinline preload="metadata"></video>
+                        <section class="recording-editor hidden" id="recordingEditor" aria-label="Quick replay edits">
+                            <div class="recording-editor-head">
+                                <h3>Quick edits</h3>
+                                <span id="recordingEditStatus">Original</span>
+                            </div>
+                            <div class="recording-editor-grid">
+                                <label class="recording-edit-field" for="recordingTrimStart">
+                                    <span>Trim start</span>
+                                    <input id="recordingTrimStart" class="text-field" type="number" inputmode="decimal" min="0" step="0.1" value="0">
+                                </label>
+                                <label class="recording-edit-field" for="recordingTrimEnd">
+                                    <span>Trim end</span>
+                                    <input id="recordingTrimEnd" class="text-field" type="number" inputmode="decimal" min="0" step="0.1">
+                                </label>
+                            </div>
+                            <div class="button-grid compact">
+                                <button class="action-button" type="button" id="applyRecordingTrimButton" disabled>Apply Trim</button>
+                                <button class="action-button" type="button" id="resetRecordingEditButton" disabled>Reset</button>
+                            </div>
+                        </section>
                         <label class="field-label" for="recordingTitle">Replay title</label>
                         <input id="recordingTitle" class="text-field" maxlength="80" value="Nova Live replay">
                         <label class="field-label" for="recordingCaption">Caption</label>
@@ -285,6 +312,6 @@
         </section>
     </div>
 
-    <script src="nova-live.js?v=20260430h" defer></script>
+    <script src="nova-live.js?v=20260501a" defer></script>
 </body>
 </html>
