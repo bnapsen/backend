@@ -7,7 +7,6 @@
   const PAPER_STORAGE_KEY = "kalshiBtcPaperLedger";
   const PAPER_AUTO_STORAGE_KEY = "kalshiBtcPaperBots";
   const PAPER_AUTO_CONTRACTS = 10;
-  const PAPER_AUTO_MAX_ENTRIES_PER_TICKER = 10;
   const PAPER_AUTO_COOLDOWN_MS = 15000;
   const PAPER_SCALP_TARGET_CENTS = 10;
   const state = {
@@ -1213,6 +1212,7 @@
       entryFee,
       entryCost,
       openedAt: new Date().toISOString(),
+      automation: order.automation || "",
       closeTime: order.closeTime || market.closeTime || "",
       targetPrice: Number(order.targetPrice || market.targetPrice),
       entrySpot: Number(order.entrySpot || market.currentPrice),
@@ -1253,14 +1253,17 @@
     paperSellContracts(position.ticker, position.side, position.contracts, bidCents, "Bid-side exit before settlement");
   }
 
-  function paperSellContracts(ticker, side, requestedContracts, exitCents, detail, orderId, sourcePositionId) {
+  function paperSellContracts(ticker, side, requestedContracts, exitCents, detail, orderId, sourcePositionId, sourcePositionIds, sourceAutomation) {
     const priceCents = clampNumber(Number(exitCents), 1, 99);
     const price = priceCents / 100;
     let remaining = Math.floor(Number(requestedContracts || 0));
     let soldContracts = 0;
     let entryCost = 0;
+    const sourceIdList = Array.isArray(sourcePositionIds) ? sourcePositionIds.filter(Boolean) : [];
     const positions = state.paper.positions
       .filter(function (position) {
+        if (sourceIdList.length) return sourceIdList.includes(position.id) && position.ticker === ticker && position.side === side;
+        if (sourceAutomation) return position.automation === sourceAutomation && position.ticker === ticker && position.side === side;
         if (sourcePositionId) return position.id === sourcePositionId && position.ticker === ticker && position.side === side;
         return position.ticker === ticker && position.side === side;
       })
@@ -1460,13 +1463,6 @@
     const label = strategy === "scalp" ? "Scalp bot" : "Completion bot";
     const key = paperAutoKey(strategy, ticker);
     const fills = paperAutoFillCount(strategy, ticker);
-    const totalFills = paperAutoTotalFillCount(ticker);
-    if (totalFills >= PAPER_AUTO_MAX_ENTRIES_PER_TICKER) {
-      return { filled: false, message: label + ": shared max " + totalFills + "/" + PAPER_AUTO_MAX_ENTRIES_PER_TICKER + " auto fills reached for " + ticker + "." };
-    }
-    if (fills >= PAPER_AUTO_MAX_ENTRIES_PER_TICKER) {
-      return { filled: false, message: label + ": max " + fills + "/" + PAPER_AUTO_MAX_ENTRIES_PER_TICKER + " fills reached for " + ticker + "." };
-    }
     const nowMs = Date.now();
     const tickerKey = paperAutoKey("ticker", ticker);
     const lastTickerAttempt = Number(state.paperAuto.lastAttemptAt[tickerKey] || 0);
@@ -1514,35 +1510,11 @@
     persistPaperAutoSettings();
 
     if (strategy === "scalp") {
-      const sellLimitCents = clampNumber(position.entryCents + PAPER_SCALP_TARGET_CENTS, 1, 99);
-      const sellOrder = {
-        id: "paper-auto-scalp-exit-" + Date.now() + "-" + Math.floor(Math.random() * 100000),
-        status: "open",
-        action: "sell",
-        side,
-        contracts: position.contracts,
-        limitCents: sellLimitCents,
-        ticker: position.ticker,
-        createdAt: new Date().toISOString(),
-        closeTime: position.closeTime,
-        targetPrice: Number(position.targetPrice),
-        entrySpot: Number(position.entrySpot),
-        lastSpot: Number(position.lastSpot),
-        lastBidCents: Number(position.lastBidCents),
-        lastAskCents: Number(position.lastAskCents),
-        lastModelProbability: Number(position.lastModelProbability),
-        automation: "scalp-exit",
-        sourcePositionId: position.id,
-      };
-      if (Number(position.lastBidCents) >= sellLimitCents) {
-        paperSellContracts(position.ticker, side, position.contracts, position.lastBidCents, "Scalp bot +10c target filled immediately", "", position.id);
-      } else {
-        queuePaperOrder(sellOrder, "Scalp bot +10c target waiting for bid >= " + formatCents(sellLimitCents));
-      }
-      return { filled: true, message: label + ": bought 10 " + side.toUpperCase() + " @ " + formatCents(position.entryCents) + " and set +10c exit at " + formatCents(sellLimitCents) + " (" + (fills + 1) + "/" + PAPER_AUTO_MAX_ENTRIES_PER_TICKER + ")." };
+      const group = syncPaperScalpGroupExit(position.ticker, side);
+      return { filled: true, message: label + ": bought 10 " + side.toUpperCase() + " @ " + formatCents(position.entryCents) + "; grouped target " + formatCents(group.limitCents) + " on " + group.contracts + " contracts from avg " + formatCents(group.averageCents) + " (buy #" + (fills + 1) + ")." };
     }
 
-    return { filled: true, message: label + ": bought 10 " + side.toUpperCase() + " @ " + formatCents(position.entryCents) + " and will hold to settlement (" + (fills + 1) + "/" + PAPER_AUTO_MAX_ENTRIES_PER_TICKER + ")." };
+    return { filled: true, message: label + ": bought 10 " + side.toUpperCase() + " @ " + formatCents(position.entryCents) + " and will hold to settlement (buy #" + (fills + 1) + ")." };
   }
 
   function paperAutoKey(strategy, ticker) {
@@ -1553,8 +1525,72 @@
     return Number(state.paperAuto.fills[paperAutoKey(strategy, ticker)] || 0);
   }
 
-  function paperAutoTotalFillCount(ticker) {
-    return paperAutoFillCount("completion", ticker) + paperAutoFillCount("scalp", ticker);
+  function syncPaperScalpGroupExit(ticker, side) {
+    const positions = paperScalpGroupPositions(ticker, side);
+    state.paper.orders = state.paper.orders.filter(function (order) {
+      return !((order.automation === "scalp-group-exit" || order.automation === "scalp-exit") && order.ticker === ticker && order.side === side);
+    });
+    const totals = paperScalpGroupTotals(positions);
+    if (totals.contracts <= 0) {
+      savePaperLedger();
+      renderPaperBankroll();
+      return { contracts: 0, averageCents: NaN, limitCents: NaN };
+    }
+    const scan = state.scan || {};
+    const market = scan.market || {};
+    const quote = getCurrentPaperQuote(side);
+    const lastPosition = positions[0] || {};
+    const bidCents = Number(quote && quote.bidCents);
+    const askCents = Number(quote && quote.askCents);
+    const exitCents = clampNumber(totals.averageCents + PAPER_SCALP_TARGET_CENTS, 1, 99);
+    const positionIds = positions.map(function (position) { return position.id; });
+    if (Number.isFinite(bidCents) && bidCents >= exitCents) {
+      paperSellContracts(ticker, side, totals.contracts, bidCents, "Scalp bot grouped +10c target filled from avg " + formatCents(totals.averageCents), "", "", positionIds, "scalp");
+      return { contracts: totals.contracts, averageCents: totals.averageCents, limitCents: exitCents };
+    }
+    queuePaperOrder({
+      id: "paper-auto-scalp-group-exit-" + Date.now() + "-" + Math.floor(Math.random() * 100000),
+      status: "open",
+      action: "sell",
+      side,
+      contracts: totals.contracts,
+      limitCents: exitCents,
+      ticker,
+      createdAt: new Date().toISOString(),
+      closeTime: market.closeTime || lastPosition.closeTime || "",
+      targetPrice: Number(market.targetPrice || lastPosition.targetPrice),
+      entrySpot: Number(lastPosition.entrySpot || market.currentPrice),
+      lastSpot: Number(market.currentPrice || lastPosition.lastSpot),
+      lastBidCents: Number.isFinite(bidCents) ? bidCents : Number(lastPosition.lastBidCents),
+      lastAskCents: Number.isFinite(askCents) ? askCents : Number(lastPosition.lastAskCents),
+      lastModelProbability: Number(quote && quote.probability || lastPosition.lastModelProbability),
+      automation: "scalp-group-exit",
+      sourceAutomation: "scalp",
+      sourcePositionIds: positionIds,
+      groupAverageCents: totals.averageCents,
+    }, "Scalp group target: avg " + formatCents(totals.averageCents) + " + " + formatCents(PAPER_SCALP_TARGET_CENTS) + " across " + totals.contracts + " contracts");
+    return { contracts: totals.contracts, averageCents: totals.averageCents, limitCents: exitCents };
+  }
+
+  function paperScalpGroupPositions(ticker, side) {
+    return state.paper.positions.filter(function (position) {
+      return position.status === "open" && position.automation === "scalp" && position.ticker === ticker && position.side === side;
+    }).sort(function (left, right) {
+      return new Date(left.openedAt || 0).getTime() - new Date(right.openedAt || 0).getTime();
+    });
+  }
+
+  function paperScalpGroupTotals(positions) {
+    const totals = positions.reduce(function (acc, position) {
+      const contracts = Math.max(0, Math.floor(Number(position.contracts || 0)));
+      acc.contracts += contracts;
+      acc.cents += contracts * Number(position.entryCents || 0);
+      return acc;
+    }, { contracts: 0, cents: 0 });
+    return {
+      contracts: totals.contracts,
+      averageCents: totals.contracts > 0 ? totals.cents / totals.contracts : NaN,
+    };
   }
 
   function updatePaperAutoStatus(message, tone) {
@@ -1562,7 +1598,7 @@
     const active = [];
     if (state.paperAuto.completion) active.push("completion");
     if (state.paperAuto.scalp) active.push("scalp");
-    paperAutoStatusEl.textContent = message || (active.length ? "Paper bots armed: " + active.join(" + ") + ". Each fill buys exactly 10 contracts on a green model entry, up to 10 auto buys per market." : "Paper bots are off.");
+    paperAutoStatusEl.textContent = message || (active.length ? "Paper bots armed: " + active.join(" + ") + ". Each fill buys exactly 10 contracts on a green model entry; no fixed holding cap beyond paper cash." : "Paper bots are off.");
     paperAutoStatusEl.className = "paper-auto-status " + (tone || "");
   }
 
@@ -1609,7 +1645,7 @@
       if (order.action === "buy" && Number(order.lastAskCents) <= Number(order.limitCents)) {
         fillPaperBuy(order, Number(order.lastAskCents), "Resting limit buy filled");
       } else if (order.action === "sell" && Number(order.lastBidCents) >= Number(order.limitCents)) {
-        paperSellContracts(order.ticker, order.side, order.contracts, Number(order.lastBidCents), "Resting limit sell filled", order.id, order.sourcePositionId);
+        paperSellContracts(order.ticker, order.side, order.contracts, Number(order.lastBidCents), "Resting limit sell filled", order.id, order.sourcePositionId, order.sourcePositionIds, order.sourceAutomation);
       }
     });
     if (changed) savePaperLedger();
@@ -1666,7 +1702,7 @@
       "<td><strong>" + escapeHtml(position.ticker || "KXBTC15M") + '</strong><br><span class="subtext">Close ' + escapeHtml(formatTime(position.closeTime)) + "</span></td>",
       '<td><span class="side-pill ' + escapeHtml(position.side) + '">' + escapeHtml(String(position.side || "").toUpperCase()) + "</span></td>",
       "<td>" + escapeHtml(String(position.contracts || 0)) + '<br><span class="subtext">cost ' + escapeHtml(paperMoney(position.entryCost)) + "</span></td>",
-      "<td>" + escapeHtml(formatCents(position.entryCents)) + '<br><span class="subtext">limit ' + escapeHtml(formatCents(position.entryLimitCents || position.entryCents)) + "</span></td>",
+      "<td>" + escapeHtml(formatCents(position.entryCents)) + '<br><span class="subtext">' + escapeHtml((position.automation === "scalp" ? "scalp avg group" : "limit") + " " + formatCents(position.entryLimitCents || position.entryCents)) + "</span></td>",
       "<td>" + escapeHtml(formatCents(position.lastBidCents)) + '<br><span class="subtext">spot ' + escapeHtml(dollars(position.lastSpot)) + "</span></td>",
       '<td class="' + pnlClass + '">' + escapeHtml(signedPaperMoney(mark.pnl)) + '<br><span class="subtext">' + escapeHtml(paperMoney(mark.value)) + " value</span></td>",
       '<td><button class="mini-button" type="button" data-paper-action="sell" data-paper-id="' + escapeHtml(position.id) + '">Sell @ Bid</button> <button class="mini-button ghost-button" type="button" data-paper-action="ticket" data-paper-id="' + escapeHtml(position.id) + '">Limit</button> <button class="mini-button ghost-button" type="button" data-paper-action="settle" data-paper-id="' + escapeHtml(position.id) + '"' + (canSettle ? "" : " disabled") + ">Settle</button></td>",
@@ -1685,10 +1721,13 @@
       state.paper.orders.map(function (order) {
         const quote = order.action === "buy" ? "ask " + formatCents(order.lastAskCents) : "bid " + formatCents(order.lastBidCents);
         const condition = order.action === "buy" ? "fills at ask <= " : "fills at bid >= ";
+        const groupDetail = order.automation === "scalp-group-exit"
+          ? " / grouped scalp avg " + formatCents(order.groupAverageCents) + " + " + formatCents(PAPER_SCALP_TARGET_CENTS)
+          : "";
         return [
           '<div class="paper-order-item">',
           "<div><strong>" + escapeHtml(order.action.toUpperCase() + " " + String(order.side || "").toUpperCase() + " " + order.contracts + " @ " + formatCents(order.limitCents)) + "</strong>",
-          '<small class="subtext">' + escapeHtml((order.ticker || "KXBTC15M") + " / " + condition + formatCents(order.limitCents) + " / " + quote + " / " + formatTime(order.createdAt)) + "</small></div>",
+          '<small class="subtext">' + escapeHtml((order.ticker || "KXBTC15M") + " / " + condition + formatCents(order.limitCents) + groupDetail + " / " + quote + " / " + formatTime(order.createdAt)) + "</small></div>",
           '<button class="mini-button ghost-button" type="button" data-paper-order-action="cancel" data-paper-order-id="' + escapeHtml(order.id) + '">Cancel</button>',
           "</div>",
         ].join("");

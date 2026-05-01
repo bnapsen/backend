@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kalshi Bitcoin 15m Lab</title>
-  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501f">
+  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501g">
 </head>
 <body>
   <header class="lab-topbar">
@@ -151,14 +151,14 @@
             <input id="paper-auto-completion" type="checkbox">
             <strong>Completion bot</strong>
           </span>
-          <span>Buys exactly 10 contracts on each green model entry, up to 10 auto buys per market, then holds to settlement.</span>
+          <span>Buys exactly 10 contracts on each green model entry, with no fixed holding cap beyond paper cash, then holds to settlement.</span>
         </label>
         <label class="paper-bot-card">
           <span class="paper-bot-toggle">
             <input id="paper-auto-scalp" type="checkbox">
             <strong>Scalp bot</strong>
           </span>
-          <span>Buys exactly 10 contracts on each green model entry, up to 10 auto buys per market, then rests a sell limit at +10c.</span>
+          <span>Buys exactly 10 contracts on each green model entry, then refreshes one grouped sell limit at average paid +10c.</span>
         </label>
         <div id="paper-auto-status" class="paper-auto-status">Paper bots are off.</div>
       </div>
@@ -355,6 +355,6 @@
     </section>
   </main>
 
-  <script src="/kalshi-bitcoin-lab.js?v=20260501f"></script>
+  <script src="/kalshi-bitcoin-lab.js?v=20260501g"></script>
 </body>
 </html>
