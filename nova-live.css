@@ -139,6 +139,7 @@ button:disabled {
 
 .stage-panel,
 .control-panel,
+.quick-chat-card,
 .live-directory-card,
 .room-card,
 .viewer-list-card,
@@ -601,10 +602,114 @@ button:disabled {
   padding: 14px;
 }
 
+.quick-chat-card,
 .live-directory-card {
   padding: 14px;
   margin-bottom: 14px;
   box-shadow: none;
+}
+
+.quick-chat-card {
+  border-color: rgba(41, 242, 166, 0.28);
+  background:
+    linear-gradient(135deg, rgba(41, 242, 166, 0.1), rgba(100, 216, 255, 0.05)),
+    rgba(16, 24, 25, 0.9);
+}
+
+.quick-chat-head {
+  align-items: flex-start;
+}
+
+.quick-chat-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.quick-chat-head span {
+  color: var(--green);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.quick-chat-status {
+  margin: 10px 0 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.quick-chat-button {
+  width: 100%;
+}
+
+.quick-chat-button + .quick-chat-button {
+  margin-top: 8px;
+}
+
+.quick-chat-room {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  border: 1px solid rgba(41, 242, 166, 0.32);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: rgba(41, 242, 166, 0.08);
+}
+
+.quick-chat-room strong {
+  color: var(--green);
+  font-family: "Oxanium", system-ui, sans-serif;
+  font-size: 1.2rem;
+  letter-spacing: 0.12em;
+}
+
+.conversation-check-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conversation-check-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.conversation-check-list li::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 10px rgba(255, 198, 93, 0.45);
+}
+
+.conversation-check-list li.is-good {
+  color: var(--green);
+}
+
+.conversation-check-list li.is-good::before {
+  background: var(--green);
+  box-shadow: 0 0 12px rgba(41, 242, 166, 0.65);
+}
+
+.conversation-check-list li.is-bad {
+  color: var(--red);
+}
+
+.conversation-check-list li.is-bad::before {
+  background: var(--red);
+  box-shadow: 0 0 12px rgba(255, 93, 125, 0.58);
 }
 
 .live-room-list {
@@ -698,6 +803,26 @@ button:disabled {
 .live-room-empty {
   padding: 14px;
   color: var(--muted);
+}
+
+.advanced-chat-controls {
+  margin-bottom: 14px;
+}
+
+.advanced-chat-controls summary {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.advanced-chat-controls[open] summary {
+  margin-bottom: 12px;
+  color: var(--text);
 }
 
 .mode-tabs {

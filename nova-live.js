@@ -40,6 +40,8 @@ const state = {
   liveRoomsLoading: false,
   liveRoomsError: '',
   liveRoomsTimer: null,
+  quickChatStarting: false,
+  autoShareAfterJoin: false,
   replays: [],
   replaysLoading: false,
   replaysError: '',
@@ -97,6 +99,13 @@ function bindElements() {
     'roomReadout',
     'mediaReadout',
     'signalReadout',
+    'startVideoChatButton',
+    'copyQuickLinkButton',
+    'quickChatStatus',
+    'quickChatOnlineCount',
+    'quickChatRoom',
+    'quickChatRoomCode',
+    'conversationCheckList',
     'hostModeButton',
     'viewerModeButton',
     'liveRoomsList',
@@ -165,6 +174,8 @@ function bindEvents() {
     button.addEventListener('click', () => setMode(button.dataset.mode));
   });
 
+  els.startVideoChatButton.addEventListener('click', startVideoChat);
+  els.copyQuickLinkButton.addEventListener('click', copyShareLink);
   els.cameraButton.addEventListener('click', startCamera);
   els.screenButton.addEventListener('click', () => startScreenShare({ includeMic: true }));
   els.screenOnlyButton.addEventListener('click', () => startScreenShare({ includeMic: false }));
@@ -271,6 +282,7 @@ function setMode(mode) {
   refreshStage();
   renderCoStreams();
   renderLiveRooms();
+  updateQuickChatControls();
 }
 
 function startLiveRoomPolling() {
@@ -315,10 +327,11 @@ function renderLiveRooms() {
     return;
   }
 
+  updateQuickChatControls();
   els.liveRoomsList.innerHTML = '';
 
   if (state.liveRoomsLoading && !state.liveRooms.length) {
-    els.liveRoomsList.appendChild(liveRoomEmptyItem('Checking live streams...'));
+    els.liveRoomsList.appendChild(liveRoomEmptyItem('Checking who is online...'));
     return;
   }
 
@@ -328,7 +341,7 @@ function renderLiveRooms() {
   }
 
   if (!state.liveRooms.length) {
-    els.liveRoomsList.appendChild(liveRoomEmptyItem('No live streams right now.'));
+    els.liveRoomsList.appendChild(liveRoomEmptyItem('No one is online right now.'));
     return;
   }
 
@@ -342,18 +355,18 @@ function renderLiveRooms() {
     const isCurrentHost = isCurrentRoom && state.role === 'host';
     const isCurrentViewer = isCurrentRoom && state.role === 'viewer';
     const buttonDisabled = isCurrentRoom || isHosting;
-    const buttonText = isCurrentHost ? 'On Air' : isCurrentViewer ? 'Watching' : 'Watch';
+    const buttonText = isCurrentHost ? 'Hosting' : isCurrentViewer ? 'In Chat' : 'Join Chat';
     const article = document.createElement('article');
     article.className = `live-room-card${isCurrentRoom ? ' is-current' : ''}`;
     article.innerHTML = `
       <div class="live-room-main">
-        <span class="live-room-status"><i></i>Live</span>
-        <strong>${escapeHtml(room.title || 'Live stream')}</strong>
+        <span class="live-room-status"><i></i>Online</span>
+        <strong>${escapeHtml(room.title || 'Video chat')}</strong>
         <p>${escapeHtml(room.hostName || 'Host')} &middot; ${formatViewerCount(room.viewerCount)} &middot; ${escapeHtml(formatStartedAt(room.createdAt))}</p>
       </div>
       <div class="live-room-actions">
         <span class="live-room-code">${escapeHtml(roomCode)}</span>
-        <button class="small-button live-room-join" type="button" data-room-code="${escapeHtml(roomCode)}" ${buttonDisabled ? 'disabled' : ''} aria-label="Watch ${escapeHtml(room.title || 'live stream')}">${buttonText}</button>
+        <button class="small-button live-room-join" type="button" data-room-code="${escapeHtml(roomCode)}" ${buttonDisabled ? 'disabled' : ''} aria-label="Join ${escapeHtml(room.title || 'video chat')}">${buttonText}</button>
       </div>
     `;
     els.liveRoomsList.appendChild(article);
@@ -365,6 +378,83 @@ function liveRoomEmptyItem(text) {
   item.className = 'live-room-empty';
   item.textContent = text;
   return item;
+}
+
+function updateQuickChatControls() {
+  if (!els.startVideoChatButton) {
+    return;
+  }
+
+  const onlineCount = state.liveRooms.length;
+  const isHosting = state.role === 'host' && Boolean(state.roomCode);
+  const isViewing = state.role === 'viewer' && Boolean(state.roomCode);
+  const viewerTotal = state.viewers.length;
+  const roomLabel = state.roomCode || '------';
+
+  els.quickChatOnlineCount.textContent = `${onlineCount} online`;
+  els.startVideoChatButton.disabled = state.quickChatStarting || isViewing;
+  els.startVideoChatButton.textContent = state.quickChatStarting
+    ? 'Starting...'
+    : (isHosting ? 'Video Chat Live' : 'Start Video Chat');
+  els.copyQuickLinkButton.classList.toggle('hidden', !isHosting);
+  els.quickChatRoom.classList.toggle('hidden', !isHosting);
+  els.quickChatRoomCode.textContent = roomLabel;
+
+  if (isHosting) {
+    els.quickChatStatus.textContent = `${formatViewerCount(viewerTotal)} connected. Invite link is ready.`;
+  } else if (isViewing) {
+    els.quickChatStatus.textContent = `In room ${roomLabel}.`;
+  } else if (state.quickChatStarting) {
+    els.quickChatStatus.textContent = 'Opening camera and creating your room...';
+  } else if (onlineCount) {
+    els.quickChatStatus.textContent = `${onlineCount} room${onlineCount === 1 ? '' : 's'} online. Join one or start your own.`;
+  } else {
+    els.quickChatStatus.textContent = 'Start a room, then send the invite link.';
+  }
+
+  updateConversationCheck();
+}
+
+function updateConversationCheck() {
+  if (!els.conversationCheckList) {
+    return;
+  }
+
+  const hasLocal = Boolean(state.localStream);
+  const audioTracks = hasLocal ? state.localStream.getAudioTracks().filter((track) => track.readyState !== 'ended') : [];
+  const videoTracks = hasLocal ? state.localStream.getVideoTracks().filter((track) => track.readyState !== 'ended') : [];
+  const hasRemote = Boolean(els.remoteVideo && els.remoteVideo.srcObject);
+  const socketOpen = Boolean(state.socket && state.socket.readyState === WebSocket.OPEN);
+  const isHosting = state.role === 'host' && Boolean(state.roomCode);
+  const isViewing = state.role === 'viewer' && Boolean(state.roomCode);
+  const mediaMissingDuringCall = Boolean(state.roomCode && (!audioTracks.length || !videoTracks.length));
+
+  const checks = [];
+  checks.push({
+    text: socketOpen ? 'Signal connected' : (state.roomCode ? 'Signal reconnecting' : 'Signal idle'),
+    tone: socketOpen ? 'good' : (state.roomCode ? 'bad' : 'warn'),
+  });
+  checks.push({
+    text: audioTracks.length && videoTracks.length
+      ? 'Camera and mic ready'
+      : (hasLocal ? 'Media source missing camera or mic' : (state.roomCode ? 'Camera and mic not shared' : 'Camera and mic not checked')),
+    tone: audioTracks.length && videoTracks.length ? 'good' : (mediaMissingDuringCall ? 'bad' : 'warn'),
+  });
+  checks.push({
+    text: isHosting
+      ? (state.coStreams.size ? 'Two-way video connected' : 'Waiting for guest video')
+      : (isViewing ? (hasRemote ? 'Host video connected' : 'Waiting for host video') : 'No room started'),
+    tone: (state.coStreams.size || hasRemote || !state.roomCode) ? 'good' : 'warn',
+  });
+
+  els.conversationCheckList.innerHTML = '';
+  checks.forEach((check) => {
+    const item = document.createElement('li');
+    item.textContent = check.text;
+    item.classList.toggle('is-good', check.tone === 'good');
+    item.classList.toggle('is-bad', check.tone === 'bad');
+    els.conversationCheckList.appendChild(item);
+  });
 }
 
 async function loadReplays(options = {}) {
@@ -686,6 +776,7 @@ function joinListedRoom(roomCode) {
     return;
   }
   els.joinRoomCode.value = nextRoomCode;
+  state.autoShareAfterJoin = true;
   joinStream();
 }
 
@@ -704,6 +795,59 @@ function insertChatEmoji(emoji) {
   const nextPosition = Math.min((prefix + spacer + emoji).length, input.value.length);
   input.focus();
   input.setSelectionRange(nextPosition, nextPosition);
+}
+
+async function startVideoChat() {
+  if (state.roomCode && state.role === 'host') {
+    await copyShareLink();
+    logEvent('Invite link copied for your live video chat.');
+    return;
+  }
+
+  if (state.roomCode && state.role === 'viewer') {
+    logEvent('Leave the current room before starting a new video chat.');
+    return;
+  }
+
+  if (state.quickChatStarting) {
+    return;
+  }
+
+  state.quickChatStarting = true;
+  updateQuickChatControls();
+  setMode('host');
+
+  const hostName = cleanText(els.hostName.value, 'Nova Host', 40);
+  const currentTitle = cleanOptionalText(els.streamTitle.value, 70);
+  if (!currentTitle || currentTitle === 'Live from BNAPSEN') {
+    els.streamTitle.value = `${hostName}'s video chat`;
+  }
+
+  let waitingForRoom = false;
+  try {
+    if (!state.localStream) {
+      await startCamera();
+    }
+
+    if (!state.localStream) {
+      logEvent('Camera and mic permission are needed to start video chat.');
+      return;
+    }
+
+    goLive();
+    waitingForRoom = true;
+    window.setTimeout(() => {
+      if (state.quickChatStarting && !state.roomCode) {
+        state.quickChatStarting = false;
+        updateQuickChatControls();
+      }
+    }, 7000);
+  } finally {
+    if (!waitingForRoom) {
+      state.quickChatStarting = false;
+      updateQuickChatControls();
+    }
+  }
 }
 
 async function startCamera() {
@@ -1196,6 +1340,7 @@ function joinStream() {
   setMode('viewer');
   state.role = 'viewer';
   state.roomCode = roomCode;
+  state.autoShareAfterJoin = true;
   state.intentionalDisconnect = false;
   sendSignal({
     action: 'live-viewer',
@@ -1233,8 +1378,11 @@ function handleSocketMessage(message) {
     setConnection('Signal error', 'error');
     const errorMessage = message.message || 'Unknown error.';
     logEvent(errorMessage);
+    state.quickChatStarting = false;
+    state.autoShareAfterJoin = false;
     els.joinButton.disabled = false;
     els.goLiveButton.disabled = !state.localStream;
+    updateQuickChatControls();
     if (state.roomCode && /already on air/i.test(errorMessage)) {
       scheduleSignalReconnect();
     }
@@ -1308,6 +1456,7 @@ function handleSocketMessage(message) {
 
 function handleLiveReady(message) {
   clearSignalReconnectTimer();
+  state.quickChatStarting = false;
   state.intentionalDisconnect = false;
   state.roomCode = normalizeRoomCode(message.roomCode || '');
   state.hostId = message.hostId || '';
@@ -1339,6 +1488,13 @@ function handleLiveReady(message) {
   renderChat();
   refreshStage();
   loadLiveRooms();
+
+  if (message.role !== 'host' && state.autoShareAfterJoin) {
+    state.autoShareAfterJoin = false;
+    window.setTimeout(() => {
+      startViewerCameraShare();
+    }, 350);
+  }
 }
 
 async function handleViewerJoined(viewer) {
@@ -2120,6 +2276,7 @@ async function deletePostedReplay() {
 
 function stopLive() {
   state.intentionalDisconnect = true;
+  state.autoShareAfterJoin = false;
   clearSignalReconnectTimer();
   sendSignal({ action: 'live-leave', roomCode: state.roomCode });
   closeAllHostPeers();
@@ -2141,6 +2298,8 @@ function stopPreview() {
 
 function leaveStream(sendLeave = true) {
   state.intentionalDisconnect = true;
+  state.quickChatStarting = false;
+  state.autoShareAfterJoin = false;
   clearSignalReconnectTimer();
   if (sendLeave) {
     sendSignal({ action: 'live-leave', roomCode: state.roomCode });
@@ -2171,6 +2330,8 @@ function leaveStream(sendLeave = true) {
 
 function resetLiveState() {
   clearSignalReconnectTimer();
+  state.quickChatStarting = false;
+  state.autoShareAfterJoin = false;
   state.roomCode = '';
   state.hostId = '';
   state.viewerId = '';
@@ -2347,6 +2508,7 @@ function setCoStream(viewerId, stream) {
   }
   state.coStreams.set(safeViewerId, stream);
   renderCoStreams();
+  updateConversationCheck();
 }
 
 function removeCoStream(viewerId) {
@@ -2356,11 +2518,13 @@ function removeCoStream(viewerId) {
   }
   state.coStreams.delete(safeViewerId);
   renderCoStreams();
+  updateConversationCheck();
 }
 
 function clearCoStreams() {
   state.coStreams.clear();
   renderCoStreams();
+  updateConversationCheck();
 }
 
 function renderCoStreams() {
@@ -2515,6 +2679,7 @@ function refreshStage() {
   updateChatControls();
   updateRecordingControls();
   updateViewerShareControls();
+  updateQuickChatControls();
   renderCoStreams();
 }
 
@@ -2522,10 +2687,12 @@ function setConnection(text, tone) {
   els.connectionPill.textContent = text;
   els.connectionPill.classList.toggle('is-live', tone === 'live');
   els.connectionPill.classList.toggle('is-error', tone === 'error');
+  updateConversationCheck();
 }
 
 function setSignal(text) {
   els.signalReadout.textContent = text;
+  updateConversationCheck();
 }
 
 function logEvent(text) {
