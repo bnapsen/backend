@@ -119,6 +119,7 @@
   const paperDockButton = document.querySelector("#paper-dock");
   const paperSyncBankrollButton = document.querySelector("#paper-sync-bankroll");
   const paperResetButton = document.querySelector("#paper-reset");
+  const paperHeadlineEl = document.querySelector("#paper-headline");
   const paperSummaryEl = document.querySelector("#paper-summary");
   const paperTicketPreviewEl = document.querySelector("#paper-ticket-preview");
   const paperPositionsEl = document.querySelector("#paper-positions");
@@ -1402,7 +1403,7 @@
   }
 
   function renderPaperBankroll() {
-    if (!paperSummaryEl || !paperPositionsEl || !paperOrdersEl || !paperHistoryEl) return;
+    if (!paperHeadlineEl || !paperSummaryEl || !paperPositionsEl || !paperOrdersEl || !paperHistoryEl) return;
     const openValue = paperOpenValue();
     const reserved = paperReservedCash();
     const buyOrderCount = state.paper.orders.filter(function (order) { return order.action === "buy"; }).length;
@@ -1411,6 +1412,16 @@
     const openRisk = state.paper.positions.reduce(function (sum, position) {
       return sum + Number(position.entryCost || 0);
     }, 0);
+    const openContracts = paperOpenContractsTotal();
+    const openAvg = paperOpenAverageCents();
+    const openMarkPnl = openValue - openRisk;
+    paperHeadlineEl.innerHTML = [
+      paperHeadlineCard("Paper bankroll", paperMoney(equity), "Cash plus current open bid mark", "primary"),
+      paperHeadlineCard("Cash available", paperMoney(paperAvailableCash()), "Cash " + paperMoney(state.paper.cash) + " / reserved " + paperMoney(reserved)),
+      paperHeadlineCard("Contracts held", formatWholeNumber(openContracts), state.paper.positions.length + " open position" + (state.paper.positions.length === 1 ? "" : "s")),
+      paperHeadlineCard("Avg paid", formatCents(openAvg), "Weighted average on open contracts"),
+      paperHeadlineCard("Open P/L", signedPaperMoney(openMarkPnl), "Marked at bid after estimated exit fees", openMarkPnl >= 0 ? "pos" : "neg"),
+    ].join("");
     paperSummaryEl.innerHTML = [
       paperMetric("Cash", paperMoney(state.paper.cash), paperMoney(paperAvailableCash()) + " free after limits"),
       paperMetric("Reserved", paperMoney(reserved), buyOrderCount + " buy limit" + (buyOrderCount === 1 ? "" : "s")),
@@ -1499,6 +1510,10 @@
     return '<div class="paper-metric ' + escapeHtml(className || "") + '"><span>' + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong><small>" + escapeHtml(detail || "") + "</small></div>";
   }
 
+  function paperHeadlineCard(label, value, detail, className) {
+    return '<div class="paper-headline-card ' + escapeHtml(className || "") + '"><span>' + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong><small>" + escapeHtml(detail || "") + "</small></div>";
+  }
+
   function paperPositionMark(position) {
     const bidCents = Number(position.lastBidCents);
     if (!Number.isFinite(bidCents) || bidCents <= 0) {
@@ -1550,6 +1565,12 @@
       return acc;
     }, { contracts: 0, cents: 0 });
     return totals.contracts > 0 ? totals.cents / totals.contracts : NaN;
+  }
+
+  function paperOpenContractsTotal() {
+    return state.paper.positions.reduce(function (sum, position) {
+      return sum + Number(position.contracts || 0);
+    }, 0);
   }
 
   function paperAvailableContractsForSell(ticker, side) {
@@ -2239,6 +2260,11 @@
   function formatCents(value) {
     const number = Number(value);
     return Number.isFinite(number) ? number.toFixed(number < 10 ? 2 : 1) + "c" : "n/a";
+  }
+
+  function formatWholeNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "0";
   }
 
   function dollars(value) {

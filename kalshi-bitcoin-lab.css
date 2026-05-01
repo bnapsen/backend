@@ -464,6 +464,62 @@ button:disabled {
   color: var(--red);
 }
 
+.paper-headline {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.35fr) repeat(4, minmax(118px, 1fr));
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(237, 244, 241, 0.08);
+  background: radial-gradient(circle at top left, rgba(41, 245, 178, 0.12), transparent 48%), #071017;
+}
+
+.paper-headline-card {
+  display: grid;
+  gap: 4px;
+  min-height: 82px;
+  padding: 12px;
+  border: 1px solid rgba(237, 244, 241, 0.12);
+  border-radius: 8px;
+  background: rgba(13, 20, 27, 0.92);
+}
+
+.paper-headline-card.primary {
+  border-color: rgba(41, 245, 178, 0.36);
+  background: linear-gradient(135deg, rgba(41, 245, 178, 0.14), rgba(96, 165, 250, 0.08));
+}
+
+.paper-headline-card span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.paper-headline-card strong {
+  color: var(--text);
+  font-size: 26px;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.paper-headline-card.primary strong {
+  color: var(--green);
+  font-size: 32px;
+}
+
+.paper-headline-card small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.paper-headline-card.pos strong {
+  color: var(--green);
+}
+
+.paper-headline-card.neg strong {
+  color: var(--red);
+}
+
 .paper-settings-row {
   display: grid;
   grid-template-columns: minmax(110px, 150px) minmax(130px, 170px) max-content max-content;
@@ -730,6 +786,10 @@ button:disabled {
 }
 
 .paper-panel.paper-floating .paper-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.paper-panel.paper-floating .paper-headline {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -1194,6 +1254,7 @@ th {
   .strategy-controls,
   .strategy-grid,
   .paper-settings-row,
+  .paper-headline,
   .paper-ticket-fields,
   .paper-ticket-preview,
   .paper-ticket-actions,
