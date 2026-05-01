@@ -16,10 +16,17 @@
     <meta name="twitter:title" content="Nova Live | BNAPSEN" />
     <meta name="twitter:description" content="Create, watch, record, and replay browser live stream rooms on BNAPSEN." />
     <meta name="twitter:image" content="https://bnapsen.com/nova-live-cover.svg" />
+    <meta name="theme-color" content="#07100f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Nova Live" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="nova-live.webmanifest?v=20260501a" />
+    <link rel="apple-touch-icon" href="nova-live-apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="nova-live.css?v=20260501a">
+    <link rel="stylesheet" href="nova-live.css?v=20260501b">
 </head>
 <body>
     <div class="live-shell">
@@ -33,9 +40,11 @@
             </a>
             <div class="topbar-actions">
                 <span class="connection-pill" id="connectionPill">Offline</span>
+                <button class="ghost-link install-app-button hidden" type="button" id="installAppButton">Install App</button>
                 <a class="ghost-link" href="index.html">Arcade</a>
             </div>
         </header>
+        <p class="install-app-note hidden" id="installAppNote" aria-live="polite"></p>
 
         <main class="live-workspace">
             <section class="stage-panel" aria-label="Live stream stage">
@@ -312,6 +321,6 @@
         </section>
     </div>
 
-    <script src="nova-live.js?v=20260501a" defer></script>
+    <script src="nova-live.js?v=20260501b" defer></script>
 </body>
 </html>

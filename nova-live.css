@@ -49,6 +49,11 @@ button:disabled {
   opacity: 0.5;
 }
 
+body.is-standalone .install-app-button,
+body.is-standalone .install-app-note {
+  display: none;
+}
+
 .live-shell {
   width: min(1540px, calc(100% - 32px));
   margin: 0 auto;
@@ -106,6 +111,8 @@ button:disabled {
 .topbar-actions {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -118,6 +125,27 @@ button:disabled {
   color: var(--text);
   text-decoration: none;
   font-size: 0.92rem;
+}
+
+.install-app-button {
+  appearance: none;
+}
+
+.install-app-button.is-ready {
+  border-color: rgba(41, 242, 166, 0.55);
+  color: var(--green);
+}
+
+.install-app-note {
+  max-width: 780px;
+  margin: -10px 0 18px auto;
+  border: 1px solid rgba(100, 216, 255, 0.22);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: rgba(100, 216, 255, 0.08);
+  color: var(--text);
+  text-align: right;
+  line-height: 1.45;
 }
 
 .connection-pill.is-live {
@@ -1215,6 +1243,11 @@ button:disabled {
   .topbar-actions,
   .stage-meter {
     width: 100%;
+  }
+
+  .install-app-note {
+    margin: -6px 0 16px;
+    text-align: left;
   }
 
   .ghost-link,

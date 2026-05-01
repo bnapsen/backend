@@ -1,0 +1,59 @@
+{
+  "id": "/nova-live.html",
+  "name": "Nova Live",
+  "short_name": "Nova Live",
+  "description": "Create, watch, record, and replay Nova Live stream rooms on BNAPSEN.",
+  "start_url": "/nova-live.html?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#07100f",
+  "theme_color": "#07100f",
+  "categories": ["entertainment", "social", "video"],
+  "icons": [
+    {
+      "src": "/nova-live-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/nova-live-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/nova-live-app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Open Nova Live",
+      "short_name": "Live",
+      "url": "/nova-live.html",
+      "icons": [
+        {
+          "src": "/nova-live-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Nova Clips",
+      "short_name": "Clips",
+      "url": "/nova-clips.html",
+      "icons": [
+        {
+          "src": "/nova-live-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

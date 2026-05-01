@@ -61,6 +61,8 @@ const state = {
   replays: [],
   replaysLoading: false,
   replaysError: '',
+  deferredInstallPrompt: null,
+  installPromptHandled: false,
   socketReconnectTimer: null,
   socketReconnectAttempts: 0,
   intentionalDisconnect: false,
@@ -92,6 +94,8 @@ const els = {};
 document.addEventListener('DOMContentLoaded', () => {
   bindElements();
   bindEvents();
+  initInstallExperience();
+  registerNovaLiveServiceWorker();
   hydrateRoomFromQuery();
   setMode(els.joinRoomCode.value ? 'viewer' : 'host');
   refreshStage();
@@ -105,6 +109,8 @@ document.addEventListener('DOMContentLoaded', () => {
 function bindElements() {
   [
     'connectionPill',
+    'installAppButton',
+    'installAppNote',
     'roleBadge',
     'viewerCount',
     'stageTitle',
@@ -202,6 +208,7 @@ function bindEvents() {
     button.addEventListener('click', () => setMode(button.dataset.mode));
   });
 
+  els.installAppButton.addEventListener('click', handleInstallAppClick);
   els.startVideoChatButton.addEventListener('click', startVideoChat);
   els.copyQuickLinkButton.addEventListener('click', copyShareLink);
   els.cameraButton.addEventListener('click', startCamera);
@@ -257,6 +264,129 @@ function bindEvents() {
   });
   els.joinRoomCode.addEventListener('input', () => {
     els.joinRoomCode.value = normalizeRoomCode(els.joinRoomCode.value);
+  });
+}
+
+function isStandaloneApp() {
+  return window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true
+    || document.referrer.startsWith('android-app://');
+}
+
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(window.navigator.userAgent || '')
+    || (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
+}
+
+function setInstallNote(text = '') {
+  if (!els.installAppNote) {
+    return;
+  }
+  els.installAppNote.textContent = text;
+  els.installAppNote.classList.toggle('hidden', !text);
+}
+
+function showInstallButton(label, ready = false) {
+  if (!els.installAppButton) {
+    return;
+  }
+  els.installAppButton.textContent = label;
+  els.installAppButton.classList.remove('hidden');
+  els.installAppButton.classList.toggle('is-ready', ready);
+}
+
+function hideInstallButton() {
+  if (!els.installAppButton) {
+    return;
+  }
+  els.installAppButton.classList.add('hidden');
+  els.installAppButton.classList.remove('is-ready');
+}
+
+function updateInstallExperience() {
+  if (isStandaloneApp()) {
+    document.body.classList.add('is-standalone');
+    hideInstallButton();
+    setInstallNote('');
+    return;
+  }
+
+  document.body.classList.remove('is-standalone');
+  if (state.deferredInstallPrompt) {
+    showInstallButton('Install App', true);
+    setInstallNote('');
+    return;
+  }
+
+  if (isIosDevice()) {
+    showInstallButton('Add to iPhone');
+    return;
+  }
+
+  showInstallButton('Open as App');
+}
+
+function initInstallExperience() {
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    state.deferredInstallPrompt = event;
+    state.installPromptHandled = false;
+    updateInstallExperience();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    state.deferredInstallPrompt = null;
+    state.installPromptHandled = true;
+    document.body.classList.add('is-standalone');
+    hideInstallButton();
+    setInstallNote('Nova Live was installed. You can launch it from your home screen now.');
+  });
+
+  window.matchMedia('(display-mode: standalone)').addEventListener?.('change', updateInstallExperience);
+  updateInstallExperience();
+}
+
+async function handleInstallAppClick() {
+  if (isStandaloneApp()) {
+    hideInstallButton();
+    setInstallNote('');
+    return;
+  }
+
+  if (state.deferredInstallPrompt) {
+    const promptEvent = state.deferredInstallPrompt;
+    state.deferredInstallPrompt = null;
+    promptEvent.prompt();
+    try {
+      const choice = await promptEvent.userChoice;
+      if (choice && choice.outcome === 'accepted') {
+        state.installPromptHandled = true;
+        setInstallNote('Nova Live is installing. Look for it on your home screen or app drawer.');
+      } else {
+        setInstallNote('Install canceled. You can tap Install App again if you want Nova Live on your phone.');
+      }
+    } catch {
+      setInstallNote('If the install prompt did not open, use your browser menu and choose Install app or Add to Home Screen.');
+    } finally {
+      updateInstallExperience();
+    }
+    return;
+  }
+
+  if (isIosDevice()) {
+    setInstallNote('On iPhone or iPad: tap the Share button in Safari, then choose Add to Home Screen. It will open Nova Live like an app.');
+    return;
+  }
+
+  setInstallNote('Use your browser menu and choose Install app or Add to Home Screen. If you are on a phone, open this page in Chrome, Edge, or Safari first.');
+}
+
+function registerNovaLiveServiceWorker() {
+  if (!('serviceWorker' in navigator) || window.location.protocol !== 'https:') {
+    return;
+  }
+  navigator.serviceWorker.register('/nova-live-sw.js').catch(() => {
+    // Nova Live still works as a normal webpage if service worker registration fails.
   });
 }
 
