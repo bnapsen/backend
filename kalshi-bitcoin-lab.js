@@ -1526,50 +1526,107 @@
   }
 
   function syncPaperScalpGroupExit(ticker, side) {
+    return upsertPaperScalpGroupExit(ticker, side, { recordHistory: true });
+  }
+
+  function upsertPaperScalpGroupExit(ticker, side, options) {
+    const settings = options || {};
+    const shouldSave = settings.save !== false;
+    const shouldRender = settings.render !== false;
+    const shouldRecordHistory = settings.recordHistory !== false;
     const positions = paperScalpGroupPositions(ticker, side);
+    let changed = false;
+    let existingGroupOrder = null;
     state.paper.orders = state.paper.orders.filter(function (order) {
-      return !((order.automation === "scalp-group-exit" || order.automation === "scalp-exit") && order.ticker === ticker && order.side === side);
+      const isSameScalpExit = (order.automation === "scalp-group-exit" || order.automation === "scalp-exit" || order.sourceAutomation === "scalp")
+        && order.ticker === ticker
+        && order.side === side;
+      if (!isSameScalpExit) return true;
+      if (order.automation === "scalp-group-exit" && !existingGroupOrder) {
+        existingGroupOrder = order;
+        return true;
+      }
+      changed = true;
+      return false;
     });
     const totals = paperScalpGroupTotals(positions);
     if (totals.contracts <= 0) {
-      savePaperLedger();
-      renderPaperBankroll();
-      return { contracts: 0, averageCents: NaN, limitCents: NaN };
+      if (existingGroupOrder) {
+        removePaperOrder(existingGroupOrder.id);
+        changed = true;
+      }
+      if (changed && shouldSave) savePaperLedger();
+      if (changed && shouldRender) renderPaperBankroll();
+      return { contracts: 0, averageCents: NaN, limitCents: NaN, changed };
     }
     const scan = state.scan || {};
     const market = scan.market || {};
-    const quote = getCurrentPaperQuote(side);
+    const quote = scan.ticker === ticker ? getCurrentPaperQuote(side) : null;
     const lastPosition = positions[0] || {};
     const bidCents = Number(quote && quote.bidCents);
     const askCents = Number(quote && quote.askCents);
     const exitCents = clampNumber(totals.averageCents + PAPER_SCALP_TARGET_CENTS, 1, 99);
     const positionIds = positions.map(function (position) { return position.id; });
     if (Number.isFinite(bidCents) && bidCents >= exitCents) {
-      paperSellContracts(ticker, side, totals.contracts, bidCents, "Scalp bot grouped +10c target filled from avg " + formatCents(totals.averageCents), "", "", positionIds, "scalp");
-      return { contracts: totals.contracts, averageCents: totals.averageCents, limitCents: exitCents };
+      paperSellContracts(ticker, side, totals.contracts, bidCents, "Scalp bot grouped +10c target filled from avg " + formatCents(totals.averageCents), existingGroupOrder && existingGroupOrder.id, "", positionIds, "scalp");
+      return { contracts: totals.contracts, averageCents: totals.averageCents, limitCents: exitCents, changed: true };
     }
-    queuePaperOrder({
+    const order = existingGroupOrder || {
       id: "paper-auto-scalp-group-exit-" + Date.now() + "-" + Math.floor(Math.random() * 100000),
       status: "open",
       action: "sell",
       side,
-      contracts: totals.contracts,
-      limitCents: exitCents,
       ticker,
       createdAt: new Date().toISOString(),
-      closeTime: market.closeTime || lastPosition.closeTime || "",
-      targetPrice: Number(market.targetPrice || lastPosition.targetPrice),
-      entrySpot: Number(lastPosition.entrySpot || market.currentPrice),
-      lastSpot: Number(market.currentPrice || lastPosition.lastSpot),
-      lastBidCents: Number.isFinite(bidCents) ? bidCents : Number(lastPosition.lastBidCents),
-      lastAskCents: Number.isFinite(askCents) ? askCents : Number(lastPosition.lastAskCents),
-      lastModelProbability: Number(quote && quote.probability || lastPosition.lastModelProbability),
       automation: "scalp-group-exit",
       sourceAutomation: "scalp",
-      sourcePositionIds: positionIds,
-      groupAverageCents: totals.averageCents,
-    }, "Scalp group target: avg " + formatCents(totals.averageCents) + " + " + formatCents(PAPER_SCALP_TARGET_CENTS) + " across " + totals.contracts + " contracts");
-    return { contracts: totals.contracts, averageCents: totals.averageCents, limitCents: exitCents };
+    };
+    const previousSnapshot = JSON.stringify({
+      contracts: order.contracts,
+      limitCents: order.limitCents,
+      sourcePositionIds: order.sourcePositionIds,
+      groupAverageCents: order.groupAverageCents,
+    });
+    order.contracts = totals.contracts;
+    order.limitCents = exitCents;
+    order.closeTime = market.closeTime || lastPosition.closeTime || "";
+    order.targetPrice = Number(market.targetPrice || lastPosition.targetPrice);
+    order.entrySpot = Number(lastPosition.entrySpot || market.currentPrice);
+    order.lastSpot = Number(market.currentPrice || lastPosition.lastSpot);
+    order.lastBidCents = Number.isFinite(bidCents) ? bidCents : Number(lastPosition.lastBidCents);
+    order.lastAskCents = Number.isFinite(askCents) ? askCents : Number(lastPosition.lastAskCents);
+    order.lastModelProbability = Number(quote && quote.probability || lastPosition.lastModelProbability);
+    order.sourcePositionIds = positionIds;
+    order.groupAverageCents = totals.averageCents;
+    if (!existingGroupOrder) {
+      state.paper.orders.unshift(order);
+      changed = true;
+      if (shouldRecordHistory) {
+        addPaperHistory({
+          type: "LIMIT",
+          ticker: order.ticker,
+          side: order.side,
+          contracts: order.contracts,
+          priceCents: order.limitCents,
+          pnl: 0,
+          detail: "SELL Scalp group target: avg " + formatCents(totals.averageCents) + " + " + formatCents(PAPER_SCALP_TARGET_CENTS) + " across " + totals.contracts + " contracts",
+        });
+      }
+    } else {
+      const nextSnapshot = JSON.stringify({
+        contracts: order.contracts,
+        limitCents: order.limitCents,
+        sourcePositionIds: order.sourcePositionIds,
+        groupAverageCents: order.groupAverageCents,
+      });
+      changed = changed || previousSnapshot !== nextSnapshot;
+    }
+    if (changed && shouldSave) savePaperLedger();
+    if (changed && shouldRender) renderPaperBankroll();
+    if (!existingGroupOrder && shouldRender) {
+      setPaperStatus("Paper limit resting: SELL " + order.contracts + " " + side.toUpperCase() + " @ " + formatCents(order.limitCents) + ".", false);
+    }
+    return { contracts: totals.contracts, averageCents: totals.averageCents, limitCents: exitCents, changed };
   }
 
   function paperScalpGroupPositions(ticker, side) {
@@ -1602,6 +1659,62 @@
     paperAutoStatusEl.className = "paper-auto-status " + (tone || "");
   }
 
+  function cleanupPaperSellOrders() {
+    let changed = false;
+    const groupsToSync = {};
+    state.paper.orders.slice().forEach(function (order) {
+      if (order.status !== "open" || order.action !== "sell") return;
+      const groupKey = String(order.ticker || "") + "|" + String(order.side || "");
+      const isScalpExit = order.automation === "scalp-group-exit" || order.automation === "scalp-exit" || order.sourceAutomation === "scalp";
+      if (order.sourcePositionId && !findPaperPosition(order.sourcePositionId)) {
+        removePaperOrder(order.id);
+        changed = true;
+        if (isScalpExit) groupsToSync[groupKey] = { ticker: order.ticker, side: order.side };
+        return;
+      }
+      if (Array.isArray(order.sourcePositionIds) && order.sourcePositionIds.length) {
+        const liveIds = order.sourcePositionIds.filter(function (id) {
+          return findPaperPosition(id);
+        });
+        if (!liveIds.length) {
+          removePaperOrder(order.id);
+          changed = true;
+          if (isScalpExit) groupsToSync[groupKey] = { ticker: order.ticker, side: order.side };
+          return;
+        }
+        if (liveIds.length !== order.sourcePositionIds.length) {
+          order.sourcePositionIds = liveIds;
+          changed = true;
+          if (isScalpExit) groupsToSync[groupKey] = { ticker: order.ticker, side: order.side };
+        }
+      }
+      if (isScalpExit) {
+        groupsToSync[groupKey] = { ticker: order.ticker, side: order.side };
+      }
+    });
+    if (state.paperAuto.scalp) {
+      state.paper.positions.forEach(function (position) {
+        if (position.status === "open" && position.automation === "scalp") {
+          groupsToSync[String(position.ticker || "") + "|" + String(position.side || "")] = {
+            ticker: position.ticker,
+            side: position.side,
+          };
+        }
+      });
+    }
+    Object.keys(groupsToSync).forEach(function (key) {
+      const group = groupsToSync[key];
+      if (!group.ticker || !group.side) return;
+      const result = upsertPaperScalpGroupExit(group.ticker, group.side, {
+        recordHistory: false,
+        save: false,
+        render: false,
+      });
+      changed = changed || Boolean(result && result.changed);
+    });
+    return changed;
+  }
+
   function markPaperLedger(scan) {
     const market = scan.market || {};
     const ticker = scan.ticker || "";
@@ -1629,6 +1742,7 @@
         changed = true;
       }
     });
+    changed = cleanupPaperSellOrders() || changed;
     state.paper.orders.slice().forEach(function (order) {
       if (order.status !== "open" || !ticker || order.ticker !== ticker) return;
       const candidate = candidates.find(function (row) { return row.side === order.side; });
