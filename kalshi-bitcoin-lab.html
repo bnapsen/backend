@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kalshi Bitcoin 15m Lab</title>
-  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501d">
+  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501e">
 </head>
 <body>
   <header class="lab-topbar">
@@ -145,6 +145,23 @@
         </div>
       </div>
       <div id="paper-headline" class="paper-headline"></div>
+      <div class="paper-bots" aria-label="Paper trader automations">
+        <label class="paper-bot-card">
+          <span class="paper-bot-toggle">
+            <input id="paper-auto-completion" type="checkbox">
+            <strong>Completion bot</strong>
+          </span>
+          <span>Buys 10 contracts only on a green model entry, shared max 2 auto fills per market, then holds to settlement.</span>
+        </label>
+        <label class="paper-bot-card">
+          <span class="paper-bot-toggle">
+            <input id="paper-auto-scalp" type="checkbox">
+            <strong>Scalp bot</strong>
+          </span>
+          <span>Buys 10 contracts only on a green model entry, shared max 2 auto fills per market, then rests a sell limit at +10c.</span>
+        </label>
+        <div id="paper-auto-status" class="paper-auto-status">Paper bots are off.</div>
+      </div>
       <div class="paper-settings-row">
         <label>
           Currency
@@ -338,6 +355,6 @@
     </section>
   </main>
 
-  <script src="/kalshi-bitcoin-lab.js?v=20260501d"></script>
+  <script src="/kalshi-bitcoin-lab.js?v=20260501e"></script>
 </body>
 </html>

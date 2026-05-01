@@ -5,6 +5,11 @@
   const LIVE_REFRESH_MS = 300;
   const FALLBACK_REFRESH_MS = 500;
   const PAPER_STORAGE_KEY = "kalshiBtcPaperLedger";
+  const PAPER_AUTO_STORAGE_KEY = "kalshiBtcPaperBots";
+  const PAPER_AUTO_CONTRACTS = 10;
+  const PAPER_AUTO_MAX_ENTRIES_PER_TICKER = 2;
+  const PAPER_AUTO_COOLDOWN_MS = 15000;
+  const PAPER_SCALP_TARGET_CENTS = 10;
   const state = {
     scan: null,
     stream: null,
@@ -44,6 +49,12 @@
     },
     paperDrag: null,
     paperTicketPositionId: "",
+    paperAuto: {
+      completion: false,
+      scalp: false,
+      fills: {},
+      lastAttemptAt: {},
+    },
   };
 
   const form = document.querySelector("#scan-form");
@@ -115,6 +126,9 @@
   const paperFillLimitButton = document.querySelector("#paper-fill-limit");
   const paperUsePlanButton = document.querySelector("#paper-use-plan");
   const paperBuyBestButton = document.querySelector("#paper-buy-best");
+  const paperAutoCompletionInput = document.querySelector("#paper-auto-completion");
+  const paperAutoScalpInput = document.querySelector("#paper-auto-scalp");
+  const paperAutoStatusEl = document.querySelector("#paper-auto-status");
   const paperFloatButton = document.querySelector("#paper-float");
   const paperDockButton = document.querySelector("#paper-dock");
   const paperSyncBankrollButton = document.querySelector("#paper-sync-bankroll");
@@ -166,6 +180,9 @@
   paperDockButton.addEventListener("click", dockPaperPanel);
   paperSyncBankrollButton.addEventListener("click", syncPaperBankrollToKelly);
   paperResetButton.addEventListener("click", resetPaperLedger);
+  [paperAutoCompletionInput, paperAutoScalpInput].forEach(function (input) {
+    input.addEventListener("change", savePaperAutoSettings);
+  });
   [paperCurrencyInput, paperStartingBankrollInput].forEach(function (input) {
     input.addEventListener("input", updatePaperSettings);
     input.addEventListener("change", updatePaperSettings);
@@ -200,6 +217,7 @@
   restoreSoundSettings();
   restoreStrategySettings();
   restorePaperLedger();
+  restorePaperAutoSettings();
   [
     strategyBankrollInput,
     strategyRiskInput,
@@ -342,6 +360,7 @@
     renderExecutionPlan(scan);
     renderPaperTicket();
     markPaperLedger(scan);
+    evaluatePaperAutomation(scan);
     renderPaperBankroll();
     renderChart(scan);
     renderReasons(scan);
@@ -1145,6 +1164,7 @@
       entrySpot: Number(market.currentPrice),
       lastSpot: Number(market.currentPrice),
       lastMarkedAt: scan.generatedAt || new Date().toISOString(),
+      sourcePositionId: sourcePosition ? sourcePosition.id : "",
     };
   }
 
@@ -1173,7 +1193,7 @@
       setPaperStatus("Paper buy could not fill: fake cash no longer covers it.", true);
       savePaperLedger();
       renderPaperBankroll();
-      return;
+      return null;
     }
     const scan = state.scan || {};
     const market = scan.market || {};
@@ -1219,6 +1239,7 @@
     savePaperLedger();
     renderPaperBankroll();
     setPaperStatus("Paper bought " + contracts + " " + String(order.side).toUpperCase() + " @ " + formatCents(entryCents) + ".", false, "pos");
+    return position;
   }
 
   function paperSellPosition(id) {
@@ -1232,14 +1253,17 @@
     paperSellContracts(position.ticker, position.side, position.contracts, bidCents, "Bid-side exit before settlement");
   }
 
-  function paperSellContracts(ticker, side, requestedContracts, exitCents, detail, orderId) {
+  function paperSellContracts(ticker, side, requestedContracts, exitCents, detail, orderId, sourcePositionId) {
     const priceCents = clampNumber(Number(exitCents), 1, 99);
     const price = priceCents / 100;
     let remaining = Math.floor(Number(requestedContracts || 0));
     let soldContracts = 0;
     let entryCost = 0;
     const positions = state.paper.positions
-      .filter(function (position) { return position.ticker === ticker && position.side === side; })
+      .filter(function (position) {
+        if (sourcePositionId) return position.id === sourcePositionId && position.ticker === ticker && position.side === side;
+        return position.ticker === ticker && position.side === side;
+      })
       .sort(function (a, b) { return new Date(a.openedAt || 0).getTime() - new Date(b.openedAt || 0).getTime(); });
     if (orderId) removePaperOrder(orderId);
     positions.forEach(function (position) {
@@ -1348,9 +1372,198 @@
       history: [],
       layout: normalizePaperLayout(state.paper.layout),
     };
+    state.paperAuto.fills = {};
+    state.paperAuto.lastAttemptAt = {};
     savePaperLedger();
+    persistPaperAutoSettings();
     renderPaperBankroll();
     setPaperStatus("Paper bankroll reset.", false);
+    updatePaperAutoStatus();
+  }
+
+  function restorePaperAutoSettings() {
+    let saved = {};
+    try {
+      saved = JSON.parse(localStorage.getItem(PAPER_AUTO_STORAGE_KEY) || "{}") || {};
+    } catch {
+      saved = {};
+    }
+    state.paperAuto.completion = saved.completion === true;
+    state.paperAuto.scalp = saved.scalp === true;
+    state.paperAuto.fills = saved.fills && typeof saved.fills === "object" && !Array.isArray(saved.fills) ? saved.fills : {};
+    state.paperAuto.lastAttemptAt = saved.lastAttemptAt && typeof saved.lastAttemptAt === "object" && !Array.isArray(saved.lastAttemptAt) ? saved.lastAttemptAt : {};
+    paperAutoCompletionInput.checked = state.paperAuto.completion;
+    paperAutoScalpInput.checked = state.paperAuto.scalp;
+    updatePaperAutoStatus();
+  }
+
+  function savePaperAutoSettings() {
+    state.paperAuto.completion = paperAutoCompletionInput.checked;
+    state.paperAuto.scalp = paperAutoScalpInput.checked;
+    persistPaperAutoSettings();
+    updatePaperAutoStatus();
+  }
+
+  function persistPaperAutoSettings() {
+    localStorage.setItem(PAPER_AUTO_STORAGE_KEY, JSON.stringify({
+      completion: state.paperAuto.completion,
+      scalp: state.paperAuto.scalp,
+      fills: state.paperAuto.fills,
+      lastAttemptAt: state.paperAuto.lastAttemptAt,
+    }));
+  }
+
+  function evaluatePaperAutomation(scan) {
+    if (!state.paperAuto.completion && !state.paperAuto.scalp) {
+      updatePaperAutoStatus();
+      return;
+    }
+    const plan = state.executionPlan;
+    const ticker = scan && scan.ticker ? scan.ticker : "";
+    if (!ticker || !plan || !plan.candidate || !plan.entry || !plan.entry.ok || plan.actionClass !== "buy") {
+      updatePaperAutoStatus("Paper bots armed. Waiting for a green BUY signal from the model.", "");
+      return;
+    }
+    if (!plan.size || Number(plan.size.contracts) <= 0) {
+      updatePaperAutoStatus("Paper bots armed. Model is green, but the Kelly/risk size is currently 0.", "");
+      return;
+    }
+    const side = plan.side === "no" ? "no" : "yes";
+    const quote = getCurrentPaperQuote(side);
+    if (!quote || !Number.isFinite(Number(quote.askCents)) || Number(quote.askCents) <= 0) {
+      updatePaperAutoStatus("Paper bots armed. Waiting for a live " + side.toUpperCase() + " ask.", "");
+      return;
+    }
+    const limitCents = Number(plan.entry.limitCents);
+    if (!Number.isFinite(limitCents) || Number(quote.askCents) > limitCents) {
+      updatePaperAutoStatus("Paper bots armed. Current ask " + formatCents(quote.askCents) + " is above the model limit " + formatCents(limitCents) + ".", "");
+      return;
+    }
+
+    const strategies = [];
+    if (state.paperAuto.completion) strategies.push("completion");
+    if (state.paperAuto.scalp) strategies.push("scalp");
+    strategies.sort(function (left, right) {
+      return paperAutoFillCount(left, ticker) - paperAutoFillCount(right, ticker);
+    });
+    const results = strategies.map(function (strategy) {
+      return runPaperAutoStrategy(strategy, scan, plan, quote);
+    });
+    const filled = results.some(function (item) { return item && item.filled; });
+    const errored = results.some(function (item) { return item && item.error; });
+    updatePaperAutoStatus(results.map(function (item) { return item.message; }).filter(Boolean).join(" "), filled ? "pos" : (errored ? "neg" : ""));
+  }
+
+  function runPaperAutoStrategy(strategy, scan, plan, quote) {
+    const ticker = scan.ticker || "KXBTC15M";
+    const side = plan.side === "no" ? "no" : "yes";
+    const label = strategy === "scalp" ? "Scalp bot" : "Completion bot";
+    const key = paperAutoKey(strategy, ticker);
+    const fills = paperAutoFillCount(strategy, ticker);
+    const totalFills = paperAutoTotalFillCount(ticker);
+    if (totalFills >= PAPER_AUTO_MAX_ENTRIES_PER_TICKER) {
+      return { filled: false, message: label + ": shared max " + totalFills + "/" + PAPER_AUTO_MAX_ENTRIES_PER_TICKER + " auto fills reached for " + ticker + "." };
+    }
+    if (fills >= PAPER_AUTO_MAX_ENTRIES_PER_TICKER) {
+      return { filled: false, message: label + ": max " + fills + "/" + PAPER_AUTO_MAX_ENTRIES_PER_TICKER + " fills reached for " + ticker + "." };
+    }
+    const nowMs = Date.now();
+    const tickerKey = paperAutoKey("ticker", ticker);
+    const lastTickerAttempt = Number(state.paperAuto.lastAttemptAt[tickerKey] || 0);
+    if (lastTickerAttempt > 0 && nowMs - lastTickerAttempt < PAPER_AUTO_COOLDOWN_MS) {
+      return { filled: false, message: label + ": shared cooldown " + formatDuration((PAPER_AUTO_COOLDOWN_MS - (nowMs - lastTickerAttempt)) / 1000) + " before another auto fill on this market." };
+    }
+    const lastAttempt = Number(state.paperAuto.lastAttemptAt[key] || 0);
+    if (lastAttempt > 0 && nowMs - lastAttempt < PAPER_AUTO_COOLDOWN_MS) {
+      return { filled: false, message: label + ": cooling down " + formatDuration((PAPER_AUTO_COOLDOWN_MS - (nowMs - lastAttempt)) / 1000) + " before another possible fill." };
+    }
+    const askCents = clampNumber(Number(quote.askCents), 1, 99);
+    const limitCents = clampNumber(Number(plan.entry.limitCents), 1, 99);
+    const availableContracts = maxPaperContracts(paperAvailableCash(), askCents);
+    if (availableContracts < PAPER_AUTO_CONTRACTS) {
+      return { filled: false, error: true, message: label + ": not enough free paper cash for 10 contracts at " + formatCents(askCents) + "." };
+    }
+
+    state.paperAuto.lastAttemptAt[key] = nowMs;
+    state.paperAuto.lastAttemptAt[tickerKey] = nowMs;
+    persistPaperAutoSettings();
+    const order = {
+      id: "paper-auto-" + strategy + "-" + Date.now() + "-" + Math.floor(Math.random() * 100000),
+      status: "open",
+      action: "buy",
+      side,
+      contracts: PAPER_AUTO_CONTRACTS,
+      limitCents,
+      ticker,
+      createdAt: new Date().toISOString(),
+      closeTime: scan.market && scan.market.closeTime || "",
+      targetPrice: Number(scan.market && scan.market.targetPrice),
+      entrySpot: Number(scan.market && scan.market.currentPrice),
+      lastSpot: Number(scan.market && scan.market.currentPrice),
+      lastBidCents: Number(quote.bidCents),
+      lastAskCents: Number(quote.askCents),
+      lastModelProbability: Number(quote.probability),
+      automation: strategy,
+    };
+    const position = fillPaperBuy(order, askCents, label + " auto entry");
+    if (!position) {
+      return { filled: false, error: true, message: label + ": entry did not fill." };
+    }
+
+    state.paperAuto.fills[key] = fills + 1;
+    persistPaperAutoSettings();
+
+    if (strategy === "scalp") {
+      const sellLimitCents = clampNumber(position.entryCents + PAPER_SCALP_TARGET_CENTS, 1, 99);
+      const sellOrder = {
+        id: "paper-auto-scalp-exit-" + Date.now() + "-" + Math.floor(Math.random() * 100000),
+        status: "open",
+        action: "sell",
+        side,
+        contracts: position.contracts,
+        limitCents: sellLimitCents,
+        ticker: position.ticker,
+        createdAt: new Date().toISOString(),
+        closeTime: position.closeTime,
+        targetPrice: Number(position.targetPrice),
+        entrySpot: Number(position.entrySpot),
+        lastSpot: Number(position.lastSpot),
+        lastBidCents: Number(position.lastBidCents),
+        lastAskCents: Number(position.lastAskCents),
+        lastModelProbability: Number(position.lastModelProbability),
+        automation: "scalp-exit",
+        sourcePositionId: position.id,
+      };
+      if (Number(position.lastBidCents) >= sellLimitCents) {
+        paperSellContracts(position.ticker, side, position.contracts, position.lastBidCents, "Scalp bot +10c target filled immediately", "", position.id);
+      } else {
+        queuePaperOrder(sellOrder, "Scalp bot +10c target waiting for bid >= " + formatCents(sellLimitCents));
+      }
+      return { filled: true, message: label + ": bought 10 " + side.toUpperCase() + " @ " + formatCents(position.entryCents) + " and set +10c exit at " + formatCents(sellLimitCents) + " (" + (fills + 1) + "/" + PAPER_AUTO_MAX_ENTRIES_PER_TICKER + ")." };
+    }
+
+    return { filled: true, message: label + ": bought 10 " + side.toUpperCase() + " @ " + formatCents(position.entryCents) + " and will hold to settlement (" + (fills + 1) + "/" + PAPER_AUTO_MAX_ENTRIES_PER_TICKER + ")." };
+  }
+
+  function paperAutoKey(strategy, ticker) {
+    return strategy + ":" + String(ticker || "KXBTC15M");
+  }
+
+  function paperAutoFillCount(strategy, ticker) {
+    return Number(state.paperAuto.fills[paperAutoKey(strategy, ticker)] || 0);
+  }
+
+  function paperAutoTotalFillCount(ticker) {
+    return paperAutoFillCount("completion", ticker) + paperAutoFillCount("scalp", ticker);
+  }
+
+  function updatePaperAutoStatus(message, tone) {
+    if (!paperAutoStatusEl) return;
+    const active = [];
+    if (state.paperAuto.completion) active.push("completion");
+    if (state.paperAuto.scalp) active.push("scalp");
+    paperAutoStatusEl.textContent = message || (active.length ? "Paper bots armed: " + active.join(" + ") + ". Each fill buys 10 contracts only on a green model entry, shared max 2 fills per market." : "Paper bots are off.");
+    paperAutoStatusEl.className = "paper-auto-status " + (tone || "");
   }
 
   function markPaperLedger(scan) {
@@ -1396,7 +1609,7 @@
       if (order.action === "buy" && Number(order.lastAskCents) <= Number(order.limitCents)) {
         fillPaperBuy(order, Number(order.lastAskCents), "Resting limit buy filled");
       } else if (order.action === "sell" && Number(order.lastBidCents) >= Number(order.limitCents)) {
-        paperSellContracts(order.ticker, order.side, order.contracts, Number(order.lastBidCents), "Resting limit sell filled", order.id);
+        paperSellContracts(order.ticker, order.side, order.contracts, Number(order.lastBidCents), "Resting limit sell filled", order.id, order.sourcePositionId);
       }
     });
     if (changed) savePaperLedger();
