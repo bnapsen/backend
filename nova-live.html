@@ -19,7 +19,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="nova-live.css?v=20260430g">
+    <link rel="stylesheet" href="nova-live.css?v=20260430h">
 </head>
 <body>
     <div class="live-shell">
@@ -134,15 +134,12 @@
                     </div>
                 </section>
 
-                <details class="advanced-chat-controls">
-                    <summary>Advanced controls</summary>
+                <div class="mode-tabs" role="tablist" aria-label="Choose stream mode">
+                    <button class="mode-tab is-active" type="button" data-mode="host" id="hostModeButton">Go Live</button>
+                    <button class="mode-tab" type="button" data-mode="viewer" id="viewerModeButton">Watch</button>
+                </div>
 
-                    <div class="mode-tabs" role="tablist" aria-label="Choose stream mode">
-                        <button class="mode-tab is-active" type="button" data-mode="host" id="hostModeButton">Go Live</button>
-                        <button class="mode-tab" type="button" data-mode="viewer" id="viewerModeButton">Watch</button>
-                    </div>
-
-                    <section class="mode-panel is-active" id="hostPanel" aria-labelledby="hostModeButton">
+                <section class="mode-panel is-active" id="hostPanel" aria-labelledby="hostModeButton">
                     <label class="field-label" for="hostName">Name</label>
                     <input id="hostName" class="text-field" autocomplete="name" maxlength="40" value="Nova Host">
 
@@ -204,9 +201,9 @@
                             <button class="action-button danger hidden" type="button" id="deleteRecordingButton" disabled>Delete Replay</button>
                         </div>
                     </div>
-                    </section>
+                </section>
 
-                    <section class="mode-panel" id="viewerPanel" aria-labelledby="viewerModeButton">
+                <section class="mode-panel" id="viewerPanel" aria-labelledby="viewerModeButton">
                     <label class="field-label" for="viewerName">Name</label>
                     <input id="viewerName" class="text-field" autocomplete="name" maxlength="40" value="Viewer">
 
@@ -237,8 +234,7 @@
                             <button class="action-button danger" type="button" id="viewerStopShareButton" disabled>Stop Share</button>
                         </div>
                     </div>
-                    </section>
-                </details>
+                </section>
 
                 <section class="chat-card" aria-label="Live chat">
                     <div class="panel-heading-row">
@@ -289,6 +285,6 @@
         </section>
     </div>
 
-    <script src="nova-live.js?v=20260430g" defer></script>
+    <script src="nova-live.js?v=20260430h" defer></script>
 </body>
 </html>

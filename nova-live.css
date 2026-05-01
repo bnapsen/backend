@@ -805,26 +805,6 @@ button:disabled {
   color: var(--muted);
 }
 
-.advanced-chat-controls {
-  margin-bottom: 14px;
-}
-
-.advanced-chat-controls summary {
-  min-height: 42px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--muted);
-  cursor: pointer;
-  font-weight: 800;
-}
-
-.advanced-chat-controls[open] summary {
-  margin-bottom: 12px;
-  color: var(--text);
-}
-
 .mode-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
