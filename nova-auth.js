@@ -4,6 +4,11 @@
   const PROD_API_BASE = 'https://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app';
   const CANONICAL_SITE_HOST = 'bnapsen.com';
   const FIREBASE_VERSION = '10.12.5';
+  const WALLET_BROADCAST_NAME = 'nova-auth-wallet';
+  const WALLET_SYNC_STORAGE_KEY = 'nova-auth:wallet-sync';
+  const WALLET_REFRESH_STORAGE_KEY = 'nova-auth:wallet-refresh';
+  const WALLET_AUTO_REFRESH_MS = 30000;
+  const CLIENT_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   if (window.location.hostname.toLowerCase() === `www.${CANONICAL_SITE_HOST}`) {
     window.location.replace(`https://${CANONICAL_SITE_HOST}${window.location.pathname}${window.location.search}${window.location.hash}`);
@@ -24,11 +29,18 @@
     apiBaseUrl: '',
     cachedToken: '',
     refreshTimer: 0,
+    walletRefreshTimer: 0,
+    walletRefreshInFlight: false,
+    walletChannel: null,
+    walletSyncInstalled: false,
+    floatingWallet: null,
+    floatingWalletStylesInjected: false,
     listeners: new Set(),
     readyPromise: null,
     simWallet: {
       ready: false,
       loading: false,
+      uid: '',
       currency: 'SIM',
       balance: null,
       balanceCents: null,
@@ -52,6 +64,131 @@
       .trim()
       .slice(0, maxLength);
     return text || fallback;
+  }
+
+  function currentUid() {
+    return cleanText(state.user && state.user.uid, '', 160);
+  }
+
+  function walletMatchesCurrentUser(wallet) {
+    const uid = cleanText(wallet && wallet.uid, '', 160);
+    const signedInUid = currentUid();
+    return Boolean(signedInUid && (!uid || uid === signedInUid));
+  }
+
+  function postWalletMessage(message) {
+    const payload = {
+      ...message,
+      clientId: CLIENT_ID,
+      uid: currentUid(),
+      sentAt: Date.now(),
+    };
+
+    try {
+      state.walletChannel?.postMessage(payload);
+    } catch {
+      // Cross-tab sync is a convenience layer. The API remains the source of truth.
+    }
+
+    try {
+      const storageKey = payload.type === 'refresh-wallet' ? WALLET_REFRESH_STORAGE_KEY : WALLET_SYNC_STORAGE_KEY;
+      window.localStorage.setItem(storageKey, JSON.stringify(payload));
+    } catch {
+      // Some browsers disable storage. BroadcastChannel or polling can still keep pages fresh.
+    }
+  }
+
+  function broadcastWallet(wallet = state.simWallet) {
+    if (!walletMatchesCurrentUser(wallet) || wallet.loading || wallet.error) {
+      return;
+    }
+    postWalletMessage({ type: 'wallet', wallet });
+  }
+
+  function requestWalletRefresh(reason = 'wallet-change') {
+    if (!currentUid()) {
+      return;
+    }
+    postWalletMessage({ type: 'refresh-wallet', reason });
+  }
+
+  function refreshWalletSoon() {
+    if (!state.user || state.walletRefreshInFlight) {
+      return;
+    }
+    loadSimWallet({ broadcast: true }).catch(() => {});
+  }
+
+  function handleWalletMessage(message) {
+    const payload = message && typeof message === 'object' ? message : null;
+    if (!payload || payload.clientId === CLIENT_ID) {
+      return;
+    }
+    const payloadUid = cleanText(payload.uid, '', 160);
+    const signedInUid = currentUid();
+    if (!signedInUid || (payloadUid && payloadUid !== signedInUid)) {
+      return;
+    }
+
+    if (payload.type === 'wallet' && walletMatchesCurrentUser(payload.wallet)) {
+      applySimWallet(payload.wallet);
+      emitChange();
+      return;
+    }
+
+    if (payload.type === 'refresh-wallet') {
+      refreshWalletSoon();
+    }
+  }
+
+  function installWalletSync() {
+    if (state.walletSyncInstalled) {
+      return;
+    }
+    state.walletSyncInstalled = true;
+
+    try {
+      if ('BroadcastChannel' in window) {
+        state.walletChannel = new BroadcastChannel(WALLET_BROADCAST_NAME);
+        state.walletChannel.onmessage = (event) => {
+          handleWalletMessage(event.data);
+        };
+      }
+    } catch {
+      state.walletChannel = null;
+    }
+
+    window.addEventListener('storage', (event) => {
+      if (event.key !== WALLET_SYNC_STORAGE_KEY && event.key !== WALLET_REFRESH_STORAGE_KEY) {
+        return;
+      }
+      try {
+        handleWalletMessage(JSON.parse(event.newValue || '{}'));
+      } catch {
+        // Ignore malformed storage events from old tabs.
+      }
+    });
+
+    window.addEventListener('focus', refreshWalletSoon);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        refreshWalletSoon();
+      }
+    });
+  }
+
+  function startWalletAutoRefresh() {
+    if (state.walletRefreshTimer) {
+      return;
+    }
+    state.walletRefreshTimer = window.setInterval(refreshWalletSoon, WALLET_AUTO_REFRESH_MS);
+  }
+
+  function stopWalletAutoRefresh() {
+    if (state.walletRefreshTimer) {
+      window.clearInterval(state.walletRefreshTimer);
+      state.walletRefreshTimer = 0;
+    }
   }
 
   function emitChange() {
@@ -130,6 +267,7 @@
     state.simWallet = {
       ready: Boolean(error),
       loading: false,
+      uid: '',
       currency: 'SIM',
       balance: null,
       balanceCents: null,
@@ -144,6 +282,7 @@
     state.simWallet = {
       ready: true,
       loading: false,
+      uid: cleanText(source.uid, currentUid(), 160),
       currency: cleanText(source.currency, 'SIM', 12).toUpperCase(),
       balance: Number.isFinite(Number(source.balance)) ? Number(source.balance) : Number(source.balanceCents || 0) / 100,
       balanceCents: Number.isFinite(Number(source.balanceCents)) ? Math.round(Number(source.balanceCents)) : null,
@@ -176,20 +315,43 @@
     return payload;
   }
 
-  async function loadSimWallet() {
+  async function loadSimWallet(options = {}) {
     if (!state.user) {
       resetSimWallet();
+      emitChange();
       return null;
     }
+    if (state.walletRefreshInFlight) {
+      return state.simWallet;
+    }
+    state.walletRefreshInFlight = true;
     state.simWallet = {
       ...state.simWallet,
       loading: true,
       error: '',
     };
-    const payload = await simWalletRequest('/api/sim/wallet', {
-      method: 'GET',
-    });
-    return applySimWallet(payload.wallet);
+    emitChange();
+    try {
+      const payload = await simWalletRequest('/api/sim/wallet', {
+        method: 'GET',
+      });
+      const wallet = applySimWallet(payload.wallet);
+      emitChange();
+      if (options.broadcast !== false) {
+        broadcastWallet(wallet);
+      }
+      return wallet;
+    } catch (error) {
+      state.simWallet = {
+        ...state.simWallet,
+        loading: false,
+        error: error.message || 'Unable to load SIM wallet.',
+      };
+      emitChange();
+      throw error;
+    } finally {
+      state.walletRefreshInFlight = false;
+    }
   }
 
   async function syncSignedInSession(forceToken = false) {
@@ -210,8 +372,10 @@
       },
       body: JSON.stringify(adjustment),
     });
-    applySimWallet(payload.wallet);
+    const wallet = applySimWallet(payload.wallet);
     emitChange();
+    broadcastWallet(wallet);
+    requestWalletRefresh('wallet-adjusted');
     return state.simWallet;
   }
 
@@ -244,6 +408,7 @@
     if (typeof options.onChange === 'function') {
       state.listeners.add(options.onChange);
     }
+    installWalletSync();
     if (state.readyPromise) {
       return state.readyPromise;
     }
@@ -287,6 +452,11 @@
         authModule.onAuthStateChanged(state.auth, async (user) => {
           state.user = user || null;
           state.error = '';
+          if (state.user) {
+            startWalletAutoRefresh();
+          } else {
+            stopWalletAutoRefresh();
+          }
           try {
             await syncSignedInSession(true);
           } catch (error) {
@@ -452,6 +622,7 @@
     await state.modules.authModule.signOut(state.auth);
     state.user = null;
     state.cachedToken = '';
+    stopWalletAutoRefresh();
     resetSimWallet();
     emitChange();
   }
@@ -683,10 +854,199 @@
     }
   }
 
+  function ensureFloatingWalletStyles() {
+    if (state.floatingWalletStylesInjected || !document.head) {
+      return;
+    }
+    state.floatingWalletStylesInjected = true;
+    const style = document.createElement('style');
+    style.id = 'nova-floating-wallet-style';
+    style.textContent = `
+      .nova-floating-wallet {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 2147482600;
+        min-width: 220px;
+        max-width: min(320px, calc(100vw - 24px));
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 14px;
+        background: rgba(9, 13, 21, 0.92);
+        color: #f8fafc;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.36);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.2;
+      }
+      .nova-floating-wallet__inner {
+        display: grid;
+        gap: 9px;
+        padding: 12px 13px;
+      }
+      .nova-floating-wallet__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .nova-floating-wallet__label {
+        color: #94a3b8;
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .nova-floating-wallet__value {
+        color: #34d399;
+        font-size: 1.08rem;
+        font-weight: 900;
+        letter-spacing: 0;
+        white-space: nowrap;
+      }
+      .nova-floating-wallet__sub {
+        color: #cbd5e1;
+        font-size: 0.76rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .nova-floating-wallet__actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .nova-floating-wallet button {
+        border: 1px solid rgba(148, 163, 184, 0.34);
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.94);
+        color: #e2e8f0;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.74rem;
+        font-weight: 800;
+        padding: 7px 10px;
+      }
+      .nova-floating-wallet button:hover,
+      .nova-floating-wallet button:focus-visible {
+        border-color: rgba(52, 211, 153, 0.7);
+        color: #ffffff;
+        outline: none;
+      }
+      .nova-floating-wallet.is-error .nova-floating-wallet__value {
+        color: #fb7185;
+      }
+      .nova-floating-wallet.is-syncing .nova-floating-wallet__value {
+        color: #fbbf24;
+      }
+      @media (max-width: 760px) {
+        .nova-floating-wallet {
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+          min-width: 0;
+        }
+      }
+      @media print {
+        .nova-floating-wallet {
+          display: none;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensureFloatingWallet() {
+    if (!document.body) {
+      return null;
+    }
+    ensureFloatingWalletStyles();
+    if (state.floatingWallet && document.body.contains(state.floatingWallet)) {
+      return state.floatingWallet;
+    }
+    const root = document.createElement('aside');
+    root.className = 'nova-floating-wallet';
+    root.setAttribute('aria-live', 'polite');
+    root.setAttribute('aria-label', 'SIM wallet');
+    document.body.appendChild(root);
+    state.floatingWallet = root;
+    return root;
+  }
+
+  function renderFloatingWallet() {
+    const root = ensureFloatingWallet();
+    if (!root) {
+      return;
+    }
+    const snapshot = profile();
+    const wallet = snapshot.simWallet || {};
+    const isSyncing = snapshot.signedIn && (wallet.loading || !wallet.ready);
+    const isError = Boolean(snapshot.error || wallet.error);
+    const value = !snapshot.ready
+      ? 'Checking'
+      : snapshot.signedIn
+        ? (isSyncing ? 'Syncing' : (isError ? 'Unavailable' : formatSimWallet(wallet)))
+        : 'Sign in';
+    const sub = !snapshot.ready
+      ? 'Loading your account'
+      : snapshot.signedIn
+        ? (isError ? (wallet.error || snapshot.error) : `${snapshot.displayName} account wallet`)
+        : 'Use one SIM balance across the site';
+
+    root.classList.toggle('is-syncing', Boolean(isSyncing));
+    root.classList.toggle('is-error', isError);
+    root.innerHTML = '';
+
+    const inner = document.createElement('div');
+    inner.className = 'nova-floating-wallet__inner';
+
+    const top = document.createElement('div');
+    top.className = 'nova-floating-wallet__top';
+
+    const label = document.createElement('span');
+    label.className = 'nova-floating-wallet__label';
+    label.textContent = 'SIM wallet';
+
+    const actions = document.createElement('div');
+    actions.className = 'nova-floating-wallet__actions';
+
+    if (snapshot.signedIn) {
+      const refreshButton = document.createElement('button');
+      refreshButton.type = 'button';
+      refreshButton.textContent = 'Refresh';
+      refreshButton.addEventListener('click', refreshWalletSoon);
+      actions.appendChild(refreshButton);
+    } else if (snapshot.ready) {
+      const signInButton = document.createElement('button');
+      signInButton.type = 'button';
+      signInButton.textContent = 'Sign in';
+      signInButton.addEventListener('click', () => {
+        signIn('google').catch(providerError);
+      });
+      actions.appendChild(signInButton);
+    }
+
+    const valueEl = document.createElement('strong');
+    valueEl.className = 'nova-floating-wallet__value';
+    valueEl.textContent = value;
+
+    const subEl = document.createElement('span');
+    subEl.className = 'nova-floating-wallet__sub';
+    subEl.textContent = sub;
+
+    top.append(label, actions);
+    inner.append(top, valueEl, subEl);
+    root.appendChild(inner);
+  }
+
   function renderWidgets() {
+    if (!document.body) {
+      return;
+    }
     document.body.classList.toggle('auth-required', state.required);
     document.body.classList.toggle('auth-signed-in', Boolean(state.user));
     document.querySelectorAll('[data-auth-widget]').forEach(renderWidget);
+    renderFloatingWallet();
   }
 
   window.NovaAuth = {
@@ -711,6 +1071,9 @@
     appendAuthHeaders,
     authPayload,
     loadSimWallet,
+    refreshWallet() {
+      return loadSimWallet({ broadcast: true });
+    },
     adjustSimWallet,
     formatSimWallet,
     requireSignedIn,
@@ -722,4 +1085,22 @@
     sendPasswordReset,
     signOut: signOutUser,
   };
+
+  function autoInit() {
+    if (!state.readyPromise) {
+      init().catch(() => {});
+    } else {
+      renderWidgets();
+    }
+  }
+
+  function queueAutoInit() {
+    window.setTimeout(autoInit, 0);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', queueAutoInit, { once: true });
+  } else {
+    queueAutoInit();
+  }
 })();
