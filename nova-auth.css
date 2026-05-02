@@ -12,6 +12,7 @@
 .nova-auth-pill,
 .nova-auth-notice,
 .nova-auth-name,
+.nova-auth-wallet,
 .nova-auth-error {
   font-size: 0.82rem;
   line-height: 1.2;
@@ -107,6 +108,16 @@
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nova-auth-wallet {
+  border: 1px solid rgba(41, 242, 166, 0.28);
+  border-radius: 999px;
+  background: rgba(41, 242, 166, 0.1);
+  color: #29f2a6;
+  padding: 6px 9px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .nova-auth-error {

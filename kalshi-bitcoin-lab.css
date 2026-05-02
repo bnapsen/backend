@@ -577,7 +577,7 @@ button:disabled {
 
 .paper-headline {
   display: grid;
-  grid-template-columns: minmax(180px, 1.35fr) repeat(4, minmax(118px, 1fr));
+  grid-template-columns: minmax(180px, 1.35fr) repeat(5, minmax(118px, 1fr));
   gap: 10px;
   padding: 14px;
   border-bottom: 1px solid rgba(237, 244, 241, 0.08);
@@ -711,6 +711,12 @@ button:disabled {
 .paper-settings-row input,
 .paper-settings-row select {
   width: 100%;
+}
+
+.paper-settings-row input[readonly] {
+  border-color: rgba(41, 245, 178, 0.24);
+  background: rgba(41, 245, 178, 0.08);
+  color: var(--green);
 }
 
 .paper-ticket {

@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kalshi Bitcoin 15m Lab</title>
-  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501j">
-  <link rel="stylesheet" href="/nova-auth.css?v=20260502c">
+  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260502b">
+  <link rel="stylesheet" href="/nova-auth.css?v=20260502d">
 </head>
 <body>
   <header class="lab-topbar">
@@ -138,7 +138,7 @@
       <div class="section-head paper-drag-handle">
         <div>
           <h2>Paper Limit Trader</h2>
-          <p class="subtext">Simulated contracts use the same 1.00 payout structure, local quotes, limit fills, and local browser storage.</p>
+          <p class="subtext">Simulated contracts use the same 1.00 payout structure, local quotes, limit fills, and your signed-in SIM wallet when available.</p>
         </div>
         <div class="paper-window-actions">
           <strong id="paper-status">Paper ready</strong>
@@ -190,10 +190,10 @@
       <div class="paper-settings-row">
         <label>
           Currency
-          <input id="paper-currency" type="text" maxlength="12" value="SIM">
+          <input id="paper-currency" type="text" maxlength="12" value="SIM" readonly>
         </label>
         <label>
-          Starting roll
+          Starting grant
           <input id="paper-starting-bankroll" type="number" min="1" max="1000000" step="10" value="1000">
         </label>
         <button id="paper-sync-bankroll" class="ghost-button" type="button">Use Equity For Kelly</button>
@@ -380,7 +380,7 @@
     </section>
   </main>
 
-  <script src="/nova-auth.js?v=20260502c"></script>
-  <script src="/kalshi-bitcoin-lab.js?v=20260502a"></script>
+  <script src="/nova-auth.js?v=20260502d"></script>
+  <script src="/kalshi-bitcoin-lab.js?v=20260502b"></script>
 </body>
 </html>

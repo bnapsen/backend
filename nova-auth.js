@@ -15,10 +15,21 @@
     app: null,
     auth: null,
     user: null,
+    apiBaseUrl: '',
     cachedToken: '',
     refreshTimer: 0,
     listeners: new Set(),
     readyPromise: null,
+    simWallet: {
+      ready: false,
+      loading: false,
+      currency: 'SIM',
+      balance: null,
+      balanceCents: null,
+      startingBalance: 1000,
+      startingBalanceCents: 100000,
+      error: '',
+    },
   };
 
   function defaultApiBaseUrl() {
@@ -100,12 +111,101 @@
     if (!state.user) {
       state.cachedToken = '';
       scheduleTokenRefresh();
+      resetSimWallet();
       return '';
     }
 
     state.cachedToken = await state.user.getIdToken(force);
     scheduleTokenRefresh();
     return state.cachedToken;
+  }
+
+  function resetSimWallet(error = '') {
+    state.simWallet = {
+      ready: Boolean(error),
+      loading: false,
+      currency: 'SIM',
+      balance: null,
+      balanceCents: null,
+      startingBalance: 1000,
+      startingBalanceCents: 100000,
+      error,
+    };
+  }
+
+  function applySimWallet(wallet) {
+    const source = wallet || {};
+    state.simWallet = {
+      ready: true,
+      loading: false,
+      currency: cleanText(source.currency, 'SIM', 12).toUpperCase(),
+      balance: Number.isFinite(Number(source.balance)) ? Number(source.balance) : Number(source.balanceCents || 0) / 100,
+      balanceCents: Number.isFinite(Number(source.balanceCents)) ? Math.round(Number(source.balanceCents)) : null,
+      startingBalance: Number.isFinite(Number(source.startingBalance)) ? Number(source.startingBalance) : 1000,
+      startingBalanceCents: Number.isFinite(Number(source.startingBalanceCents)) ? Math.round(Number(source.startingBalanceCents)) : 100000,
+      updatedAt: cleanText(source.updatedAt, '', 40),
+      recentTransactions: Array.isArray(source.recentTransactions) ? source.recentTransactions.slice(0, 12) : [],
+      error: '',
+    };
+    return state.simWallet;
+  }
+
+  async function simWalletRequest(path, options = {}) {
+    const token = state.cachedToken || await getIdToken();
+    if (!token) {
+      throw new Error('Sign in to use SIM.');
+    }
+    const response = await fetch(`${state.apiBaseUrl || defaultApiBaseUrl()}${path}`, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${token}`,
+      },
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error || 'Unable to update SIM wallet.');
+    }
+    return payload;
+  }
+
+  async function loadSimWallet() {
+    if (!state.user) {
+      resetSimWallet();
+      return null;
+    }
+    state.simWallet = {
+      ...state.simWallet,
+      loading: true,
+      error: '',
+    };
+    const payload = await simWalletRequest('/api/sim/wallet', {
+      method: 'GET',
+    });
+    return applySimWallet(payload.wallet);
+  }
+
+  async function adjustSimWallet(adjustment = {}) {
+    const payload = await simWalletRequest('/api/sim/wallet/adjust', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(adjustment),
+    });
+    applySimWallet(payload.wallet);
+    emitChange();
+    return state.simWallet;
+  }
+
+  function formatSimWallet(wallet = state.simWallet) {
+    const balance = Number(wallet && wallet.balance);
+    const currency = cleanText(wallet && wallet.currency, 'SIM', 12).toUpperCase();
+    if (!Number.isFinite(balance)) {
+      return currency;
+    }
+    return balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + currency;
   }
 
   function profile() {
@@ -120,22 +220,24 @@
       email: cleanText(user && user.email, '', 120),
       photoURL: cleanText(user && user.photoURL, '', 500),
       uid: cleanText(user && user.uid, '', 160),
+      simWallet: { ...state.simWallet },
     };
   }
 
   async function init(options = {}) {
+    if (typeof options.onChange === 'function') {
+      state.listeners.add(options.onChange);
+    }
     if (state.readyPromise) {
       return state.readyPromise;
     }
 
     state.required = options.required !== undefined ? Boolean(options.required) : state.required;
-    if (typeof options.onChange === 'function') {
-      state.listeners.add(options.onChange);
-    }
 
     state.readyPromise = (async () => {
       try {
         const apiBaseUrl = options.apiBaseUrl || defaultApiBaseUrl();
+        state.apiBaseUrl = apiBaseUrl;
         const config = await fetchAuthConfig(apiBaseUrl);
         state.enabled = Boolean(config.enabled && config.firebaseConfig);
         state.required = Boolean(config.required);
@@ -149,6 +251,7 @@
         if (!state.enabled) {
           state.error = 'Firebase web config is missing on the server.';
           state.ready = true;
+          resetSimWallet();
           emitChange();
           return profile();
         }
@@ -163,9 +266,11 @@
           state.error = '';
           try {
             await refreshToken(true);
+            await loadSimWallet();
           } catch (error) {
             state.cachedToken = '';
             state.error = error.message || 'Unable to refresh sign-in.';
+            resetSimWallet(error.message || 'Unable to load SIM wallet.');
           }
           state.ready = true;
           emitChange();
@@ -174,6 +279,7 @@
         state.enabled = false;
         state.error = error.message || 'Unable to load account sign-in.';
         state.ready = true;
+        resetSimWallet();
         emitChange();
       }
       return profile();
@@ -324,6 +430,7 @@
     await state.modules.authModule.signOut(state.auth);
     state.user = null;
     state.cachedToken = '';
+    resetSimWallet();
     emitChange();
   }
 
@@ -525,6 +632,16 @@
       name.className = 'nova-auth-name';
       name.textContent = snapshot.displayName;
 
+      const wallet = document.createElement('span');
+      wallet.className = 'nova-auth-wallet';
+      if (snapshot.simWallet?.loading) {
+        wallet.textContent = 'Syncing SIM';
+      } else if (snapshot.simWallet?.error) {
+        wallet.textContent = 'SIM unavailable';
+      } else {
+        wallet.textContent = formatSimWallet(snapshot.simWallet);
+      }
+
       const signOutButton = document.createElement('button');
       signOutButton.type = 'button';
       signOutButton.className = 'nova-auth-link';
@@ -533,7 +650,7 @@
         signOutUser().catch(providerError);
       });
 
-      root.append(avatar, name, signOutButton);
+      root.append(avatar, name, wallet, signOutButton);
     }
 
     if (state.error) {
@@ -571,6 +688,9 @@
     },
     appendAuthHeaders,
     authPayload,
+    loadSimWallet,
+    adjustSimWallet,
+    formatSimWallet,
     requireSignedIn,
     signInWithGoogle() {
       return signIn('google');

@@ -100,6 +100,24 @@ will show that accounts still need setup and protected actions will fail closed.
 The homepage account box supports both Google sign-in and plain email/password
 account creation when those providers are enabled in Firebase Authentication.
 
+## SIM wallet
+
+Signed-in accounts get a shared SIM wallet the first time the backend sees the
+account. The default grant is `1,000 SIM`; the wallet is stored in Firestore and
+is used by the 15-minute Bitcoin paper trader now, with the same API available
+for future games.
+
+- `GET /api/sim/wallet` verifies the Firebase ID token, creates the wallet if
+  needed, and returns the current SIM balance.
+- `POST /api/sim/wallet/adjust` records debits and credits in cents, rejects
+  overdrafts, and keeps a capped recent transaction list on the wallet document.
+- `SIM_STARTING_BALANCE` can override the starter grant.
+- `SIM_WALLET_FIRESTORE_COLLECTION` can override the default `simWallets`
+  collection.
+
+Unsigned visitors keep using local browser-only SIM in tools that support paper
+play, but signed-in users see the account SIM balance in the auth widget.
+
 ## Deploy
 
 From the repo root:

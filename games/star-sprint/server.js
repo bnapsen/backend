@@ -18,6 +18,7 @@ const ArcadeChat = require('./arcade-chat-core.js');
 const CarSoccer = require('./car-soccer-core.js');
 const ZombieSiege = require('./zombie-siege-core.js');
 const { createArcadeChatStore } = require('./arcade-chat-store.js');
+const { createSimWalletStore } = require('./sim-wallet-store.js');
 const { createReviewsStore } = require('./reviews-store.js');
 const { createSongsStore } = require('./songs-store.js');
 const {
@@ -163,6 +164,9 @@ const rooms = new Map();
 const cityRaidLobbies = new Map();
 const liveRooms = new Map();
 const arcadeChatStore = createArcadeChatStore();
+const simWalletStore = createSimWalletStore({
+  projectId: FIREBASE_PROJECT_ID,
+});
 const reviewsStore = createReviewsStore({
   dataDir: DATA_DIR,
   maxReviews: MAX_REVIEWS,
@@ -406,6 +410,110 @@ function handleAuthConfigRequest(req, res) {
     },
     firebaseConfig: publicFirebaseWebConfig(),
   });
+}
+
+function simWalletErrorStatus(error) {
+  const code = String(error && error.code || '');
+  if (code === 'sim/insufficient-funds') return 409;
+  if (code.startsWith('sim/')) return 400;
+  return 500;
+}
+
+async function handleSimWalletRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return;
+  }
+
+  try {
+    const wallet = await simWalletStore.getOrCreateWallet(auth.user);
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      wallet,
+      store: {
+        enabled: simWalletStore.enabled,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, simWalletErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to load SIM wallet.',
+    });
+  }
+}
+
+async function handleSimWalletAdjustRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return;
+  }
+
+  let body = {};
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Invalid JSON body.',
+    });
+    return;
+  }
+
+  try {
+    const wallet = await simWalletStore.adjustWallet(auth.user, {
+      amount: body.amount,
+      amountCents: body.amountCents,
+      source: body.source,
+      action: body.action,
+      note: body.note,
+      metadata: body.metadata,
+      allowNegative: body.allowNegative === true,
+    });
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      wallet,
+      store: {
+        enabled: simWalletStore.enabled,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, simWalletErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to update SIM wallet.',
+    });
+  }
 }
 
 function firebaseAuthVerifier() {
@@ -5384,6 +5492,16 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/auth/config') {
     handleAuthConfigRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/sim/wallet') {
+    await handleSimWalletRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/sim/wallet/adjust') {
+    await handleSimWalletAdjustRequest(req, res);
     return;
   }
 

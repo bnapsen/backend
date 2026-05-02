@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const PROD_API_BASE = "https://nova-arcade-backend-1000121513328.us-central1.run.app";
+  const PROD_API_BASE = "https://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app";
   const LIVE_REFRESH_MS = 300;
   const FALLBACK_REFRESH_MS = 500;
   const PAPER_STORAGE_KEY = "kalshiBtcPaperLedger";
@@ -70,6 +70,16 @@
       research: false,
       fills: {},
       lastAttemptAt: {},
+    },
+    simWallet: {
+      ready: false,
+      signedIn: false,
+      syncing: false,
+      currency: "SIM",
+      balance: null,
+      startingBalance: 1000,
+      error: "",
+      paperAccountId: PAPER_DEFAULT_ACCOUNT_ID,
     },
   };
 
@@ -252,7 +262,13 @@
   restorePaperLedger();
   restorePaperAutoSettings();
   if (window.NovaAuth) {
-    window.NovaAuth.init({ apiBaseUrl: defaultApiBase() }).catch(function () {});
+    window.NovaAuth.init({
+      apiBaseUrl: defaultApiBase(),
+      onChange: handleNovaAuthChange,
+    }).catch(function () {
+      state.simWallet.error = "SIM wallet sign-in did not initialize.";
+      renderPaperBankroll();
+    });
   }
   [
     strategyBankrollInput,
@@ -366,10 +382,81 @@
 
   function defaultApiBase() {
     const host = window.location.hostname;
-    if (host === "localhost" || host === "127.0.0.1" || host === "nova-arcade-backend-1000121513328.us-central1.run.app") {
+    if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".run.app")) {
       return window.location.origin;
     }
     return PROD_API_BASE;
+  }
+
+  function handleNovaAuthChange(profile) {
+    const signedIn = Boolean(profile && profile.signedIn);
+    const wallet = profile && profile.simWallet || {};
+    state.simWallet.signedIn = signedIn;
+    state.simWallet.ready = Boolean(wallet.ready);
+    state.simWallet.syncing = Boolean(wallet.loading);
+    state.simWallet.currency = "SIM";
+    state.simWallet.balance = Number.isFinite(Number(wallet.balance)) ? Number(wallet.balance) : null;
+    state.simWallet.startingBalance = Number.isFinite(Number(wallet.startingBalance)) ? Number(wallet.startingBalance) : 1000;
+    state.simWallet.error = signedIn ? String(wallet.error || "") : "";
+    if (signedIn && state.simWallet.ready && !state.simWallet.error && Number.isFinite(Number(state.simWallet.balance))) {
+      attachSimWalletToActivePaper();
+    } else {
+      syncPaperInputsFromActive();
+    }
+    renderPaperBankroll();
+  }
+
+  function attachSimWalletToActivePaper() {
+    if (!state.simWallet.signedIn || !Number.isFinite(Number(state.simWallet.balance))) {
+      return;
+    }
+    state.simWallet.paperAccountId = state.activePaperAccountId;
+    state.paper.currency = "SIM";
+    state.paper.startingBankroll = Math.max(1, Number(state.simWallet.startingBalance || 1000));
+    state.paper.cash = Math.max(0, Number(state.simWallet.balance || 0));
+    syncActivePaperAccount();
+    syncPaperInputsFromActive();
+    savePaperLedger();
+  }
+
+  function simWalletConnected() {
+    return Boolean(
+      state.simWallet.signedIn
+      && state.simWallet.ready
+      && !state.simWallet.error
+      && state.simWallet.paperAccountId === state.activePaperAccountId
+      && Number.isFinite(Number(state.simWallet.balance))
+    );
+  }
+
+  function syncSimWalletDelta(amount, action, note, metadata) {
+    if (!simWalletConnected() || !window.NovaAuth || typeof window.NovaAuth.adjustSimWallet !== "function") {
+      return Promise.resolve(null);
+    }
+    state.simWallet.syncing = true;
+    renderPaperBankroll();
+    return window.NovaAuth.adjustSimWallet({
+      amount: Math.round(Number(amount || 0) * 100) / 100,
+      source: "bitcoin-15m-paper",
+      action,
+      note,
+      metadata,
+    }).then(function (wallet) {
+      state.simWallet.ready = true;
+      state.simWallet.syncing = false;
+      state.simWallet.balance = Number(wallet && wallet.balance);
+      state.simWallet.startingBalance = Number(wallet && wallet.startingBalance) || state.simWallet.startingBalance;
+      state.simWallet.error = "";
+      attachSimWalletToActivePaper();
+      renderPaperBankroll();
+      return wallet;
+    }).catch(function (error) {
+      state.simWallet.syncing = false;
+      state.simWallet.error = error && error.message ? error.message : "SIM wallet sync failed.";
+      setPaperStatus("SIM wallet sync failed: " + state.simWallet.error, true);
+      renderPaperBankroll();
+      return null;
+    });
   }
 
   function openKalshiWindow(url) {
@@ -1106,7 +1193,14 @@
     const account = activePaperAccount();
     if (!account) return;
     paperAccountNameInput.value = account.name;
-    paperCurrencyInput.value = state.paper.currency;
+    state.paper.currency = "SIM";
+    paperCurrencyInput.value = "SIM";
+    paperCurrencyInput.readOnly = true;
+    paperCurrencyInput.title = "SIM is the site-wide paper currency.";
+    paperStartingBankrollInput.readOnly = Boolean(state.simWallet.signedIn && state.simWallet.ready);
+    paperStartingBankrollInput.title = paperStartingBankrollInput.readOnly
+      ? "Signed-in SIM wallets start at 1,000 SIM and keep their balance on your account."
+      : "Unsigned local paper mode can still change the starting roll.";
     paperStartingBankrollInput.value = String(state.paper.startingBankroll);
     paperAutoCompletionInput.checked = state.paperAuto.completion;
     paperAutoScalpInput.checked = state.paperAuto.scalp;
@@ -1132,6 +1226,9 @@
     syncActivePaperAccount();
     state.activePaperAccountId = account.id;
     bindActivePaperAccount();
+    if (state.simWallet.signedIn && state.simWallet.ready) {
+      attachSimWalletToActivePaper();
+    }
     syncPaperInputsFromActive();
     applyPaperLayout();
     savePaperLedger();
@@ -1149,9 +1246,9 @@
       id: newPaperAccountId(),
       name: "Desk " + nextNumber,
       paper: {
-        currency: activePaper.currency || "SIM",
-        startingBankroll: activePaper.startingBankroll || 1000,
-        cash: activePaper.startingBankroll || 1000,
+        currency: "SIM",
+        startingBankroll: state.simWallet.signedIn ? state.simWallet.startingBalance : (activePaper.startingBankroll || 1000),
+        cash: state.simWallet.signedIn && Number.isFinite(Number(state.simWallet.balance)) ? state.simWallet.balance : (activePaper.startingBankroll || 1000),
         layout: activePaper.layout,
       },
       auto: {},
@@ -1159,6 +1256,9 @@
     state.paperAccounts.push(account);
     state.activePaperAccountId = account.id;
     bindActivePaperAccount();
+    if (state.simWallet.signedIn && state.simWallet.ready) {
+      attachSimWalletToActivePaper();
+    }
     syncPaperInputsFromActive();
     savePaperLedger();
     renderPaperAccounts();
@@ -1175,9 +1275,9 @@
       id: newPaperAccountId(),
       name: active.name + " copy",
       paper: {
-        currency: active.paper.currency,
-        startingBankroll: active.paper.startingBankroll,
-        cash: active.paper.startingBankroll,
+        currency: "SIM",
+        startingBankroll: state.simWallet.signedIn ? state.simWallet.startingBalance : active.paper.startingBankroll,
+        cash: state.simWallet.signedIn && Number.isFinite(Number(state.simWallet.balance)) ? state.simWallet.balance : active.paper.startingBankroll,
         layout: active.paper.layout,
       },
       auto: {
@@ -1189,6 +1289,9 @@
     state.paperAccounts.push(account);
     state.activePaperAccountId = account.id;
     bindActivePaperAccount();
+    if (state.simWallet.signedIn && state.simWallet.ready) {
+      attachSimWalletToActivePaper();
+    }
     syncPaperInputsFromActive();
     savePaperLedger();
     renderPaperAccounts();
@@ -1300,15 +1403,26 @@
 
   function updatePaperSettings() {
     const previousStarting = Number(state.paper.startingBankroll || 1000);
+    if (state.simWallet.signedIn && state.simWallet.ready) {
+      state.paper.currency = "SIM";
+      state.paper.startingBankroll = Math.max(1, Number(state.simWallet.startingBalance || 1000));
+      if (Number.isFinite(Number(state.simWallet.balance))) {
+        state.paper.cash = Math.max(0, Number(state.simWallet.balance || 0));
+      }
+      syncPaperInputsFromActive();
+      savePaperLedger();
+      renderPaperBankroll();
+      return;
+    }
     const nextStarting = Math.max(1, Number(paperStartingBankrollInput.value || previousStarting));
     const untouched = !state.paper.positions.length
       && !state.paper.orders.length
       && !state.paper.history.length
       && Math.abs(Number(state.paper.cash || 0) - previousStarting) < 0.01;
-    state.paper.currency = cleanPaperCurrency(paperCurrencyInput.value || "SIM");
+    state.paper.currency = "SIM";
     state.paper.startingBankroll = nextStarting;
     if (untouched) state.paper.cash = nextStarting;
-    paperCurrencyInput.value = state.paper.currency;
+    paperCurrencyInput.value = "SIM";
     savePaperLedger();
     renderPaperBankroll();
   }
@@ -1524,6 +1638,18 @@
     const price = entryCents / 100;
     const entryFee = kalshiFeeDollars(contracts, price);
     const entryCost = contracts * price + entryFee;
+    if (state.simWallet.signedIn && !simWalletConnected()) {
+      setPaperStatus("No paper buy: signed-in SIM wallet is still syncing.", true);
+      savePaperLedger();
+      renderPaperBankroll();
+      return null;
+    }
+    if (simWalletConnected() && Number(state.simWallet.balance || 0) + 0.0001 < entryCost) {
+      setPaperStatus("No paper buy: account SIM wallet has only " + paperMoney(state.simWallet.balance) + ".", true);
+      savePaperLedger();
+      renderPaperBankroll();
+      return null;
+    }
     const probability = Number(order.lastModelProbability || (state.executionPlan && state.executionPlan.expiry && state.executionPlan.expiry.probability));
     const orderEdge = Number(order.lastModelEdge);
     const edge = Number.isFinite(orderEdge) ? orderEdge : Number((state.executionPlan && state.executionPlan.side === order.side && state.executionPlan.expiry && state.executionPlan.expiry.edge) || 0);
@@ -1565,6 +1691,14 @@
     savePaperLedger();
     renderPaperBankroll();
     setPaperStatus("Paper bought " + contracts + " " + String(order.side).toUpperCase() + " @ " + formatCents(entryCents) + ".", false, "pos");
+    syncSimWalletDelta(-entryCost, "buy", "Bitcoin 15-minute paper buy", {
+      ticker: position.ticker,
+      side: position.side,
+      contracts,
+      priceCents: entryCents,
+      fee: entryFee,
+      automation: position.automation || "",
+    });
     return position;
   }
 
@@ -1634,6 +1768,15 @@
     savePaperLedger();
     renderPaperBankroll();
     setPaperStatus("Paper sold " + soldContracts + " " + String(side).toUpperCase() + " @ " + formatCents(priceCents) + " for " + signedPaperMoney(pnl) + ".", pnl < 0, pnl >= 0 ? "pos" : "neg");
+    syncSimWalletDelta(proceeds, "sell", "Bitcoin 15-minute paper sell", {
+      ticker,
+      side,
+      contracts: soldContracts,
+      priceCents,
+      fee: exitFee,
+      pnl,
+      detail: detail || "",
+    });
   }
 
   function paperSettlePosition(id, options) {
@@ -1661,6 +1804,16 @@
     });
     savePaperLedger();
     renderPaperBankroll();
+    if (payout > 0) {
+      syncSimWalletDelta(payout, "settlement", "Bitcoin 15-minute paper settlement", {
+        ticker: position.ticker,
+        side: position.side,
+        contracts: position.contracts,
+        won: wins,
+        finalSpot: spot,
+        target,
+      });
+    }
     if (!options || !options.silent) {
       setPaperStatus("Paper settled " + position.ticker + " as " + (wins ? "win" : "loss") + " for " + signedPaperMoney(pnl) + ".", pnl < 0, pnl >= 0 ? "pos" : "neg");
     }
@@ -1690,14 +1843,19 @@
   function resetPaperLedger() {
     const account = activePaperAccount();
     const name = account ? account.name : "active desk";
-    if (!window.confirm("Reset " + name + "'s paper bankroll, open paper positions, pending limits, and local paper history?")) {
+    const resetNote = state.simWallet.signedIn
+      ? "Reset " + name + "'s open paper positions, pending limits, and local paper history? This will not reset your account SIM wallet."
+      : "Reset " + name + "'s paper bankroll, open paper positions, pending limits, and local paper history?";
+    if (!window.confirm(resetNote)) {
       return;
     }
-    const startingBankroll = Math.max(1, Number(paperStartingBankrollInput.value || 1000));
+    const startingBankroll = state.simWallet.signedIn
+      ? Math.max(1, Number(state.simWallet.startingBalance || 1000))
+      : Math.max(1, Number(paperStartingBankrollInput.value || 1000));
     state.paper = normalizePaperLedger({
-      currency: cleanPaperCurrency(paperCurrencyInput.value || "SIM"),
+      currency: "SIM",
       startingBankroll,
-      cash: startingBankroll,
+      cash: state.simWallet.signedIn && Number.isFinite(Number(state.simWallet.balance)) ? Number(state.simWallet.balance) : startingBankroll,
       orders: [],
       positions: [],
       history: [],
@@ -2405,8 +2563,15 @@
     const openContracts = paperOpenContractsTotal();
     const openAvg = paperOpenAverageCents();
     const openMarkPnl = openValue - openRisk;
+    const walletValue = state.simWallet.signedIn
+      ? (Number.isFinite(Number(state.simWallet.balance)) ? paperMoney(state.simWallet.balance) : (state.simWallet.syncing ? "Syncing" : "Unavailable"))
+      : paperMoney(state.paper.cash);
+    const walletDetail = state.simWallet.signedIn
+      ? (state.simWallet.error ? state.simWallet.error : "Account wallet shared across SIM games")
+      : "Local browser wallet until you sign in";
     paperHeadlineEl.innerHTML = [
-      paperHeadlineCard("Paper bankroll", paperMoney(equity), "Cash plus current open bid mark", "primary"),
+      paperHeadlineCard(state.simWallet.signedIn ? "SIM wallet" : "Local SIM wallet", walletValue, walletDetail, state.simWallet.error ? "neg" : "primary"),
+      paperHeadlineCard("Paper equity", paperMoney(equity), "SIM cash plus current open bid mark"),
       paperHeadlineCard("Cash available", paperMoney(paperAvailableCash()), "Cash " + paperMoney(state.paper.cash) + " / reserved " + paperMoney(reserved)),
       paperHeadlineCard("Contracts held", formatWholeNumber(openContracts), state.paper.positions.length + " open position" + (state.paper.positions.length === 1 ? "" : "s")),
       paperHeadlineCard("Avg paid", formatCents(openAvg), "Weighted average on open contracts"),
