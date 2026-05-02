@@ -49,6 +49,7 @@ S3-compatible path:
 - `FIREBASE_APP_ID` (optional when using Identity Platform Auth without a Firebase Web App)
 - `FIREBASE_MESSAGING_SENDER_ID` (optional)
 - `FIREBASE_STORAGE_BUCKET` (optional)
+- `FIREBASE_GOOGLE_AUTH_ENABLED` (`true` only after the Google OAuth provider is configured)
 
 For the current `bnapsen` project the important values are:
 
@@ -65,6 +66,7 @@ For the current `bnapsen` project the important values are:
 - `FIREBASE_APP_ID=<your Firebase web app id, if you create one>`
 - `FIREBASE_MESSAGING_SENDER_ID=<your Firebase sender id, if available>`
 - `FIREBASE_STORAGE_BUCKET=<your Firebase storage bucket, if enabled>`
+- `FIREBASE_GOOGLE_AUTH_ENABLED=false`
 
 ## Account sign-in
 
@@ -82,16 +84,21 @@ token to the Cloud Run backend. The backend verifies that token with
 Firebase Console setup:
 
 1. Enable Authentication for the `bnapsen` Firebase project.
-2. Enable the Google provider and the Email/Password provider.
-3. Add authorized domains for `bnapsen.com`, `www.bnapsen.com`, and any preview
+2. Enable the Email/Password provider.
+3. To enable the Google provider, create or reuse a Google OAuth web client in
+   Google Auth Platform, then add that client ID and client secret to the
+   `google.com` provider config in Firebase Authentication.
+4. Add authorized domains for `bnapsen.com`, `www.bnapsen.com`, and any preview
    domain you use while testing.
-4. Copy the Firebase web app config values into the Cloud Run environment
+5. Copy the Firebase web app config values into the Cloud Run environment
    variables above.
+6. Set `FIREBASE_GOOGLE_AUTH_ENABLED=true` only after a test call to
+   `accounts:createAuthUri` for `google.com` succeeds.
 
 If the Firebase web config is missing and `NOVA_AUTH_REQUIRED=true`, the UI
 will show that accounts still need setup and protected actions will fail closed.
 The homepage account box supports both Google sign-in and plain email/password
-account creation once those providers are enabled in Firebase Authentication.
+account creation when those providers are enabled in Firebase Authentication.
 
 ## Deploy
 

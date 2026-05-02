@@ -114,6 +114,9 @@ const FIREBASE_WEB_AUTH_ENABLED = Boolean(
   && FIREBASE_WEB_CONFIG.authDomain
   && FIREBASE_WEB_CONFIG.projectId
 );
+const FIREBASE_GOOGLE_AUTH_ENABLED = String(
+  process.env.FIREBASE_GOOGLE_AUTH_ENABLED || '',
+).trim().toLowerCase() === 'true';
 const FIREBASE_ADMIN_AUTH_ENABLED = Boolean(FIREBASE_PROJECT_ID);
 const CLIP_UPLOAD_SIGNING_SECRET = String(
   process.env.CLIP_UPLOAD_SIGNING_SECRET
@@ -397,7 +400,7 @@ function handleAuthConfigRequest(req, res) {
     required: NOVA_AUTH_REQUIRED,
     adminVerifierEnabled: FIREBASE_ADMIN_AUTH_ENABLED,
     providers: {
-      google: true,
+      google: FIREBASE_GOOGLE_AUTH_ENABLED,
       password: true,
       facebook: false,
     },
