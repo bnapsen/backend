@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kalshi Bitcoin 15m Lab</title>
-  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501h">
+  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501i">
 </head>
 <body>
   <header class="lab-topbar">
@@ -159,6 +159,13 @@
             <strong>Scalp bot</strong>
           </span>
           <span>Buys exactly 10 contracts on each green model entry, then refreshes one grouped sell limit at average paid +10c.</span>
+        </label>
+        <label class="paper-bot-card">
+          <span class="paper-bot-toggle">
+            <input id="paper-auto-research" type="checkbox">
+            <strong>Research fade bot</strong>
+          </span>
+          <span>Waits for a stretched BTC move, buys the cheaper mean-reversion side only when edge, spread, and time filters pass, then targets average paid +6c.</span>
         </label>
         <div id="paper-auto-status" class="paper-auto-status">Paper bots are off.</div>
       </div>
@@ -355,6 +362,6 @@
     </section>
   </main>
 
-  <script src="/kalshi-bitcoin-lab.js?v=20260501h"></script>
+  <script src="/kalshi-bitcoin-lab.js?v=20260501i"></script>
 </body>
 </html>
