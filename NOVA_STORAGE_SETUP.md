@@ -83,10 +83,9 @@ Firebase Console setup:
 
 1. Enable Authentication for the `bnapsen` Firebase project.
 2. Enable the Google provider.
-3. Enable the Facebook provider and add the Meta app id/secret inside Firebase.
-4. Add authorized domains for `bnapsen.com`, `www.bnapsen.com`, and any preview
+3. Add authorized domains for `bnapsen.com`, `www.bnapsen.com`, and any preview
    domain you use while testing.
-5. Copy the Firebase web app config values into the Cloud Run environment
+4. Copy the Firebase web app config values into the Cloud Run environment
    variables above.
 
 If the Firebase web config is missing and `NOVA_AUTH_REQUIRED=true`, the UI

@@ -35,6 +35,12 @@
   font-weight: 700;
 }
 
+.nova-auth-button--primary {
+  border-color: rgba(41, 242, 166, 0.56);
+  background: linear-gradient(135deg, #29f2a6, #64d8ff);
+  color: #03100d;
+}
+
 .nova-auth-button:hover,
 .nova-auth-button:focus-visible,
 .nova-auth-link:hover,
@@ -89,6 +95,39 @@
   gap: 14px;
   flex-wrap: wrap;
   margin-bottom: 16px;
+}
+
+.home-account-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 1.2rem;
+  border: 1px solid rgba(210, 255, 244, 0.22);
+  border-radius: 12px;
+  background: rgba(6, 15, 20, 0.58);
+  padding: 1rem;
+  width: min(100%, 560px);
+}
+
+.home-account-card h2,
+.home-account-card p {
+  margin: 0;
+}
+
+.home-account-card h2 {
+  font-family: var(--display, "Oxanium", system-ui, sans-serif);
+  font-size: clamp(1.2rem, 2vw, 1.7rem);
+}
+
+.home-account-card p:not(.panel-kicker) {
+  color: var(--muted, rgba(244, 251, 248, 0.72));
+}
+
+.nova-auth-widget--home {
+  justify-content: flex-start;
+}
+
+.nova-auth-widget--home .nova-auth-error {
+  text-align: left;
 }
 
 body.auth-required:not(.auth-signed-in) .nova-auth-gate {

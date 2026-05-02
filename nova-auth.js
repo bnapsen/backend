@@ -66,7 +66,7 @@
         ok: true,
         enabled: true,
         required: true,
-        providers: { google: true, facebook: true },
+        providers: { google: true, facebook: false },
         firebaseConfig: window.NOVA_FIREBASE_CONFIG,
       };
     }
@@ -141,7 +141,7 @@
         state.firebaseConfig = config.firebaseConfig || null;
 
         if (!state.enabled) {
-          state.error = 'Account sign-in needs Firebase setup before Google or Facebook can work.';
+          state.error = 'Google sign-in needs Firebase setup before accounts can work.';
           state.ready = true;
           emitChange();
           return profile();
@@ -191,9 +191,7 @@
 
     try {
       const { authModule } = await loadFirebaseModules();
-      const provider = providerName === 'facebook'
-        ? new authModule.FacebookAuthProvider()
-        : new authModule.GoogleAuthProvider();
+      const provider = new authModule.GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       const result = await authModule.signInWithPopup(state.auth, provider);
       state.user = result.user || null;
@@ -246,7 +244,7 @@
 
   function requireSignedIn(actionLabel = 'continue') {
     if (!state.enabled) {
-      state.error = 'Sign-in is being set up. Firebase config is missing on the server.';
+      state.error = 'Google sign-in is being set up. Firebase config is missing on the server.';
       renderWidgets();
       return false;
     }
@@ -278,37 +276,33 @@
       return;
     }
 
-    if (!state.enabled) {
-      const notice = document.createElement('span');
-      notice.className = 'nova-auth-notice';
-      notice.textContent = 'Accounts need setup';
-      root.appendChild(notice);
-      return;
-    }
-
     if (!snapshot.signedIn) {
-      const googleButton = document.createElement('button');
-      googleButton.type = 'button';
-      googleButton.className = 'nova-auth-button';
-      googleButton.dataset.authGoogle = 'true';
-      googleButton.textContent = 'Google';
-      googleButton.addEventListener('click', () => {
-        signIn('google').catch(providerError);
-      });
-
-      const facebookButton = document.createElement('button');
-      facebookButton.type = 'button';
-      facebookButton.className = 'nova-auth-button';
-      facebookButton.textContent = 'Facebook';
-      facebookButton.addEventListener('click', () => {
-        signIn('facebook').catch(providerError);
-      });
-
       const label = document.createElement('span');
       label.className = 'nova-auth-label';
-      label.textContent = state.required ? 'Sign in' : 'Account';
+      label.textContent = root.dataset.authLabel || (state.required ? 'Account required' : 'Account');
 
-      root.append(label, googleButton, facebookButton);
+      const makeGoogleButton = (text, intent = 'sign-in') => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = intent === 'create' ? 'nova-auth-button nova-auth-button--primary' : 'nova-auth-button';
+        button.dataset.authGoogle = 'true';
+        button.textContent = text;
+        button.addEventListener('click', () => {
+          if (!state.enabled) {
+            state.error = 'Google sign-in is not configured on the server yet.';
+            renderWidgets();
+            return;
+          }
+          signIn('google').catch(providerError);
+        });
+        return button;
+      };
+
+      if (root.dataset.authMode === 'home') {
+        root.append(label, makeGoogleButton('Create Account', 'create'), makeGoogleButton('Sign In'));
+      } else {
+        root.append(label, makeGoogleButton('Sign in with Google', 'create'));
+      }
     } else {
       const avatar = document.createElement('span');
       avatar.className = 'nova-auth-avatar';
@@ -371,9 +365,6 @@
     requireSignedIn,
     signInWithGoogle() {
       return signIn('google');
-    },
-    signInWithFacebook() {
-      return signIn('facebook');
     },
     signOut: signOutUser,
   };

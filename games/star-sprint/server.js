@@ -399,7 +399,7 @@ function handleAuthConfigRequest(req, res) {
     adminVerifierEnabled: FIREBASE_ADMIN_AUTH_ENABLED,
     providers: {
       google: true,
-      facebook: true,
+      facebook: false,
     },
     firebaseConfig: publicFirebaseWebConfig(),
   });

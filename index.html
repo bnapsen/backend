@@ -25,6 +25,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=20260423b">
+    <link rel="stylesheet" href="nova-auth.css?v=20260502b">
 </head>
 <body>
     <div class="page-shell">
@@ -57,6 +58,15 @@
                         <a href="arcade-lounge.html" class="btn btn-secondary">Arcade Lounge</a>
                         <a href="dragonfall-jungle-siege.html" class="btn btn-secondary">Dragonfall</a>
                     </div>
+
+                    <section class="home-account-card" aria-label="Nova account">
+                        <div>
+                            <p class="panel-kicker">Nova account</p>
+                            <h2>Sign in with Google</h2>
+                            <p>One account for Nova Live, clips, chat, and your saved tools.</p>
+                        </div>
+                        <div class="nova-auth-widget nova-auth-widget--home" data-auth-widget data-auth-mode="home" data-auth-label="Google account" aria-live="polite"></div>
+                    </section>
                 </div>
 
                 <aside class="hero-panel">
@@ -349,7 +359,15 @@
         </footer>
     </div>
 
+    <script src="nova-auth.js?v=20260502b" defer></script>
     <script src="reviews.js?v=20260423b" defer></script>
     <script src="home-page.js?v=20260423b" defer></script>
+    <script>
+      window.addEventListener('DOMContentLoaded', function () {
+        if (window.NovaAuth) {
+          window.NovaAuth.init();
+        }
+      });
+    </script>
 </body>
 </html>
