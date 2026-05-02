@@ -121,6 +121,18 @@ select {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.backgammon-auth-widget {
+  max-width: min(100%, 520px);
+}
+
+.backgammon-auth-widget .nova-auth-button,
+.backgammon-auth-widget .nova-auth-link,
+.backgammon-auth-widget .nova-auth-input {
+  border-radius: 12px;
 }
 
 .status-pill {
@@ -364,6 +376,7 @@ button:disabled {
 }
 
 .invite-panel,
+.wager-panel,
 .advanced-panel,
 .control-card,
 .hud-row {
@@ -372,6 +385,58 @@ button:disabled {
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.035);
+}
+
+.wager-panel {
+  border-color: rgba(140, 255, 199, 0.16);
+  background:
+    radial-gradient(circle at top right, rgba(140, 255, 199, 0.08), transparent 42%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.wager-balance {
+  border: 1px solid rgba(140, 255, 199, 0.24);
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: var(--good);
+  background: rgba(140, 255, 199, 0.08);
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wager-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.wager-quick {
+  min-height: 34px;
+  padding: 8px 11px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.wager-readout {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+}
+
+.wager-readout strong {
+  color: var(--gold);
+  font-size: 0.95rem;
+}
+
+.wager-readout span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
 }
 
 .invite-header,

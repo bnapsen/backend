@@ -24,7 +24,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/backgammon-blitz/style.css?v=20260328e" />
+  <link rel="stylesheet" href="nova-auth.css?v=20260502d" />
+  <link rel="stylesheet" href="games/backgammon-blitz/style.css?v=20260502a" />
 </head>
 <body>
   <div class="page-shell">
@@ -36,6 +37,7 @@
         <button id="soundToggleBtn" class="secondary ui-toggle" data-state="on">Sound on</button>
       </div>
       <div class="topbar-status">
+        <div class="nova-auth-widget backgammon-auth-widget" data-auth-widget aria-live="polite"></div>
         <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
         <div class="status-pill ghost" id="modePill">No match running</div>
       </div>
@@ -89,6 +91,30 @@
             <button id="joinBtn">Join match</button>
           </div>
 
+          <div class="wager-panel" id="wagerPanel">
+            <div class="invite-header">
+              <div>
+                <p class="label">SIM wager</p>
+                <p class="invite-help">Optional play-money stake. Player matches escrow both stakes; solo matches stake against the bot.</p>
+              </div>
+              <span class="wager-balance" id="simBalanceText">SIM wallet</span>
+            </div>
+            <label class="advanced-field">
+              <span>Stake per side</span>
+              <input id="wagerInput" type="number" min="0" max="1000" step="0.01" value="0" inputmode="decimal" />
+            </label>
+            <div class="wager-quick-row" aria-label="Quick SIM stake choices">
+              <button class="secondary wager-quick" type="button" data-wager-cents="0">Free</button>
+              <button class="secondary wager-quick" type="button" data-wager-cents="100">1 SIM</button>
+              <button class="secondary wager-quick" type="button" data-wager-cents="500">5 SIM</button>
+              <button class="secondary wager-quick" type="button" data-wager-cents="1000">10 SIM</button>
+            </div>
+            <div class="wager-readout">
+              <strong id="wagerStatusText">No stake selected</strong>
+              <span id="wagerDetailText">Free match. Set a stake before starting if you want SIM on the winner.</span>
+            </div>
+          </div>
+
           <div class="invite-panel">
             <div class="invite-header">
               <div>
@@ -120,7 +146,7 @@
             <summary>Advanced connection settings</summary>
             <label class="advanced-field">
               <span>Server WS URL</span>
-              <input id="serverUrlInput" placeholder="wss://nova-arcade-backend-1000121513328.us-central1.run.app" />
+              <input id="serverUrlInput" placeholder="wss://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app" />
             </label>
           </details>
 
@@ -306,8 +332,9 @@
     <div class="toast" id="toast" aria-live="polite"></div>
   </div>
 
+  <script src="nova-auth.js?v=20260502d"></script>
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
   <script src="games/star-sprint/backgammon-core.js?v=20260328a"></script>
-  <script src="games/backgammon-blitz/game.js?v=20260328e"></script>
+  <script src="games/backgammon-blitz/game.js?v=20260502a"></script>
 </body>
 </html>

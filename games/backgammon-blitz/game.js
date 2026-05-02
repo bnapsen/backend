@@ -2,7 +2,9 @@
   'use strict';
 
   const Core = window.NeonBackgammonCore;
-  const PROD_SERVER_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.app';
+  const PROD_SERVER_URL = 'wss://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app';
+  const PROD_API_BASE = 'https://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app';
+  const MAX_WAGER_CENTS = 100000;
   const STORAGE_KEYS = {
     name: 'neonBackgammon.name',
     serverUrl: 'neonBackgammon.serverUrl',
@@ -11,6 +13,7 @@
     soundEnabled: 'neonBackgammon.soundEnabled',
     boardTheme: 'neonBackgammon.boardTheme',
     checkerTheme: 'neonBackgammon.checkerTheme',
+    wagerCents: 'neonBackgammon.wagerCents',
   };
   const query = new URLSearchParams(window.location.search);
   const canvas = document.getElementById('board');
@@ -145,6 +148,10 @@
     nameInput: document.getElementById('nameInput'),
     roomInput: document.getElementById('roomInput'),
     serverUrlInput: document.getElementById('serverUrlInput'),
+    wagerInput: document.getElementById('wagerInput'),
+    wagerStatusText: document.getElementById('wagerStatusText'),
+    wagerDetailText: document.getElementById('wagerDetailText'),
+    simBalanceText: document.getElementById('simBalanceText'),
     hostBtn: document.getElementById('hostBtn'),
     joinBtn: document.getElementById('joinBtn'),
     soloBtn: document.getElementById('soloBtn'),
@@ -213,6 +220,15 @@
     diceGrab: null,
     throwIntent: null,
     statusMessage: '',
+    authProfile: null,
+    soloWager: {
+      enabled: false,
+      stakeCents: 0,
+      potCents: 0,
+      status: 'off',
+      settled: false,
+      message: 'No SIM wager on this match.',
+    },
     pointRects: [],
     drawQueued: false,
     anim: {
@@ -250,6 +266,59 @@
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
+  }
+
+  function wsToHttpBase(url) {
+    const clean = String(url || '').trim();
+    if (!clean) {
+      return PROD_API_BASE;
+    }
+    return clean.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
+  }
+
+  function normalizeWagerCents(raw) {
+    const number = Number(raw);
+    if (!Number.isFinite(number) || number <= 0) {
+      return 0;
+    }
+    return Math.max(0, Math.min(MAX_WAGER_CENTS, Math.round(number)));
+  }
+
+  function selectedWagerCents() {
+    return normalizeWagerCents(Number(ui.wagerInput?.value || 0) * 100);
+  }
+
+  function setWagerInputCents(cents) {
+    if (!ui.wagerInput) {
+      return;
+    }
+    const clean = normalizeWagerCents(cents);
+    ui.wagerInput.value = clean ? (clean / 100).toFixed(clean % 100 === 0 ? 0 : 2) : '0';
+    localStorage.setItem(STORAGE_KEYS.wagerCents, String(clean));
+  }
+
+  function formatSimCents(cents) {
+    const amount = Math.max(0, Number(cents || 0)) / 100;
+    return `${amount.toLocaleString(undefined, {
+      minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+      maximumFractionDigits: 2,
+    })} SIM`;
+  }
+
+  function currentSimWallet() {
+    return state.authProfile?.simWallet || null;
+  }
+
+  function signedInForSim(actionLabel) {
+    if (!window.NovaAuth || typeof window.NovaAuth.requireSignedIn !== 'function') {
+      showToast('Sign-in is not ready yet.');
+      return false;
+    }
+    const ok = window.NovaAuth.requireSignedIn(actionLabel);
+    if (!ok) {
+      render();
+    }
+    return ok;
   }
 
   function lerp(start, end, amount) {
@@ -340,6 +409,9 @@
       return false;
     }
     if (state.mode === 'online') {
+      if (state.snapshot?.wager?.enabled && !state.snapshot.wager.locked) {
+        return false;
+      }
       return Boolean(
         state.socket &&
         state.socket.readyState === WebSocket.OPEN &&
@@ -357,6 +429,7 @@
     localStorage.setItem(STORAGE_KEYS.soundEnabled, state.audio.enabled ? '1' : '0');
     localStorage.setItem(STORAGE_KEYS.boardTheme, normalizeBoardTheme(state.appearance.boardTheme));
     localStorage.setItem(STORAGE_KEYS.checkerTheme, normalizeCheckerTheme(state.appearance.checkerTheme));
+    localStorage.setItem(STORAGE_KEYS.wagerCents, String(selectedWagerCents()));
   }
 
   function clearUndoHistory() {
@@ -380,6 +453,9 @@
 
   function onlineUndoAvailable() {
     if (state.mode !== 'online' || !state.snapshot || !state.snapshot.undo) {
+      return false;
+    }
+    if (state.snapshot?.wager?.enabled && state.snapshot.wager.locked && !state.snapshot.wager.settled) {
       return false;
     }
     const side = controlledSide();
@@ -548,6 +624,52 @@
       : 'Waiting for the second player...';
   }
 
+  function renderWagerPanel() {
+    if (!ui.wagerInput || !ui.wagerStatusText || !ui.wagerDetailText || !ui.simBalanceText) {
+      return;
+    }
+
+    const wallet = currentSimWallet();
+    if (wallet?.loading) {
+      ui.simBalanceText.textContent = 'Syncing SIM';
+    } else if (wallet?.error) {
+      ui.simBalanceText.textContent = 'SIM unavailable';
+    } else if (wallet && Number.isFinite(Number(wallet.balance))) {
+      ui.simBalanceText.textContent = `${formatSimCents(Math.round(Number(wallet.balance) * 100))} wallet`;
+    } else {
+      ui.simBalanceText.textContent = 'Sign in for SIM';
+    }
+
+    const selectedCents = selectedWagerCents();
+    const selectedCopy = selectedCents
+      ? `${formatSimCents(selectedCents)} each, ${formatSimCents(selectedCents * 2)} pot on the next match.`
+      : 'Free match. Set a stake before starting if you want SIM on the winner.';
+
+    if (state.mode === 'online' && state.snapshot?.wager) {
+      const wager = state.snapshot.wager;
+      if (wager.enabled) {
+        ui.wagerStatusText.textContent = wager.settled
+          ? 'Online SIM wager settled'
+          : wager.locked
+            ? 'Online SIM pot locked'
+            : 'Online SIM wager pending';
+        ui.wagerDetailText.textContent = wager.message || `${formatSimCents(wager.stakeCents)} each.`;
+        return;
+      }
+    }
+
+    if (state.mode === 'solo' && state.soloWager.enabled) {
+      ui.wagerStatusText.textContent = state.soloWager.settled
+        ? 'Solo SIM wager settled'
+        : 'Solo SIM wager locked';
+      ui.wagerDetailText.textContent = state.soloWager.message || `${formatSimCents(state.soloWager.stakeCents)} staked against ${BOT_NAME}.`;
+      return;
+    }
+
+    ui.wagerStatusText.textContent = selectedCents ? 'SIM stake ready' : 'No stake selected';
+    ui.wagerDetailText.textContent = selectedCopy;
+  }
+
   function pipCount(player) {
     if (!state.snapshot) {
       return 0;
@@ -631,12 +753,14 @@
     const undoCount = state.mode === 'online'
       ? Number(state.snapshot?.undo?.count || 0)
       : state.undo.states.length;
+    const wagerLocksUndo = (state.mode === 'online' && state.snapshot?.wager?.enabled && state.snapshot?.wager?.locked && !state.snapshot?.wager?.settled) ||
+      (state.mode === 'solo' && state.soloWager.enabled && !state.soloWager.settled);
 
     ui.hostBtn.disabled = pendingConnection;
     ui.joinBtn.disabled = pendingConnection || !canJoin;
     ui.shareLoungeBtn.disabled = !(state.mode === 'online' && state.roomCode);
     ui.rollBtn.disabled = !activeTurn || !state.snapshot || state.snapshot.winner || state.snapshot.dice.length > 0;
-    ui.undoBtn.disabled = !canUndoMove();
+    ui.undoBtn.disabled = !canUndoMove() || wagerLocksUndo;
     ui.undoBtn.textContent = undoCount > 1 ? `Undo (${undoCount})` : 'Undo';
     ui.autoBtn.disabled = !activeTurn || !state.snapshot || state.snapshot.winner || !state.snapshot.dice.length;
     ui.restartBtn.disabled = !state.snapshot;
@@ -713,6 +837,7 @@
     updateInviteUi();
     renderSummary();
     renderPlayers();
+    renderWagerPanel();
     renderControls();
     renderStartOverlay();
     renderSoundToggle();
@@ -1152,7 +1277,9 @@
     const roomCode = sanitizeRoomCode(ui.roomInput.value);
     revealSetup('room');
     if (roomCode) {
-      connectOnline('join');
+      connectOnline('join').catch((error) => {
+        showToast(error && error.message ? error.message : 'Could not join that match.');
+      });
       return;
     }
     setStatusMessage('Enter a room code or open an invite link, then join the live match.');
@@ -1241,6 +1368,119 @@
     window.clearTimeout(state.botTimer);
   }
 
+  function resetSoloWager() {
+    state.soloWager = {
+      enabled: false,
+      stakeCents: 0,
+      potCents: 0,
+      status: 'off',
+      settled: false,
+      message: 'No SIM wager on this match.',
+    };
+  }
+
+  function soloWagerActive() {
+    return Boolean(state.soloWager.enabled && !state.soloWager.settled && !state.snapshot?.winner);
+  }
+
+  async function prepareSoloWager(stakeCents) {
+    resetSoloWager();
+    if (!stakeCents) {
+      return true;
+    }
+    if (!signedInForSim('stake SIM against the bot')) {
+      return false;
+    }
+    try {
+      await window.NovaAuth.adjustSimWallet({
+        amountCents: -stakeCents,
+        source: 'backgammon-solo',
+        action: 'stake-escrow',
+        note: `Solo backgammon stake against ${BOT_NAME}`,
+        metadata: {
+          game: 'backgammon',
+          opponent: BOT_NAME,
+          stakeCents,
+        },
+      });
+      state.soloWager = {
+        enabled: true,
+        stakeCents,
+        potCents: stakeCents * 2,
+        status: 'locked',
+        settled: false,
+        message: `${formatSimCents(stakeCents)} staked against ${BOT_NAME}. Win the match to collect ${formatSimCents(stakeCents * 2)}.`,
+      };
+      return true;
+    } catch (error) {
+      const message = error && error.message ? error.message : 'Could not lock that SIM stake.';
+      showToast(message);
+      setStatusMessage(message);
+      resetSoloWager();
+      render();
+      return false;
+    }
+  }
+
+  async function settleSoloWagerIfNeeded() {
+    if (!state.soloWager.enabled || state.soloWager.settled || !state.snapshot?.winner) {
+      return;
+    }
+    state.soloWager.settled = true;
+    if (state.snapshot.winner === Core.WHITE) {
+      try {
+        await window.NovaAuth.adjustSimWallet({
+          amountCents: state.soloWager.potCents,
+          source: 'backgammon-solo',
+          action: 'wager-payout',
+          note: `Solo backgammon payout against ${BOT_NAME}`,
+          metadata: {
+            game: 'backgammon',
+            opponent: BOT_NAME,
+            stakeCents: state.soloWager.stakeCents,
+            potCents: state.soloWager.potCents,
+          },
+        });
+        state.soloWager.message = `You won ${formatSimCents(state.soloWager.potCents)} from the bot match.`;
+        showToast(state.soloWager.message);
+      } catch (error) {
+        state.soloWager.message = error && error.message
+          ? error.message
+          : 'You won, but the SIM payout could not be stored.';
+        showToast(state.soloWager.message);
+      }
+    } else {
+      state.soloWager.message = `${BOT_NAME} won. Your ${formatSimCents(state.soloWager.stakeCents)} stake is spent.`;
+      showToast(state.soloWager.message);
+    }
+    render();
+  }
+
+  function refreshWalletForOnlineWager(previousSnapshot, nextSnapshot) {
+    if (state.mode !== 'online' || !window.NovaAuth || typeof window.NovaAuth.loadSimWallet !== 'function') {
+      return;
+    }
+    const previousKey = previousSnapshot?.wager?.enabled
+      ? `${previousSnapshot.wager.status}:${previousSnapshot.wager.potCents || 0}:${previousSnapshot.wager.message || ''}`
+      : '';
+    const nextKey = nextSnapshot?.wager?.enabled
+      ? `${nextSnapshot.wager.status}:${nextSnapshot.wager.potCents || 0}:${nextSnapshot.wager.message || ''}`
+      : '';
+    if (!nextKey || previousKey === nextKey) {
+      return;
+    }
+    const status = String(nextSnapshot.wager.status || '');
+    if (!['locked', 'settled', 'refunded', 'failed'].includes(status)) {
+      return;
+    }
+    window.NovaAuth.loadSimWallet()
+      .then(() => {
+        state.authProfile = window.NovaAuth.profile();
+        render();
+      })
+      .catch(() => {});
+  }
+
   function applyIncomingSnapshot(snapshot, message) {
     const previousSnapshot = state.snapshot;
     const previousRoll = state.snapshot?.lastRoll?.join('-') || '';
@@ -1250,12 +1490,16 @@
     }
     playSnapshotDeltaSound(previousSnapshot, snapshot);
     state.snapshot = snapshot;
+    refreshWalletForOnlineWager(previousSnapshot, snapshot);
     clearSelection();
     cleanupDrag();
     if (message) {
       setStatusMessage(message);
     } else if (snapshot?.status) {
       setStatusMessage(snapshot.status);
+    }
+    if (state.mode === 'solo') {
+      settleSoloWagerIfNeeded().catch(() => {});
     }
     render();
   }
@@ -1296,12 +1540,17 @@
     }
   }
 
-  function connectOnline(mode) {
+  async function connectOnline(mode) {
+    if (soloWagerActive()) {
+      showToast('Finish the active solo SIM wager before joining another match.');
+      return;
+    }
     cancelBotTurn();
     disconnectSocket();
     clearSelection();
     cleanupDrag();
     clearUndoHistory();
+    resetSoloWager();
 
     state.mode = 'online';
     state.snapshot = null;
@@ -1310,6 +1559,34 @@
     state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
     ui.serverUrlInput.value = state.serverUrl;
     persistSettings();
+
+    const wagerStakeCents = selectedWagerCents();
+    let authPayload = window.NovaAuth && typeof window.NovaAuth.authPayload === 'function'
+      ? window.NovaAuth.authPayload()
+      : {};
+    if (wagerStakeCents > 0) {
+      if (!signedInForSim('stake SIM on backgammon')) {
+        state.mode = 'idle';
+        render();
+        return;
+      }
+      let token = '';
+      try {
+        token = await window.NovaAuth.getIdToken(true);
+      } catch (error) {
+        showToast(error && error.message ? error.message : 'Sign-in could not be verified.');
+        state.mode = 'idle';
+        render();
+        return;
+      }
+      if (!token) {
+        showToast('Sign in before starting a SIM wager.');
+        state.mode = 'idle';
+        render();
+        return;
+      }
+      authPayload = { authToken: token };
+    }
 
     setStatusMessage(mode === 'host' ? 'Creating your room...' : 'Joining room...');
     render();
@@ -1325,6 +1602,10 @@
           mode,
           roomCode: sanitizeRoomCode(ui.roomInput.value),
           name: getPlayerName(),
+          wager: {
+            stakeCents: wagerStakeCents,
+          },
+          ...authPayload,
         }));
         render();
       };
@@ -1357,7 +1638,20 @@
     }
   }
 
-  function startSolo() {
+  async function startSolo() {
+    if (state.mode === 'online' && state.snapshot?.wager?.enabled && state.snapshot?.wager?.locked && !state.snapshot?.wager?.settled && !state.snapshot?.winner) {
+      showToast('Finish the online SIM wager before starting solo.');
+      return;
+    }
+    if (soloWagerActive()) {
+      showToast('Finish the active SIM wager before starting another solo match.');
+      return;
+    }
+    const stakeCents = selectedWagerCents();
+    const wagerReady = await prepareSoloWager(stakeCents);
+    if (!wagerReady) {
+      return;
+    }
     disconnectSocket();
     cancelBotTurn();
     stopDiceAnimation();
@@ -1369,7 +1663,9 @@
     state.yourColor = Core.WHITE;
     state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
     persistSettings();
-    applyIncomingSnapshot(Core.createGameState(), `Solo match started. ${BOT_NAME} is on the far side of the board.`);
+    applyIncomingSnapshot(Core.createGameState(), stakeCents
+      ? `Solo SIM match started. ${BOT_NAME} is playing for a ${formatSimCents(stakeCents * 2)} pot.`
+      : `Solo match started. ${BOT_NAME} is on the far side of the board.`);
   }
 
   function queueBotTurn() {
@@ -1422,6 +1718,7 @@
           setStatusMessage(state.snapshot.status);
           clearSelection();
           render();
+          settleSoloWagerIfNeeded().catch(() => {});
           if (state.snapshot.current === Core.BLACK && !state.snapshot.winner) {
             queueBotTurn();
           }
@@ -1463,6 +1760,7 @@
     setStatusMessage(state.snapshot.status);
     clearSelection();
     render();
+    settleSoloWagerIfNeeded().catch(() => {});
     queueBotTurn();
   }
 
@@ -1558,7 +1856,9 @@
       return;
     }
 
-    startSolo();
+    startSolo().catch((error) => {
+      showToast(error && error.message ? error.message : 'Could not start that solo match.');
+    });
   }
 
   function applySelectedSource(source) {
@@ -2413,13 +2713,37 @@
       persistSettings();
       updateInviteUi();
     });
-    ui.hostBtn.addEventListener('click', () => connectOnline('host'));
-    ui.joinBtn.addEventListener('click', () => connectOnline('join'));
-    ui.soloBtn.addEventListener('click', startSolo);
-    ui.heroSoloBtn?.addEventListener('click', startSolo);
+    ui.wagerInput?.addEventListener('input', () => {
+      localStorage.setItem(STORAGE_KEYS.wagerCents, String(selectedWagerCents()));
+      renderWagerPanel();
+    });
+    ui.wagerInput?.addEventListener('change', () => {
+      setWagerInputCents(selectedWagerCents());
+      render();
+    });
+    document.querySelectorAll('.wager-quick').forEach((button) => {
+      button.addEventListener('click', () => {
+        setWagerInputCents(Number(button.dataset.wagerCents || 0));
+        render();
+      });
+    });
+    ui.hostBtn.addEventListener('click', () => connectOnline('host').catch((error) => {
+      showToast(error && error.message ? error.message : 'Could not host that match.');
+    }));
+    ui.joinBtn.addEventListener('click', () => connectOnline('join').catch((error) => {
+      showToast(error && error.message ? error.message : 'Could not join that match.');
+    }));
+    ui.soloBtn.addEventListener('click', () => startSolo().catch((error) => {
+      showToast(error && error.message ? error.message : 'Could not start that solo match.');
+    }));
+    ui.heroSoloBtn?.addEventListener('click', () => startSolo().catch((error) => {
+      showToast(error && error.message ? error.message : 'Could not start that solo match.');
+    }));
     ui.heroHostBtn?.addEventListener('click', () => {
       revealSetup();
-      connectOnline('host');
+      connectOnline('host').catch((error) => {
+        showToast(error && error.message ? error.message : 'Could not host that match.');
+      });
     });
     ui.heroJoinBtn?.addEventListener('click', beginJoinFlow);
     ui.toggleSetupBtn.addEventListener('click', () => setPanelCollapse('setupCollapsed', !state.panels.setupCollapsed));
@@ -2540,6 +2864,7 @@
     state.serverUrl = sanitizeServerUrl(localStorage.getItem(STORAGE_KEYS.serverUrl) || query.get('server') || '');
     ui.serverUrlInput.value = state.serverUrl;
     ui.roomInput.value = sanitizeRoomCode(query.get('room') || '');
+    setWagerInputCents(localStorage.getItem(STORAGE_KEYS.wagerCents) || 0);
     const savedSetup = localStorage.getItem(STORAGE_KEYS.setupCollapsed);
     const savedInfo = localStorage.getItem(STORAGE_KEYS.infoCollapsed);
     state.panels.setupCollapsed = savedSetup === '1';
@@ -2553,9 +2878,34 @@
     renderSoundToggle();
   }
 
+  function initNovaAuth() {
+    if (!window.NovaAuth || typeof window.NovaAuth.init !== 'function') {
+      return;
+    }
+    const applyProfile = (profile) => {
+      state.authProfile = profile || null;
+      if (profile?.signedIn && !ui.nameInput.value.trim()) {
+        ui.nameInput.value = String(profile.displayName || 'Nova').slice(0, 18);
+        persistSettings();
+      }
+      render();
+    };
+    window.NovaAuth.init({
+      apiBaseUrl: wsToHttpBase(state.serverUrl || PROD_SERVER_URL),
+      onChange: applyProfile,
+    }).then(applyProfile).catch((error) => {
+      state.authProfile = {
+        error: error && error.message ? error.message : 'SIM sign-in did not initialize.',
+      };
+      render();
+    });
+  }
+
   function bootFromQuery() {
     if (ui.roomInput.value) {
-      connectOnline('join');
+      connectOnline('join').catch((error) => {
+        showToast(error && error.message ? error.message : 'Could not join that match.');
+      });
       return;
     }
     render();
@@ -2563,6 +2913,7 @@
 
   initDiceVisuals();
   hydrateSettings();
+  initNovaAuth();
   bindEvents();
   render();
   bootFromQuery();

@@ -55,6 +55,8 @@ const DEFAULT_MAX_PLAYERS = 2;
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const COLORS = ['white', 'black'];
 const TICK_MS = 50;
+const BACKGAMMON_MAX_WAGER_CENTS = 100000;
+const BACKGAMMON_WAGER_SOURCE = 'backgammon';
 const ALLOWED_HTTP_ORIGIN_HOSTS = new Set([
   'bnapsen.com',
   'www.bnapsen.com',
@@ -3834,6 +3836,9 @@ function createRoom(code, gameType, options = {}) {
           states: [],
         }
       : null,
+    backgammonWager: gameDef.id === 'backgammon'
+      ? createBackgammonWagerState(options)
+      : null,
     clock: gameDef.id === 'chess'
       ? createChessClock(options.timeControlPreset)
       : null,
@@ -3873,6 +3878,301 @@ function serializeBackgammonUndo(room) {
     color: room.backgammonUndo.player === Backgammon.WHITE ? 'white' : 'black',
     count: room.backgammonUndo.states.length,
   };
+}
+
+function normalizeBackgammonStakeCents(raw) {
+  const number = Number(raw);
+  if (!Number.isFinite(number) || number <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(BACKGAMMON_MAX_WAGER_CENTS, Math.round(number)));
+}
+
+function normalizeBackgammonAmountCents(raw) {
+  const number = Number(raw);
+  return Number.isFinite(number) ? Math.max(0, Math.round(number)) : 0;
+}
+
+function backgammonStakeCentsFromPayload(payload) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  const wager = source.wager && typeof source.wager === 'object' ? source.wager : {};
+  return normalizeBackgammonStakeCents(
+    Object.prototype.hasOwnProperty.call(wager, 'stakeCents')
+      ? wager.stakeCents
+      : source.stakeCents,
+  );
+}
+
+function formatSimCents(amountCents) {
+  const amount = normalizeBackgammonAmountCents(Math.abs(amountCents)) / 100;
+  return `${amount.toLocaleString(undefined, {
+    minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })} SIM`;
+}
+
+function colorForBackgammonSide(side) {
+  return side === Backgammon.WHITE ? 'white' : 'black';
+}
+
+function createBackgammonWagerState(options = {}) {
+  const stakeCents = normalizeBackgammonStakeCents(
+    options.backgammonStakeCents !== undefined ? options.backgammonStakeCents : options.stakeCents,
+  );
+  const createdAt = new Date().toISOString();
+  return {
+    stakeCents,
+    potCents: 0,
+    status: stakeCents > 0 ? 'pending' : 'off',
+    started: false,
+    lockedAt: '',
+    settledAt: '',
+    refundedAt: '',
+    winnerColor: '',
+    message: stakeCents > 0
+      ? `${formatSimCents(stakeCents)} each. Waiting for both signed-in players to sit before locking the pot.`
+      : 'No SIM wager on this match.',
+    escrowed: {
+      white: false,
+      black: false,
+    },
+    participants: {
+      white: null,
+      black: null,
+    },
+    createdAt,
+  };
+}
+
+function playerByBackgammonColor(room, color) {
+  if (!room || room.gameType !== 'backgammon') {
+    return null;
+  }
+  return Array.from(room.players.values()).find((player) => player.color === color) || null;
+}
+
+function publicBackgammonParticipant(participant, player, escrowed) {
+  const source = participant || player || {};
+  return source && (source.name || source.id || player)
+    ? {
+        name: sanitizeName(source.name || (player && player.name) || 'Player'),
+        ready: Boolean(escrowed),
+        signedIn: Boolean((player && player.authUser && player.authUser.uid) || (participant && participant.user && participant.user.uid)),
+      }
+    : null;
+}
+
+function serializeBackgammonWager(room) {
+  const wager = room && room.backgammonWager;
+  if (!room || room.gameType !== 'backgammon' || !wager) {
+    return undefined;
+  }
+  const stakeCents = normalizeBackgammonStakeCents(wager.stakeCents);
+  return {
+    enabled: stakeCents > 0,
+    stake: stakeCents / 100,
+    stakeCents,
+    pot: normalizeBackgammonAmountCents(wager.potCents) / 100,
+    potCents: normalizeBackgammonAmountCents(wager.potCents),
+    status: String(wager.status || (stakeCents > 0 ? 'pending' : 'off')),
+    locked: wager.status === 'locked' || wager.status === 'settled',
+    settled: wager.status === 'settled',
+    refunded: wager.status === 'refunded',
+    started: Boolean(wager.started),
+    winnerColor: String(wager.winnerColor || ''),
+    message: String(wager.message || ''),
+    participants: {
+      white: publicBackgammonParticipant(wager.participants.white, playerByBackgammonColor(room, 'white'), wager.escrowed.white),
+      black: publicBackgammonParticipant(wager.participants.black, playerByBackgammonColor(room, 'black'), wager.escrowed.black),
+    },
+  };
+}
+
+async function adjustBackgammonWallet(user, amountCents, action, room, color, note) {
+  return simWalletStore.adjustWallet(user, {
+    amountCents,
+    source: BACKGAMMON_WAGER_SOURCE,
+    action,
+    note,
+    metadata: {
+      roomCode: room && room.code,
+      color,
+      game: 'backgammon',
+    },
+  });
+}
+
+async function refundBackgammonWager(room, reason = 'refund') {
+  const wager = room && room.backgammonWager;
+  if (!wager || !wager.stakeCents || wager.status !== 'locked') {
+    return '';
+  }
+  const stakeCents = normalizeBackgammonStakeCents(wager.stakeCents);
+  const refunds = [];
+  for (const color of COLORS) {
+    const participant = wager.participants[color];
+    if (wager.escrowed[color] && participant && participant.user) {
+      refunds.push(adjustBackgammonWallet(
+        participant.user,
+        stakeCents,
+        'stake-refund',
+        room,
+        color,
+        `Backgammon stake refunded for room ${room.code}.`,
+      ));
+    }
+  }
+  await Promise.all(refunds);
+  wager.status = 'refunded';
+  wager.refundedAt = new Date().toISOString();
+  wager.message = `SIM pot refunded (${reason}).`;
+  return wager.message;
+}
+
+async function tryLockBackgammonWager(room) {
+  const wager = room && room.backgammonWager;
+  if (!wager || !wager.stakeCents || wager.status === 'locked' || wager.status === 'settled') {
+    return true;
+  }
+  if (room.players.size < 2) {
+    wager.status = 'pending';
+    wager.message = `${formatSimCents(wager.stakeCents)} each. Waiting for the second signed-in player.`;
+    return false;
+  }
+
+  const white = playerByBackgammonColor(room, 'white');
+  const black = playerByBackgammonColor(room, 'black');
+  if (!white || !black) {
+    wager.status = 'pending';
+    wager.message = 'Waiting for both backgammon seats before locking the SIM pot.';
+    return false;
+  }
+  if (!white.authUser || !black.authUser) {
+    wager.status = 'pending';
+    wager.message = 'Both players need signed-in accounts before a SIM wager can start.';
+    return false;
+  }
+
+  const stakeCents = normalizeBackgammonStakeCents(wager.stakeCents);
+  const seats = [
+    { color: 'white', player: white },
+    { color: 'black', player: black },
+  ];
+  const debited = [];
+  wager.status = 'locking';
+  wager.message = 'Locking the SIM pot...';
+
+  try {
+    for (const seat of seats) {
+      await adjustBackgammonWallet(
+        seat.player.authUser,
+        -stakeCents,
+        'stake-escrow',
+        room,
+        seat.color,
+        `Backgammon stake escrowed for room ${room.code}.`,
+      );
+      debited.push(seat);
+      wager.escrowed[seat.color] = true;
+      wager.participants[seat.color] = {
+        id: seat.player.id,
+        name: seat.player.name,
+        user: seat.player.authUser,
+      };
+    }
+  } catch (error) {
+    await Promise.all(debited.map((seat) => adjustBackgammonWallet(
+      seat.player.authUser,
+      stakeCents,
+      'stake-refund',
+      room,
+      seat.color,
+      `Backgammon stake rollback for room ${room.code}.`,
+    ).catch(() => null)));
+    for (const seat of debited) {
+      wager.escrowed[seat.color] = false;
+      wager.participants[seat.color] = null;
+    }
+    wager.status = 'failed';
+    wager.message = error && error.code === 'sim/insufficient-funds'
+      ? 'A player does not have enough SIM for this stake.'
+      : 'The SIM pot could not be locked. Try a smaller stake.';
+    return false;
+  }
+
+  wager.status = 'locked';
+  wager.potCents = stakeCents * 2;
+  wager.lockedAt = new Date().toISOString();
+  wager.message = `${formatSimCents(wager.potCents)} pot locked. Winner takes the pot.`;
+  return true;
+}
+
+function backgammonWagerPlayBlock(room) {
+  const wager = room && room.backgammonWager;
+  if (!wager || !wager.stakeCents) {
+    return '';
+  }
+  if (wager.status === 'locked') {
+    return '';
+  }
+  if (wager.status === 'settled') {
+    return 'This SIM wager is already settled. Start a new match.';
+  }
+  if (wager.status === 'failed') {
+    return wager.message || 'The SIM pot could not be locked.';
+  }
+  return wager.message || 'Wait for the SIM pot to lock before rolling.';
+}
+
+async function settleBackgammonWager(room) {
+  const wager = room && room.backgammonWager;
+  if (!wager || !wager.stakeCents || !room.game.winner || wager.status === 'settled') {
+    return '';
+  }
+  if (wager.status !== 'locked') {
+    wager.status = 'failed';
+    wager.message = 'The match ended before the SIM pot was locked, so no payout was made.';
+    return wager.message;
+  }
+  const winnerColor = colorForBackgammonSide(room.game.winner);
+  const participant = wager.participants[winnerColor] || {};
+  if (!participant.user) {
+    wager.status = 'failed';
+    wager.message = 'The winner account could not be found, so the SIM pot is still locked for review.';
+    return wager.message;
+  }
+  await adjustBackgammonWallet(
+    participant.user,
+    normalizeBackgammonAmountCents(wager.potCents),
+    'wager-payout',
+    room,
+    winnerColor,
+    `Backgammon pot paid for room ${room.code}.`,
+  );
+  wager.status = 'settled';
+  wager.settledAt = new Date().toISOString();
+  wager.winnerColor = winnerColor;
+  wager.message = `${participant.name || winnerColor} won ${formatSimCents(wager.potCents)}.`;
+  return wager.message;
+}
+
+async function resolveBackgammonWagerOnDisconnect(room, disconnectedPlayer) {
+  const wager = room && room.backgammonWager;
+  if (!wager || !wager.stakeCents || wager.status !== 'locked' || room.game.winner) {
+    return '';
+  }
+  if (!wager.started || room.players.size === 0) {
+    return refundBackgammonWager(room, 'player disconnected before the wagered match finished');
+  }
+  if (room.players.size === 1) {
+    const winner = Array.from(room.players.values())[0];
+    room.game.winner = playerBackgammonSide(winner);
+    room.game.dice = [];
+    room.game.status = `${winner.name} wins by forfeit after ${disconnectedPlayer ? disconnectedPlayer.name : 'the opponent'} disconnected.`;
+    clearBackgammonUndo(room);
+    return settleBackgammonWager(room);
+  }
+  return '';
 }
 
 function getRoomForJoin(code, mode, gameType, options = {}) {
@@ -3917,6 +4217,7 @@ function listPlayers(room) {
     name: player.name,
     color: player.color,
     seat: player.seat,
+    signedIn: Boolean(player.authUser && player.authUser.uid),
     voiceJoined: Boolean(player.voiceJoined),
     voiceMuted: Boolean(player.voiceMuted),
     voicePreset: String(player.voicePreset || ''),
@@ -3964,6 +4265,7 @@ function snapshot(room, viewerId) {
     ...base,
     clock: room.gameType === 'chess' ? serializeChessClock(room) : undefined,
     undo: room.gameType === 'backgammon' ? serializeBackgammonUndo(room) : undefined,
+    wager: room.gameType === 'backgammon' ? serializeBackgammonWager(room) : undefined,
     players: listPlayers(room),
   };
 }
@@ -4061,18 +4363,34 @@ function seatIdentityForRoom(room) {
   return getOpenColor(room);
 }
 
-function handleJoin(socket, payload) {
-  const mode = payload && payload.mode === 'join' ? 'join' : 'host';
-  const gameType = normalizeGameType(payload && payload.game);
-  const lookup = getRoomForJoin(payload.roomCode, mode, gameType, {
-    timeControlPreset: normalizeChessTimeControlPreset(payload && payload.timeControlPreset),
-    variantId: MiniPool.normalizeVariantId(payload && payload.variantId),
+async function handleJoin(socket, payload) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  const mode = source.mode === 'join' ? 'join' : 'host';
+  const gameType = normalizeGameType(source.game);
+  const requestedBackgammonStakeCents = gameType === 'backgammon'
+    ? backgammonStakeCentsFromPayload(source)
+    : 0;
+  const lookup = getRoomForJoin(source.roomCode, mode, gameType, {
+    timeControlPreset: normalizeChessTimeControlPreset(source.timeControlPreset),
+    variantId: MiniPool.normalizeVariantId(source.variantId),
+    backgammonStakeCents: requestedBackgammonStakeCents,
   });
   if (lookup.error) {
     sendError(socket, lookup.error);
     return;
   }
   const room = lookup.room;
+  const roomWagerStakeCents = room.gameType === 'backgammon' && room.backgammonWager
+    ? normalizeBackgammonStakeCents(room.backgammonWager.stakeCents)
+    : 0;
+  if (room.gameType === 'backgammon') {
+    const authUser = await authenticateSocketPayload(socket, source, {
+      required: roomWagerStakeCents > 0,
+    });
+    if (roomWagerStakeCents > 0 && !authUser) {
+      return;
+    }
+  }
 
   if (room.players.size >= room.maxPlayers) {
     sendError(socket, 'That room is already full.');
@@ -4087,9 +4405,10 @@ function handleJoin(socket, payload) {
 
   const player = {
     id: crypto.randomUUID(),
-    name: sanitizeName(payload.name),
+    name: sanitizeName(source.name),
     color: identity === true ? null : identity,
     socket,
+    authUser: socket.authUser || null,
     voiceJoined: false,
     voiceMuted: false,
     voicePreset: 'Clean Comms',
@@ -4110,6 +4429,9 @@ function handleJoin(socket, payload) {
   room.lastTickAt = Date.now();
   if (room.gameType === 'chess') {
     refreshChessClockTurn(room, room.lastTickAt);
+  }
+  if (room.gameType === 'backgammon') {
+    await tryLockBackgammonWager(room);
   }
 
   send(socket, {
@@ -4176,7 +4498,7 @@ function playerBackgammonSide(player) {
   return player.color === 'white' ? Backgammon.WHITE : Backgammon.BLACK;
 }
 
-function handleMove(socket, payload) {
+async function handleMove(socket, payload) {
   const context = requirePlayer(socket);
   if (!context) {
     return;
@@ -4254,7 +4576,10 @@ function handleMove(socket, payload) {
     return;
   }
 
-  broadcastState(room);
+  const wagerMessage = room.gameType === 'backgammon' && room.game.winner
+    ? await settleBackgammonWager(room)
+    : '';
+  broadcastState(room, wagerMessage || undefined);
 }
 
 function handleTableAction(socket, payload) {
@@ -5161,6 +5486,11 @@ function handleRoll(socket) {
     sendError(socket, `It is ${Backgammon.playerName(room.game.current)}'s turn.`);
     return;
   }
+  const wagerBlock = backgammonWagerPlayBlock(room);
+  if (wagerBlock) {
+    sendError(socket, wagerBlock);
+    return;
+  }
   if (room.backgammonUndo && room.backgammonUndo.player !== room.game.current) {
     clearBackgammonUndo(room);
   }
@@ -5169,6 +5499,9 @@ function handleRoll(socket) {
   if (!result.ok) {
     sendError(socket, result.error || 'The dice could not be rolled.');
     return;
+  }
+  if (room.backgammonWager && room.backgammonWager.stakeCents) {
+    room.backgammonWager.started = true;
   }
 
   broadcastState(room);
@@ -5183,6 +5516,10 @@ function handleUndo(socket) {
   const { room, player } = context;
   if (room.gameType !== 'backgammon') {
     sendError(socket, 'Undo is only available in backgammon rooms.');
+    return;
+  }
+  if (room.backgammonWager && room.backgammonWager.stakeCents && room.backgammonWager.status === 'locked') {
+    sendError(socket, 'Undo is disabled once a SIM wager is locked.');
     return;
   }
 
@@ -5202,13 +5539,23 @@ function handleUndo(socket) {
   broadcastState(room, `${player.name} undid the last move.`);
 }
 
-function handleRestart(socket) {
+async function handleRestart(socket) {
   const context = requirePlayer(socket);
   if (!context) {
     return;
   }
 
   const { room, player } = context;
+  if (
+    room.gameType === 'backgammon'
+    && room.backgammonWager
+    && room.backgammonWager.stakeCents
+    && room.backgammonWager.status === 'locked'
+    && !room.game.winner
+  ) {
+    sendError(socket, 'Finish the locked SIM wager before starting a new backgammon match.');
+    return;
+  }
   if (room.gameType === 'arcade-chat') {
     sendError(socket, 'Arcade Lounge rooms do not use reset.');
     return;
@@ -5233,6 +5580,11 @@ function handleRestart(socket) {
     room.game.roomCode = room.code;
     if (room.gameType === 'backgammon') {
       clearBackgammonUndo(room);
+      const stakeCents = room.backgammonWager
+        ? normalizeBackgammonStakeCents(room.backgammonWager.stakeCents)
+        : normalizeBackgammonStakeCents(room.options && room.options.backgammonStakeCents);
+      room.backgammonWager = createBackgammonWagerState({ stakeCents });
+      await tryLockBackgammonWager(room);
     }
     room.clock = room.gameType === 'chess'
       ? createChessClock(room.clock ? room.clock.presetId : 'untimed')
@@ -5259,7 +5611,7 @@ function handleRestart(socket) {
   );
 }
 
-function handleDisconnect(socket) {
+async function handleDisconnect(socket) {
   const roomCode = socket.roomCode;
   const playerId = socket.playerId;
   if (!roomCode || !playerId) {
@@ -5278,6 +5630,9 @@ function handleDisconnect(socket) {
   room.players.delete(playerId);
 
   if (room.players.size === 0) {
+    if (room.gameType === 'backgammon') {
+      await refundBackgammonWager(room, 'room closed');
+    }
     rooms.delete(roomCode);
     return;
   }
@@ -5304,6 +5659,7 @@ function handleDisconnect(socket) {
     persistArcadeChatRoom(room);
   } else if (room.gameType === 'backgammon') {
     clearBackgammonUndo(room);
+    await resolveBackgammonWagerOnDisconnect(room, player);
   } else if (room.gameType === 'chess') {
     refreshChessClockTurn(room, Date.now());
   }
@@ -5328,7 +5684,9 @@ function handleDisconnect(socket) {
   if (room.gameType === 'arcade-chat') {
     broadcastState(room);
   } else {
-    broadcastState(room, message);
+    broadcastState(room, room.gameType === 'backgammon' && room.backgammonWager && room.backgammonWager.message
+      ? room.backgammonWager.message
+      : message);
   }
 }
 
@@ -5338,7 +5696,9 @@ function cleanupDisconnectedSocket(socket, reason) {
   }
   socket.didDisconnectCleanup = true;
   cleanupLiveSocket(socket, reason);
-  handleDisconnect(socket);
+  handleDisconnect(socket).catch((error) => {
+    console.error('Disconnect cleanup failed:', error.message);
+  });
 }
 
 function tickRealtimeRooms() {
@@ -5650,7 +6010,10 @@ wss.on('connection', (socket) => {
     const action = payload.action || payload.type;
     switch (action) {
       case 'join':
-        handleJoin(socket, payload);
+        handleJoin(socket, payload).catch((error) => {
+          console.error('Join failed:', error.message);
+          sendError(socket, 'Unable to join that room right now.');
+        });
         break;
       case 'chat':
         handleChatMessage(socket, payload);
@@ -5704,7 +6067,10 @@ wss.on('connection', (socket) => {
         handleRoll(socket);
         break;
       case 'move':
-        handleMove(socket, payload);
+        handleMove(socket, payload).catch((error) => {
+          console.error('Move failed:', error.message);
+          sendError(socket, 'Unable to play that move right now.');
+        });
         break;
       case 'undo':
         handleUndo(socket);
@@ -5728,7 +6094,10 @@ wss.on('connection', (socket) => {
         handleInput(socket, payload);
         break;
       case 'restart':
-        handleRestart(socket);
+        handleRestart(socket).catch((error) => {
+          console.error('Restart failed:', error.message);
+          sendError(socket, 'Unable to restart that match right now.');
+        });
         break;
       default:
         sendError(socket, 'Unknown action.');
