@@ -157,6 +157,44 @@ function clipDeleteEndpoint() {
     return `${clipsApiBase()}/api/clips/delete`;
 }
 
+function initClipAuth() {
+    if (!window.NovaAuth) {
+        return;
+    }
+    window.NovaAuth.init({
+        apiBaseUrl: clipsApiBase(),
+        onChange(profile) {
+            if (profile.signedIn && uploaderNameInput && (!uploaderNameInput.value || uploaderNameInput.value === "Guest uploader")) {
+                uploaderNameInput.value = profile.displayName || "Nova member";
+            }
+        },
+    }).catch((error) => {
+        setUploadStatus(`Account sign-in setup failed: ${error.message || "unknown error"}.`, true);
+    });
+}
+
+function requireClipAuth(actionLabel) {
+    if (!window.NovaAuth) {
+        return true;
+    }
+    const ok = window.NovaAuth.requireSignedIn(actionLabel);
+    if (!ok) {
+        setUploadStatus(`Sign in to ${actionLabel}.`, true);
+    }
+    return ok;
+}
+
+async function clipAuthHeaders(headers = {}) {
+    if (!window.NovaAuth) {
+        return headers;
+    }
+    return window.NovaAuth.appendAuthHeaders(headers);
+}
+
+function clipUploaderName() {
+    return window.NovaAuth?.displayName("Nova member") || uploaderNameInput.value.trim();
+}
+
 function clipReportEndpoint() {
     return `${clipsApiBase()}/api/clips/report`;
 }
@@ -771,6 +809,10 @@ function setDropZoneState({ dragging = false, busy = false } = {}) {
 }
 
 async function removeClip(clipId, deleteButton) {
+    if (!requireClipAuth("delete your clip")) {
+        return;
+    }
+
     const deleteToken = deleteTokenForClip(clipId);
     if (!deleteToken) {
         setClipsStatus("This browser does not have delete access for that clip.", true);
@@ -787,9 +829,9 @@ async function removeClip(clipId, deleteButton) {
     try {
         const response = await fetch(clipDeleteEndpoint(), {
             method: "POST",
-            headers: {
+            headers: await clipAuthHeaders({
                 "Content-Type": "application/json",
-            },
+            }),
             body: JSON.stringify({
                 clipId,
                 deleteToken,
@@ -1970,14 +2012,14 @@ async function handleClipSelection(file) {
 async function requestDirectClipUploadSession(file) {
     const response = await fetch(clipUploadSessionEndpoint(), {
         method: "POST",
-        headers: {
+        headers: await clipAuthHeaders({
             "Content-Type": "application/json",
-        },
+        }),
         body: JSON.stringify({
             fileName: file.name,
             mimeType: file.type || "",
             sizeBytes: file.size,
-            uploaderName: uploaderNameInput.value.trim(),
+            uploaderName: clipUploaderName(),
             title: titleInput.value.trim(),
             caption: captionInput.value.trim(),
             origin: "nova-clips",
@@ -2017,9 +2059,9 @@ function uploadFileToCloudSession(uploadUrl, file, onProgress, uploadContentType
 async function finalizeDirectClipUpload(rawUploadKey, uploadToken) {
     const response = await fetch(clipFinalizeUploadEndpoint(), {
         method: "POST",
-        headers: {
+        headers: await clipAuthHeaders({
             "Content-Type": "application/json",
-        },
+        }),
         body: JSON.stringify({
             rawUploadKey,
             uploadToken,
@@ -2036,8 +2078,8 @@ async function uploadClipLegacy(file) {
     const formData = new FormData();
     formData.append("clipFile", file);
     formData.append("origin", "nova-clips");
-    if (uploaderNameInput.value.trim()) {
-        formData.append("uploaderName", uploaderNameInput.value.trim());
+    if (clipUploaderName()) {
+        formData.append("uploaderName", clipUploaderName());
     }
     if (titleInput.value.trim()) {
         formData.append("title", titleInput.value.trim());
@@ -2048,6 +2090,7 @@ async function uploadClipLegacy(file) {
 
     const response = await fetch(clipsEndpoint(), {
         method: "POST",
+        headers: await clipAuthHeaders(),
         body: formData,
     });
     const payload = await response.json();
@@ -2062,6 +2105,9 @@ async function uploadClip(file) {
         if (!file) {
             setUploadStatus("Choose a clip first.");
         }
+        return;
+    }
+    if (!requireClipAuth("upload a clip")) {
         return;
     }
 
@@ -2187,4 +2233,5 @@ clipModerationLoadButton?.addEventListener("click", async () => {
     await fetchModerationQueue();
 });
 
+initClipAuth();
 fetchClips();

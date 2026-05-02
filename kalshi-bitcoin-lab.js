@@ -251,6 +251,9 @@
   restoreStrategySettings();
   restorePaperLedger();
   restorePaperAutoSettings();
+  if (window.NovaAuth) {
+    window.NovaAuth.init({ apiBaseUrl: defaultApiBase() }).catch(function () {});
+  }
   [
     strategyBankrollInput,
     strategyRiskInput,

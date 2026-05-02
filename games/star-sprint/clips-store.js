@@ -96,6 +96,9 @@ function clipRecord(record) {
     title: String(record.title || ''),
     caption: String(record.caption || ''),
     uploaderName: String(record.uploaderName || ''),
+    ownerUserId: String(record.ownerUserId || record.owner_user_id || ''),
+    ownerEmail: String(record.ownerEmail || record.owner_email || ''),
+    ownerProvider: String(record.ownerProvider || record.owner_provider || ''),
     origin: String(record.origin || record.sourceOrigin || record.source_context || ''),
     createdAt: String(record.createdAt || ''),
     durationSeconds: Number(record.durationSeconds || 0),
@@ -297,6 +300,9 @@ function mapPostgresClipRow(row) {
     title: row.title,
     caption: row.caption,
     uploaderName: row.uploader_name,
+    ownerUserId: row.owner_user_id,
+    ownerEmail: row.owner_email,
+    ownerProvider: row.owner_provider,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
     durationSeconds: row.duration_seconds,
     sizeBytes: row.size_bytes,
@@ -578,6 +584,9 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
           title,
           caption,
           uploader_name,
+          owner_user_id,
+          owner_email,
+          owner_provider,
           created_at,
           duration_seconds,
           size_bytes,
@@ -598,7 +607,7 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
           appeal_message,
           appeal_requested_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22, $23, $24
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24, $25, $26, $27
         )
         ON CONFLICT (id) DO NOTHING`,
         [
@@ -607,6 +616,9 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
           clip.title,
           clip.caption,
           clip.uploaderName,
+          clip.ownerUserId,
+          clip.ownerEmail,
+          clip.ownerProvider,
           clip.createdAt,
           clip.durationSeconds,
           clip.sizeBytes,
@@ -650,6 +662,9 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         title TEXT NOT NULL,
         caption TEXT NOT NULL DEFAULT '',
         uploader_name TEXT NOT NULL,
+        owner_user_id TEXT NOT NULL DEFAULT '',
+        owner_email TEXT NOT NULL DEFAULT '',
+        owner_provider TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         duration_seconds DOUBLE PRECISION NOT NULL,
         size_bytes BIGINT NOT NULL,
@@ -673,6 +688,9 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
     `);
 
     await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS moderation_state TEXT NOT NULL DEFAULT 'queued';`);
+    await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS owner_user_id TEXT NOT NULL DEFAULT '';`);
+    await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS owner_email TEXT NOT NULL DEFAULT '';`);
+    await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS owner_provider TEXT NOT NULL DEFAULT '';`);
     await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS moderation_summary TEXT NOT NULL DEFAULT '';`);
     await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS moderation_reasons JSONB NOT NULL DEFAULT '[]'::jsonb;`);
     await pool.query(`ALTER TABLE clips ADD COLUMN IF NOT EXISTS moderation_details JSONB NOT NULL DEFAULT '{}'::jsonb;`);
@@ -893,6 +911,9 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         title,
         caption,
         uploader_name,
+        owner_user_id,
+        owner_email,
+        owner_provider,
         created_at,
         duration_seconds,
         size_bytes,
@@ -995,6 +1016,9 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         title,
         caption,
         uploader_name,
+        owner_user_id,
+        owner_email,
+        owner_provider,
         created_at,
         duration_seconds,
         size_bytes,
@@ -1015,7 +1039,7 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         appeal_message,
         appeal_requested_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22, $23, $24
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24, $25, $26, $27
       )`,
       [
         nextClip.id,
@@ -1023,6 +1047,9 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         nextClip.title,
         nextClip.caption,
         nextClip.uploaderName,
+        nextClip.ownerUserId,
+        nextClip.ownerEmail,
+        nextClip.ownerProvider,
         nextClip.createdAt,
         nextClip.durationSeconds,
         nextClip.sizeBytes,
@@ -1077,6 +1104,9 @@ function createClipsStore({ dataDir, databaseUrl = '', maxClips = 0, maxVisibleC
         title,
         caption,
         uploader_name,
+        owner_user_id,
+        owner_email,
+        owner_provider,
         created_at,
         duration_seconds,
         size_bytes,

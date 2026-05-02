@@ -94,6 +94,7 @@ const els = {};
 document.addEventListener('DOMContentLoaded', () => {
   bindElements();
   bindEvents();
+  initNovaLiveAuth();
   initInstallExperience();
   registerNovaLiveServiceWorker();
   hydrateRoomFromQuery();
@@ -429,6 +430,53 @@ function clipUploadSessionEndpoint() {
 
 function clipFinalizeUploadEndpoint() {
   return `${apiBaseUrl()}/api/clips/finalize-upload`;
+}
+
+function initNovaLiveAuth() {
+  if (!window.NovaAuth) {
+    return;
+  }
+  window.NovaAuth.onChange(applyAuthProfile);
+  window.NovaAuth.init({
+    apiBaseUrl: apiBaseUrl(),
+    onChange: applyAuthProfile,
+  }).then(applyAuthProfile).catch((error) => {
+    logEvent(`Account sign-in setup failed: ${error.message || 'unknown error'}.`);
+  });
+}
+
+function applyAuthProfile(profile = {}) {
+  if (!profile.signedIn) {
+    return;
+  }
+  if (els.hostName && (!els.hostName.value || els.hostName.value === 'Nova Host')) {
+    els.hostName.value = profile.displayName || 'Nova Host';
+  }
+  if (els.viewerName && (!els.viewerName.value || els.viewerName.value === 'Viewer')) {
+    els.viewerName.value = profile.displayName || 'Viewer';
+  }
+}
+
+function requireNovaAuth(actionLabel) {
+  if (!window.NovaAuth) {
+    return true;
+  }
+  const ok = window.NovaAuth.requireSignedIn(actionLabel);
+  if (!ok) {
+    logEvent(`Sign in to ${actionLabel}.`);
+  }
+  return ok;
+}
+
+async function novaAuthHeaders(headers = {}) {
+  if (!window.NovaAuth) {
+    return headers;
+  }
+  return window.NovaAuth.appendAuthHeaders(headers);
+}
+
+function novaAuthPayload() {
+  return window.NovaAuth ? window.NovaAuth.authPayload() : {};
 }
 
 function setMode(mode) {
@@ -793,6 +841,9 @@ function createReplayCard(clip, ownedUploads, isNew = false) {
     deleteButton.type = 'button';
     deleteButton.textContent = 'Delete';
     deleteButton.addEventListener('click', async () => {
+      if (!requireNovaAuth('delete your replay')) {
+        return;
+      }
       if (!window.confirm('Delete this replay from Nova Live?')) {
         return;
       }
@@ -959,6 +1010,10 @@ function insertChatEmoji(emoji) {
 }
 
 async function startVideoChat() {
+  if (!requireNovaAuth('start a video chat')) {
+    return;
+  }
+
   if (state.roomCode && state.role === 'host') {
     await copyShareLink();
     logEvent('Invite link copied for your live video chat.');
@@ -1094,6 +1149,10 @@ async function startScreenShare(options = {}) {
 }
 
 async function startViewerCameraShare() {
+  if (!requireNovaAuth('share camera back')) {
+    return;
+  }
+
   if (!canViewerCoStream()) {
     logEvent('Join a live room before sharing back.');
     return;
@@ -1464,7 +1523,10 @@ function reconnectLiveSignal() {
 
 function sendSignal(payload) {
   const socket = connectSocket();
-  const message = JSON.stringify(payload);
+  const message = JSON.stringify({
+    ...payload,
+    ...novaAuthPayload(),
+  });
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(message);
     return;
@@ -1473,6 +1535,10 @@ function sendSignal(payload) {
 }
 
 function goLive() {
+  if (!requireNovaAuth('go live')) {
+    return;
+  }
+
   if (!state.localStream) {
     logEvent('Choose Camera + Mic, Desktop + Mic, or Desktop Only before going live.');
     return;
@@ -1491,6 +1557,10 @@ function goLive() {
 }
 
 function joinStream() {
+  if (!requireNovaAuth('join a live room')) {
+    return;
+  }
+
   const roomCode = normalizeRoomCode(els.joinRoomCode.value);
   if (!roomCode) {
     logEvent('Room code is required.');
@@ -1515,6 +1585,10 @@ function joinStream() {
 }
 
 function sendChatMessage() {
+  if (!requireNovaAuth('send live chat')) {
+    return;
+  }
+
   const message = cleanText(els.chatInput.value, '', 240);
   if (!message) {
     return;
@@ -2462,6 +2536,9 @@ async function postReplayRecording() {
   if (!state.recording.blob || state.recording.uploadInFlight) {
     return;
   }
+  if (!requireNovaAuth('post a replay')) {
+    return;
+  }
   if (isReplayRecording()) {
     setRecordingStatus('Stop the recording before posting it.', 'error');
     return;
@@ -2473,7 +2550,7 @@ async function postReplayRecording() {
     80,
   );
   const caption = cleanOptionalText(els.recordingCaption.value, 240);
-  const uploaderName = cleanText(els.hostName.value, 'Nova Host', 48);
+  const uploaderName = cleanText(window.NovaAuth?.displayName('Nova Host') || els.hostName.value, 'Nova Host', 48);
   const file = makeReplayFile(state.recording.blob, title);
 
   state.recording.uploadInFlight = true;
@@ -2536,9 +2613,9 @@ async function postReplayRecording() {
 async function requestReplayUploadSession(file, title, caption, uploaderName) {
   const response = await fetch(clipUploadSessionEndpoint(), {
     method: 'POST',
-    headers: {
+    headers: await novaAuthHeaders({
       'Content-Type': 'application/json',
-    },
+    }),
     body: JSON.stringify({
       fileName: file.name,
       mimeType: file.type || '',
@@ -2583,9 +2660,9 @@ function uploadFileToCloudSession(uploadUrl, file, onProgress, uploadContentType
 async function finalizeReplayUpload(rawUploadKey, uploadToken) {
   const response = await fetch(clipFinalizeUploadEndpoint(), {
     method: 'POST',
-    headers: {
+    headers: await novaAuthHeaders({
       'Content-Type': 'application/json',
-    },
+    }),
     body: JSON.stringify({
       rawUploadKey,
       uploadToken,
@@ -2610,6 +2687,7 @@ async function uploadReplayLegacy(file, title, caption, uploaderName) {
 
   const response = await fetch(clipsEndpoint(), {
     method: 'POST',
+    headers: await novaAuthHeaders(),
     body: formData,
   });
   const payload = await response.json();
@@ -2712,9 +2790,9 @@ function forgetOwnedUpload(clipId) {
 async function requestClipDelete(clipId, deleteToken) {
   const response = await fetch(clipDeleteEndpoint(), {
     method: 'POST',
-    headers: {
+    headers: await novaAuthHeaders({
       'Content-Type': 'application/json',
-    },
+    }),
     body: JSON.stringify({
       clipId,
       deleteToken,
@@ -2728,6 +2806,10 @@ async function requestClipDelete(clipId, deleteToken) {
 }
 
 async function deletePostedReplay() {
+  if (!requireNovaAuth('delete your replay')) {
+    return;
+  }
+
   const clipId = state.recording.postedClipId;
   const deleteToken = state.recording.postedDeleteToken;
   if (!clipId || !deleteToken || state.recording.deleteInFlight) {

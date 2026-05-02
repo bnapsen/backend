@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const Busboy = require('busboy');
+const firebaseAdmin = require('firebase-admin');
 const { WebSocketServer } = require('ws');
 const Chess = require('./chess-core.js');
 const Backgammon = require('./backgammon-core.js');
@@ -93,6 +94,28 @@ const GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES = 5 * 1024 * 1024 * 1024;
 const CLIP_ADMIN_TOKEN = String(process.env.CLIP_ADMIN_TOKEN || '').trim();
 const KALSHI_LAB_TOKEN = String(process.env.KALSHI_LAB_TOKEN || '').trim();
 const KALSHI_TRADE_TOKEN = String(process.env.KALSHI_TRADE_TOKEN || process.env.KALSHI_LAB_TOKEN || '').trim();
+const NOVA_AUTH_REQUIRED = String(process.env.NOVA_AUTH_REQUIRED || 'true').trim().toLowerCase() !== 'false';
+const FIREBASE_PROJECT_ID = String(
+  process.env.FIREBASE_PROJECT_ID
+  || process.env.GCLOUD_PROJECT
+  || process.env.GOOGLE_CLOUD_PROJECT
+  || '',
+).trim();
+const FIREBASE_WEB_CONFIG = Object.freeze({
+  apiKey: String(process.env.FIREBASE_WEB_API_KEY || '').trim(),
+  authDomain: String(process.env.FIREBASE_AUTH_DOMAIN || '').trim(),
+  projectId: String(process.env.FIREBASE_WEB_PROJECT_ID || FIREBASE_PROJECT_ID || '').trim(),
+  appId: String(process.env.FIREBASE_APP_ID || '').trim(),
+  messagingSenderId: String(process.env.FIREBASE_MESSAGING_SENDER_ID || '').trim(),
+  storageBucket: String(process.env.FIREBASE_STORAGE_BUCKET || '').trim(),
+});
+const FIREBASE_WEB_AUTH_ENABLED = Boolean(
+  FIREBASE_WEB_CONFIG.apiKey
+  && FIREBASE_WEB_CONFIG.authDomain
+  && FIREBASE_WEB_CONFIG.projectId
+  && FIREBASE_WEB_CONFIG.appId
+);
+const FIREBASE_ADMIN_AUTH_ENABLED = Boolean(FIREBASE_PROJECT_ID);
 const CLIP_UPLOAD_SIGNING_SECRET = String(
   process.env.CLIP_UPLOAD_SIGNING_SECRET
   || process.env.S3_SECRET_ACCESS_KEY
@@ -319,7 +342,7 @@ function corsHeaders(req) {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token, X-Kalshi-Lab-Token, X-Kalshi-Trade-Token',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Admin-Token, X-Kalshi-Lab-Token, X-Kalshi-Trade-Token',
     Vary: 'Origin',
   };
 }
@@ -335,6 +358,186 @@ function sendJsonResponse(req, res, statusCode, payload) {
 
 function requestHeader(req, name) {
   return String(req.headers[String(name).toLowerCase()] || '').trim();
+}
+
+function publicFirebaseWebConfig() {
+  if (!FIREBASE_WEB_AUTH_ENABLED) {
+    return null;
+  }
+
+  return {
+    apiKey: FIREBASE_WEB_CONFIG.apiKey,
+    authDomain: FIREBASE_WEB_CONFIG.authDomain,
+    projectId: FIREBASE_WEB_CONFIG.projectId,
+    appId: FIREBASE_WEB_CONFIG.appId,
+    messagingSenderId: FIREBASE_WEB_CONFIG.messagingSenderId,
+    storageBucket: FIREBASE_WEB_CONFIG.storageBucket,
+  };
+}
+
+function handleAuthConfigRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  sendJsonResponse(req, res, 200, {
+    ok: true,
+    enabled: FIREBASE_WEB_AUTH_ENABLED,
+    required: NOVA_AUTH_REQUIRED,
+    adminVerifierEnabled: FIREBASE_ADMIN_AUTH_ENABLED,
+    providers: {
+      google: true,
+      facebook: true,
+    },
+    firebaseConfig: publicFirebaseWebConfig(),
+  });
+}
+
+function firebaseAuthVerifier() {
+  if (!FIREBASE_ADMIN_AUTH_ENABLED) {
+    return null;
+  }
+
+  if (!firebaseAdmin.apps.length) {
+    firebaseAdmin.initializeApp({
+      projectId: FIREBASE_PROJECT_ID,
+    });
+  }
+
+  return firebaseAdmin.auth();
+}
+
+function bearerTokenFromRequest(req) {
+  const header = requestHeader(req, 'authorization');
+  const match = /^Bearer\s+(.+)$/i.exec(header);
+  return match ? match[1].trim().slice(0, 4096) : '';
+}
+
+function tokenFromSocketPayload(payload) {
+  return String(
+    payload && (
+      payload.authToken
+      || payload.idToken
+      || payload.firebaseToken
+      || ''
+    ) || '',
+  ).trim().slice(0, 4096);
+}
+
+function normalizeAuthUser(decodedToken) {
+  const email = String(decodedToken && decodedToken.email || '').trim();
+  const name = String(
+    decodedToken && (
+      decodedToken.name
+      || decodedToken.displayName
+      || decodedToken.firebase && decodedToken.firebase.identities && decodedToken.firebase.identities.email && decodedToken.firebase.identities.email[0]
+      || ''
+    ) || '',
+  ).trim();
+
+  return {
+    uid: String(decodedToken && (decodedToken.uid || decodedToken.sub) || '').trim(),
+    email,
+    displayName: name || (email ? email.split('@')[0] : 'Nova member'),
+    picture: String(decodedToken && decodedToken.picture || '').trim(),
+    provider: String(decodedToken && decodedToken.firebase && decodedToken.firebase.sign_in_provider || '').trim(),
+  };
+}
+
+async function verifyAuthToken(idToken) {
+  if (!idToken) {
+    return null;
+  }
+
+  const verifier = firebaseAuthVerifier();
+  if (!verifier) {
+    const error = new Error('Authentication is not configured yet.');
+    error.code = 'auth/not-configured';
+    throw error;
+  }
+
+  const decodedToken = await verifier.verifyIdToken(idToken);
+  const user = normalizeAuthUser(decodedToken);
+  if (!user.uid) {
+    const error = new Error('Authentication token did not include a user id.');
+    error.code = 'auth/missing-uid';
+    throw error;
+  }
+  return user;
+}
+
+async function authenticateHttpRequest(req, res, { required = NOVA_AUTH_REQUIRED } = {}) {
+  const token = bearerTokenFromRequest(req);
+  if (!token) {
+    if (!required) {
+      return { user: null };
+    }
+    sendJsonResponse(req, res, 401, {
+      ok: false,
+      error: 'Sign in is required.',
+    });
+    return null;
+  }
+
+  try {
+    return {
+      user: await verifyAuthToken(token),
+    };
+  } catch (error) {
+    sendJsonResponse(req, res, error.code === 'auth/not-configured' ? 503 : 401, {
+      ok: false,
+      error: error.code === 'auth/not-configured'
+        ? 'Account sign-in is not configured on this server yet.'
+        : 'Your sign-in session could not be verified.',
+    });
+    return null;
+  }
+}
+
+async function authenticateSocketPayload(socket, payload, { required = NOVA_AUTH_REQUIRED } = {}) {
+  const token = tokenFromSocketPayload(payload);
+  if (!token) {
+    if (!required) {
+      return socket.authUser || null;
+    }
+    sendError(socket, 'Sign in is required.');
+    return null;
+  }
+
+  try {
+    socket.authUser = await verifyAuthToken(token);
+    return socket.authUser;
+  } catch (error) {
+    sendError(socket, error.code === 'auth/not-configured'
+      ? 'Account sign-in is not configured on this server yet.'
+      : 'Your sign-in session could not be verified.');
+    return null;
+  }
+}
+
+function authDisplayName(user, fallback = 'Nova member', maxLength = 48) {
+  return sanitizeClipField(user && (user.displayName || user.email) || fallback, maxLength) || fallback;
+}
+
+function authOwnsClip(user, clip) {
+  return Boolean(
+    user
+    && clip
+    && clip.ownerUserId
+    && String(clip.ownerUserId) === String(user.uid || ''),
+  );
 }
 
 function hasKalshiWeatherLabAccess(req, requestUrl) {
@@ -1702,6 +1905,11 @@ async function handleClipUploadSessionRequest(req, res) {
     return;
   }
 
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return;
+  }
+
   let body;
   try {
     body = await readJsonBody(req);
@@ -1717,7 +1925,7 @@ async function handleClipUploadSessionRequest(req, res) {
   const originalFileName = sanitizeClipFileName(body.fileName || body.originalFileName);
   const normalizedUpload = normalizeClipUploadType(originalFileName, body.mimeType);
   const sizeBytes = Number(body.sizeBytes || 0);
-  const uploaderName = sanitizeClipField(body.uploaderName, 48) || 'Guest uploader';
+  const uploaderName = authDisplayName(auth.user, sanitizeClipField(body.uploaderName, 48) || 'Nova member', 48);
   const title = sanitizeClipField(body.title, 80) || inferClipTitle(originalFileName);
   const caption = sanitizeClipField(body.caption, 240);
   const origin = normalizeClipOrigin(body.origin || body.sourceOrigin || body.sourceContext);
@@ -1753,6 +1961,9 @@ async function handleClipUploadSessionRequest(req, res) {
     mimeType: normalizedUpload.mimeType,
     sizeBytes,
     uploaderName,
+    ownerUserId: auth.user.uid,
+    ownerEmail: auth.user.email,
+    ownerProvider: auth.user.provider,
     title,
     caption,
     origin,
@@ -1805,6 +2016,11 @@ async function handleClipUploadFinalizeRequest(req, res) {
     return;
   }
 
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return;
+  }
+
   let body;
   try {
     body = await readJsonBody(req);
@@ -1829,6 +2045,14 @@ async function handleClipUploadFinalizeRequest(req, res) {
     return;
   }
 
+  if (uploadPayload.ownerUserId && uploadPayload.ownerUserId !== auth.user.uid) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'That upload session belongs to another signed-in account.',
+    });
+    return;
+  }
+
   let storedClip = null;
   try {
     const uploadedAsset = await clipMediaManager.inspectRawUpload(rawUploadKey);
@@ -1842,7 +2066,10 @@ async function handleClipUploadFinalizeRequest(req, res) {
       deleteToken: crypto.randomBytes(24).toString('hex'),
       title: sanitizeClipField(uploadPayload.title, 80) || inferClipTitle(uploadPayload.originalFileName),
       caption: sanitizeClipField(uploadPayload.caption, 240),
-      uploaderName: sanitizeClipField(uploadPayload.uploaderName, 48) || 'Guest uploader',
+      uploaderName: authDisplayName(auth.user, sanitizeClipField(uploadPayload.uploaderName, 48) || 'Nova member', 48),
+      ownerUserId: auth.user.uid,
+      ownerEmail: auth.user.email,
+      ownerProvider: auth.user.provider,
       origin: normalizeClipOrigin(uploadPayload.origin),
       createdAt: new Date().toISOString(),
       durationSeconds: processedClip.durationSeconds,
@@ -2334,6 +2561,11 @@ async function handleClipsRequest(req, res) {
     return;
   }
 
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return;
+  }
+
   let upload;
   try {
     upload = await readClipUpload(req);
@@ -2348,7 +2580,7 @@ async function handleClipsRequest(req, res) {
 
   const title = sanitizeClipField(upload.fields.title, 80) || inferClipTitle(upload.file.originalFileName);
   const caption = sanitizeClipField(upload.fields.caption, 240);
-  const uploaderName = sanitizeClipField(upload.fields.uploaderName, 48) || 'Guest uploader';
+  const uploaderName = authDisplayName(auth.user, sanitizeClipField(upload.fields.uploaderName, 48) || 'Nova member', 48);
   const origin = normalizeClipOrigin(upload.fields.origin || upload.fields.sourceOrigin || upload.fields.sourceContext);
 
   let storedClip = null;
@@ -2361,6 +2593,9 @@ async function handleClipsRequest(req, res) {
       title,
       caption,
       uploaderName,
+      ownerUserId: auth.user.uid,
+      ownerEmail: auth.user.email,
+      ownerProvider: auth.user.provider,
       origin,
       createdAt: new Date().toISOString(),
       durationSeconds: processedClip.durationSeconds,
@@ -2441,10 +2676,15 @@ async function handleClipDeleteRequest(req, res) {
 
   const clipId = sanitizeClipField(body.clipId, 80);
   const deleteToken = normalizeDeleteToken(body.deleteToken);
-  if (!clipId || !deleteToken) {
+  const auth = await authenticateHttpRequest(req, res, { required: false });
+  if (!auth) {
+    return;
+  }
+
+  if (!clipId || (!deleteToken && !auth.user)) {
     sendJsonResponse(req, res, 400, {
       ok: false,
-      error: 'Clip id and delete token are required.',
+      error: 'Clip id and delete permission are required.',
     });
     return;
   }
@@ -2458,7 +2698,9 @@ async function handleClipDeleteRequest(req, res) {
     return;
   }
 
-  if (clip.deleteToken !== deleteToken) {
+  const tokenMatches = Boolean(deleteToken && clip.deleteToken === deleteToken);
+  const ownerMatches = authOwnsClip(auth.user, clip);
+  if (!tokenMatches && !ownerMatches) {
     sendJsonResponse(req, res, 403, {
       ok: false,
       error: 'Delete permission not found for that clip.',
@@ -4524,7 +4766,12 @@ function cleanupLiveSocket(socket, reason = 'leave') {
   }
 }
 
-function handleLiveHost(socket, payload) {
+async function handleLiveHost(socket, payload) {
+  const auth = await authenticateSocketPayload(socket, payload);
+  if (!auth) {
+    return;
+  }
+
   clearStaleLiveRooms();
   cleanupLiveSocket(socket, 'replace');
 
@@ -4541,9 +4788,14 @@ function handleLiveHost(socket, payload) {
     }
 
     clearLiveHostReconnectTimer(existingRoom);
+    if (existingRoom.hostUserId && existingRoom.hostUserId !== auth.uid) {
+      sendError(socket, 'That live room belongs to another signed-in account.');
+      return;
+    }
     existingRoom.hostSocket = socket;
-    existingRoom.hostName = sanitizeLiveText(payload && payload.name, existingRoom.hostName || 'Nova Host', 40);
+    existingRoom.hostName = sanitizeLiveText(authDisplayName(auth, existingRoom.hostName || 'Nova Host', 40), existingRoom.hostName || 'Nova Host', 40);
     existingRoom.title = sanitizeLiveText(payload && payload.title, existingRoom.title || 'Live from BNAPSEN', 70);
+    existingRoom.hostUserId = auth.uid;
     existingRoom.hostDisconnectedAt = 0;
 
     socket.liveRole = 'host';
@@ -4582,7 +4834,8 @@ function handleLiveHost(socket, payload) {
   const room = {
     code: roomCode,
     hostId,
-    hostName: sanitizeLiveText(payload && payload.name, 'Nova Host', 40),
+    hostUserId: auth.uid,
+    hostName: sanitizeLiveText(authDisplayName(auth, 'Nova Host', 40), 'Nova Host', 40),
     title: sanitizeLiveText(payload && payload.title, 'Live from BNAPSEN', 70),
     hostSocket: socket,
     viewers: new Map(),
@@ -4608,7 +4861,12 @@ function handleLiveHost(socket, payload) {
   });
 }
 
-function handleLiveViewer(socket, payload) {
+async function handleLiveViewer(socket, payload) {
+  const auth = await authenticateSocketPayload(socket, payload);
+  if (!auth) {
+    return;
+  }
+
   clearStaleLiveRooms();
   cleanupLiveSocket(socket, 'replace');
 
@@ -4630,7 +4888,8 @@ function handleLiveViewer(socket, payload) {
 
   const viewer = {
     id: crypto.randomUUID(),
-    name: sanitizeLiveText(payload && payload.name, 'Viewer', 40),
+    userId: auth.uid,
+    name: sanitizeLiveText(authDisplayName(auth, 'Viewer', 40), 'Viewer', 40),
     socket,
     joinedAt: new Date().toISOString(),
   };
@@ -4711,7 +4970,12 @@ function handleLiveSignal(socket, payload) {
   }
 }
 
-function handleLiveChat(socket, payload) {
+async function handleLiveChat(socket, payload) {
+  const auth = socket.authUser || await authenticateSocketPayload(socket, payload);
+  if (!auth) {
+    return;
+  }
+
   const roomCode = normalizeLiveRoomCode(socket.liveRoomCode || payload && payload.roomCode);
   const liveId = String(socket.liveId || '');
   const role = String(socket.liveRole || '');
@@ -4727,10 +4991,13 @@ function handleLiveChat(socket, payload) {
   }
 
   let senderName = '';
-  if (role === 'host' && room.hostId === liveId) {
+  if (role === 'host' && room.hostId === liveId && (!room.hostUserId || room.hostUserId === auth.uid)) {
     senderName = room.hostName;
   } else if (role === 'viewer' && room.viewers.has(liveId)) {
-    senderName = room.viewers.get(liveId).name;
+    const viewer = room.viewers.get(liveId);
+    if (!viewer.userId || viewer.userId === auth.uid) {
+      senderName = viewer.name;
+    }
   }
 
   if (!senderName) {
@@ -5112,6 +5379,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/auth/config') {
+    handleAuthConfigRequest(req, res);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/reviews') {
     await handleReviewsRequest(req, res);
     return;
@@ -5350,16 +5622,25 @@ wss.on('connection', (socket) => {
         handleVoiceStyle(socket, payload);
         break;
       case 'live-host':
-        handleLiveHost(socket, payload);
+        handleLiveHost(socket, payload).catch((error) => {
+          console.error('Live host auth failed:', error.message);
+          sendError(socket, 'Unable to start that live room right now.');
+        });
         break;
       case 'live-viewer':
-        handleLiveViewer(socket, payload);
+        handleLiveViewer(socket, payload).catch((error) => {
+          console.error('Live viewer auth failed:', error.message);
+          sendError(socket, 'Unable to join that live room right now.');
+        });
         break;
       case 'live-signal':
         handleLiveSignal(socket, payload);
         break;
       case 'live-chat':
-        handleLiveChat(socket, payload);
+        handleLiveChat(socket, payload).catch((error) => {
+          console.error('Live chat auth failed:', error.message);
+          sendError(socket, 'Unable to send that chat message right now.');
+        });
         break;
       case 'live-leave':
         handleLiveLeave(socket);

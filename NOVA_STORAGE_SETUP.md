@@ -42,6 +42,13 @@ S3-compatible path:
 - `S3_ACCESS_KEY_ID`
 - `S3_SECRET_ACCESS_KEY`
 - `ARCADE_CHAT_FIRESTORE_COLLECTION`
+- `NOVA_AUTH_REQUIRED`
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_WEB_API_KEY`
+- `FIREBASE_AUTH_DOMAIN`
+- `FIREBASE_APP_ID`
+- `FIREBASE_MESSAGING_SENDER_ID`
+- `FIREBASE_STORAGE_BUCKET`
 
 For the current `bnapsen` project the important values are:
 
@@ -51,6 +58,39 @@ For the current `bnapsen` project the important values are:
 - `S3_ENDPOINT=https://storage.googleapis.com`
 - `S3_FORCE_PATH_STYLE=true`
 - `ARCADE_CHAT_FIRESTORE_COLLECTION=arcadeChatRooms`
+- `NOVA_AUTH_REQUIRED=true`
+- `FIREBASE_PROJECT_ID=bnapsen`
+- `FIREBASE_AUTH_DOMAIN=<your Firebase auth domain>`
+- `FIREBASE_WEB_API_KEY=<your Firebase web api key>`
+- `FIREBASE_APP_ID=<your Firebase web app id>`
+- `FIREBASE_MESSAGING_SENDER_ID=<your Firebase sender id>`
+- `FIREBASE_STORAGE_BUCKET=<your Firebase storage bucket, if enabled>`
+
+## Account sign-in
+
+Nova Live and Nova Clips now use Firebase Authentication. The frontend loads
+the Firebase web config from `GET /api/auth/config`, then sends the Firebase ID
+token to the Cloud Run backend. The backend verifies that token with
+`firebase-admin` before allowing:
+
+- Nova Live hosting, joining, and chat
+- Nova Live replay posting
+- Nova Clips uploads
+- clip deletion by the owning signed-in account, with existing delete tokens
+  still accepted as a fallback for older uploads
+
+Firebase Console setup:
+
+1. Enable Authentication for the `bnapsen` Firebase project.
+2. Enable the Google provider.
+3. Enable the Facebook provider and add the Meta app id/secret inside Firebase.
+4. Add authorized domains for `bnapsen.com`, `www.bnapsen.com`, and any preview
+   domain you use while testing.
+5. Copy the Firebase web app config values into the Cloud Run environment
+   variables above.
+
+If the Firebase web config is missing and `NOVA_AUTH_REQUIRED=true`, the UI
+will show that accounts still need setup and protected actions will fail closed.
 
 ## Deploy
 
