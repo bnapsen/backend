@@ -48,9 +48,6 @@ const {
   previewBitcoin15mOrder,
   scanBitcoin15m,
 } = require('./kalshi-bitcoin-lab.js');
-const {
-  scanSportsbookCrossCheck,
-} = require('./kalshi-sportsbook-scanner.js');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8081);
@@ -921,32 +918,6 @@ async function handleKalshiBitcoinPlaceOrderRequest(req, res, requestUrl) {
     }));
   } catch (error) {
     const payload = { ok: false, error: 'Kalshi rejected the order or the trading request failed.' };
-    if (process.env.DEBUG_ERRORS === 'true') {
-      payload.detail = error.stack || error.message;
-    }
-    sendJsonResponse(req, res, 502, payload);
-  }
-}
-
-async function handleKalshiSportsbookScanRequest(req, res, requestUrl) {
-  if (req.method !== 'GET') {
-    sendJsonResponse(req, res, 405, { error: 'Method not allowed.' });
-    return;
-  }
-  if (!hasKalshiWeatherLabAccess(req, requestUrl)) {
-    sendJsonResponse(req, res, 403, { error: 'A valid Kalshi Lab token is required.' });
-    return;
-  }
-
-  try {
-    sendJsonResponse(req, res, 200, await scanSportsbookCrossCheck({
-      sports: requestUrl.searchParams.get('sports'),
-      bookmakers: requestUrl.searchParams.get('bookmakers'),
-      kalshiLimit: readFloatParam(requestUrl, 'kalshiLimit', 320),
-      minEdge: readFloatParam(requestUrl, 'minEdge', 0.015),
-    }));
-  } catch (error) {
-    const payload = { error: 'Unable to scan Kalshi sports and sportsbook prices right now.' };
     if (process.env.DEBUG_ERRORS === 'true') {
       payload.detail = error.stack || error.message;
     }
@@ -5537,11 +5508,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (requestUrl.pathname === '/api/kalshi/sportsbook/scan') {
-    await handleKalshiSportsbookScanRequest(req, res, requestUrl);
-    return;
-  }
-
   if (requestUrl.pathname === '/api/clips/upload-session') {
     await handleClipUploadSessionRequest(req, res);
     return;
@@ -5661,7 +5627,6 @@ const server = http.createServer(async (req, res) => {
     liveRoomsApi: '/api/live/rooms',
     kalshiWeatherApi: '/api/kalshi/weather/scan',
     kalshiBitcoinApi: '/api/kalshi/bitcoin/scan',
-    kalshiSportsbookScannerApi: '/api/kalshi/sportsbook/scan',
   });
 });
 
