@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kalshi Bitcoin 15m Lab</title>
-  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501i">
+  <link rel="stylesheet" href="/kalshi-bitcoin-lab.css?v=20260501j">
 </head>
 <body>
   <header class="lab-topbar">
@@ -144,6 +144,22 @@
           <button id="paper-dock" class="ghost-button" type="button">Dock</button>
         </div>
       </div>
+      <div class="paper-desks">
+        <div>
+          <span class="desk-label">Paper desks</span>
+          <div id="paper-account-tabs" class="paper-account-tabs" aria-label="Paper trader desks"></div>
+        </div>
+        <div class="paper-account-actions">
+          <label>
+            Active desk
+            <input id="paper-account-name" type="text" maxlength="32" value="Desk 1">
+          </label>
+          <button id="paper-add-account" class="ghost-button" type="button">New Desk</button>
+          <button id="paper-clone-account" class="ghost-button" type="button">Clone Setup</button>
+          <button id="paper-delete-account" class="danger-button" type="button">Delete Desk</button>
+        </div>
+      </div>
+      <div id="paper-account-comparison" class="paper-account-comparison"></div>
       <div id="paper-headline" class="paper-headline"></div>
       <div class="paper-bots" aria-label="Paper trader automations">
         <label class="paper-bot-card">
@@ -362,6 +378,6 @@
     </section>
   </main>
 
-  <script src="/kalshi-bitcoin-lab.js?v=20260501i"></script>
+  <script src="/kalshi-bitcoin-lab.js?v=20260501j"></script>
 </body>
 </html>

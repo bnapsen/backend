@@ -6,6 +6,8 @@
   const FALLBACK_REFRESH_MS = 500;
   const PAPER_STORAGE_KEY = "kalshiBtcPaperLedger";
   const PAPER_AUTO_STORAGE_KEY = "kalshiBtcPaperBots";
+  const PAPER_ACCOUNTS_STORAGE_KEY = "kalshiBtcPaperAccounts";
+  const PAPER_DEFAULT_ACCOUNT_ID = "paper-desk-main";
   const PAPER_AUTO_CONTRACTS = 10;
   const PAPER_AUTO_COOLDOWN_MS = 15000;
   const PAPER_SCALP_TARGET_CENTS = 10;
@@ -44,6 +46,9 @@
       running: false,
       log: [],
     },
+    paperAccounts: [],
+    activePaperAccountId: PAPER_DEFAULT_ACCOUNT_ID,
+    paperUiMuted: false,
     paper: {
       currency: "SIM",
       startingBankroll: 1000,
@@ -120,6 +125,12 @@
   const strategyExitBufferInput = document.querySelector("#strategy-exit-buffer");
   const paperPanelEl = document.querySelector("#paper-panel");
   const paperStatusEl = document.querySelector("#paper-status");
+  const paperAccountTabsEl = document.querySelector("#paper-account-tabs");
+  const paperAccountNameInput = document.querySelector("#paper-account-name");
+  const paperAddAccountButton = document.querySelector("#paper-add-account");
+  const paperCloneAccountButton = document.querySelector("#paper-clone-account");
+  const paperDeleteAccountButton = document.querySelector("#paper-delete-account");
+  const paperAccountComparisonEl = document.querySelector("#paper-account-comparison");
   const paperCurrencyInput = document.querySelector("#paper-currency");
   const paperStartingBankrollInput = document.querySelector("#paper-starting-bankroll");
   const paperOrderActionInput = document.querySelector("#paper-order-action");
@@ -192,6 +203,16 @@
   paperDockButton.addEventListener("click", dockPaperPanel);
   paperSyncBankrollButton.addEventListener("click", syncPaperBankrollToKelly);
   paperResetButton.addEventListener("click", resetPaperLedger);
+  paperAccountTabsEl.addEventListener("click", function (event) {
+    const button = event.target.closest("[data-paper-account-id]");
+    if (!button) return;
+    switchPaperAccount(button.getAttribute("data-paper-account-id"));
+  });
+  paperAccountNameInput.addEventListener("input", updateActivePaperAccountName);
+  paperAccountNameInput.addEventListener("change", updateActivePaperAccountName);
+  paperAddAccountButton.addEventListener("click", addPaperAccount);
+  paperCloneAccountButton.addEventListener("click", clonePaperAccountSetup);
+  paperDeleteAccountButton.addEventListener("click", deleteActivePaperAccount);
   [paperAutoCompletionInput, paperAutoScalpInput, paperAutoResearchInput].forEach(function (input) {
     input.addEventListener("change", savePaperAutoSettings);
   });
@@ -371,8 +392,7 @@
     renderCandidates(scan);
     renderExecutionPlan(scan);
     renderPaperTicket();
-    markPaperLedger(scan);
-    evaluatePaperAutomation(scan);
+    evaluateAllPaperAccounts(scan);
     renderPaperBankroll();
     renderChart(scan);
     renderReasons(scan);
@@ -960,30 +980,319 @@
   }
 
   function restorePaperLedger() {
-    let saved = {};
+    let savedBook = {};
     try {
-      saved = JSON.parse(localStorage.getItem(PAPER_STORAGE_KEY) || "{}") || {};
+      savedBook = JSON.parse(localStorage.getItem(PAPER_ACCOUNTS_STORAGE_KEY) || "{}") || {};
     } catch {
-      saved = {};
+      savedBook = {};
     }
-    const startingBankroll = Math.max(1, Number(saved.startingBankroll || 1000));
-    state.paper = {
-      currency: cleanPaperCurrency(saved.currency || "SIM"),
-      startingBankroll,
-      cash: Number.isFinite(Number(saved.cash)) ? Number(saved.cash) : startingBankroll,
-      orders: Array.isArray(saved.orders) ? saved.orders.filter(function (item) { return item && item.status === "open"; }) : [],
-      positions: Array.isArray(saved.positions) ? saved.positions.filter(function (item) { return item && item.status === "open"; }) : [],
-      history: Array.isArray(saved.history) ? saved.history.slice(0, 100) : [],
-      layout: normalizePaperLayout(saved.layout),
-    };
-    paperCurrencyInput.value = state.paper.currency;
-    paperStartingBankrollInput.value = String(state.paper.startingBankroll);
+    let accounts = Array.isArray(savedBook.accounts) ? savedBook.accounts.map(normalizePaperAccount).filter(Boolean) : [];
+    if (!accounts.length) {
+      accounts = [migrateLegacyPaperAccount()];
+    }
+    state.paperAccounts = accounts;
+    state.activePaperAccountId = accounts.some(function (account) { return account.id === savedBook.activeId; })
+      ? savedBook.activeId
+      : accounts[0].id;
+    bindActivePaperAccount();
+    syncPaperInputsFromActive();
     applyPaperLayout();
+    renderPaperAccounts();
     renderPaperBankroll();
   }
 
   function savePaperLedger() {
+    syncActivePaperAccount();
+    const payload = {
+      activeId: state.activePaperAccountId,
+      accounts: state.paperAccounts.map(function (account) {
+        return {
+          id: account.id,
+          name: account.name,
+          paper: account.paper,
+          auto: account.auto,
+          lastAutomationMessage: account.lastAutomationMessage || "",
+          lastAutomationTone: account.lastAutomationTone || "",
+        };
+      }),
+    };
+    localStorage.setItem(PAPER_ACCOUNTS_STORAGE_KEY, JSON.stringify(payload));
     localStorage.setItem(PAPER_STORAGE_KEY, JSON.stringify(state.paper));
+    localStorage.setItem(PAPER_AUTO_STORAGE_KEY, JSON.stringify(state.paperAuto));
+  }
+
+  function migrateLegacyPaperAccount() {
+    let savedPaper = {};
+    let savedAuto = {};
+    try {
+      savedPaper = JSON.parse(localStorage.getItem(PAPER_STORAGE_KEY) || "{}") || {};
+    } catch {
+      savedPaper = {};
+    }
+    try {
+      savedAuto = JSON.parse(localStorage.getItem(PAPER_AUTO_STORAGE_KEY) || "{}") || {};
+    } catch {
+      savedAuto = {};
+    }
+    return normalizePaperAccount({
+      id: PAPER_DEFAULT_ACCOUNT_ID,
+      name: "Desk 1",
+      paper: savedPaper,
+      auto: savedAuto,
+    });
+  }
+
+  function normalizePaperAccount(saved, index) {
+    const source = saved || {};
+    const id = cleanPaperAccountId(source.id) || (index === 0 ? PAPER_DEFAULT_ACCOUNT_ID : newPaperAccountId());
+    return {
+      id,
+      name: cleanPaperAccountName(source.name || ("Desk " + ((index || 0) + 1))),
+      paper: normalizePaperLedger(source.paper || {}),
+      auto: normalizePaperAuto(source.auto || {}),
+      lastAutomationMessage: String(source.lastAutomationMessage || ""),
+      lastAutomationTone: String(source.lastAutomationTone || ""),
+    };
+  }
+
+  function normalizePaperLedger(saved) {
+    const source = saved || {};
+    const startingBankroll = Math.max(1, Number(source.startingBankroll || 1000));
+    return {
+      currency: cleanPaperCurrency(source.currency || "SIM"),
+      startingBankroll,
+      cash: Number.isFinite(Number(source.cash)) ? Number(source.cash) : startingBankroll,
+      orders: Array.isArray(source.orders) ? source.orders.filter(function (item) { return item && item.status === "open"; }) : [],
+      positions: Array.isArray(source.positions) ? source.positions.filter(function (item) { return item && item.status === "open"; }) : [],
+      history: Array.isArray(source.history) ? source.history.slice(0, 100) : [],
+      layout: normalizePaperLayout(source.layout),
+    };
+  }
+
+  function normalizePaperAuto(saved) {
+    const source = saved || {};
+    return {
+      completion: source.completion === true,
+      scalp: source.scalp === true,
+      research: source.research === true,
+      fills: source.fills && typeof source.fills === "object" && !Array.isArray(source.fills) ? source.fills : {},
+      lastAttemptAt: source.lastAttemptAt && typeof source.lastAttemptAt === "object" && !Array.isArray(source.lastAttemptAt) ? source.lastAttemptAt : {},
+    };
+  }
+
+  function syncActivePaperAccount() {
+    const account = activePaperAccount();
+    if (!account) return;
+    account.paper = state.paper;
+    account.auto = state.paperAuto;
+  }
+
+  function bindActivePaperAccount() {
+    const account = activePaperAccount() || state.paperAccounts[0];
+    if (!account) return;
+    state.activePaperAccountId = account.id;
+    state.paper = account.paper;
+    state.paperAuto = account.auto;
+  }
+
+  function activePaperAccount() {
+    return state.paperAccounts.find(function (account) { return account.id === state.activePaperAccountId; });
+  }
+
+  function syncPaperInputsFromActive() {
+    const account = activePaperAccount();
+    if (!account) return;
+    paperAccountNameInput.value = account.name;
+    paperCurrencyInput.value = state.paper.currency;
+    paperStartingBankrollInput.value = String(state.paper.startingBankroll);
+    paperAutoCompletionInput.checked = state.paperAuto.completion;
+    paperAutoScalpInput.checked = state.paperAuto.scalp;
+    paperAutoResearchInput.checked = state.paperAuto.research;
+    updatePaperAutoStatus(account.lastAutomationMessage || "", account.lastAutomationTone || "");
+  }
+
+  function newPaperAccountId() {
+    return "paper-desk-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
+  }
+
+  function cleanPaperAccountId(value) {
+    return String(value || "").replace(/[^a-z0-9_-]/gi, "").slice(0, 60);
+  }
+
+  function cleanPaperAccountName(value) {
+    return String(value || "Desk").replace(/\s+/g, " ").trim().slice(0, 32) || "Desk";
+  }
+
+  function switchPaperAccount(id) {
+    const account = state.paperAccounts.find(function (item) { return item.id === id; });
+    if (!account || account.id === state.activePaperAccountId) return;
+    syncActivePaperAccount();
+    state.activePaperAccountId = account.id;
+    bindActivePaperAccount();
+    syncPaperInputsFromActive();
+    applyPaperLayout();
+    savePaperLedger();
+    renderPaperAccounts();
+    renderPaperBankroll();
+    setPaperStatus("Switched to " + account.name + ".", false, "pos");
+  }
+
+  function addPaperAccount() {
+    syncActivePaperAccount();
+    const active = activePaperAccount();
+    const activePaper = active ? active.paper : state.paper;
+    const nextNumber = state.paperAccounts.length + 1;
+    const account = normalizePaperAccount({
+      id: newPaperAccountId(),
+      name: "Desk " + nextNumber,
+      paper: {
+        currency: activePaper.currency || "SIM",
+        startingBankroll: activePaper.startingBankroll || 1000,
+        cash: activePaper.startingBankroll || 1000,
+        layout: activePaper.layout,
+      },
+      auto: {},
+    }, nextNumber - 1);
+    state.paperAccounts.push(account);
+    state.activePaperAccountId = account.id;
+    bindActivePaperAccount();
+    syncPaperInputsFromActive();
+    savePaperLedger();
+    renderPaperAccounts();
+    renderPaperBankroll();
+    setPaperStatus("Created " + account.name + ".", false, "pos");
+  }
+
+  function clonePaperAccountSetup() {
+    syncActivePaperAccount();
+    const active = activePaperAccount();
+    if (!active) return;
+    const nextNumber = state.paperAccounts.length + 1;
+    const account = normalizePaperAccount({
+      id: newPaperAccountId(),
+      name: active.name + " copy",
+      paper: {
+        currency: active.paper.currency,
+        startingBankroll: active.paper.startingBankroll,
+        cash: active.paper.startingBankroll,
+        layout: active.paper.layout,
+      },
+      auto: {
+        completion: active.auto.completion,
+        scalp: active.auto.scalp,
+        research: active.auto.research,
+      },
+    }, nextNumber - 1);
+    state.paperAccounts.push(account);
+    state.activePaperAccountId = account.id;
+    bindActivePaperAccount();
+    syncPaperInputsFromActive();
+    savePaperLedger();
+    renderPaperAccounts();
+    renderPaperBankroll();
+    setPaperStatus("Cloned setup into " + account.name + ".", false, "pos");
+  }
+
+  function deleteActivePaperAccount() {
+    if (state.paperAccounts.length <= 1) {
+      setPaperStatus("Keep at least one paper desk.", true);
+      return;
+    }
+    const account = activePaperAccount();
+    if (!account || !window.confirm("Delete " + account.name + " and its paper history?")) return;
+    state.paperAccounts = state.paperAccounts.filter(function (item) { return item.id !== account.id; });
+    state.activePaperAccountId = state.paperAccounts[0].id;
+    bindActivePaperAccount();
+    syncPaperInputsFromActive();
+    applyPaperLayout();
+    savePaperLedger();
+    renderPaperAccounts();
+    renderPaperBankroll();
+    setPaperStatus("Deleted " + account.name + ".", false);
+  }
+
+  function updateActivePaperAccountName() {
+    const account = activePaperAccount();
+    if (!account) return;
+    account.name = cleanPaperAccountName(paperAccountNameInput.value || account.name);
+    paperAccountNameInput.value = account.name;
+    savePaperLedger();
+    renderPaperAccounts();
+  }
+
+  function renderPaperAccounts() {
+    if (!paperAccountTabsEl || !paperAccountComparisonEl) return;
+    if (state.paperUiMuted) return;
+    syncActivePaperAccount();
+    paperDeleteAccountButton.disabled = state.paperAccounts.length <= 1;
+    paperAccountTabsEl.innerHTML = state.paperAccounts.map(function (account) {
+      const metrics = paperAccountMetrics(account);
+      return [
+        '<button class="paper-account-tab ' + (account.id === state.activePaperAccountId ? "active" : "") + '" type="button" data-paper-account-id="' + escapeHtml(account.id) + '">',
+        "<strong>" + escapeHtml(account.name) + "</strong>",
+        "<span>" + escapeHtml(paperMoneyFor(account.paper, metrics.equity) + " / " + signedPaperMoneyFor(account.paper, metrics.pnl)) + "</span>",
+        "</button>",
+      ].join("");
+    }).join("");
+    paperAccountComparisonEl.innerHTML = [
+      "<h3>Desk comparison</h3>",
+      '<div class="paper-desk-grid">',
+      state.paperAccounts.map(renderPaperDeskCard).join(""),
+      "</div>",
+    ].join("");
+  }
+
+  function renderPaperDeskCard(account) {
+    const metrics = paperAccountMetrics(account);
+    const pnlClass = metrics.pnl >= 0 ? "pos" : "neg";
+    return [
+      '<div class="paper-desk-card ' + (account.id === state.activePaperAccountId ? "active" : "") + '">',
+      "<strong>" + escapeHtml(account.name) + "</strong>",
+      '<span>Equity <b>' + escapeHtml(paperMoneyFor(account.paper, metrics.equity)) + '</b> / <b class="' + pnlClass + '">' + escapeHtml(signedPaperMoneyFor(account.paper, metrics.pnl)) + "</b></span>",
+      "<span>Cash " + escapeHtml(paperMoneyFor(account.paper, account.paper.cash)) + " / open risk " + escapeHtml(paperMoneyFor(account.paper, metrics.openRisk)) + "</span>",
+      "<span>" + escapeHtml(metrics.contracts + " contracts / " + metrics.positions + " positions / bots " + paperBotSummary(account.auto)) + "</span>",
+      account.lastAutomationMessage ? "<span>" + escapeHtml(account.lastAutomationMessage.slice(0, 135)) + "</span>" : "",
+      "</div>",
+    ].join("");
+  }
+
+  function paperAccountMetrics(account) {
+    const paper = account && account.paper || normalizePaperLedger({});
+    const openValue = paperLedgerOpenValue(paper);
+    const equity = Number(paper.cash || 0) + openValue;
+    const starting = Number(paper.startingBankroll || 0);
+    const openRisk = paper.positions.reduce(function (sum, position) {
+      return sum + Number(position.entryCost || 0);
+    }, 0);
+    return {
+      equity,
+      pnl: equity - starting,
+      openValue,
+      openRisk,
+      contracts: paper.positions.reduce(function (sum, position) { return sum + Number(position.contracts || 0); }, 0),
+      positions: paper.positions.length,
+    };
+  }
+
+  function paperLedgerOpenValue(paper) {
+    return (paper.positions || []).reduce(function (sum, position) {
+      return sum + paperPositionMarkFor(position);
+    }, 0);
+  }
+
+  function paperPositionMarkFor(position) {
+    const bidCents = Number(position.lastBidCents);
+    if (!Number.isFinite(bidCents) || bidCents <= 0) return 0;
+    const price = bidCents / 100;
+    return Math.max(0, Number(position.contracts || 0) * price - kalshiFeeDollars(position.contracts, price));
+  }
+
+  function paperBotSummary(auto) {
+    const active = [];
+    if (auto && auto.completion) active.push("completion");
+    if (auto && auto.scalp) active.push("scalp");
+    if (auto && auto.research) active.push("research");
+    return active.length ? active.join(", ") : "off";
   }
 
   function updatePaperSettings() {
@@ -1376,11 +1685,13 @@
   }
 
   function resetPaperLedger() {
-    if (!window.confirm("Reset the paper bankroll, open paper positions, pending limits, and local paper history?")) {
+    const account = activePaperAccount();
+    const name = account ? account.name : "active desk";
+    if (!window.confirm("Reset " + name + "'s paper bankroll, open paper positions, pending limits, and local paper history?")) {
       return;
     }
     const startingBankroll = Math.max(1, Number(paperStartingBankrollInput.value || 1000));
-    state.paper = {
+    state.paper = normalizePaperLedger({
       currency: cleanPaperCurrency(paperCurrencyInput.value || "SIM"),
       startingBankroll,
       cash: startingBankroll,
@@ -1388,32 +1699,20 @@
       positions: [],
       history: [],
       layout: normalizePaperLayout(state.paper.layout),
-    };
+    });
     state.paperAuto.fills = {};
     state.paperAuto.lastAttemptAt = {};
     savePaperLedger();
     persistPaperAutoSettings();
+    syncPaperInputsFromActive();
+    renderPaperAccounts();
     renderPaperBankroll();
-    setPaperStatus("Paper bankroll reset.", false);
+    setPaperStatus(name + " reset.", false);
     updatePaperAutoStatus();
   }
 
   function restorePaperAutoSettings() {
-    let saved = {};
-    try {
-      saved = JSON.parse(localStorage.getItem(PAPER_AUTO_STORAGE_KEY) || "{}") || {};
-    } catch {
-      saved = {};
-    }
-    state.paperAuto.completion = saved.completion === true;
-    state.paperAuto.scalp = saved.scalp === true;
-    state.paperAuto.research = saved.research === true;
-    state.paperAuto.fills = saved.fills && typeof saved.fills === "object" && !Array.isArray(saved.fills) ? saved.fills : {};
-    state.paperAuto.lastAttemptAt = saved.lastAttemptAt && typeof saved.lastAttemptAt === "object" && !Array.isArray(saved.lastAttemptAt) ? saved.lastAttemptAt : {};
-    paperAutoCompletionInput.checked = state.paperAuto.completion;
-    paperAutoScalpInput.checked = state.paperAuto.scalp;
-    paperAutoResearchInput.checked = state.paperAuto.research;
-    updatePaperAutoStatus();
+    syncPaperInputsFromActive();
   }
 
   function savePaperAutoSettings() {
@@ -1421,23 +1720,68 @@
     state.paperAuto.scalp = paperAutoScalpInput.checked;
     state.paperAuto.research = paperAutoResearchInput.checked;
     persistPaperAutoSettings();
+    renderPaperAccounts();
     updatePaperAutoStatus();
   }
 
   function persistPaperAutoSettings() {
-    localStorage.setItem(PAPER_AUTO_STORAGE_KEY, JSON.stringify({
-      completion: state.paperAuto.completion,
-      scalp: state.paperAuto.scalp,
-      research: state.paperAuto.research,
-      fills: state.paperAuto.fills,
-      lastAttemptAt: state.paperAuto.lastAttemptAt,
-    }));
+    savePaperLedger();
+  }
+
+  function evaluateAllPaperAccounts(scan) {
+    if (!state.paperAccounts.length) {
+      markPaperLedger(scan);
+      evaluatePaperAutomation(scan);
+      return;
+    }
+    const activeId = state.activePaperAccountId;
+    syncActivePaperAccount();
+    state.paperAccounts.forEach(function (account) {
+      withPaperAccount(account, { muted: true }, function () {
+        markPaperLedger(scan);
+        const result = evaluatePaperAutomation(scan);
+        if (result) {
+          account.lastAutomationMessage = result.message || "";
+          account.lastAutomationTone = result.tone || "";
+        }
+      });
+    });
+    state.activePaperAccountId = activeId;
+    bindActivePaperAccount();
+    const active = activePaperAccount();
+    if (active && active.lastAutomationMessage) {
+      updatePaperAutoStatus(active.lastAutomationMessage, active.lastAutomationTone || "");
+    } else {
+      updatePaperAutoStatus();
+    }
+    savePaperLedger();
+  }
+
+  function withPaperAccount(account, options, callback) {
+    const previousPaper = state.paper;
+    const previousAuto = state.paperAuto;
+    const previousId = state.activePaperAccountId;
+    const previousMuted = state.paperUiMuted;
+    state.paper = account.paper;
+    state.paperAuto = account.auto;
+    state.activePaperAccountId = account.id;
+    state.paperUiMuted = Boolean(options && options.muted);
+    try {
+      return callback();
+    } finally {
+      account.paper = state.paper;
+      account.auto = state.paperAuto;
+      state.paper = previousPaper;
+      state.paperAuto = previousAuto;
+      state.activePaperAccountId = previousId;
+      state.paperUiMuted = previousMuted;
+    }
   }
 
   function evaluatePaperAutomation(scan) {
     if (!state.paperAuto.completion && !state.paperAuto.scalp && !state.paperAuto.research) {
       updatePaperAutoStatus();
-      return;
+      return { message: "", tone: "" };
     }
     const results = [];
     let researchExitFilled = false;
@@ -1457,7 +1801,10 @@
     const visible = results.filter(function (item) { return item && item.message; });
     const filled = visible.some(function (item) { return item.filled; });
     const errored = visible.some(function (item) { return item.error; });
-    updatePaperAutoStatus(visible.map(function (item) { return item.message; }).join(" "), filled ? "pos" : (errored ? "neg" : ""));
+    const message = visible.map(function (item) { return item.message; }).join(" ");
+    const tone = filled ? "pos" : (errored ? "neg" : "");
+    updatePaperAutoStatus(message, tone);
+    return { message, tone };
   }
 
   function evaluateModelPaperBots(scan) {
@@ -1912,6 +2259,7 @@
 
   function updatePaperAutoStatus(message, tone) {
     if (!paperAutoStatusEl) return;
+    if (state.paperUiMuted) return;
     const active = [];
     if (state.paperAuto.completion) active.push("completion");
     if (state.paperAuto.scalp) active.push("scalp");
@@ -2042,6 +2390,7 @@
 
   function renderPaperBankroll() {
     if (!paperHeadlineEl || !paperSummaryEl || !paperPositionsEl || !paperOrdersEl || !paperHistoryEl) return;
+    if (state.paperUiMuted) return;
     const openValue = paperOpenValue();
     const reserved = paperReservedCash();
     const buyOrderCount = state.paper.orders.filter(function (order) { return order.action === "buy"; }).length;
@@ -2079,6 +2428,7 @@
     renderPaperTicket();
     renderPaperOrders();
     renderPaperHistory();
+    renderPaperAccounts();
   }
 
   function renderPaperPositionRow(position) {
@@ -2306,6 +2656,7 @@
   }
 
   function setPaperStatus(message, error, tone) {
+    if (state.paperUiMuted) return;
     paperStatusEl.textContent = message;
     paperStatusEl.className = error ? "neg" : (tone || "");
   }
@@ -2325,10 +2676,22 @@
     return number.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + state.paper.currency;
   }
 
+  function paperMoneyFor(paper, value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "n/a";
+    return number.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + cleanPaperCurrency(paper && paper.currency || "SIM");
+  }
+
   function signedPaperMoney(value) {
     const number = Number(value || 0);
     const sign = number > 0 ? "+" : number < 0 ? "-" : "";
     return sign + paperMoney(Math.abs(number));
+  }
+
+  function signedPaperMoneyFor(paper, value) {
+    const number = Number(value || 0);
+    const sign = number > 0 ? "+" : number < 0 ? "-" : "";
+    return sign + paperMoneyFor(paper, Math.abs(number));
   }
 
   function normalizePaperLayout(layout) {

@@ -464,6 +464,117 @@ button:disabled {
   color: var(--red);
 }
 
+.paper-desks {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(360px, 0.95fr);
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border-bottom: 1px solid rgba(237, 244, 241, 0.08);
+  background: #071017;
+}
+
+.desk-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.paper-account-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.paper-account-tab {
+  display: grid;
+  gap: 2px;
+  min-width: 150px;
+  padding: 10px 12px;
+  border: 1px solid rgba(237, 244, 241, 0.14);
+  border-radius: 8px;
+  background: #0d141b;
+  color: var(--text);
+  text-align: left;
+}
+
+.paper-account-tab strong,
+.paper-account-tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paper-account-tab span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.paper-account-tab.active {
+  border-color: rgba(41, 245, 178, 0.48);
+  background: linear-gradient(135deg, rgba(41, 245, 178, 0.13), rgba(96, 165, 250, 0.08));
+}
+
+.paper-account-actions {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) repeat(3, max-content);
+  gap: 10px;
+  align-items: end;
+}
+
+.paper-account-actions input {
+  width: 100%;
+}
+
+.paper-account-comparison {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(237, 244, 241, 0.08);
+  background: #050b10;
+}
+
+.paper-account-comparison h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.paper-desk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.paper-desk-card {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid rgba(237, 244, 241, 0.1);
+  border-radius: 8px;
+  background: #0d141b;
+}
+
+.paper-desk-card.active {
+  border-color: rgba(41, 245, 178, 0.34);
+}
+
+.paper-desk-card strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.paper-desk-card span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .paper-headline {
   display: grid;
   grid-template-columns: minmax(180px, 1.35fr) repeat(4, minmax(118px, 1fr));
@@ -862,6 +973,12 @@ button:disabled {
 }
 
 .paper-panel.paper-floating .paper-bots {
+  grid-template-columns: 1fr;
+}
+
+.paper-panel.paper-floating .paper-desks,
+.paper-panel.paper-floating .paper-account-actions,
+.paper-panel.paper-floating .paper-desk-grid {
   grid-template-columns: 1fr;
 }
 
@@ -1325,6 +1442,8 @@ th {
   .clock-panel,
   .strategy-controls,
   .strategy-grid,
+  .paper-desks,
+  .paper-account-actions,
   .paper-settings-row,
   .paper-headline,
   .paper-bots,
