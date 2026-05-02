@@ -46,9 +46,9 @@ S3-compatible path:
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_WEB_API_KEY`
 - `FIREBASE_AUTH_DOMAIN`
-- `FIREBASE_APP_ID`
-- `FIREBASE_MESSAGING_SENDER_ID`
-- `FIREBASE_STORAGE_BUCKET`
+- `FIREBASE_APP_ID` (optional when using Identity Platform Auth without a Firebase Web App)
+- `FIREBASE_MESSAGING_SENDER_ID` (optional)
+- `FIREBASE_STORAGE_BUCKET` (optional)
 
 For the current `bnapsen` project the important values are:
 
@@ -60,10 +60,10 @@ For the current `bnapsen` project the important values are:
 - `ARCADE_CHAT_FIRESTORE_COLLECTION=arcadeChatRooms`
 - `NOVA_AUTH_REQUIRED=true`
 - `FIREBASE_PROJECT_ID=bnapsen`
-- `FIREBASE_AUTH_DOMAIN=<your Firebase auth domain>`
-- `FIREBASE_WEB_API_KEY=<your Firebase web api key>`
-- `FIREBASE_APP_ID=<your Firebase web app id>`
-- `FIREBASE_MESSAGING_SENDER_ID=<your Firebase sender id>`
+- `FIREBASE_AUTH_DOMAIN=bnapsen.firebaseapp.com`
+- `FIREBASE_WEB_API_KEY=<your Firebase or Identity Platform web api key>`
+- `FIREBASE_APP_ID=<your Firebase web app id, if you create one>`
+- `FIREBASE_MESSAGING_SENDER_ID=<your Firebase sender id, if available>`
 - `FIREBASE_STORAGE_BUCKET=<your Firebase storage bucket, if enabled>`
 
 ## Account sign-in
@@ -82,7 +82,7 @@ token to the Cloud Run backend. The backend verifies that token with
 Firebase Console setup:
 
 1. Enable Authentication for the `bnapsen` Firebase project.
-2. Enable the Google provider.
+2. Enable the Google provider and the Email/Password provider.
 3. Add authorized domains for `bnapsen.com`, `www.bnapsen.com`, and any preview
    domain you use while testing.
 4. Copy the Firebase web app config values into the Cloud Run environment
@@ -90,6 +90,8 @@ Firebase Console setup:
 
 If the Firebase web config is missing and `NOVA_AUTH_REQUIRED=true`, the UI
 will show that accounts still need setup and protected actions will fail closed.
+The homepage account box supports both Google sign-in and plain email/password
+account creation once those providers are enabled in Firebase Authentication.
 
 ## Deploy
 

@@ -24,7 +24,8 @@
 }
 
 .nova-auth-button,
-.nova-auth-link {
+.nova-auth-link,
+.nova-auth-input {
   border: 1px solid rgba(209, 255, 241, 0.2);
   background: rgba(255, 255, 255, 0.06);
   color: #f4fbf8;
@@ -33,6 +34,16 @@
   padding: 8px 12px;
   font: inherit;
   font-weight: 700;
+}
+
+.nova-auth-input {
+  min-width: 0;
+  width: min(100%, 220px);
+  font-weight: 600;
+}
+
+.nova-auth-input::placeholder {
+  color: rgba(244, 251, 248, 0.48);
 }
 
 .nova-auth-button--primary {
@@ -44,9 +55,36 @@
 .nova-auth-button:hover,
 .nova-auth-button:focus-visible,
 .nova-auth-link:hover,
-.nova-auth-link:focus-visible {
+.nova-auth-link:focus-visible,
+.nova-auth-input:focus {
   border-color: rgba(41, 242, 166, 0.58);
   outline: none;
+}
+
+.nova-auth-actions,
+.nova-auth-email-actions,
+.nova-auth-email-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.nova-auth-actions {
+  justify-content: flex-end;
+}
+
+.nova-auth-email-form {
+  flex-basis: 100%;
+  justify-content: flex-end;
+}
+
+.nova-auth-link--inline {
+  border-color: transparent;
+  background: transparent;
+  min-height: 34px;
+  padding-inline: 6px;
+  color: rgba(244, 251, 248, 0.74);
 }
 
 .nova-auth-avatar {
@@ -124,10 +162,28 @@
 
 .nova-auth-widget--home {
   justify-content: flex-start;
+  display: grid;
+  justify-items: start;
+  max-width: 100%;
 }
 
 .nova-auth-widget--home .nova-auth-error {
   text-align: left;
+}
+
+.nova-auth-widget--home .nova-auth-actions,
+.nova-auth-widget--home .nova-auth-email-form {
+  justify-content: flex-start;
+}
+
+.nova-auth-widget--home .nova-auth-email-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr);
+  width: 100%;
+}
+
+.nova-auth-widget--home .nova-auth-email-actions {
+  grid-column: 1 / -1;
 }
 
 body.auth-required:not(.auth-signed-in) .nova-auth-gate {
@@ -142,5 +198,19 @@ body.auth-required:not(.auth-signed-in) .nova-auth-gate {
 
   .nova-auth-error {
     text-align: left;
+  }
+
+  .nova-auth-actions,
+  .nova-auth-email-form,
+  .nova-auth-email-actions {
+    justify-content: flex-start;
+  }
+
+  .nova-auth-widget--home .nova-auth-email-form {
+    grid-template-columns: 1fr;
+  }
+
+  .nova-auth-widget--home .nova-auth-email-actions {
+    grid-column: auto;
   }
 }

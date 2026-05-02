@@ -113,7 +113,6 @@ const FIREBASE_WEB_AUTH_ENABLED = Boolean(
   FIREBASE_WEB_CONFIG.apiKey
   && FIREBASE_WEB_CONFIG.authDomain
   && FIREBASE_WEB_CONFIG.projectId
-  && FIREBASE_WEB_CONFIG.appId
 );
 const FIREBASE_ADMIN_AUTH_ENABLED = Boolean(FIREBASE_PROJECT_ID);
 const CLIP_UPLOAD_SIGNING_SECRET = String(
@@ -365,14 +364,14 @@ function publicFirebaseWebConfig() {
     return null;
   }
 
-  return {
+  return Object.fromEntries(Object.entries({
     apiKey: FIREBASE_WEB_CONFIG.apiKey,
     authDomain: FIREBASE_WEB_CONFIG.authDomain,
     projectId: FIREBASE_WEB_CONFIG.projectId,
     appId: FIREBASE_WEB_CONFIG.appId,
     messagingSenderId: FIREBASE_WEB_CONFIG.messagingSenderId,
     storageBucket: FIREBASE_WEB_CONFIG.storageBucket,
-  };
+  }).filter(([, value]) => Boolean(value)));
 }
 
 function handleAuthConfigRequest(req, res) {
@@ -399,6 +398,7 @@ function handleAuthConfigRequest(req, res) {
     adminVerifierEnabled: FIREBASE_ADMIN_AUTH_ENABLED,
     providers: {
       google: true,
+      password: true,
       facebook: false,
     },
     firebaseConfig: publicFirebaseWebConfig(),

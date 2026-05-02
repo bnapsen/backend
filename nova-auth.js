@@ -1,7 +1,7 @@
 'use strict';
 
 (function () {
-  const PROD_API_BASE = 'https://nova-arcade-backend-1000121513328.us-central1.run.app';
+  const PROD_API_BASE = 'https://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app';
   const FIREBASE_VERSION = '10.12.5';
 
   const state = {
@@ -10,6 +10,7 @@
     required: true,
     error: '',
     firebaseConfig: null,
+    providers: { google: true, password: true, facebook: false },
     modules: null,
     app: null,
     auth: null,
@@ -66,7 +67,7 @@
         ok: true,
         enabled: true,
         required: true,
-        providers: { google: true, facebook: false },
+        providers: { google: true, password: true, facebook: false },
         firebaseConfig: window.NOVA_FIREBASE_CONFIG,
       };
     }
@@ -139,9 +140,14 @@
         state.enabled = Boolean(config.enabled && config.firebaseConfig);
         state.required = Boolean(config.required);
         state.firebaseConfig = config.firebaseConfig || null;
+        state.providers = {
+          google: config.providers?.google !== false,
+          password: config.providers?.password !== false,
+          facebook: false,
+        };
 
         if (!state.enabled) {
-          state.error = 'Google sign-in needs Firebase setup before accounts can work.';
+          state.error = 'Firebase web config is missing on the server.';
           state.ready = true;
           emitChange();
           return profile();
@@ -176,16 +182,37 @@
     return state.readyPromise;
   }
 
-  function providerError(error) {
+  function friendlyAuthMessage(error) {
     const message = String(error && error.message || 'Sign-in did not complete.');
-    state.error = message.replace(/^Firebase:\s*/i, '').replace(/\s*\([^)]+\)\.?$/, '.');
+    const code = String(error && error.code || '').toLowerCase();
+    const knownMessages = {
+      'auth/email-already-in-use': 'That email already has an account. Try signing in instead.',
+      'auth/invalid-email': 'Enter a valid email address.',
+      'auth/invalid-credential': 'That email or password did not match.',
+      'auth/missing-password': 'Enter a password.',
+      'auth/operation-not-allowed': 'This sign-in method is not enabled in Firebase yet.',
+      'auth/popup-closed-by-user': 'The sign-in window was closed before it finished.',
+      'auth/too-many-requests': 'Too many attempts. Wait a minute and try again.',
+      'auth/user-not-found': 'No account was found for that email.',
+      'auth/weak-password': 'Use a password with at least 6 characters.',
+      'auth/wrong-password': 'That email or password did not match.',
+    };
+    return knownMessages[code] || message.replace(/^Firebase:\s*/i, '').replace(/\s*\([^)]+\)\.?$/, '.');
+  }
+
+  function providerError(error) {
+    state.error = friendlyAuthMessage(error);
     emitChange();
   }
 
-  async function signIn(providerName) {
+  function setAuthNotConfiguredError() {
+    state.error = 'Firebase account sign-in is not configured on the server yet.';
+    emitChange();
+  }
+
+  async function signIn(providerName = 'google') {
     if (!state.enabled || !state.auth) {
-      state.error = 'Account sign-in is not configured yet.';
-      emitChange();
+      setAuthNotConfiguredError();
       return null;
     }
 
@@ -195,12 +222,98 @@
       provider.setCustomParameters({ prompt: 'select_account' });
       const result = await authModule.signInWithPopup(state.auth, provider);
       state.user = result.user || null;
+      state.error = '';
       await refreshToken(true);
       emitChange();
       return state.user;
     } catch (error) {
       providerError(error);
       return null;
+    }
+  }
+
+  function normalizeEmail(email) {
+    return String(email || '').trim().slice(0, 160);
+  }
+
+  function validateEmailPassword(email, password, options = {}) {
+    const cleanEmail = normalizeEmail(email);
+    const cleanPassword = String(password || '');
+    if (!cleanEmail) {
+      throw Object.assign(new Error('Enter an email address.'), { code: 'auth/invalid-email' });
+    }
+    if (!options.passwordOptional && cleanPassword.length < 6) {
+      throw Object.assign(new Error('Use a password with at least 6 characters.'), { code: 'auth/weak-password' });
+    }
+    return { email: cleanEmail, password: cleanPassword };
+  }
+
+  async function createAccountWithEmail(email, password) {
+    if (!state.enabled || !state.auth) {
+      setAuthNotConfiguredError();
+      return null;
+    }
+
+    try {
+      const { authModule } = await loadFirebaseModules();
+      const credentials = validateEmailPassword(email, password);
+      const result = await authModule.createUserWithEmailAndPassword(
+        state.auth,
+        credentials.email,
+        credentials.password,
+      );
+      state.user = result.user || null;
+      state.error = '';
+      await refreshToken(true);
+      emitChange();
+      return state.user;
+    } catch (error) {
+      providerError(error);
+      return null;
+    }
+  }
+
+  async function signInWithEmail(email, password) {
+    if (!state.enabled || !state.auth) {
+      setAuthNotConfiguredError();
+      return null;
+    }
+
+    try {
+      const { authModule } = await loadFirebaseModules();
+      const credentials = validateEmailPassword(email, password);
+      const result = await authModule.signInWithEmailAndPassword(
+        state.auth,
+        credentials.email,
+        credentials.password,
+      );
+      state.user = result.user || null;
+      state.error = '';
+      await refreshToken(true);
+      emitChange();
+      return state.user;
+    } catch (error) {
+      providerError(error);
+      return null;
+    }
+  }
+
+  async function sendPasswordReset(email) {
+    if (!state.enabled || !state.auth) {
+      setAuthNotConfiguredError();
+      return false;
+    }
+
+    try {
+      const { authModule } = await loadFirebaseModules();
+      const credentials = validateEmailPassword(email, '', { passwordOptional: true });
+      await authModule.sendPasswordResetEmail(state.auth, credentials.email);
+      state.error = 'Password reset email sent.';
+      emitChange();
+      return true;
+    } catch (error) {
+      providerError(error);
+      return false;
     }
   }
 
@@ -244,7 +357,7 @@
 
   function requireSignedIn(actionLabel = 'continue') {
     if (!state.enabled) {
-      state.error = 'Google sign-in is being set up. Firebase config is missing on the server.';
+      state.error = 'Firebase account setup is missing on the server.';
       renderWidgets();
       return false;
     }
@@ -253,9 +366,86 @@
     }
     state.error = `Sign in to ${actionLabel}.`;
     renderWidgets();
-    const firstButton = document.querySelector('[data-auth-google]');
+    const firstButton = document.querySelector('[data-auth-google], [data-auth-email-toggle]');
     firstButton?.focus();
     return false;
+  }
+
+  function makeButton(text, className = 'nova-auth-button') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.textContent = text;
+    return button;
+  }
+
+  function makeEmailForm(root, expandedByDefault) {
+    const form = document.createElement('form');
+    form.className = 'nova-auth-email-form';
+    if (!expandedByDefault) {
+      form.hidden = root.dataset.authEmailOpen !== 'true';
+    }
+
+    const emailInput = document.createElement('input');
+    emailInput.className = 'nova-auth-input';
+    emailInput.type = 'email';
+    emailInput.name = 'email';
+    emailInput.autocomplete = 'email';
+    emailInput.placeholder = 'Email';
+    emailInput.required = true;
+
+    const passwordInput = document.createElement('input');
+    passwordInput.className = 'nova-auth-input';
+    passwordInput.type = 'password';
+    passwordInput.name = 'password';
+    passwordInput.autocomplete = 'current-password';
+    passwordInput.placeholder = 'Password';
+    passwordInput.minLength = 6;
+
+    const buttonRow = document.createElement('div');
+    buttonRow.className = 'nova-auth-email-actions';
+
+    const createButton = makeButton('Create Account', 'nova-auth-button nova-auth-button--primary');
+    createButton.type = 'submit';
+    createButton.dataset.authAction = 'create';
+
+    const signInButton = makeButton('Sign In');
+    signInButton.type = 'submit';
+    signInButton.dataset.authAction = 'sign-in';
+
+    const resetButton = makeButton('Reset Password', 'nova-auth-link nova-auth-link--inline');
+    resetButton.dataset.authAction = 'reset';
+
+    buttonRow.append(createButton, signInButton, resetButton);
+    form.append(emailInput, passwordInput, buttonRow);
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!state.enabled) {
+        setAuthNotConfiguredError();
+        return;
+      }
+      const action = event.submitter?.dataset.authAction || 'sign-in';
+      const email = emailInput.value;
+      const password = passwordInput.value;
+      if (action === 'create') {
+        createAccountWithEmail(email, password).catch(providerError);
+      } else if (action === 'reset') {
+        sendPasswordReset(email).catch(providerError);
+      } else {
+        signInWithEmail(email, password).catch(providerError);
+      }
+    });
+
+    resetButton.addEventListener('click', () => {
+      if (!state.enabled) {
+        setAuthNotConfiguredError();
+        return;
+      }
+      sendPasswordReset(emailInput.value).catch(providerError);
+    });
+
+    return form;
   }
 
   function renderWidget(root) {
@@ -281,16 +471,18 @@
       label.className = 'nova-auth-label';
       label.textContent = root.dataset.authLabel || (state.required ? 'Account required' : 'Account');
 
+      const actions = document.createElement('div');
+      actions.className = 'nova-auth-actions';
+
       const makeGoogleButton = (text, intent = 'sign-in') => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = intent === 'create' ? 'nova-auth-button nova-auth-button--primary' : 'nova-auth-button';
+        const button = makeButton(
+          text,
+          intent === 'create' ? 'nova-auth-button nova-auth-button--primary' : 'nova-auth-button',
+        );
         button.dataset.authGoogle = 'true';
-        button.textContent = text;
         button.addEventListener('click', () => {
           if (!state.enabled) {
-            state.error = 'Google sign-in is not configured on the server yet.';
-            renderWidgets();
+            setAuthNotConfiguredError();
             return;
           }
           signIn('google').catch(providerError);
@@ -298,10 +490,27 @@
         return button;
       };
 
+      if (state.providers.google) {
+        actions.appendChild(makeGoogleButton('Continue with Google', 'create'));
+      }
+
+      const expandedEmail = root.dataset.authMode === 'home';
+      const emailForm = makeEmailForm(root, expandedEmail);
+      if (!expandedEmail && state.providers.password) {
+        const emailToggle = makeButton('Email', 'nova-auth-button');
+        emailToggle.dataset.authEmailToggle = 'true';
+        emailToggle.addEventListener('click', () => {
+          const isOpen = root.dataset.authEmailOpen === 'true';
+          root.dataset.authEmailOpen = isOpen ? 'false' : 'true';
+          renderWidget(root);
+        });
+        actions.appendChild(emailToggle);
+      }
+
       if (root.dataset.authMode === 'home') {
-        root.append(label, makeGoogleButton('Create Account', 'create'), makeGoogleButton('Sign In'));
+        root.append(label, actions, emailForm);
       } else {
-        root.append(label, makeGoogleButton('Sign in with Google', 'create'));
+        root.append(label, actions, emailForm);
       }
     } else {
       const avatar = document.createElement('span');
@@ -366,6 +575,9 @@
     signInWithGoogle() {
       return signIn('google');
     },
+    createAccountWithEmail,
+    signInWithEmail,
+    sendPasswordReset,
     signOut: signOutUser,
   };
 })();
