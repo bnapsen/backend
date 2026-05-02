@@ -276,6 +276,14 @@
     return clean.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
   }
 
+  function authApiBaseUrl() {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.run.app')) {
+      return wsToHttpBase(state.serverUrl || PROD_SERVER_URL);
+    }
+    return PROD_API_BASE;
+  }
+
   function normalizeWagerCents(raw) {
     const number = Number(raw);
     if (!Number.isFinite(number) || number <= 0) {
@@ -2891,7 +2899,7 @@
       render();
     };
     window.NovaAuth.init({
-      apiBaseUrl: wsToHttpBase(state.serverUrl || PROD_SERVER_URL),
+      apiBaseUrl: authApiBaseUrl(),
       onChange: applyProfile,
     }).then(applyProfile).catch((error) => {
       state.authProfile = {

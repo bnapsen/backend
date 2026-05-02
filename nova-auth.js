@@ -2,7 +2,13 @@
 
 (function () {
   const PROD_API_BASE = 'https://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app';
+  const CANONICAL_SITE_HOST = 'bnapsen.com';
   const FIREBASE_VERSION = '10.12.5';
+
+  if (window.location.hostname.toLowerCase() === `www.${CANONICAL_SITE_HOST}`) {
+    window.location.replace(`https://${CANONICAL_SITE_HOST}${window.location.pathname}${window.location.search}${window.location.hash}`);
+    return;
+  }
 
   const state = {
     ready: false,
@@ -186,6 +192,16 @@
     return applySimWallet(payload.wallet);
   }
 
+  async function syncSignedInSession(forceToken = false) {
+    await refreshToken(forceToken);
+    try {
+      await loadSimWallet();
+    } catch (error) {
+      state.error = error.message || 'Unable to load SIM wallet.';
+      resetSimWallet(state.error);
+    }
+  }
+
   async function adjustSimWallet(adjustment = {}) {
     const payload = await simWalletRequest('/api/sim/wallet/adjust', {
       method: 'POST',
@@ -260,13 +276,19 @@
         state.app = appModule.initializeApp(state.firebaseConfig);
         state.auth = authModule.getAuth(state.app);
         state.auth.useDeviceLanguage();
+        if (authModule.setPersistence && authModule.browserLocalPersistence) {
+          try {
+            await authModule.setPersistence(state.auth, authModule.browserLocalPersistence);
+          } catch {
+            // Some restricted browsers block persistent storage. Firebase will fall back as available.
+          }
+        }
 
         authModule.onAuthStateChanged(state.auth, async (user) => {
           state.user = user || null;
           state.error = '';
           try {
-            await refreshToken(true);
-            await loadSimWallet();
+            await syncSignedInSession(true);
           } catch (error) {
             state.cachedToken = '';
             state.error = error.message || 'Unable to refresh sign-in.';
@@ -329,7 +351,7 @@
       const result = await authModule.signInWithPopup(state.auth, provider);
       state.user = result.user || null;
       state.error = '';
-      await refreshToken(true);
+      await syncSignedInSession(true);
       emitChange();
       return state.user;
     } catch (error) {
@@ -370,7 +392,7 @@
       );
       state.user = result.user || null;
       state.error = '';
-      await refreshToken(true);
+      await syncSignedInSession(true);
       emitChange();
       return state.user;
     } catch (error) {
@@ -395,7 +417,7 @@
       );
       state.user = result.user || null;
       state.error = '';
-      await refreshToken(true);
+      await syncSignedInSession(true);
       emitChange();
       return state.user;
     } catch (error) {
