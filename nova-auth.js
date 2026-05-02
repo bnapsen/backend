@@ -7,7 +7,11 @@
   const WALLET_BROADCAST_NAME = 'nova-auth-wallet';
   const WALLET_SYNC_STORAGE_KEY = 'nova-auth:wallet-sync';
   const WALLET_REFRESH_STORAGE_KEY = 'nova-auth:wallet-refresh';
+  const FLOATING_WALLET_STORAGE_KEY = 'nova-auth:floating-wallet';
   const WALLET_AUTO_REFRESH_MS = 30000;
+  const FLOATING_WALLET_MIN_WIDTH = 190;
+  const FLOATING_WALLET_MAX_WIDTH = 420;
+  const FLOATING_WALLET_MARGIN = 12;
   const CLIENT_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   if (window.location.hostname.toLowerCase() === `www.${CANONICAL_SITE_HOST}`) {
@@ -34,7 +38,12 @@
     walletChannel: null,
     walletSyncInstalled: false,
     floatingWallet: null,
+    floatingWalletRestore: null,
+    floatingWalletPrefs: null,
     floatingWalletStylesInjected: false,
+    floatingWalletPointerEventsInstalled: false,
+    floatingWalletDrag: null,
+    floatingWalletResize: null,
     listeners: new Set(),
     readyPromise: null,
     simWallet: {
@@ -64,6 +73,228 @@
       .trim()
       .slice(0, maxLength);
     return text || fallback;
+  }
+
+  function clampNumber(value, min, max) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return min;
+    }
+    return Math.min(max, Math.max(min, number));
+  }
+
+  function normalizeFloatingWalletPrefs(source = {}) {
+    const width = clampNumber(source.width || 244, FLOATING_WALLET_MIN_WIDTH, FLOATING_WALLET_MAX_WIDTH);
+    const left = source.left === null || source.left === undefined ? NaN : Number(source.left);
+    const top = source.top === null || source.top === undefined ? NaN : Number(source.top);
+    return {
+      hidden: Boolean(source.hidden),
+      left: Number.isFinite(left) ? left : null,
+      top: Number.isFinite(top) ? top : null,
+      width,
+    };
+  }
+
+  function loadFloatingWalletPrefs() {
+    if (state.floatingWalletPrefs) {
+      return state.floatingWalletPrefs;
+    }
+    try {
+      state.floatingWalletPrefs = normalizeFloatingWalletPrefs(
+        JSON.parse(window.localStorage.getItem(FLOATING_WALLET_STORAGE_KEY) || '{}'),
+      );
+    } catch {
+      state.floatingWalletPrefs = normalizeFloatingWalletPrefs();
+    }
+    return state.floatingWalletPrefs;
+  }
+
+  function saveFloatingWalletPrefs(nextPrefs) {
+    state.floatingWalletPrefs = normalizeFloatingWalletPrefs(nextPrefs);
+    try {
+      window.localStorage.setItem(FLOATING_WALLET_STORAGE_KEY, JSON.stringify(state.floatingWalletPrefs));
+    } catch {
+      // The wallet still works if a browser blocks local storage; it just will not remember placement.
+    }
+    return state.floatingWalletPrefs;
+  }
+
+  function viewportLimit(value, size, maxSize) {
+    const max = Math.max(FLOATING_WALLET_MARGIN, maxSize - size - FLOATING_WALLET_MARGIN);
+    return clampNumber(value, FLOATING_WALLET_MARGIN, max);
+  }
+
+  function clampFloatingWalletToViewport(root, prefs = loadFloatingWalletPrefs()) {
+    if (!root || prefs.left === null || prefs.top === null) {
+      return prefs;
+    }
+    const rect = root.getBoundingClientRect();
+    const width = clampNumber(prefs.width || rect.width, FLOATING_WALLET_MIN_WIDTH, Math.min(FLOATING_WALLET_MAX_WIDTH, window.innerWidth - FLOATING_WALLET_MARGIN * 2));
+    const height = Math.max(56, rect.height || 96);
+    return {
+      ...prefs,
+      width,
+      left: viewportLimit(prefs.left, width, window.innerWidth),
+      top: viewportLimit(prefs.top, height, window.innerHeight),
+    };
+  }
+
+  function applyFloatingWalletPrefs(root) {
+    if (!root) {
+      return;
+    }
+    let prefs = loadFloatingWalletPrefs();
+    root.style.width = `${Math.min(prefs.width, window.innerWidth - FLOATING_WALLET_MARGIN * 2)}px`;
+    root.style.maxWidth = `calc(100vw - ${FLOATING_WALLET_MARGIN * 2}px)`;
+    if (prefs.left === null || prefs.top === null) {
+      root.style.left = 'auto';
+      root.style.top = 'auto';
+      root.style.right = '18px';
+      root.style.bottom = '18px';
+      return;
+    }
+    prefs = clampFloatingWalletToViewport(root, prefs);
+    state.floatingWalletPrefs = prefs;
+    root.style.left = `${prefs.left}px`;
+    root.style.top = `${prefs.top}px`;
+    root.style.right = 'auto';
+    root.style.bottom = 'auto';
+    root.style.width = `${prefs.width}px`;
+  }
+
+  function setFloatingWalletHidden(hidden) {
+    saveFloatingWalletPrefs({ ...loadFloatingWalletPrefs(), hidden });
+    renderFloatingWallet();
+  }
+
+  function changeFloatingWalletSize(delta) {
+    const root = ensureFloatingWallet();
+    const prefs = loadFloatingWalletPrefs();
+    const currentWidth = Number(root?.getBoundingClientRect().width || prefs.width || 244);
+    const nextPrefs = saveFloatingWalletPrefs({
+      ...prefs,
+      hidden: false,
+      width: currentWidth + delta,
+    });
+    if (root && nextPrefs.left !== null && nextPrefs.top !== null) {
+      saveFloatingWalletPrefs(clampFloatingWalletToViewport(root, nextPrefs));
+    }
+    renderFloatingWallet();
+  }
+
+  function startFloatingWalletDrag(event) {
+    if (event.button !== 0 || !state.floatingWallet) {
+      return;
+    }
+    const root = state.floatingWallet;
+    const rect = root.getBoundingClientRect();
+    state.floatingWalletDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: rect.left,
+      startTop: rect.top,
+      width: rect.width,
+    };
+    root.classList.add('is-moving');
+    try {
+      root.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Pointer capture is best-effort; dragging still works while the pointer stays over the wallet.
+    }
+    event.preventDefault();
+  }
+
+  function startFloatingWalletResize(event) {
+    if (event.button !== 0 || !state.floatingWallet) {
+      return;
+    }
+    const root = state.floatingWallet;
+    const rect = root.getBoundingClientRect();
+    state.floatingWalletResize = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: rect.width,
+      left: rect.left,
+      top: rect.top,
+    };
+    root.classList.add('is-resizing');
+    try {
+      root.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Pointer capture is best-effort; resizing still works while the pointer stays over the wallet.
+    }
+    event.preventDefault();
+  }
+
+  function handleFloatingWalletPointerMove(event) {
+    const root = state.floatingWallet;
+    if (!root) {
+      return;
+    }
+
+    if (state.floatingWalletDrag && state.floatingWalletDrag.pointerId === event.pointerId) {
+      const drag = state.floatingWalletDrag;
+      const nextPrefs = {
+        ...loadFloatingWalletPrefs(),
+        hidden: false,
+        left: drag.startLeft + event.clientX - drag.startX,
+        top: drag.startTop + event.clientY - drag.startY,
+        width: drag.width,
+      };
+      state.floatingWalletPrefs = clampFloatingWalletToViewport(root, nextPrefs);
+      applyFloatingWalletPrefs(root);
+      event.preventDefault();
+      return;
+    }
+
+    if (state.floatingWalletResize && state.floatingWalletResize.pointerId === event.pointerId) {
+      const resize = state.floatingWalletResize;
+      const maxWidth = Math.min(FLOATING_WALLET_MAX_WIDTH, window.innerWidth - FLOATING_WALLET_MARGIN * 2);
+      const nextPrefs = {
+        ...loadFloatingWalletPrefs(),
+        hidden: false,
+        left: resize.left,
+        top: resize.top,
+        width: clampNumber(resize.startWidth + event.clientX - resize.startX, FLOATING_WALLET_MIN_WIDTH, maxWidth),
+      };
+      state.floatingWalletPrefs = clampFloatingWalletToViewport(root, nextPrefs);
+      applyFloatingWalletPrefs(root);
+      event.preventDefault();
+    }
+  }
+
+  function finishFloatingWalletPointer(event) {
+    const root = state.floatingWallet;
+    if (!root) {
+      return;
+    }
+    const wasMoving = Boolean(state.floatingWalletDrag || state.floatingWalletResize);
+    if (state.floatingWalletDrag?.pointerId === event.pointerId) {
+      state.floatingWalletDrag = null;
+    }
+    if (state.floatingWalletResize?.pointerId === event.pointerId) {
+      state.floatingWalletResize = null;
+    }
+    root.classList.remove('is-moving', 'is-resizing');
+    try {
+      root.releasePointerCapture?.(event.pointerId);
+    } catch {
+      // Some browsers throw if the pointer capture already ended.
+    }
+    if (wasMoving) {
+      saveFloatingWalletPrefs(clampFloatingWalletToViewport(root, loadFloatingWalletPrefs()));
+    }
+  }
+
+  function resetFloatingWalletPlacement() {
+    saveFloatingWalletPrefs({
+      hidden: false,
+      left: null,
+      top: null,
+      width: 244,
+    });
+    renderFloatingWallet();
   }
 
   function currentUid() {
@@ -159,6 +390,15 @@
     }
 
     window.addEventListener('storage', (event) => {
+      if (event.key === FLOATING_WALLET_STORAGE_KEY) {
+        try {
+          state.floatingWalletPrefs = normalizeFloatingWalletPrefs(JSON.parse(event.newValue || '{}'));
+        } catch {
+          state.floatingWalletPrefs = normalizeFloatingWalletPrefs();
+        }
+        renderFloatingWallet();
+        return;
+      }
       if (event.key !== WALLET_SYNC_STORAGE_KEY && event.key !== WALLET_REFRESH_STORAGE_KEY) {
         return;
       }
@@ -173,6 +413,13 @@
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
         refreshWalletSoon();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      if (state.floatingWallet) {
+        saveFloatingWalletPrefs(clampFloatingWalletToViewport(state.floatingWallet, loadFloatingWalletPrefs()));
+        renderFloatingWallet();
       }
     });
   }
@@ -867,8 +1114,9 @@
         right: 18px;
         bottom: 18px;
         z-index: 2147482600;
-        min-width: 220px;
-        max-width: min(320px, calc(100vw - 24px));
+        width: 244px;
+        min-width: ${FLOATING_WALLET_MIN_WIDTH}px;
+        max-width: calc(100vw - 24px);
         border: 1px solid rgba(148, 163, 184, 0.28);
         border-radius: 14px;
         background: rgba(9, 13, 21, 0.92);
@@ -879,6 +1127,10 @@
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         line-height: 1.2;
       }
+      .nova-floating-wallet[hidden],
+      .nova-floating-wallet-restore[hidden] {
+        display: none;
+      }
       .nova-floating-wallet__inner {
         display: grid;
         gap: 9px;
@@ -888,7 +1140,25 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
         gap: 10px;
+      }
+      .nova-floating-wallet__drag {
+        align-items: center;
+        cursor: move;
+        display: inline-flex;
+        gap: 7px;
+        min-width: 0;
+        touch-action: none;
+      }
+      .nova-floating-wallet__drag-dot {
+        border: 1px solid rgba(52, 211, 153, 0.55);
+        border-radius: 999px;
+        box-shadow: 0 0 14px rgba(52, 211, 153, 0.28);
+        display: inline-block;
+        flex: 0 0 auto;
+        height: 9px;
+        width: 9px;
       }
       .nova-floating-wallet__label {
         color: #94a3b8;
@@ -896,6 +1166,7 @@
         font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
+        white-space: nowrap;
       }
       .nova-floating-wallet__value {
         color: #34d399;
@@ -915,6 +1186,9 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        flex: 0 0 auto;
+        flex-wrap: wrap;
+        justify-content: flex-end;
       }
       .nova-floating-wallet button {
         border: 1px solid rgba(148, 163, 184, 0.34);
@@ -926,6 +1200,14 @@
         font-size: 0.74rem;
         font-weight: 800;
         padding: 7px 10px;
+      }
+      .nova-floating-wallet button.nova-floating-wallet__control {
+        align-items: center;
+        display: inline-flex;
+        height: 28px;
+        justify-content: center;
+        min-width: 28px;
+        padding: 0 8px;
       }
       .nova-floating-wallet button:hover,
       .nova-floating-wallet button:focus-visible {
@@ -939,6 +1221,64 @@
       .nova-floating-wallet.is-syncing .nova-floating-wallet__value {
         color: #fbbf24;
       }
+      .nova-floating-wallet.is-moving,
+      .nova-floating-wallet.is-resizing {
+        user-select: none;
+      }
+      .nova-floating-wallet__resize {
+        bottom: 4px;
+        cursor: nwse-resize;
+        height: 18px;
+        opacity: 0.78;
+        position: absolute;
+        right: 4px;
+        touch-action: none;
+        width: 18px;
+      }
+      .nova-floating-wallet__resize::before,
+      .nova-floating-wallet__resize::after {
+        border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+        border-right: 1px solid rgba(226, 232, 240, 0.7);
+        bottom: 3px;
+        content: "";
+        position: absolute;
+        right: 3px;
+      }
+      .nova-floating-wallet__resize::before {
+        height: 10px;
+        width: 10px;
+      }
+      .nova-floating-wallet__resize::after {
+        height: 5px;
+        width: 5px;
+      }
+      .nova-floating-wallet-restore {
+        align-items: center;
+        border: 1px solid rgba(52, 211, 153, 0.48);
+        border-radius: 999px;
+        background: rgba(9, 13, 21, 0.94);
+        bottom: 18px;
+        box-shadow: 0 14px 38px rgba(0, 0, 0, 0.32);
+        color: #34d399;
+        cursor: pointer;
+        display: inline-flex;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 0.78rem;
+        font-weight: 900;
+        gap: 7px;
+        justify-content: center;
+        letter-spacing: 0;
+        padding: 10px 12px;
+        position: fixed;
+        right: 18px;
+        z-index: 2147482600;
+      }
+      .nova-floating-wallet-restore:hover,
+      .nova-floating-wallet-restore:focus-visible {
+        border-color: rgba(52, 211, 153, 0.86);
+        color: #ffffff;
+        outline: none;
+      }
       @media (max-width: 760px) {
         .nova-floating-wallet {
           left: 12px;
@@ -946,9 +1286,14 @@
           bottom: 12px;
           min-width: 0;
         }
+        .nova-floating-wallet-restore {
+          bottom: 12px;
+          right: 12px;
+        }
       }
       @media print {
-        .nova-floating-wallet {
+        .nova-floating-wallet,
+        .nova-floating-wallet-restore {
           display: none;
         }
       }
@@ -961,16 +1306,31 @@
       return null;
     }
     ensureFloatingWalletStyles();
-    if (state.floatingWallet && document.body.contains(state.floatingWallet)) {
-      return state.floatingWallet;
+    if (!state.floatingWallet || !document.body.contains(state.floatingWallet)) {
+      const root = document.createElement('aside');
+      root.className = 'nova-floating-wallet';
+      root.setAttribute('aria-live', 'polite');
+      root.setAttribute('aria-label', 'SIM wallet');
+      document.body.appendChild(root);
+      state.floatingWallet = root;
+      state.floatingWalletPointerEventsInstalled = false;
     }
-    const root = document.createElement('aside');
-    root.className = 'nova-floating-wallet';
-    root.setAttribute('aria-live', 'polite');
-    root.setAttribute('aria-label', 'SIM wallet');
-    document.body.appendChild(root);
-    state.floatingWallet = root;
-    return root;
+    if (!state.floatingWalletRestore || !document.body.contains(state.floatingWalletRestore)) {
+      const restore = document.createElement('button');
+      restore.type = 'button';
+      restore.className = 'nova-floating-wallet-restore';
+      restore.setAttribute('aria-label', 'Show SIM wallet');
+      restore.addEventListener('click', () => setFloatingWalletHidden(false));
+      document.body.appendChild(restore);
+      state.floatingWalletRestore = restore;
+    }
+    if (!state.floatingWalletPointerEventsInstalled) {
+      state.floatingWalletPointerEventsInstalled = true;
+      state.floatingWallet.addEventListener('pointermove', handleFloatingWalletPointerMove);
+      state.floatingWallet.addEventListener('pointerup', finishFloatingWalletPointer);
+      state.floatingWallet.addEventListener('pointercancel', finishFloatingWalletPointer);
+    }
+    return state.floatingWallet;
   }
 
   function renderFloatingWallet() {
@@ -992,7 +1352,23 @@
       : snapshot.signedIn
         ? (isError ? (wallet.error || snapshot.error) : `${snapshot.displayName} account wallet`)
         : 'Use one SIM balance across the site';
+    const prefs = loadFloatingWalletPrefs();
+    const restore = state.floatingWalletRestore;
 
+    if (prefs.hidden) {
+      root.hidden = true;
+      if (restore) {
+        restore.hidden = false;
+        restore.textContent = snapshot.signedIn && !isSyncing && !isError ? formatSimWallet(wallet) : 'SIM wallet';
+      }
+      return;
+    }
+
+    root.hidden = false;
+    if (restore) {
+      restore.hidden = true;
+    }
+    applyFloatingWalletPrefs(root);
     root.classList.toggle('is-syncing', Boolean(isSyncing));
     root.classList.toggle('is-error', isError);
     root.innerHTML = '';
@@ -1003,12 +1379,32 @@
     const top = document.createElement('div');
     top.className = 'nova-floating-wallet__top';
 
+    const dragHandle = document.createElement('span');
+    dragHandle.className = 'nova-floating-wallet__drag';
+    dragHandle.title = 'Drag to move the SIM wallet';
+    dragHandle.addEventListener('pointerdown', startFloatingWalletDrag);
+
+    const dragDot = document.createElement('span');
+    dragDot.className = 'nova-floating-wallet__drag-dot';
+
     const label = document.createElement('span');
     label.className = 'nova-floating-wallet__label';
     label.textContent = 'SIM wallet';
+    dragHandle.append(dragDot, label);
 
     const actions = document.createElement('div');
     actions.className = 'nova-floating-wallet__actions';
+
+    const makeControlButton = (text, labelText, handler) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'nova-floating-wallet__control';
+      button.textContent = text;
+      button.title = labelText;
+      button.setAttribute('aria-label', labelText);
+      button.addEventListener('click', handler);
+      return button;
+    };
 
     if (snapshot.signedIn) {
       const refreshButton = document.createElement('button');
@@ -1025,6 +1421,10 @@
       });
       actions.appendChild(signInButton);
     }
+    actions.appendChild(makeControlButton('-', 'Make SIM wallet smaller', () => changeFloatingWalletSize(-32)));
+    actions.appendChild(makeControlButton('+', 'Make SIM wallet larger', () => changeFloatingWalletSize(32)));
+    actions.appendChild(makeControlButton('Dock', 'Dock SIM wallet in the corner', resetFloatingWalletPlacement));
+    actions.appendChild(makeControlButton('Hide', 'Hide SIM wallet', () => setFloatingWalletHidden(true)));
 
     const valueEl = document.createElement('strong');
     valueEl.className = 'nova-floating-wallet__value';
@@ -1034,9 +1434,14 @@
     subEl.className = 'nova-floating-wallet__sub';
     subEl.textContent = sub;
 
-    top.append(label, actions);
+    const resizeHandle = document.createElement('span');
+    resizeHandle.className = 'nova-floating-wallet__resize';
+    resizeHandle.title = 'Drag to resize the SIM wallet';
+    resizeHandle.addEventListener('pointerdown', startFloatingWalletResize);
+
+    top.append(dragHandle, actions);
     inner.append(top, valueEl, subEl);
-    root.appendChild(inner);
+    root.append(inner, resizeHandle);
   }
 
   function renderWidgets() {
