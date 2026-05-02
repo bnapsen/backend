@@ -66,7 +66,7 @@ For the current `bnapsen` project the important values are:
 - `FIREBASE_APP_ID=<your Firebase web app id, if you create one>`
 - `FIREBASE_MESSAGING_SENDER_ID=<your Firebase sender id, if available>`
 - `FIREBASE_STORAGE_BUCKET=<your Firebase storage bucket, if enabled>`
-- `FIREBASE_GOOGLE_AUTH_ENABLED=false`
+- `FIREBASE_GOOGLE_AUTH_ENABLED=true`
 
 ## Account sign-in
 
