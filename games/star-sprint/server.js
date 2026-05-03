@@ -58,6 +58,7 @@ const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const COLORS = ['white', 'black'];
 const TICK_MS = 50;
 const BACKGAMMON_MAX_WAGER_CENTS = 100000;
+const BACKGAMMON_MAX_POINTS = 3;
 const BACKGAMMON_WAGER_SOURCE = 'backgammon';
 const SIM_KILL_REWARD_CENTS = Math.max(1, Math.min(25, Math.round(Number(process.env.SIM_KILL_REWARD_CENTS || 1))));
 const SIM_KILL_REWARD_KILLS_PER_CREDIT = Math.max(2, Math.min(
@@ -447,10 +448,10 @@ function canClientCreditSim(body = {}, amountCents = normalizeSimAdjustmentCents
   const source = String(body.source || '').trim();
   const action = String(body.action || '').trim();
   if (source === 'backgammon-solo' && action === 'wager-payout') {
-    return amountCents > 0 && amountCents <= BACKGAMMON_MAX_WAGER_CENTS * 2;
+    return amountCents > 0 && amountCents <= BACKGAMMON_MAX_WAGER_CENTS * BACKGAMMON_MAX_POINTS * 2;
   }
   if (source === 'backgammon-solo' && action === 'stake-refund') {
-    return amountCents > 0 && amountCents <= BACKGAMMON_MAX_WAGER_CENTS;
+    return amountCents > 0 && amountCents <= BACKGAMMON_MAX_WAGER_CENTS * BACKGAMMON_MAX_POINTS;
   }
   if (source === 'space-shooter' && action === 'sim-coin-pickup') {
     return amountCents === 1;
@@ -4387,13 +4388,62 @@ function colorForBackgammonSide(side) {
   return side === Backgammon.WHITE ? 'white' : 'black';
 }
 
+function backgammonMaxLossCents(stakeCents) {
+  return normalizeBackgammonStakeCents(stakeCents) * BACKGAMMON_MAX_POINTS;
+}
+
+function backgammonResultForGame(game) {
+  const fallback = game && game.winner
+    ? {
+        winner: game.winner,
+        loser: game.winner * -1,
+        points: 1,
+        resultType: 'single',
+        label: 'Single game',
+        reason: '',
+      }
+    : null;
+  if (!game || !game.winner) {
+    return null;
+  }
+  if (game.gamePoints && typeof game.gamePoints === 'object') {
+    const storedPoints = Math.max(1, Math.min(BACKGAMMON_MAX_POINTS, Math.round(Number(game.gamePoints.points) || 1)));
+    return {
+      winner: game.gamePoints.winner || game.winner,
+      loser: game.gamePoints.loser || game.winner * -1,
+      points: storedPoints,
+      resultType: String(game.gamePoints.resultType || 'single'),
+      label: String(game.gamePoints.label || (storedPoints === 3 ? 'Backgammon' : storedPoints === 2 ? 'Gammon' : 'Single game')),
+      reason: String(game.gamePoints.reason || ''),
+    };
+  }
+  const result = typeof Backgammon.calculateGamePoints === 'function'
+    ? Backgammon.calculateGamePoints(game, game.winner)
+    : fallback;
+  if (!result) {
+    return fallback;
+  }
+  const points = Math.max(1, Math.min(BACKGAMMON_MAX_POINTS, Math.round(Number(result.points) || 1)));
+  return {
+    winner: result.winner || game.winner,
+    loser: result.loser || game.winner * -1,
+    points,
+    resultType: String(result.resultType || 'single'),
+    label: String(result.label || (points === 3 ? 'Backgammon' : points === 2 ? 'Gammon' : 'Single game')),
+    reason: String(result.reason || ''),
+  };
+}
+
 function createBackgammonWagerState(options = {}) {
   const stakeCents = normalizeBackgammonStakeCents(
     options.backgammonStakeCents !== undefined ? options.backgammonStakeCents : options.stakeCents,
   );
   const createdAt = new Date().toISOString();
+  const maxLossCents = backgammonMaxLossCents(stakeCents);
   return {
     stakeCents,
+    maxPoints: BACKGAMMON_MAX_POINTS,
+    maxLossCents,
     potCents: 0,
     status: stakeCents > 0 ? 'pending' : 'off',
     started: false,
@@ -4401,8 +4451,13 @@ function createBackgammonWagerState(options = {}) {
     settledAt: '',
     refundedAt: '',
     winnerColor: '',
+    loserColor: '',
+    points: 0,
+    resultType: '',
+    resultLabel: '',
+    transferCents: 0,
     message: stakeCents > 0
-      ? `${formatSimCents(stakeCents)} each. Waiting for both signed-in players to sit before locking the pot.`
+      ? `${formatSimCents(stakeCents)} per point. Each player escrows up to ${formatSimCents(maxLossCents)} for a 1/2/3-point result.`
       : 'No SIM wager on this match.',
     escrowed: {
       white: false,
@@ -4440,18 +4495,30 @@ function serializeBackgammonWager(room) {
     return undefined;
   }
   const stakeCents = normalizeBackgammonStakeCents(wager.stakeCents);
+  const maxLossCents = backgammonMaxLossCents(stakeCents);
   return {
     enabled: stakeCents > 0,
     stake: stakeCents / 100,
     stakeCents,
+    stakePerPoint: stakeCents / 100,
+    stakePerPointCents: stakeCents,
+    maxPoints: BACKGAMMON_MAX_POINTS,
+    maxLoss: maxLossCents / 100,
+    maxLossCents,
     pot: normalizeBackgammonAmountCents(wager.potCents) / 100,
     potCents: normalizeBackgammonAmountCents(wager.potCents),
+    transfer: normalizeBackgammonAmountCents(wager.transferCents) / 100,
+    transferCents: normalizeBackgammonAmountCents(wager.transferCents),
+    points: Math.max(0, Math.min(BACKGAMMON_MAX_POINTS, Number(wager.points) || 0)),
+    resultType: String(wager.resultType || ''),
+    resultLabel: String(wager.resultLabel || ''),
     status: String(wager.status || (stakeCents > 0 ? 'pending' : 'off')),
     locked: wager.status === 'locked' || wager.status === 'settled',
     settled: wager.status === 'settled',
     refunded: wager.status === 'refunded',
     started: Boolean(wager.started),
     winnerColor: String(wager.winnerColor || ''),
+    loserColor: String(wager.loserColor || ''),
     message: String(wager.message || ''),
     participants: {
       white: publicBackgammonParticipant(wager.participants.white, playerByBackgammonColor(room, 'white'), wager.escrowed.white),
@@ -4479,14 +4546,14 @@ async function refundBackgammonWager(room, reason = 'refund') {
   if (!wager || !wager.stakeCents || wager.status !== 'locked') {
     return '';
   }
-  const stakeCents = normalizeBackgammonStakeCents(wager.stakeCents);
+  const refundCents = backgammonMaxLossCents(wager.stakeCents);
   const refunds = [];
   for (const color of COLORS) {
     const participant = wager.participants[color];
     if (wager.escrowed[color] && participant && participant.user) {
       refunds.push(adjustBackgammonWallet(
         participant.user,
-        stakeCents,
+        refundCents,
         'stake-refund',
         room,
         color,
@@ -4497,7 +4564,7 @@ async function refundBackgammonWager(room, reason = 'refund') {
   await Promise.all(refunds);
   wager.status = 'refunded';
   wager.refundedAt = new Date().toISOString();
-  wager.message = `SIM pot refunded (${reason}).`;
+  wager.message = `SIM point stake refunded (${reason}).`;
   return wager.message;
 }
 
@@ -4508,7 +4575,7 @@ async function tryLockBackgammonWager(room) {
   }
   if (room.players.size < 2) {
     wager.status = 'pending';
-    wager.message = `${formatSimCents(wager.stakeCents)} each. Waiting for the second signed-in player.`;
+    wager.message = `${formatSimCents(wager.stakeCents)} per point. Waiting for the second signed-in player.`;
     return false;
   }
 
@@ -4516,7 +4583,7 @@ async function tryLockBackgammonWager(room) {
   const black = playerByBackgammonColor(room, 'black');
   if (!white || !black) {
     wager.status = 'pending';
-    wager.message = 'Waiting for both backgammon seats before locking the SIM pot.';
+    wager.message = 'Waiting for both backgammon seats before locking the SIM point stake.';
     return false;
   }
   if (!white.authUser || !black.authUser) {
@@ -4526,23 +4593,24 @@ async function tryLockBackgammonWager(room) {
   }
 
   const stakeCents = normalizeBackgammonStakeCents(wager.stakeCents);
+  const maxLossCents = backgammonMaxLossCents(stakeCents);
   const seats = [
     { color: 'white', player: white },
     { color: 'black', player: black },
   ];
   const debited = [];
   wager.status = 'locking';
-  wager.message = 'Locking the SIM pot...';
+  wager.message = 'Locking the SIM point stakes...';
 
   try {
     for (const seat of seats) {
       await adjustBackgammonWallet(
         seat.player.authUser,
-        -stakeCents,
+        -maxLossCents,
         'stake-escrow',
         room,
         seat.color,
-        `Backgammon stake escrowed for room ${room.code}.`,
+        `Backgammon max point stake escrowed for room ${room.code}.`,
       );
       debited.push(seat);
       wager.escrowed[seat.color] = true;
@@ -4555,11 +4623,11 @@ async function tryLockBackgammonWager(room) {
   } catch (error) {
     await Promise.all(debited.map((seat) => adjustBackgammonWallet(
       seat.player.authUser,
-      stakeCents,
+      maxLossCents,
       'stake-refund',
       room,
       seat.color,
-      `Backgammon stake rollback for room ${room.code}.`,
+      `Backgammon point stake rollback for room ${room.code}.`,
     ).catch(() => null)));
     for (const seat of debited) {
       wager.escrowed[seat.color] = false;
@@ -4568,14 +4636,15 @@ async function tryLockBackgammonWager(room) {
     wager.status = 'failed';
     wager.message = error && error.code === 'sim/insufficient-funds'
       ? 'A player does not have enough SIM for this stake.'
-      : 'The SIM pot could not be locked. Try a smaller stake.';
+      : 'The SIM point stake could not be locked. Try a smaller stake.';
     return false;
   }
 
   wager.status = 'locked';
-  wager.potCents = stakeCents * 2;
+  wager.maxLossCents = maxLossCents;
+  wager.potCents = maxLossCents * 2;
   wager.lockedAt = new Date().toISOString();
-  wager.message = `${formatSimCents(wager.potCents)} pot locked. Winner takes the pot.`;
+  wager.message = `${formatSimCents(stakeCents)} per point locked. Max loss is ${formatSimCents(maxLossCents)} each; single/gammon/backgammon pays 1/2/3 points.`;
   return true;
 }
 
@@ -4591,9 +4660,9 @@ function backgammonWagerPlayBlock(room) {
     return 'This SIM wager is already settled. Start a new match.';
   }
   if (wager.status === 'failed') {
-    return wager.message || 'The SIM pot could not be locked.';
+    return wager.message || 'The SIM point stake could not be locked.';
   }
-  return wager.message || 'Wait for the SIM pot to lock before rolling.';
+  return wager.message || 'Wait for the SIM point stake to lock before rolling.';
 }
 
 async function settleBackgammonWager(room) {
@@ -4603,28 +4672,59 @@ async function settleBackgammonWager(room) {
   }
   if (wager.status !== 'locked') {
     wager.status = 'failed';
-    wager.message = 'The match ended before the SIM pot was locked, so no payout was made.';
+    wager.message = 'The match ended before the SIM point stake was locked, so no payout was made.';
     return wager.message;
   }
   const winnerColor = colorForBackgammonSide(room.game.winner);
-  const participant = wager.participants[winnerColor] || {};
-  if (!participant.user) {
+  const loserColor = winnerColor === 'white' ? 'black' : 'white';
+  const winnerParticipant = wager.participants[winnerColor] || {};
+  const loserParticipant = wager.participants[loserColor] || {};
+  if (!winnerParticipant.user || !loserParticipant.user) {
     wager.status = 'failed';
-    wager.message = 'The winner account could not be found, so the SIM pot is still locked for review.';
+    wager.message = 'A player account could not be found, so the SIM stake is still locked for review.';
     return wager.message;
   }
-  await adjustBackgammonWallet(
-    participant.user,
-    normalizeBackgammonAmountCents(wager.potCents),
-    'wager-payout',
-    room,
-    winnerColor,
-    `Backgammon pot paid for room ${room.code}.`,
-  );
+
+  const result = backgammonResultForGame(room.game);
+  const points = result ? result.points : 1;
+  const stakeCents = normalizeBackgammonStakeCents(wager.stakeCents);
+  const maxLossCents = backgammonMaxLossCents(stakeCents);
+  const transferCents = Math.min(maxLossCents, stakeCents * points);
+  const loserRefundCents = Math.max(0, maxLossCents - transferCents);
+  const winnerCreditCents = maxLossCents + transferCents;
+  const settlementJobs = [
+    adjustBackgammonWallet(
+      winnerParticipant.user,
+      winnerCreditCents,
+      'wager-payout',
+      room,
+      winnerColor,
+      `Backgammon ${result.resultType} payout for room ${room.code}: ${points} point${points === 1 ? '' : 's'}.`,
+    ),
+  ];
+  if (loserRefundCents > 0) {
+    settlementJobs.push(adjustBackgammonWallet(
+      loserParticipant.user,
+      loserRefundCents,
+      'stake-refund',
+      room,
+      loserColor,
+      `Backgammon unused point stake refunded for room ${room.code}.`,
+    ));
+  }
+  await Promise.all(settlementJobs);
+
   wager.status = 'settled';
   wager.settledAt = new Date().toISOString();
   wager.winnerColor = winnerColor;
-  wager.message = `${participant.name || winnerColor} won ${formatSimCents(wager.potCents)}.`;
+  wager.loserColor = loserColor;
+  wager.maxLossCents = maxLossCents;
+  wager.potCents = maxLossCents * 2;
+  wager.points = points;
+  wager.resultType = result.resultType;
+  wager.resultLabel = result.label;
+  wager.transferCents = transferCents;
+  wager.message = `${winnerParticipant.name || winnerColor} won a ${result.label.toLowerCase()} (${points} point${points === 1 ? '' : 's'}). ${loserParticipant.name || loserColor} loses ${formatSimCents(transferCents)} to the opponent.`;
   return wager.message;
 }
 
@@ -4639,6 +4739,14 @@ async function resolveBackgammonWagerOnDisconnect(room, disconnectedPlayer) {
   if (room.players.size === 1) {
     const winner = Array.from(room.players.values())[0];
     room.game.winner = playerBackgammonSide(winner);
+    room.game.gamePoints = {
+      winner: room.game.winner,
+      loser: room.game.winner * -1,
+      points: 1,
+      resultType: 'single',
+      label: 'Single game',
+      reason: 'Won by forfeit.',
+    };
     room.game.dice = [];
     room.game.status = `${winner.name} wins by forfeit after ${disconnectedPlayer ? disconnectedPlayer.name : 'the opponent'} disconnected.`;
     clearBackgammonUndo(room);

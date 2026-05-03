@@ -5,6 +5,7 @@
   const PROD_SERVER_URL = 'wss://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app';
   const PROD_API_BASE = 'https://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app';
   const MAX_WAGER_CENTS = 100000;
+  const MAX_BACKGAMMON_POINTS = 3;
   const STORAGE_KEYS = {
     name: 'neonBackgammon.name',
     serverUrl: 'neonBackgammon.serverUrl',
@@ -225,7 +226,11 @@
     soloWager: {
       enabled: false,
       stakeCents: 0,
+      maxLossCents: 0,
       potCents: 0,
+      points: 0,
+      transferCents: 0,
+      resultLabel: '',
       status: 'off',
       settled: false,
       message: 'No SIM wager on this match.',
@@ -312,6 +317,38 @@
       minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
       maximumFractionDigits: 2,
     })} SIM`;
+  }
+
+  function wagerMaxLossCents(stakeCents) {
+    return normalizeWagerCents(stakeCents) * MAX_BACKGAMMON_POINTS;
+  }
+
+  function wagerPointCopy(stakeCents) {
+    const clean = normalizeWagerCents(stakeCents);
+    if (!clean) {
+      return 'Free match. Set a per-point stake before starting if you want SIM on the score.';
+    }
+    return `${formatSimCents(clean)} per point. Single/gammon/backgammon pays ${formatSimCents(clean)}, ${formatSimCents(clean * 2)}, or ${formatSimCents(clean * 3)}.`;
+  }
+
+  function gamePointResult(snapshot = state.snapshot) {
+    if (!snapshot || !snapshot.winner) {
+      return null;
+    }
+    const source = snapshot.gamePoints || (
+      Core && typeof Core.calculateGamePoints === 'function'
+        ? Core.calculateGamePoints(snapshot, snapshot.winner)
+        : null
+    );
+    const points = Math.max(1, Math.min(MAX_BACKGAMMON_POINTS, Math.round(Number(source?.points) || 1)));
+    return {
+      winner: source?.winner || snapshot.winner,
+      loser: source?.loser || snapshot.winner * -1,
+      points,
+      resultType: String(source?.resultType || (points === 3 ? 'backgammon' : points === 2 ? 'gammon' : 'single')),
+      label: String(source?.label || (points === 3 ? 'Backgammon' : points === 2 ? 'Gammon' : 'Single game')),
+      reason: String(source?.reason || ''),
+    };
   }
 
   function currentSimWallet() {
@@ -650,9 +687,7 @@
     }
 
     const selectedCents = selectedWagerCents();
-    const selectedCopy = selectedCents
-      ? `${formatSimCents(selectedCents)} each, ${formatSimCents(selectedCents * 2)} pot on the next match.`
-      : 'Free match. Set a stake before starting if you want SIM on the winner.';
+    const selectedCopy = wagerPointCopy(selectedCents);
 
     if (state.mode === 'online' && state.snapshot?.wager) {
       const wager = state.snapshot.wager;
@@ -660,9 +695,9 @@
         ui.wagerStatusText.textContent = wager.settled
           ? 'Online SIM wager settled'
           : wager.locked
-            ? 'Online SIM pot locked'
+            ? 'Online SIM points locked'
             : 'Online SIM wager pending';
-        ui.wagerDetailText.textContent = wager.message || `${formatSimCents(wager.stakeCents)} each.`;
+        ui.wagerDetailText.textContent = wager.message || `${wagerPointCopy(wager.stakePerPointCents || wager.stakeCents)} Max loss ${formatSimCents(wager.maxLossCents || wagerMaxLossCents(wager.stakeCents))}.`;
         return;
       }
     }
@@ -671,11 +706,11 @@
       ui.wagerStatusText.textContent = state.soloWager.settled
         ? 'Solo SIM wager settled'
         : 'Solo SIM wager locked';
-      ui.wagerDetailText.textContent = state.soloWager.message || `${formatSimCents(state.soloWager.stakeCents)} staked against ${BOT_NAME}.`;
+      ui.wagerDetailText.textContent = state.soloWager.message || `${formatSimCents(state.soloWager.stakeCents)} per point against ${BOT_NAME}.`;
       return;
     }
 
-    ui.wagerStatusText.textContent = selectedCents ? 'SIM stake ready' : 'No stake selected';
+    ui.wagerStatusText.textContent = selectedCents ? 'SIM per-point stake ready' : 'No stake selected';
     ui.wagerDetailText.textContent = selectedCopy;
   }
 
@@ -715,7 +750,10 @@
     ui.turnText.textContent = state.snapshot.winner
       ? `${playerLabel(state.snapshot.winner)} wins`
       : `${playerLabel(state.snapshot.current)} ${state.snapshot.dice.length ? 'to move' : 'to roll'}`;
-    ui.phaseText.textContent = state.snapshot.status || 'Match in progress.';
+    const result = gamePointResult();
+    ui.phaseText.textContent = result
+      ? `${playerLabel(result.winner)} wins ${result.label.toLowerCase()} (${result.points} point${result.points === 1 ? '' : 's'}).`
+      : state.snapshot.status || 'Match in progress.';
     ui.diceLabel.textContent = state.snapshot.dice.length ? state.snapshot.dice.join(', ') : 'Awaiting roll';
     ui.diceText.textContent = state.snapshot.dice.length
       ? `Live dice: ${state.snapshot.dice.join(', ')}`
@@ -813,7 +851,7 @@
       ui.startHint.textContent = `Room ${sanitizeRoomCode(ui.roomInput.value)} is ready to join.`;
       return;
     }
-    ui.startHint.textContent = 'Choose 10, 20, or 50 SIM to start a staked bot match immediately.';
+    ui.startHint.textContent = 'Choose 10, 20, or 50 SIM per point to start a staked bot match immediately.';
   }
 
   function audioSupported() {
@@ -1386,7 +1424,11 @@
     state.soloWager = {
       enabled: false,
       stakeCents: 0,
+      maxLossCents: 0,
       potCents: 0,
+      points: 0,
+      transferCents: 0,
+      resultLabel: '',
       status: 'off',
       settled: false,
       message: 'No SIM wager on this match.',
@@ -1405,25 +1447,32 @@
     if (!signedInForSim('stake SIM against the bot')) {
       return false;
     }
+    const maxLossCents = wagerMaxLossCents(stakeCents);
     try {
       await window.NovaAuth.adjustSimWallet({
-        amountCents: -stakeCents,
+        amountCents: -maxLossCents,
         source: 'backgammon-solo',
         action: 'stake-escrow',
-        note: `Solo backgammon stake against ${BOT_NAME}`,
+        note: `Solo backgammon max point stake against ${BOT_NAME}`,
         metadata: {
           game: 'backgammon',
           opponent: BOT_NAME,
           stakeCents,
+          maxLossCents,
+          maxPoints: MAX_BACKGAMMON_POINTS,
         },
       });
       state.soloWager = {
         enabled: true,
         stakeCents,
-        potCents: stakeCents * 2,
+        maxLossCents,
+        potCents: maxLossCents * 2,
+        points: 0,
+        transferCents: 0,
+        resultLabel: '',
         status: 'locked',
         settled: false,
-        message: `${formatSimCents(stakeCents)} staked against ${BOT_NAME}. Win the match to collect ${formatSimCents(stakeCents * 2)}.`,
+        message: `${formatSimCents(stakeCents)} per point locked against ${BOT_NAME}. Max loss ${formatSimCents(maxLossCents)}; single/gammon/backgammon pays 1/2/3 points.`,
       };
       return true;
     } catch (error) {
@@ -1441,21 +1490,35 @@
       return;
     }
     state.soloWager.settled = true;
+    const result = gamePointResult();
+    const points = result ? result.points : 1;
+    const stakeCents = normalizeWagerCents(state.soloWager.stakeCents);
+    const maxLossCents = state.soloWager.maxLossCents || wagerMaxLossCents(stakeCents);
+    const transferCents = Math.min(maxLossCents, stakeCents * points);
+    const refundCents = Math.max(0, maxLossCents - transferCents);
+    state.soloWager.points = points;
+    state.soloWager.transferCents = transferCents;
+    state.soloWager.resultLabel = result?.label || 'Single game';
     if (state.snapshot.winner === Core.WHITE) {
+      const winnerCreditCents = maxLossCents + transferCents;
       try {
         await window.NovaAuth.adjustSimWallet({
-          amountCents: state.soloWager.potCents,
+          amountCents: winnerCreditCents,
           source: 'backgammon-solo',
           action: 'wager-payout',
           note: `Solo backgammon payout against ${BOT_NAME}`,
           metadata: {
             game: 'backgammon',
             opponent: BOT_NAME,
-            stakeCents: state.soloWager.stakeCents,
-            potCents: state.soloWager.potCents,
+            stakeCents,
+            maxLossCents,
+            transferCents,
+            payoutCents: winnerCreditCents,
+            points,
+            resultType: result?.resultType || 'single',
           },
         });
-        state.soloWager.message = `You won ${formatSimCents(state.soloWager.potCents)} from the bot match.`;
+        state.soloWager.message = `You won a ${(result?.label || 'single game').toLowerCase()} for ${points} point${points === 1 ? '' : 's'}. ${BOT_NAME} loses ${formatSimCents(transferCents)} to you.`;
         showToast(state.soloWager.message);
       } catch (error) {
         state.soloWager.message = error && error.message
@@ -1464,8 +1527,38 @@
         showToast(state.soloWager.message);
       }
     } else {
-      state.soloWager.message = `${BOT_NAME} won. Your ${formatSimCents(state.soloWager.stakeCents)} stake is spent.`;
-      showToast(state.soloWager.message);
+      const finalizeLossMessage = () => {
+        state.soloWager.message = `${BOT_NAME} won a ${(result?.label || 'single game').toLowerCase()} for ${points} point${points === 1 ? '' : 's'}. You lose ${formatSimCents(transferCents)} to the bot.`;
+        showToast(state.soloWager.message);
+      };
+      if (refundCents > 0) {
+        try {
+          await window.NovaAuth.adjustSimWallet({
+            amountCents: refundCents,
+            source: 'backgammon-solo',
+            action: 'stake-refund',
+            note: `Solo backgammon unused point stake refund against ${BOT_NAME}`,
+            metadata: {
+              game: 'backgammon',
+              opponent: BOT_NAME,
+              stakeCents,
+              maxLossCents,
+              transferCents,
+              refundCents,
+              points,
+              resultType: result?.resultType || 'single',
+            },
+          });
+          finalizeLossMessage();
+        } catch (error) {
+          state.soloWager.message = error && error.message
+            ? error.message
+            : 'The bot won, but the unused SIM stake refund could not be stored.';
+          showToast(state.soloWager.message);
+        }
+      } else {
+        finalizeLossMessage();
+      }
     }
     render();
   }
@@ -1678,7 +1771,7 @@
     state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
     persistSettings();
     applyIncomingSnapshot(Core.createGameState(), stakeCents
-      ? `Solo SIM match started. ${BOT_NAME} is playing for a ${formatSimCents(stakeCents * 2)} pot.`
+      ? `Solo SIM match started. ${formatSimCents(stakeCents)} per point, max loss ${formatSimCents(wagerMaxLossCents(stakeCents))}.`
       : `Solo match started. ${BOT_NAME} is on the far side of the board.`);
   }
 

@@ -37,6 +37,7 @@
       dice: [],
       lastRoll: [0, 0],
       winner: 0,
+      gamePoints: null,
       status: 'White to roll.',
     };
   }
@@ -51,7 +52,22 @@
       dice: state.dice.slice(),
       lastRoll: Array.isArray(state.lastRoll) ? state.lastRoll.slice(0, 2) : [0, 0],
       winner: state.winner || 0,
+      gamePoints: cloneGamePoints(state.gamePoints) || calculateGamePoints(state, state.winner),
       status: state.status || '',
+    };
+  }
+
+  function cloneGamePoints(result) {
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+    return {
+      winner: result.winner || 0,
+      loser: result.loser || 0,
+      points: Number(result.points) || 0,
+      resultType: String(result.resultType || 'none'),
+      label: String(result.label || ''),
+      reason: String(result.reason || ''),
     };
   }
 
@@ -59,6 +75,61 @@
     return player === WHITE
       ? index >= 0 && index <= 5
       : index >= 18 && index <= 23;
+  }
+
+  function playerCheckerCountOnPoint(state, player, index) {
+    const value = Number(state.points[index]) || 0;
+    return player === WHITE ? Math.max(0, value) : Math.max(0, -value);
+  }
+
+  function hasCheckerInOpponentHome(state, loser, winner) {
+    for (let index = 0; index < 24; index += 1) {
+      if (isHome(winner, index) && playerCheckerCountOnPoint(state, loser, index) > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function calculateGamePoints(state, winner = state && state.winner) {
+    const cleanWinner = winner === WHITE || winner === BLACK ? winner : 0;
+    if (!state || !cleanWinner) {
+      return null;
+    }
+    const loser = cleanWinner * -1;
+    const loserBorneOff = Number(state.borneOff && state.borneOff[loser]) || 0;
+    if (loserBorneOff > 0) {
+      return {
+        winner: cleanWinner,
+        loser,
+        points: 1,
+        resultType: 'single',
+        label: 'Single game',
+        reason: `${playerName(loser)} bore off ${loserBorneOff} checker${loserBorneOff === 1 ? '' : 's'}.`,
+      };
+    }
+
+    const backgammon = (Number(state.bar && state.bar[loser]) || 0) > 0 ||
+      hasCheckerInOpponentHome(state, loser, cleanWinner);
+    if (backgammon) {
+      return {
+        winner: cleanWinner,
+        loser,
+        points: 3,
+        resultType: 'backgammon',
+        label: 'Backgammon',
+        reason: `${playerName(loser)} bore off none and still had a checker on the bar or in ${playerName(cleanWinner)}'s home board.`,
+      };
+    }
+
+    return {
+      winner: cleanWinner,
+      loser,
+      points: 2,
+      resultType: 'gammon',
+      label: 'Gammon',
+      reason: `${playerName(loser)} bore off no checkers.`,
+    };
   }
 
   function allInHome(state, player) {
@@ -339,14 +410,19 @@
     state.dice.splice(move.di, 1);
 
     if (state.borneOff[player] >= 15) {
+      const gamePoints = calculateGamePoints(state, player);
       state.winner = player;
+      state.gamePoints = gamePoints;
       state.dice = [];
-      state.status = `${playerName(player)} wins the match.`;
+      state.status = gamePoints
+        ? `${playerName(player)} wins a ${gamePoints.label.toLowerCase()} for ${gamePoints.points} point${gamePoints.points === 1 ? '' : 's'}.`
+        : `${playerName(player)} wins the match.`;
       return {
         ok: true,
         move,
         hit,
         winner: player,
+        gamePoints,
       };
     }
 
@@ -903,6 +979,7 @@
     getAllLegalMoves,
     getLegalMovesForSource,
     hasAnyLegalMove,
+    calculateGamePoints,
     moveProgressForPlayer,
     furthestMove,
     rollDice,

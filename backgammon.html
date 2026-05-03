@@ -95,12 +95,12 @@
             <div class="invite-header">
               <div>
                 <p class="label">SIM wager</p>
-                <p class="invite-help">Optional play-money stake. Player matches escrow both stakes; solo matches stake against the bot.</p>
+                <p class="invite-help">Optional play-money stake scored like backgammon: single, gammon, and backgammon pay 1, 2, or 3 points.</p>
               </div>
               <span class="wager-balance" id="simBalanceText">SIM wallet</span>
             </div>
             <label class="advanced-field">
-              <span>Stake per side</span>
+              <span>Stake per point</span>
               <input id="wagerInput" type="number" min="0" max="1000" step="0.01" value="0" inputmode="decimal" />
             </label>
             <div class="wager-quick-row" aria-label="Quick SIM stake choices">
@@ -111,7 +111,7 @@
             </div>
             <div class="wager-readout">
               <strong id="wagerStatusText">No stake selected</strong>
-              <span id="wagerDetailText">Free match. Set a stake before starting if you want SIM on the winner.</span>
+              <span id="wagerDetailText">Free match. Set a per-point stake before starting if you want SIM on the score.</span>
             </div>
           </div>
 
@@ -260,19 +260,19 @@
               <div class="start-card">
                 <p class="start-kicker">Fastest way in</p>
                 <h2>Pick a SIM stake and play</h2>
-                <p class="start-copy">Start a solo match against Deep Blitz Bot with a quick SIM wager, or play free while you warm up.</p>
+                <p class="start-copy">Start a solo match against Deep Blitz Bot with a quick SIM-per-point wager, or play free while you warm up.</p>
                 <div class="start-wager-grid" aria-label="Quick SIM wager choices">
                   <button class="start-wager-card" type="button" data-start-wager-cents="1000">
-                    <strong>Bet 10 SIM</strong>
-                    <span>20 SIM pot</span>
+                    <strong>10 SIM / pt</strong>
+                    <span>Max loss 30 SIM</span>
                   </button>
                   <button class="start-wager-card" type="button" data-start-wager-cents="2000">
-                    <strong>Bet 20 SIM</strong>
-                    <span>40 SIM pot</span>
+                    <strong>20 SIM / pt</strong>
+                    <span>Max loss 60 SIM</span>
                   </button>
                   <button class="start-wager-card" type="button" data-start-wager-cents="5000">
-                    <strong>Bet 50 SIM</strong>
-                    <span>100 SIM pot</span>
+                    <strong>50 SIM / pt</strong>
+                    <span>Max loss 150 SIM</span>
                   </button>
                 </div>
                 <div class="start-actions">
@@ -280,7 +280,7 @@
                   <button id="heroHostBtn" class="secondary" type="button">Host live match</button>
                   <button id="heroJoinBtn" type="button">Join with code</button>
                 </div>
-                <p class="start-note" id="startHint">Quick bets start instantly. Hosting creates a room code you can copy and send.</p>
+                <p class="start-note" id="startHint">Quick stakes start instantly. Hosting creates a room code you can copy and send.</p>
               </div>
             </div>
           </div>
@@ -348,7 +348,7 @@
 
   <script src="nova-auth.js?v=20260503d"></script>
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
-  <script src="games/star-sprint/backgammon-core.js?v=20260328a"></script>
-  <script src="games/backgammon-blitz/game.js?v=20260503b"></script>
+  <script src="games/star-sprint/backgammon-core.js?v=20260503a"></script>
+  <script src="games/backgammon-blitz/game.js?v=20260503c"></script>
 </body>
 </html>
