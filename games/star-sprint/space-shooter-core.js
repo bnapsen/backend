@@ -15,6 +15,9 @@
   const MAX_EVENTS = 24;
   const SIM_COIN_KILLS_PER_DROP = 10;
   const SIM_COIN_VALUE_CENTS = 1;
+  const SIM_COIN_PICKUP_RADIUS = 78;
+  const SIM_COIN_MAGNET_RADIUS = 210;
+  const SIM_COIN_MAGNET_SPEED = 560;
   const PLAYER_COLORS = ['#67e8f9', '#ffd166'];
   const ENEMY_COLORS = {
     drone: '#ff7a90',
@@ -485,8 +488,11 @@
       type: 'sim-coin',
       x,
       y,
-      r: 19,
-      ttl: 14,
+      r: 24,
+      ttl: 18,
+      collectRadius: SIM_COIN_PICKUP_RADIUS,
+      magnetRadius: SIM_COIN_MAGNET_RADIUS,
+      magnetSpeed: SIM_COIN_MAGNET_SPEED,
       valueCents: SIM_COIN_VALUE_CENTS,
       ownerId: owner.id,
       killsPerDrop: SIM_COIN_KILLS_PER_DROP,
@@ -785,6 +791,26 @@
       pickup.ttl -= dt;
       if (pickup.ttl <= 0) {
         state.pickups.splice(index, 1);
+        continue;
+      }
+      if (pickup.type === 'sim-coin' && pickup.ownerId) {
+        const owner = findPlayer(state, pickup.ownerId);
+        if (!owner || !owner.alive) {
+          continue;
+        }
+        const dx = owner.x - pickup.x;
+        const dy = owner.y - pickup.y;
+        const distance = Math.hypot(dx, dy);
+        const magnetRadius = pickup.magnetRadius || SIM_COIN_MAGNET_RADIUS;
+        if (distance > 0.1 && distance < magnetRadius) {
+          const pull = clamp(1 - distance / magnetRadius, 0.12, 1);
+          const stepDistance = Math.min(
+            distance,
+            (pickup.magnetSpeed || SIM_COIN_MAGNET_SPEED) * pull * dt
+          );
+          pickup.x += (dx / distance) * stepDistance;
+          pickup.y += (dy / distance) * stepDistance;
+        }
       }
     }
 
@@ -929,7 +955,8 @@
         if (pickup.ownerId && pickup.ownerId !== player.id) {
           continue;
         }
-        const hitRadius = pickup.r + player.r;
+        const pickupRadius = pickup.collectRadius || pickup.r;
+        const hitRadius = pickupRadius + player.r;
         if (distanceSquared(pickup.x, pickup.y, player.x, player.y) > hitRadius * hitRadius) {
           continue;
         }
