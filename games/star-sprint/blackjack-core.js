@@ -1002,6 +1002,7 @@ function canDoubleHand(player, hand = currentHand(player)) {
     hand &&
     player.participating &&
     !hand.done &&
+    !hand.splitAces &&
     hand.cards.length === 2 &&
     player.stack >= hand.bet
   );
@@ -1009,6 +1010,9 @@ function canDoubleHand(player, hand = currentHand(player)) {
 
 function canSplitHand(player, hand = currentHand(player)) {
   if (!player || !hand || !player.participating || hand.done || hand.cards.length !== 2) {
+    return false;
+  }
+  if (hand.splitAces) {
     return false;
   }
   if (playerHands(player).length >= MAX_SPLIT_HANDS || player.stack < hand.bet) {
