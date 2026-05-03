@@ -535,23 +535,40 @@
     const styleAttr = settings.style ? ` style="${settings.style}"` : '';
     if (!card) {
       const hiddenClass = settings.dim ? ' hidden' : '';
-      return `<div class="card back${hiddenClass}${extraClass}${animateClass}"${styleAttr}></div>`;
+      return `
+        <div class="card back${hiddenClass}${extraClass}${animateClass}"${styleAttr}>
+          <div class="card-inner">
+            <div class="card-back-face" aria-hidden="true">
+              <span class="card-back-monogram">AP</span>
+            </div>
+          </div>
+        </div>
+      `;
     }
     const tone = suitTone(card.suit);
     const suit = suitEntity(card.suit);
+    const pipMarks = Array.from({ length: 6 }, () => `<span>${suit}</span>`).join('');
     return `
       <div class="card ${tone}${extraClass}${animateClass}"${styleAttr}>
-        <div class="card-corner top">
-          <span class="card-rank">${card.rank}</span>
-          <span class="card-suit">${suit}</span>
-        </div>
-        <div class="card-center">
-          <span class="card-center-rank">${card.rank}</span>
-          <span class="card-center-suit">${suit}</span>
-        </div>
-        <div class="card-corner bottom">
-          <span class="card-rank">${card.rank}</span>
-          <span class="card-suit">${suit}</span>
+        <div class="card-inner">
+          <div class="card-back-face" aria-hidden="true">
+            <span class="card-back-monogram">AP</span>
+          </div>
+          <div class="card-face">
+            <div class="card-corner top">
+              <span class="card-rank">${card.rank}</span>
+              <span class="card-suit">${suit}</span>
+            </div>
+            <div class="card-center">
+              <span class="card-center-rank">${card.rank}</span>
+              <span class="card-center-suit">${suit}</span>
+            </div>
+            <div class="card-pip-cloud" aria-hidden="true">${pipMarks}</div>
+            <div class="card-corner bottom">
+              <span class="card-rank">${card.rank}</span>
+              <span class="card-suit">${suit}</span>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -931,6 +948,11 @@
     });
   }
 
+  function formatMeterPercent(ratio) {
+    const bounded = Math.max(0, Math.min(1, Number.isFinite(Number(ratio)) ? Number(ratio) : 0));
+    return `${Math.round(bounded * 100)}%`;
+  }
+
   function renderShoeMeters(snapshot) {
     const total = Math.max(1, Number(snapshot?.shoeCardCount) || 312);
     const remainingRaw = Number(snapshot?.shoeRemaining);
@@ -939,15 +961,18 @@
     const discard = Math.max(0, Math.min(total, Number.isFinite(discardRaw) ? discardRaw : 0));
     const shoeFill = remaining / total;
     const discardFill = discard / total;
+    const shoePercent = formatMeterPercent(shoeFill);
+    const discardPercent = formatMeterPercent(discardFill);
 
     if (ui.shoeMeter) {
       ui.shoeMeter.style.setProperty('--fill', shoeFill.toFixed(4));
-      ui.shoeMeter.style.setProperty('--cards', String(remaining));
+      ui.shoeMeter.style.setProperty('--cards-left', String(remaining));
+      ui.shoeMeter.dataset.percent = shoePercent;
       ui.shoeMeter.title = `Shoe: ${remaining} of ${total} cards remain`;
       ui.shoeMeter.setAttribute('aria-label', ui.shoeMeter.title);
       const label = ui.shoeMeter.querySelector('span');
       if (label) {
-        label.textContent = `Shoe ${remaining}`;
+        label.innerHTML = `<strong>${shoePercent}</strong><small>Shoe left</small>`;
       }
       if (state.renderMemo.shoeRemaining !== null && state.renderMemo.shoeRemaining !== remaining) {
         pulseMeter(ui.shoeMeter);
@@ -956,12 +981,13 @@
 
     if (ui.discardMeter) {
       ui.discardMeter.style.setProperty('--fill', discardFill.toFixed(4));
-      ui.discardMeter.style.setProperty('--cards', String(discard));
+      ui.discardMeter.style.setProperty('--cards-used', String(discard));
+      ui.discardMeter.dataset.percent = discardPercent;
       ui.discardMeter.title = `Discard: ${discard} of ${total} cards`;
       ui.discardMeter.setAttribute('aria-label', ui.discardMeter.title);
       const label = ui.discardMeter.querySelector('span');
       if (label) {
-        label.textContent = `Discard ${discard}`;
+        label.innerHTML = `<strong>${discardPercent}</strong><small>Discard</small>`;
       }
       if (state.renderMemo.discardCount !== null && state.renderMemo.discardCount !== discard) {
         pulseMeter(ui.discardMeter);
@@ -995,7 +1021,9 @@
     ui.roomCodeLabel.textContent = state.roomCode || snapshot.roomCode || '-';
     ui.phaseLabel.textContent = phaseText(snapshot.phase);
     ui.tableBetLabel.textContent = formatChips(snapshot.tableBetTotal || 0);
-    ui.shoeLabel.textContent = `${snapshot.shoeRemaining || 0} cards${snapshot.shufflePending ? ' - shuffle next' : ''}`;
+    const shoeTotal = Math.max(1, Number(snapshot.shoeCardCount) || 312);
+    const shoeLeft = Math.max(0, Math.min(shoeTotal, Number(snapshot.shoeRemaining) || 0));
+    ui.shoeLabel.textContent = `${formatMeterPercent(shoeLeft / shoeTotal)} shoe${snapshot.shufflePending ? ' - shuffle next' : ''}`;
     ui.tableHeadline.textContent = snapshot.handNumber
       ? `Hand ${snapshot.handNumber} live`
       : 'AP Blackjack Live';
