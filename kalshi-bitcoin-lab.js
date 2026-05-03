@@ -7,6 +7,7 @@
   const PAPER_STORAGE_KEY = "kalshiBtcPaperLedger";
   const PAPER_AUTO_STORAGE_KEY = "kalshiBtcPaperBots";
   const PAPER_ACCOUNTS_STORAGE_KEY = "kalshiBtcPaperAccounts";
+  const PAPER_COLLAPSE_STORAGE_KEY = "kalshiBtcPaperCollapse";
   const PAPER_DEFAULT_ACCOUNT_ID = "paper-desk-main";
   const PAPER_AUTO_CONTRACTS = 10;
   const PAPER_AUTO_COOLDOWN_MS = 15000;
@@ -62,6 +63,7 @@
     paperAccounts: [],
     activePaperAccountId: PAPER_DEFAULT_ACCOUNT_ID,
     paperUiMuted: false,
+    paperCollapse: {},
     paper: {
       currency: "SIM",
       startingBankroll: 1000,
@@ -157,6 +159,12 @@
   const paperCloneAccountButton = document.querySelector("#paper-clone-account");
   const paperDeleteAccountButton = document.querySelector("#paper-delete-account");
   const paperAccountComparisonEl = document.querySelector("#paper-account-comparison");
+  const paperDesksEl = document.querySelector(".paper-desks");
+  const paperBotsEl = document.querySelector(".paper-bots");
+  const paperSettingsRowEl = document.querySelector(".paper-settings-row");
+  const paperTicketEl = document.querySelector(".paper-ticket");
+  const paperTableWrapEl = document.querySelector(".paper-table-wrap");
+  const paperSimBotCardEl = document.querySelector(".paper-sim-bot-card");
   const paperCurrencyInput = document.querySelector("#paper-currency");
   const paperStartingBankrollInput = document.querySelector("#paper-starting-bankroll");
   const paperOrderActionInput = document.querySelector("#paper-order-action");
@@ -209,6 +217,18 @@
   const paperPositionsEl = document.querySelector("#paper-positions");
   const paperOrdersEl = document.querySelector("#paper-orders");
   const paperHistoryEl = document.querySelector("#paper-history");
+  const paperCollapseSections = [
+    { key: "desks", label: "Desk Controls", detail: "switch, clone, and delete paper desks", element: paperDesksEl, defaultCollapsed: true },
+    { key: "comparison", label: "Desk Comparison", detail: "compare every paper desk", element: paperAccountComparisonEl, defaultCollapsed: true },
+    { key: "headline", label: "Wallet Snapshot", detail: "cash, equity, contracts, and average paid", element: paperHeadlineEl, defaultCollapsed: false },
+    { key: "bots", label: "Bot Controls", detail: "completion, scalp, research, and account SIM bot", element: paperBotsEl, defaultCollapsed: false },
+    { key: "settings", label: "Paper Settings", detail: "starting grant, reset, and Kelly sync", element: paperSettingsRowEl, defaultCollapsed: true },
+    { key: "ticket", label: "Limit Ticket", detail: "manual buy and sell order ticket", element: paperTicketEl, defaultCollapsed: false },
+    { key: "summary", label: "Paper Metrics", detail: "cash, reserved, open mark, and risk", element: paperSummaryEl, defaultCollapsed: true },
+    { key: "positions", label: "Open Positions", detail: "active paper contracts and exits", element: paperTableWrapEl, defaultCollapsed: false },
+    { key: "orders", label: "Pending Limits", detail: "resting paper buy and sell limits", element: paperOrdersEl, defaultCollapsed: true },
+    { key: "history", label: "Recent Trades", detail: "paper buy, sell, win, loss, and limit log", element: paperHistoryEl, defaultCollapsed: true },
+  ];
 
   kalshiLinkEl.addEventListener("click", function (event) {
     if (openKalshiWindow(kalshiLinkEl.href)) {
@@ -300,6 +320,8 @@
   });
   restoreSoundSettings();
   restoreStrategySettings();
+  restorePaperCollapseSettings();
+  installPaperCollapsibles();
   restorePaperLedger();
   restorePaperAutoSettings();
   if (window.NovaAuth) {
@@ -1180,6 +1202,117 @@
     applyPaperLayout();
     renderPaperAccounts();
     renderPaperBankroll();
+  }
+
+  function restorePaperCollapseSettings() {
+    let saved = {};
+    try {
+      saved = JSON.parse(localStorage.getItem(PAPER_COLLAPSE_STORAGE_KEY) || "{}") || {};
+    } catch {
+      saved = {};
+    }
+    state.paperCollapse = {};
+    paperCollapseSections.forEach(function (section) {
+      state.paperCollapse[section.key] = Object.prototype.hasOwnProperty.call(saved, section.key)
+        ? saved[section.key] === true
+        : section.defaultCollapsed === true;
+    });
+    state.paperCollapse.simBot = Object.prototype.hasOwnProperty.call(saved, "simBot")
+      ? saved.simBot === true
+      : true;
+  }
+
+  function savePaperCollapseSettings() {
+    try {
+      localStorage.setItem(PAPER_COLLAPSE_STORAGE_KEY, JSON.stringify(state.paperCollapse || {}));
+    } catch {
+      // The panel still works if local storage is blocked; it just will not remember collapsed sections.
+    }
+  }
+
+  function installPaperCollapsibles() {
+    paperCollapseSections.forEach(function (section) {
+      if (!section.element || section.toggleButton) return;
+      if (!section.element.id) section.element.id = "paper-section-" + section.key;
+      section.element.classList.add("paper-collapsible-body");
+      section.element.setAttribute("data-paper-collapse-body", section.key);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "paper-collapse-toggle";
+      button.setAttribute("data-paper-collapse-toggle", section.key);
+      button.setAttribute("aria-controls", section.element.id);
+      button.addEventListener("click", function () {
+        setPaperSectionCollapsed(section.key, !paperSectionCollapsed(section.key));
+      });
+      section.element.parentNode.insertBefore(button, section.element);
+      section.toggleButton = button;
+      applyPaperSectionCollapse(section);
+    });
+    installPaperSimBotCollapse();
+  }
+
+  function installPaperSimBotCollapse() {
+    if (!paperSimBotCardEl || paperSimBotCardEl.getAttribute("data-collapse-installed") === "1") return;
+    const controls = paperSimBotCardEl.querySelector(".paper-bot-controls");
+    if (!controls) return;
+    paperSimBotCardEl.setAttribute("data-collapse-installed", "1");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "paper-sim-bot-collapse";
+    button.addEventListener("click", function () {
+      state.paperCollapse.simBot = !paperSimBotControlsCollapsed();
+      applyPaperSimBotCollapse();
+      savePaperCollapseSettings();
+    });
+    paperSimBotCardEl.insertBefore(button, controls);
+    applyPaperSimBotCollapse();
+  }
+
+  function paperSectionCollapsed(key) {
+    return state.paperCollapse && state.paperCollapse[key] === true;
+  }
+
+  function paperSimBotControlsCollapsed() {
+    return state.paperCollapse && state.paperCollapse.simBot === true;
+  }
+
+  function setPaperSectionCollapsed(key, collapsed) {
+    if (!state.paperCollapse) state.paperCollapse = {};
+    state.paperCollapse[key] = collapsed === true;
+    const section = paperCollapseSections.find(function (item) { return item.key === key; });
+    if (section) applyPaperSectionCollapse(section);
+    savePaperCollapseSettings();
+  }
+
+  function applyPaperSectionCollapse(section) {
+    const collapsed = paperSectionCollapsed(section.key);
+    if (section.element) {
+      section.element.hidden = collapsed;
+      section.element.classList.toggle("is-collapsed", collapsed);
+    }
+    if (!section.toggleButton) return;
+    section.toggleButton.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    section.toggleButton.classList.toggle("is-collapsed", collapsed);
+    section.toggleButton.innerHTML = [
+      '<span class="paper-collapse-title">',
+      '<strong>' + escapeHtml(section.label) + '</strong>',
+      '<small>' + escapeHtml(section.detail || "") + '</small>',
+      '</span>',
+      '<span class="paper-collapse-state">' + (collapsed ? "Show" : "Hide") + '</span>',
+    ].join("");
+  }
+
+  function applyPaperSimBotCollapse() {
+    if (!paperSimBotCardEl) return;
+    const controls = paperSimBotCardEl.querySelector(".paper-bot-controls");
+    const button = paperSimBotCardEl.querySelector(".paper-sim-bot-collapse");
+    const collapsed = paperSimBotControlsCollapsed();
+    paperSimBotCardEl.classList.toggle("is-sim-bot-compact", collapsed);
+    if (controls) controls.hidden = collapsed;
+    if (button) {
+      button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      button.textContent = collapsed ? "Show Account SIM parameters" : "Hide Account SIM parameters";
+    }
   }
 
   function savePaperLedger() {

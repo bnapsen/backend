@@ -464,6 +464,67 @@ button:disabled {
   color: var(--red);
 }
 
+.paper-collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 0;
+  border-top: 1px solid rgba(237, 244, 241, 0.08);
+  border-bottom: 1px solid rgba(237, 244, 241, 0.08);
+  border-radius: 0;
+  background: #0a1118;
+  color: var(--text);
+  text-align: left;
+}
+
+.paper-collapse-toggle:hover,
+.paper-collapse-toggle:focus-visible {
+  background: #101923;
+}
+
+.paper-collapse-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.paper-collapse-title strong {
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.paper-collapse-title small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paper-collapse-state {
+  flex: 0 0 auto;
+  border: 1px solid rgba(237, 244, 241, 0.13);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.paper-collapse-toggle.is-collapsed .paper-collapse-state {
+  color: var(--blue);
+}
+
+.paper-collapsible-body[hidden],
+.paper-bot-controls[hidden] {
+  display: none !important;
+}
+
 .paper-desks {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) minmax(360px, 0.95fr);
@@ -667,6 +728,37 @@ button:disabled {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.4;
+}
+
+.paper-sim-bot-collapse {
+  justify-self: start;
+  min-height: 32px;
+  padding: 7px 10px;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  border-radius: 6px;
+  background: rgba(96, 165, 250, 0.1);
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.paper-sim-bot-collapse:hover,
+.paper-sim-bot-collapse:focus-visible {
+  background: rgba(96, 165, 250, 0.18);
+}
+
+.paper-sim-bot-card.is-sim-bot-compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 0;
+}
+
+.paper-sim-bot-card.is-sim-bot-compact > span {
+  display: none;
+}
+
+.paper-sim-bot-card.is-sim-bot-compact .paper-sim-bot-collapse {
+  justify-self: end;
 }
 
 .paper-bot-toggle {
