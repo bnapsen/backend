@@ -70,6 +70,7 @@
     hitBtn: document.getElementById('hitBtn'),
     standBtn: document.getElementById('standBtn'),
     doubleBtn: document.getElementById('doubleBtn'),
+    splitBtn: document.getElementById('splitBtn'),
     resetTableBtn: document.getElementById('resetTableBtn'),
     toast: document.getElementById('toast'),
     layoutShell: document.getElementById('layoutShell'),
@@ -336,6 +337,7 @@
       canHit: false,
       canStand: false,
       canDouble: false,
+      canSplit: false,
       betPresets: [100, 500, 2500, 10000, -500],
     };
   }
@@ -763,6 +765,7 @@
     ui.hitBtn.disabled = !(connected && controls.canHit);
     ui.standBtn.disabled = !(connected && controls.canStand);
     ui.doubleBtn.disabled = !(connected && controls.canDouble);
+    ui.splitBtn.disabled = !(connected && controls.canSplit);
     ui.resetTableBtn.disabled = !(connected && controls.canResetTable);
 
     renderActionPrompt();

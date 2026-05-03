@@ -24,7 +24,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/blackjack-live/style.css?v=20260503c" />
+  <link rel="stylesheet" href="games/blackjack-live/style.css?v=20260503e" />
 </head>
 <body>
   <div class="page-shell">
@@ -205,30 +205,30 @@
               </div>
 
               <div class="seat-layer" id="seatLayer"></div>
-            </div>
-          </div>
 
-          <div class="action-tray">
-            <div class="tray-copy">
-              <p class="label">Your controls</p>
-              <p class="tray-line" id="actionPrompt">Host or join, sit at the player spot, set your SIM wager, and deal the round when ready.</p>
-            </div>
+              <div class="action-tray felt-actions">
+                <div class="tray-copy">
+                  <p class="tray-line" id="actionPrompt">Host or join, sit at the player spot, set your SIM wager, and deal the round when ready.</p>
+                </div>
 
-            <div class="wager-strip">
-              <div class="chip-row" id="chipRow"></div>
-              <div class="bet-summary">
-                <div class="bet-pill">Next bet <strong id="nextBetLabel">25</strong></div>
-                <div class="bet-pill alt">Live bet <strong id="activeBetLabel">0</strong></div>
-                <button id="clearBetBtn" class="secondary" type="button">Clear bet</button>
+                <div class="wager-strip">
+                  <div class="chip-row" id="chipRow"></div>
+                  <div class="bet-summary">
+                    <div class="bet-pill">Next bet <strong id="nextBetLabel">25</strong></div>
+                    <div class="bet-pill alt">Live bet <strong id="activeBetLabel">0</strong></div>
+                    <button id="clearBetBtn" class="secondary" type="button">Clear bet</button>
+                  </div>
+                </div>
+
+                <div class="table-buttons">
+                  <button id="dealBtn" class="primary" type="button">Deal</button>
+                  <button id="hitBtn" type="button">Hit</button>
+                  <button id="standBtn" type="button">Stand</button>
+                  <button id="doubleBtn" type="button">Double</button>
+                  <button id="splitBtn" type="button" title="Split is not available in this blackjack engine yet.">Split</button>
+                  <button id="resetTableBtn" type="button">Reset</button>
+                </div>
               </div>
-            </div>
-
-            <div class="table-buttons">
-              <button id="dealBtn" class="primary" type="button">Deal round</button>
-              <button id="hitBtn" type="button">Hit</button>
-              <button id="standBtn" type="button">Stand</button>
-              <button id="doubleBtn" type="button">Double</button>
-              <button id="resetTableBtn" type="button">Reset table</button>
             </div>
           </div>
         </section>
@@ -271,6 +271,6 @@
 
   <script src="nova-auth.js?v=20260503e"></script>
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
-  <script src="games/blackjack-live/game.js?v=20260503d"></script>
+  <script src="games/blackjack-live/game.js?v=20260503e"></script>
 </body>
 </html>
