@@ -162,8 +162,46 @@
     root.style.width = `${prefs.width}px`;
   }
 
+  function applyFloatingWalletRestorePrefs(restore, prefs = loadFloatingWalletPrefs()) {
+    if (!restore) {
+      return;
+    }
+    restore.style.maxWidth = `calc(100vw - ${FLOATING_WALLET_MARGIN * 2}px)`;
+    if (prefs.left === null || prefs.top === null) {
+      restore.style.left = 'auto';
+      restore.style.top = 'auto';
+      restore.style.right = '18px';
+      restore.style.bottom = '18px';
+      return;
+    }
+    const rect = restore.getBoundingClientRect();
+    const width = Math.max(96, rect.width || FLOATING_WALLET_MIN_WIDTH);
+    const height = Math.max(40, rect.height || 44);
+    restore.style.left = `${viewportLimit(prefs.left, width, window.innerWidth)}px`;
+    restore.style.top = `${viewportLimit(prefs.top, height, window.innerHeight)}px`;
+    restore.style.right = 'auto';
+    restore.style.bottom = 'auto';
+  }
+
+  function currentFloatingWalletPlacement(root = state.floatingWallet) {
+    if (!root) {
+      return loadFloatingWalletPrefs();
+    }
+    const rect = root.getBoundingClientRect();
+    return clampFloatingWalletToViewport(root, {
+      ...loadFloatingWalletPrefs(),
+      hidden: false,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+    });
+  }
+
   function setFloatingWalletHidden(hidden) {
-    saveFloatingWalletPrefs({ ...loadFloatingWalletPrefs(), hidden });
+    const prefs = state.floatingWallet && !state.floatingWallet.hidden
+      ? currentFloatingWalletPlacement(state.floatingWallet)
+      : loadFloatingWalletPrefs();
+    saveFloatingWalletPrefs({ ...prefs, hidden });
     renderFloatingWallet();
   }
 
@@ -287,13 +325,12 @@
     }
   }
 
-  function resetFloatingWalletPlacement() {
-    saveFloatingWalletPrefs({
-      hidden: false,
-      left: null,
-      top: null,
-      width: 244,
-    });
+  function dockFloatingWalletPlacement() {
+    const root = ensureFloatingWallet();
+    if (!root) {
+      return;
+    }
+    saveFloatingWalletPrefs(currentFloatingWalletPlacement(root));
     renderFloatingWallet();
   }
 
@@ -1360,6 +1397,7 @@
       if (restore) {
         restore.hidden = false;
         restore.textContent = snapshot.signedIn && !isSyncing && !isError ? formatSimWallet(wallet) : 'SIM wallet';
+        applyFloatingWalletRestorePrefs(restore, prefs);
       }
       return;
     }
@@ -1423,7 +1461,7 @@
     }
     actions.appendChild(makeControlButton('-', 'Make SIM wallet smaller', () => changeFloatingWalletSize(-32)));
     actions.appendChild(makeControlButton('+', 'Make SIM wallet larger', () => changeFloatingWalletSize(32)));
-    actions.appendChild(makeControlButton('Dock', 'Dock SIM wallet in the corner', resetFloatingWalletPlacement));
+    actions.appendChild(makeControlButton('Dock', 'Keep SIM wallet docked here', dockFloatingWalletPlacement));
     actions.appendChild(makeControlButton('Hide', 'Hide SIM wallet', () => setFloatingWalletHidden(true)));
 
     const valueEl = document.createElement('strong');
