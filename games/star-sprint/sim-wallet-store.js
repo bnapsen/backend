@@ -55,7 +55,7 @@ function normalizeUser(user) {
   return {
     uid,
     email: cleanText(user && user.email, '', 180),
-    displayName: cleanText(user && user.displayName, 'Nova member', 120),
+    displayName: cleanText(user && user.displayName, 'AP member', 120),
     picture: cleanText(user && user.picture, '', 500),
     provider: cleanText(user && user.provider, '', 80),
   };

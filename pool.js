@@ -1001,7 +1001,7 @@
 
   function openArcadeLounge(autoShare) {
     if (!window.NovaArcadeLoungeBridge) {
-      setStatus('Arcade Lounge bridge is not available.');
+      setStatus('AP Lounge bridge is not available.');
       return;
     }
     if (autoShare && (isSoloMode() || !state.roomCode)) {
@@ -1019,7 +1019,7 @@
         : '',
       autoShare: Boolean(autoShare),
     });
-    setStatus(autoShare ? 'Opening Arcade Lounge with your duel ready to share.' : 'Opening Arcade Lounge in a new tab.');
+    setStatus(autoShare ? 'Opening AP Lounge with your duel ready to share.' : 'Opening AP Lounge in a new tab.');
   }
 
   function sendJson(payload) {

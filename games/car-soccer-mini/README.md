@@ -1,12 +1,12 @@
 # Car Soccer Mini - Turbo Arena Live
 
-Car Soccer Mini now runs on the shared Nova Arcade realtime backend, just like chess, backgammon, blackjack, poker, mini pool, and the co-op shooter.
+Car Soccer Mini now runs on the shared AP Advantage Player realtime backend, just like chess, backgammon, blackjack, poker, mini pool, and the co-op shooter.
 
 ## What changed
 
 - Shared backend room hosting and joining
 - Invite links and room codes
-- Arcade Lounge sharing
+- AP Lounge sharing
 - Solo mode against Turbo Bot
 - Better arena HUD, roster cards, event feed, and touch-friendly controls
 - Boost pads, overtime, and cleaner kickoff flow

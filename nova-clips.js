@@ -165,7 +165,7 @@ function initClipAuth() {
         apiBaseUrl: clipsApiBase(),
         onChange(profile) {
             if (profile.signedIn && uploaderNameInput && (!uploaderNameInput.value || uploaderNameInput.value === "Guest uploader")) {
-                uploaderNameInput.value = profile.displayName || "Nova member";
+                uploaderNameInput.value = profile.displayName || "AP member";
             }
         },
     }).catch((error) => {
@@ -192,7 +192,7 @@ async function clipAuthHeaders(headers = {}) {
 }
 
 function clipUploaderName() {
-    return window.NovaAuth?.displayName("Nova member") || uploaderNameInput.value.trim();
+    return window.NovaAuth?.displayName("AP member") || uploaderNameInput.value.trim();
 }
 
 function clipReportEndpoint() {
@@ -819,7 +819,7 @@ async function removeClip(clipId, deleteButton) {
         return;
     }
 
-    if (!window.confirm("Remove this clip from Nova Clips?")) {
+    if (!window.confirm("Remove this clip from AP Clips?")) {
         return;
     }
 

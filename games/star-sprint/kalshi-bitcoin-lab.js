@@ -218,7 +218,7 @@ async function fetchJson(url, options = {}) {
     signal: fetchOptions.signal || controller.signal,
     headers: {
       Accept: 'application/json',
-      'User-Agent': 'BNAPSN-Kalshi-Bitcoin-Lab/1.0',
+      'User-Agent': 'AP-Advantage-Player-Kalshi-Bitcoin-Lab/1.0',
       ...(fetchOptions.headers || {}),
     },
   }).finally(() => {
@@ -1224,7 +1224,7 @@ function buildBitcoinOrderPayload(scan, candidate, options = {}) {
     type: 'limit',
     time_in_force: 'fill_or_kill',
     buy_max_cost: maxCostCents,
-    client_order_id: options.clientOrderId || `bnapsn-btc15m-${Date.now()}-${crypto.randomUUID()}`,
+    client_order_id: options.clientOrderId || `ap-btc15m-${Date.now()}-${crypto.randomUUID()}`,
     cancel_order_on_pause: true,
   };
   payload[candidate.side === 'yes' ? 'yes_price' : 'no_price'] = priceCents;

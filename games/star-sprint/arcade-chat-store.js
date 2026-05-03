@@ -43,7 +43,7 @@ function sanitizeInviteEntry(entry) {
 function sanitizeRoomState(roomCode, game) {
   return {
     roomCode: String(roomCode || '').trim().toUpperCase(),
-    topic: String(game && game.topic || 'Nova Arcade Lounge'),
+    topic: String(game && game.topic || 'AP Advantage Player Lounge'),
     status: String(game && game.status || ''),
     messages: Array.isArray(game && game.messages)
       ? game.messages.slice(-MAX_MESSAGES).map(sanitizeMessageEntry)

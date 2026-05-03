@@ -411,7 +411,7 @@
     }
     if (state.mode === 'online') {
       return state.roomCode
-        ? `Room ${state.roomCode} is live. Copy the invite or drop it into Arcade Lounge.`
+        ? `Room ${state.roomCode} is live. Copy the invite or drop it into AP Lounge.`
         : 'Live room connected.';
     }
     if (state.mode === 'solo') {
@@ -464,7 +464,7 @@
 
   function openArcadeLounge(autoShare) {
     if (!window.NovaArcadeLoungeBridge) {
-      showToast('Arcade Lounge is not available right now.');
+      showToast('AP Lounge is not available right now.');
       return;
     }
     if (autoShare && !(state.mode === 'online' && state.roomCode)) {
@@ -482,7 +482,7 @@
         : '',
       autoShare: Boolean(autoShare),
     });
-    showToast(autoShare ? 'Opening Arcade Lounge with your zombie room ready to share.' : 'Opening Arcade Lounge in a new tab.');
+    showToast(autoShare ? 'Opening AP Lounge with your zombie room ready to share.' : 'Opening AP Lounge in a new tab.');
   }
 
   function sizedCanvasTexture(size, painter) {

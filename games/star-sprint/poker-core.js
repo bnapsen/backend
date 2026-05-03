@@ -14,7 +14,7 @@ const BOT_NAME_POOL = [
   'Mint Mirage',
   'Gold Lantern',
   'Velvet Comet',
-  'Nova Tell',
+  'AP Tell',
   'Pocket Halo',
   'Lucky Prism',
   'Dealer Zero',

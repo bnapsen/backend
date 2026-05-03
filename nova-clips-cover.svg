@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
-  <title id="title">Nova Clips cover art</title>
+  <title id="title">AP Clips cover art</title>
   <desc id="desc">A stylized short-video app cover with stacked phone screens and glowing playback panels.</desc>
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -46,7 +46,7 @@
   </g>
   <g fill="#f6fbff" font-family="Oxanium, Arial, sans-serif">
     <text x="112" y="126" font-size="40" font-weight="700" letter-spacing="6">SHORT VIDEO APP</text>
-    <text x="112" y="210" font-size="132" font-weight="800">NOVA CLIPS</text>
+    <text x="112" y="210" font-size="132" font-weight="800">AP CLIPS</text>
     <text x="118" y="268" font-size="34" font-weight="600" letter-spacing="4" opacity="0.86">UPLOAD. SCROLL. KEEP IT LIVE.</text>
   </g>
 </svg>

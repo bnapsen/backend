@@ -8,7 +8,7 @@ const FALLBACK_SONGS = [
         title: "Sude",
         artist: "Ben Wagner",
         uploaderName: "Ben Wagner",
-        description: "The first track inside Nova Jukebox.",
+        description: "The first track inside AP Jukebox.",
         createdAt: "2026-04-12T12:26:58.000Z",
         sizeBytes: 35835052,
         mimeType: "audio/wav",
@@ -233,7 +233,7 @@ function showUploadedPreview(song, fallbackFile) {
     previewPanel.classList.remove("hidden");
     previewTitle.textContent = song.title || inferTitleFromFileName(fallbackFile?.name || "");
     previewFileName.textContent = song.originalFileName || fallbackFile?.name || "";
-    previewMeta.textContent = `${formatBytes(song.sizeBytes || fallbackFile?.size || 0)} · Live on Nova Jukebox`;
+    previewMeta.textContent = `${formatBytes(song.sizeBytes || fallbackFile?.size || 0)} · Live on AP Jukebox`;
     setPreviewStatus("Uploaded live");
     releasePreviewUrl();
     setPreviewAudioSource(resolveAudioUrl(song));
@@ -266,7 +266,7 @@ async function removeSong(songId, deleteButton) {
         return;
     }
 
-    if (!window.confirm("Remove this uploaded song from Nova Jukebox?")) {
+    if (!window.confirm("Remove this uploaded song from AP Jukebox?")) {
         return;
     }
 

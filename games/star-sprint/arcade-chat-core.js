@@ -90,12 +90,12 @@ function setStatus(game, text) {
 function createGameState() {
   const game = {
     roomCode: '',
-    topic: 'Nova Arcade Lounge',
-    status: 'Nova Arcade Lounge is live. Share a room and rally players.',
+    topic: 'AP Advantage Player Lounge',
+    status: 'AP Advantage Player Lounge is live. Share a room and rally players.',
     messages: [],
     invites: [],
   };
-  addSystemMessage(game, 'Nova Arcade Lounge is live. Share a game invite or say hello.');
+  addSystemMessage(game, 'AP Advantage Player Lounge is live. Share a game invite or say hello.');
   return game;
 }
 

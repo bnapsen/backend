@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
   <title id="title">Galaga cover art</title>
-  <desc id="desc">Nova Arcade Galaga cover with alien formation, starfield, and player ship.</desc>
+  <desc id="desc">AP Advantage Player Galaga cover with alien formation, starfield, and player ship.</desc>
   <defs>
     <linearGradient id="bg" x1="800" y1="0" x2="800" y2="900" gradientUnits="userSpaceOnUse">
       <stop stop-color="#091126"/>

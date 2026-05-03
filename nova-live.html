@@ -3,25 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nova Live | BNAPSEN</title>
-    <meta name="description" content="Create, watch, record, and replay browser live stream rooms on BNAPSEN." />
+    <title>AP Live | AP Advantage Player</title>
+    <meta name="description" content="Create, watch, record, and replay browser live stream rooms on AP Advantage Player." />
     <link rel="canonical" href="https://bnapsen.com/nova-live.html" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Nova Live | BNAPSEN" />
-    <meta property="og:description" content="Create, watch, record, and replay browser live stream rooms on BNAPSEN." />
+    <meta property="og:title" content="AP Live | AP Advantage Player" />
+    <meta property="og:description" content="Create, watch, record, and replay browser live stream rooms on AP Advantage Player." />
     <meta property="og:url" content="https://bnapsen.com/nova-live.html" />
     <meta property="og:image" content="https://bnapsen.com/nova-live-cover.svg" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Nova Live | BNAPSEN" />
-    <meta name="twitter:description" content="Create, watch, record, and replay browser live stream rooms on BNAPSEN." />
+    <meta name="twitter:title" content="AP Live | AP Advantage Player" />
+    <meta name="twitter:description" content="Create, watch, record, and replay browser live stream rooms on AP Advantage Player." />
     <meta name="twitter:image" content="https://bnapsen.com/nova-live-cover.svg" />
     <meta name="theme-color" content="#07100f" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="Nova Live" />
+    <meta name="apple-mobile-web-app-title" content="AP Live" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <link rel="manifest" href="nova-live.webmanifest?v=20260501a" />
+    <link rel="manifest" href="nova-live.webmanifest?v=20260503a" />
     <link rel="apple-touch-icon" href="nova-live-apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -32,18 +32,18 @@
 <body>
     <div class="live-shell">
         <header class="live-topbar">
-            <a class="brand-lockup" href="index.html" aria-label="Back to Nova Arcade">
-                <span class="brand-mark">N</span>
+            <a class="brand-lockup" href="index.html" aria-label="Back to AP Advantage Player">
+                <span class="brand-mark">AP</span>
                 <span>
-                    <strong>Nova Live</strong>
-                    <small>BNAPSEN stream rooms</small>
+                    <strong>AP Live</strong>
+                    <small>AP Advantage Player stream rooms</small>
                 </span>
             </a>
             <div class="topbar-actions">
                 <div class="nova-auth-widget" data-auth-widget aria-live="polite"></div>
                 <span class="connection-pill" id="connectionPill">Offline</span>
                 <button class="ghost-link install-app-button hidden" type="button" id="installAppButton">Install App</button>
-                <a class="ghost-link" href="index.html">Arcade</a>
+                <a class="ghost-link" href="index.html">AP Home</a>
             </div>
         </header>
         <p class="install-app-note hidden" id="installAppNote" aria-live="polite"></p>
@@ -54,7 +54,7 @@
                 <div class="stage-toolbar">
                     <div>
                         <p class="eyebrow">Control room</p>
-                        <h1 id="stageTitle">Nova Live</h1>
+                        <h1 id="stageTitle">AP Live</h1>
                     </div>
                     <div class="stage-meter">
                         <span id="roleBadge">Host</span>
@@ -101,11 +101,11 @@
                     </article>
                 </div>
 
-                <section class="replay-panel" id="liveReplays" aria-label="Nova Live replays">
+                <section class="replay-panel" id="liveReplays" aria-label="AP Live replays">
                     <div class="panel-heading-row replay-panel-head">
                         <div>
                             <p class="eyebrow">Replays</p>
-                            <h2>Nova Live Replays</h2>
+                            <h2>AP Live Replays</h2>
                         </div>
                         <button class="small-button" type="button" id="refreshReplaysButton">Refresh</button>
                     </div>
@@ -153,10 +153,10 @@
 
                 <section class="mode-panel is-active" id="hostPanel" aria-labelledby="hostModeButton">
                     <label class="field-label" for="hostName">Name</label>
-                    <input id="hostName" class="text-field" autocomplete="name" maxlength="40" value="Nova Host">
+                    <input id="hostName" class="text-field" autocomplete="name" maxlength="40" value="AP Host">
 
                     <label class="field-label" for="streamTitle">Stream title</label>
-                    <input id="streamTitle" class="text-field" maxlength="70" value="Live from BNAPSEN">
+                    <input id="streamTitle" class="text-field" maxlength="70" value="Live from AP Advantage Player">
 
                     <span class="field-label">Stream source</span>
                     <div class="source-grid">
@@ -231,9 +231,9 @@
                             </div>
                         </section>
                         <label class="field-label" for="recordingTitle">Replay title</label>
-                        <input id="recordingTitle" class="text-field" maxlength="80" value="Nova Live replay">
+                        <input id="recordingTitle" class="text-field" maxlength="80" value="AP Live replay">
                         <label class="field-label" for="recordingCaption">Caption</label>
-                        <textarea id="recordingCaption" class="text-field recording-caption" maxlength="240" rows="2" placeholder="Optional note for Nova Live"></textarea>
+                        <textarea id="recordingCaption" class="text-field recording-caption" maxlength="240" rows="2" placeholder="Optional note for AP Live"></textarea>
                         <div class="button-grid compact">
                             <button class="action-button primary" type="button" id="postRecordingButton" disabled>Post Replay</button>
                             <a class="action-link recording-link hidden" id="recordingPostLink" href="#liveReplays">View Replay</a>
@@ -314,7 +314,7 @@
             <div class="panel-heading-row replay-modal-head">
                 <div>
                     <p class="eyebrow">Replay</p>
-                    <h2 id="replayModalTitle">Nova Live replay</h2>
+                    <h2 id="replayModalTitle">AP Live replay</h2>
                 </div>
                 <button class="small-button" type="button" id="replayModalClose">Close</button>
             </div>
@@ -324,7 +324,7 @@
         </section>
     </div>
 
-    <script src="nova-auth.js?v=20260502i" defer></script>
-    <script src="nova-live.js?v=20260502a" defer></script>
+    <script src="nova-auth.js?v=20260503a" defer></script>
+    <script src="nova-live.js?v=20260503a" defer></script>
 </body>
 </html>

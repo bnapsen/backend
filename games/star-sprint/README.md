@@ -2,7 +2,7 @@
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/bnapsen/backend)
 
-Neon Crown Chess is a browser chess game for Nova Arcade with:
+Neon Crown Chess is a browser chess game for AP Advantage Player with:
 
 - real chess rules
 - room-based online multiplayer over WebSockets
@@ -36,4 +36,4 @@ GET /healthz
 - Render blueprint lives at the repo root in `render.yaml`
 - Production WebSocket URL is configured in `game.js`
 - City Raid lobby API path: `/api/cityraid/lobbies`
-- Nova Jukebox uploads should use a persistent disk-backed `DATA_DIR` on Render so songs survive restarts and deploys
+- AP Jukebox uploads should use a persistent disk-backed `DATA_DIR` on Render so songs survive restarts and deploys

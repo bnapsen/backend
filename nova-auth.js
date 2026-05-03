@@ -656,7 +656,7 @@
       required: state.required,
       signedIn: Boolean(user),
       error: state.error,
-      displayName: cleanText(user && (user.displayName || user.email), 'Nova member', 80),
+      displayName: cleanText(user && (user.displayName || user.email), 'AP member', 80),
       email: cleanText(user && user.email, '', 120),
       photoURL: cleanText(user && user.photoURL, '', 500),
       uid: cleanText(user && user.uid, '', 160),
@@ -1471,7 +1471,7 @@
     isSignedIn() {
       return Boolean(state.user);
     },
-    displayName(fallback = 'Nova member') {
+    displayName(fallback = 'AP member') {
       return profile().displayName || fallback;
     },
     getIdToken,

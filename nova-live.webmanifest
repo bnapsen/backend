@@ -1,8 +1,8 @@
 {
   "id": "/nova-live.html",
-  "name": "Nova Live",
-  "short_name": "Nova Live",
-  "description": "Create, watch, record, and replay Nova Live stream rooms on BNAPSEN.",
+  "name": "AP Live",
+  "short_name": "AP Live",
+  "description": "Create, watch, record, and replay AP Live stream rooms on AP Advantage Player.",
   "start_url": "/nova-live.html?source=pwa",
   "scope": "/",
   "display": "standalone",
@@ -32,7 +32,7 @@
   ],
   "shortcuts": [
     {
-      "name": "Open Nova Live",
+      "name": "Open AP Live",
       "short_name": "Live",
       "url": "/nova-live.html",
       "icons": [
@@ -44,7 +44,7 @@
       ]
     },
     {
-      "name": "Nova Clips",
+      "name": "AP Clips",
       "short_name": "Clips",
       "url": "/nova-clips.html",
       "icons": [

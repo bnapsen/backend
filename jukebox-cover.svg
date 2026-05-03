@@ -19,7 +19,7 @@
   <circle cx="889" cy="283" r="28" fill="#FFC178"/>
   <circle cx="889" cy="283" r="12" fill="#08111D"/>
   <rect x="180" y="160" width="250" height="54" rx="27" fill="#79F0FF" fill-opacity="0.12" stroke="#79F0FF" stroke-opacity="0.24" stroke-width="2"/>
-  <text x="305" y="194" fill="#79F0FF" font-family="Oxanium, Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="3">NOVA JUKEBOX</text>
+  <text x="305" y="194" fill="#79F0FF" font-family="Oxanium, Segoe UI, sans-serif" font-size="28" font-weight="700" letter-spacing="3">AP JUKEBOX</text>
   <text x="706" y="515" fill="#F7FBFF" font-family="Oxanium, Segoe UI, sans-serif" font-size="72" font-weight="800">Upload</text>
   <text x="706" y="584" fill="#F7FBFF" font-family="Oxanium, Segoe UI, sans-serif" font-size="72" font-weight="800">Play</text>
   <text x="706" y="653" fill="#F7FBFF" font-family="Oxanium, Segoe UI, sans-serif" font-size="72" font-weight="800">Repeat</text>

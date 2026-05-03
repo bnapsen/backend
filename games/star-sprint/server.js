@@ -146,7 +146,7 @@ const SEEDED_SONGS = Object.freeze([
     title: 'Sude',
     artist: 'Ben Wagner',
     uploaderName: 'Ben Wagner',
-    description: 'The first track inside Nova Jukebox.',
+    description: 'The first track inside AP Jukebox.',
     createdAt: '2026-04-12T12:26:58.000Z',
     sizeBytes: 35835052,
     mimeType: 'audio/wav',
@@ -302,7 +302,7 @@ const GAME_DEFS = {
   },
   'arcade-chat': {
     id: 'arcade-chat',
-    title: 'Nova Arcade Lounge',
+    title: 'AP Advantage Player Lounge',
     maxPlayers: 60,
     createGameState: () => ArcadeChat.createGameState(),
     cloneState: (game) => ArcadeChat.cloneState(game),
@@ -570,7 +570,7 @@ function normalizeAuthUser(decodedToken) {
   return {
     uid: String(decodedToken && (decodedToken.uid || decodedToken.sub) || '').trim(),
     email,
-    displayName: name || (email ? email.split('@')[0] : 'Nova member'),
+    displayName: name || (email ? email.split('@')[0] : 'AP member'),
     picture: String(decodedToken && decodedToken.picture || '').trim(),
     provider: String(decodedToken && decodedToken.firebase && decodedToken.firebase.sign_in_provider || '').trim(),
   };
@@ -647,7 +647,7 @@ async function authenticateSocketPayload(socket, payload, { required = NOVA_AUTH
   }
 }
 
-function authDisplayName(user, fallback = 'Nova member', maxLength = 48) {
+function authDisplayName(user, fallback = 'AP member', maxLength = 48) {
   return sanitizeClipField(user && (user.displayName || user.email) || fallback, maxLength) || fallback;
 }
 
@@ -1189,10 +1189,10 @@ function bootstrapPersistentDataDir() {
 
 function logStorageConfiguration() {
   const usesCustomDataDir = DATA_DIR !== DEFAULT_DATA_DIR;
-  console.log(`Nova Arcade data dir: ${DATA_DIR}`);
+  console.log(`AP Advantage Player data dir: ${DATA_DIR}`);
 
   if (usesCustomDataDir) {
-    console.log('Nova Arcade uploads are configured to persist in custom storage.');
+    console.log('AP Advantage Player uploads are configured to persist in custom storage.');
     return;
   }
 
@@ -1203,7 +1203,7 @@ function logStorageConfiguration() {
 
   if (isLikelyRenderRuntime) {
     console.warn(
-      'Nova Arcade is using the default local data directory on Render. ' +
+      'AP Advantage Player is using the default local data directory on Render. ' +
       'Uploads may be lost when the instance restarts unless DATA_DIR points to a mounted persistent disk.',
     );
   }
@@ -2208,7 +2208,7 @@ async function handleClipUploadSessionRequest(req, res) {
   const originalFileName = sanitizeClipFileName(body.fileName || body.originalFileName);
   const normalizedUpload = normalizeClipUploadType(originalFileName, body.mimeType);
   const sizeBytes = Number(body.sizeBytes || 0);
-  const uploaderName = authDisplayName(auth.user, sanitizeClipField(body.uploaderName, 48) || 'Nova member', 48);
+  const uploaderName = authDisplayName(auth.user, sanitizeClipField(body.uploaderName, 48) || 'AP member', 48);
   const title = sanitizeClipField(body.title, 80) || inferClipTitle(originalFileName);
   const caption = sanitizeClipField(body.caption, 240);
   const origin = normalizeClipOrigin(body.origin || body.sourceOrigin || body.sourceContext);
@@ -2349,7 +2349,7 @@ async function handleClipUploadFinalizeRequest(req, res) {
       deleteToken: crypto.randomBytes(24).toString('hex'),
       title: sanitizeClipField(uploadPayload.title, 80) || inferClipTitle(uploadPayload.originalFileName),
       caption: sanitizeClipField(uploadPayload.caption, 240),
-      uploaderName: authDisplayName(auth.user, sanitizeClipField(uploadPayload.uploaderName, 48) || 'Nova member', 48),
+      uploaderName: authDisplayName(auth.user, sanitizeClipField(uploadPayload.uploaderName, 48) || 'AP member', 48),
       ownerUserId: auth.user.uid,
       ownerEmail: auth.user.email,
       ownerProvider: auth.user.provider,
@@ -2863,7 +2863,7 @@ async function handleClipsRequest(req, res) {
 
   const title = sanitizeClipField(upload.fields.title, 80) || inferClipTitle(upload.file.originalFileName);
   const caption = sanitizeClipField(upload.fields.caption, 240);
-  const uploaderName = authDisplayName(auth.user, sanitizeClipField(upload.fields.uploaderName, 48) || 'Nova member', 48);
+  const uploaderName = authDisplayName(auth.user, sanitizeClipField(upload.fields.uploaderName, 48) || 'AP member', 48);
   const origin = normalizeClipOrigin(upload.fields.origin || upload.fields.sourceOrigin || upload.fields.sourceContext);
 
   let storedClip = null;
@@ -4964,7 +4964,7 @@ function handleChatMessage(socket, payload) {
 
   const { room, player } = context;
   if (room.gameType !== 'arcade-chat') {
-    sendError(socket, 'Chat messages are only used in Arcade Lounge rooms.');
+    sendError(socket, 'Chat messages are only used in AP Lounge rooms.');
     return;
   }
 
@@ -4990,7 +4990,7 @@ function handleShareInvite(socket, payload) {
 
   const { room, player } = context;
   if (room.gameType !== 'arcade-chat') {
-    sendError(socket, 'Invite sharing is only used in Arcade Lounge rooms.');
+    sendError(socket, 'Invite sharing is only used in AP Lounge rooms.');
     return;
   }
 
@@ -5019,7 +5019,7 @@ function handleVoiceJoin(socket, payload) {
 
   const { room, player } = context;
   if (room.gameType !== 'arcade-chat') {
-    sendError(socket, 'Voice chat is only available in Arcade Lounge rooms.');
+    sendError(socket, 'Voice chat is only available in AP Lounge rooms.');
     return;
   }
 
@@ -5037,7 +5037,7 @@ function handleVoiceLeave(socket) {
 
   const { room, player } = context;
   if (room.gameType !== 'arcade-chat') {
-    sendError(socket, 'Voice chat is only available in Arcade Lounge rooms.');
+    sendError(socket, 'Voice chat is only available in AP Lounge rooms.');
     return;
   }
 
@@ -5054,7 +5054,7 @@ function handleVoiceMute(socket, payload) {
 
   const { room, player } = context;
   if (room.gameType !== 'arcade-chat') {
-    sendError(socket, 'Voice chat is only available in Arcade Lounge rooms.');
+    sendError(socket, 'Voice chat is only available in AP Lounge rooms.');
     return;
   }
 
@@ -5075,7 +5075,7 @@ function handleVoiceStyle(socket, payload) {
 
   const { room, player } = context;
   if (room.gameType !== 'arcade-chat') {
-    sendError(socket, 'Voice Lab is only available in Arcade Lounge rooms.');
+    sendError(socket, 'Voice Lab is only available in AP Lounge rooms.');
     return;
   }
 
@@ -5091,7 +5091,7 @@ function handleVoiceSignal(socket, payload) {
 
   const { room, player } = context;
   if (room.gameType !== 'arcade-chat') {
-    sendError(socket, 'Voice chat is only available in Arcade Lounge rooms.');
+    sendError(socket, 'Voice chat is only available in AP Lounge rooms.');
     return;
   }
 
@@ -5399,8 +5399,8 @@ async function handleLiveHost(socket, payload) {
       return;
     }
     existingRoom.hostSocket = socket;
-    existingRoom.hostName = sanitizeLiveText(authDisplayName(auth, existingRoom.hostName || 'Nova Host', 40), existingRoom.hostName || 'Nova Host', 40);
-    existingRoom.title = sanitizeLiveText(payload && payload.title, existingRoom.title || 'Live from BNAPSEN', 70);
+    existingRoom.hostName = sanitizeLiveText(authDisplayName(auth, existingRoom.hostName || 'AP Host', 40), existingRoom.hostName || 'AP Host', 40);
+    existingRoom.title = sanitizeLiveText(payload && payload.title, existingRoom.title || 'Live from AP Advantage Player', 70);
     existingRoom.hostUserId = auth.uid;
     existingRoom.hostDisconnectedAt = 0;
 
@@ -5441,8 +5441,8 @@ async function handleLiveHost(socket, payload) {
     code: roomCode,
     hostId,
     hostUserId: auth.uid,
-    hostName: sanitizeLiveText(authDisplayName(auth, 'Nova Host', 40), 'Nova Host', 40),
-    title: sanitizeLiveText(payload && payload.title, 'Live from BNAPSEN', 70),
+    hostName: sanitizeLiveText(authDisplayName(auth, 'AP Host', 40), 'AP Host', 40),
+    title: sanitizeLiveText(payload && payload.title, 'Live from AP Advantage Player', 70),
     hostSocket: socket,
     viewers: new Map(),
     chatMessages: [],
@@ -5784,7 +5784,7 @@ async function handleRestart(socket) {
     return;
   }
   if (room.gameType === 'arcade-chat') {
-    sendError(socket, 'Arcade Lounge rooms do not use reset.');
+    sendError(socket, 'AP Lounge rooms do not use reset.');
     return;
   }
   if (room.gameType === 'space-shooter') {
@@ -6414,7 +6414,7 @@ Promise.all([
       `Arcade chat persistence: ${arcadeChatStore.enabled ? 'firestore' : 'in-memory only'}`,
     );
     server.listen(PORT, HOST, () => {
-      console.log(`Nova Arcade realtime server running at ws://${HOST}:${PORT}`);
+      console.log(`AP Advantage Player realtime server running at ws://${HOST}:${PORT}`);
     });
   })
   .catch((error) => {

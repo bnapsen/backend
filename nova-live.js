@@ -340,7 +340,7 @@ function initInstallExperience() {
     state.installPromptHandled = true;
     document.body.classList.add('is-standalone');
     hideInstallButton();
-    setInstallNote('Nova Live was installed. You can launch it from your home screen now.');
+    setInstallNote('AP Live was installed. You can launch it from your home screen now.');
   });
 
   window.matchMedia('(display-mode: standalone)').addEventListener?.('change', updateInstallExperience);
@@ -362,9 +362,9 @@ async function handleInstallAppClick() {
       const choice = await promptEvent.userChoice;
       if (choice && choice.outcome === 'accepted') {
         state.installPromptHandled = true;
-        setInstallNote('Nova Live is installing. Look for it on your home screen or app drawer.');
+        setInstallNote('AP Live is installing. Look for it on your home screen or app drawer.');
       } else {
-        setInstallNote('Install canceled. You can tap Install App again if you want Nova Live on your phone.');
+        setInstallNote('Install canceled. You can tap Install App again if you want AP Live on your phone.');
       }
     } catch {
       setInstallNote('If the install prompt did not open, use your browser menu and choose Install app or Add to Home Screen.');
@@ -375,7 +375,7 @@ async function handleInstallAppClick() {
   }
 
   if (isIosDevice()) {
-    setInstallNote('On iPhone or iPad: tap the Share button in Safari, then choose Add to Home Screen. It will open Nova Live like an app.');
+    setInstallNote('On iPhone or iPad: tap the Share button in Safari, then choose Add to Home Screen. It will open AP Live like an app.');
     return;
   }
 
@@ -387,7 +387,7 @@ function registerNovaLiveServiceWorker() {
     return;
   }
   navigator.serviceWorker.register('/nova-live-sw.js').catch(() => {
-    // Nova Live still works as a normal webpage if service worker registration fails.
+    // AP Live still works as a normal webpage if service worker registration fails.
   });
 }
 
@@ -449,8 +449,8 @@ function applyAuthProfile(profile = {}) {
   if (!profile.signedIn) {
     return;
   }
-  if (els.hostName && (!els.hostName.value || els.hostName.value === 'Nova Host')) {
-    els.hostName.value = profile.displayName || 'Nova Host';
+  if (els.hostName && (!els.hostName.value || els.hostName.value === 'AP Host')) {
+    els.hostName.value = profile.displayName || 'AP Host';
   }
   if (els.viewerName && (!els.viewerName.value || els.viewerName.value === 'Viewer')) {
     els.viewerName.value = profile.displayName || 'Viewer';
@@ -717,7 +717,7 @@ function isLiveReplayClip(clip) {
     return false;
   }
   const text = `${clip.title || ''} ${clip.caption || ''}`.toLowerCase();
-  return text.includes('nova live') || /\breplay\b/.test(text);
+  return text.includes('ap live') || text.includes('nova' + ' live') || /\breplay\b/.test(text);
 }
 
 function upsertReplayClip(clip) {
@@ -739,7 +739,7 @@ function renderReplays(focusClipId = '') {
   els.replayStatus.classList.toggle('is-error', Boolean(state.replaysError));
 
   if (state.replaysLoading && !state.replays.length) {
-    els.replayStatus.textContent = 'Loading Nova Live replays...';
+    els.replayStatus.textContent = 'Loading AP Live replays...';
     return;
   }
 
@@ -749,11 +749,11 @@ function renderReplays(focusClipId = '') {
   }
 
   if (!state.replays.length) {
-    els.replayStatus.textContent = 'No Nova Live replays posted yet.';
+    els.replayStatus.textContent = 'No AP Live replays posted yet.';
     return;
   }
 
-  els.replayStatus.textContent = `${state.replays.length} replay${state.replays.length === 1 ? '' : 's'} on Nova Live.`;
+  els.replayStatus.textContent = `${state.replays.length} replay${state.replays.length === 1 ? '' : 's'} on AP Live.`;
   const ownedUploads = readOwnedUploads();
   state.replays.forEach((clip) => {
     els.replayGrid.appendChild(createReplayCard(clip, ownedUploads, clip.id === focusClipId));
@@ -776,7 +776,7 @@ function createReplayCard(clip, ownedUploads, isNew = false) {
   const thumbnailButton = document.createElement('button');
   thumbnailButton.className = 'replay-thumb-button';
   thumbnailButton.type = 'button';
-  thumbnailButton.setAttribute('aria-label', `Play ${clip.title || 'Nova Live replay'}`);
+  thumbnailButton.setAttribute('aria-label', `Play ${clip.title || 'AP Live replay'}`);
   if (posterUrl) {
     const image = document.createElement('img');
     image.className = 'replay-thumb-media';
@@ -787,7 +787,7 @@ function createReplayCard(clip, ownedUploads, isNew = false) {
   } else {
     const fallback = document.createElement('div');
     fallback.className = 'replay-thumb-fallback';
-    fallback.textContent = 'NOVA';
+    fallback.textContent = 'AP';
     thumbnailButton.appendChild(fallback);
   }
 
@@ -808,14 +808,14 @@ function createReplayCard(clip, ownedUploads, isNew = false) {
   body.className = 'replay-card-body';
 
   const title = document.createElement('h3');
-  title.textContent = clip.title || 'Nova Live replay';
+  title.textContent = clip.title || 'AP Live replay';
   body.appendChild(title);
 
   const meta = document.createElement('p');
   meta.className = 'replay-meta';
   meta.textContent = [
     formatReplayDate(clip.createdAt),
-    clip.uploaderName || 'Nova Host',
+    clip.uploaderName || 'AP Host',
   ].filter(Boolean).join(' - ');
   body.appendChild(meta);
 
@@ -844,7 +844,7 @@ function createReplayCard(clip, ownedUploads, isNew = false) {
       if (!requireNovaAuth('delete your replay')) {
         return;
       }
-      if (!window.confirm('Delete this replay from Nova Live?')) {
+      if (!window.confirm('Delete this replay from AP Live?')) {
         return;
       }
       deleteButton.disabled = true;
@@ -853,7 +853,7 @@ function createReplayCard(clip, ownedUploads, isNew = false) {
         forgetOwnedUpload(clip.id);
         state.replays = state.replays.filter((entry) => entry.id !== clip.id);
         renderReplays();
-        logEvent('Replay deleted from Nova Live.');
+        logEvent('Replay deleted from AP Live.');
       } catch (error) {
         deleteButton.disabled = false;
         logEvent(`Replay delete failed: ${error.message || 'network error'}.`);
@@ -879,11 +879,11 @@ function openReplayModal(clip) {
   }
 
   const posterUrl = resolveClipMediaUrl(clip.posterPath);
-  els.replayModalTitle.textContent = clip.title || 'Nova Live replay';
+  els.replayModalTitle.textContent = clip.title || 'AP Live replay';
   els.replayModalMeta.textContent = [
     formatReplayDuration(clip.durationSeconds),
     formatReplayDate(clip.createdAt),
-    clip.uploaderName || 'Nova Host',
+    clip.uploaderName || 'AP Host',
     formatReplayStats(clip),
   ].filter(Boolean).join(' - ');
   els.replayModalCaption.textContent = clip.caption || '';
@@ -1033,9 +1033,9 @@ async function startVideoChat() {
   updateQuickChatControls();
   setMode('host');
 
-  const hostName = cleanText(els.hostName.value, 'Nova Host', 40);
+  const hostName = cleanText(els.hostName.value, 'AP Host', 40);
   const currentTitle = cleanOptionalText(els.streamTitle.value, 70);
-  if (!currentTitle || currentTitle === 'Live from BNAPSEN') {
+  if (!currentTitle || currentTitle === 'Live from AP Advantage Player') {
     els.streamTitle.value = `${hostName}'s video chat`;
   }
 
@@ -1506,8 +1506,8 @@ function reconnectLiveSignal() {
     sendSignal({
       action: 'live-host',
       roomCode: state.roomCode,
-      name: cleanText(els.hostName.value, 'Nova Host', 40),
-      title: cleanText(els.streamTitle.value, 'Live from BNAPSEN', 70),
+      name: cleanText(els.hostName.value, 'AP Host', 40),
+      title: cleanText(els.streamTitle.value, 'Live from AP Advantage Player', 70),
     });
     return;
   }
@@ -1548,8 +1548,8 @@ function goLive() {
   state.intentionalDisconnect = false;
   sendSignal({
     action: 'live-host',
-    name: cleanText(els.hostName.value, 'Nova Host', 40),
-    title: cleanText(els.streamTitle.value, 'Live from BNAPSEN', 70),
+    name: cleanText(els.hostName.value, 'AP Host', 40),
+    title: cleanText(els.streamTitle.value, 'Live from AP Advantage Player', 70),
   });
   els.goLiveButton.disabled = true;
   els.stopLiveButton.disabled = false;
@@ -2138,7 +2138,7 @@ function finishReplayRecording() {
   els.recordingPostLink.classList.add('hidden');
   syncRecordingEditor({ resetRange: true });
   updateRecordingTimer();
-  setRecordingStatus(`Replay saved (${formatFileSize(blob.size)}). Review it, then post to Nova Live.`, 'ready');
+  setRecordingStatus(`Replay saved (${formatFileSize(blob.size)}). Review it, then post to AP Live.`, 'ready');
   updateRecordingControls();
   logEvent('Replay recording saved.');
 }
@@ -2505,7 +2505,7 @@ async function applyRecordingTrim() {
     els.recordingPreview.classList.add('is-visible');
     syncRecordingEditor();
     updateRecordingTimer();
-    setRecordingStatus(`Trim applied (${formatFileSize(editedBlob.size)}). Review it, then post to Nova Live.`, 'ready');
+    setRecordingStatus(`Trim applied (${formatFileSize(editedBlob.size)}). Review it, then post to AP Live.`, 'ready');
   } catch (error) {
     setRecordingStatus(`Trim failed: ${error.message || 'browser error'}.`, 'error');
   } finally {
@@ -2546,11 +2546,11 @@ async function postReplayRecording() {
 
   const title = cleanText(
     els.recordingTitle.value,
-    `${cleanText(els.streamTitle.value, 'Nova Live', 70)} replay`,
+    `${cleanText(els.streamTitle.value, 'AP Live', 70)} replay`,
     80,
   );
   const caption = cleanOptionalText(els.recordingCaption.value, 240);
-  const uploaderName = cleanText(window.NovaAuth?.displayName('Nova Host') || els.hostName.value, 'Nova Host', 48);
+  const uploaderName = cleanText(window.NovaAuth?.displayName('AP Host') || els.hostName.value, 'AP Host', 48);
   const file = makeReplayFile(state.recording.blob, title);
 
   state.recording.uploadInFlight = true;
@@ -2566,7 +2566,7 @@ async function postReplayRecording() {
         const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((loaded / total) * 100))) : 0;
         setRecordingStatus(`Uploading replay to cloud storage... ${percent}%`, 'ready');
       }, session.uploadContentType || session.mimeType || '');
-      setRecordingStatus('Processing replay for Nova Live...', 'ready');
+      setRecordingStatus('Processing replay for AP Live...', 'ready');
       payload = await finalizeReplayUpload(session.rawUploadKey, session.uploadToken);
     } catch (error) {
       if (file.size > LEGACY_REPLAY_UPLOAD_MAX_BYTES) {
@@ -2597,9 +2597,9 @@ async function postReplayRecording() {
     releaseRecordingPreview();
     syncRecordingEditor();
     setRecordingStatus(payload.clip && payload.clip.status === 'active'
-      ? 'Replay posted to Nova Live.'
+      ? 'Replay posted to AP Live.'
       : 'Replay uploaded and sent to moderation.', 'ready');
-    logEvent('Replay posted to Nova Live.');
+    logEvent('Replay posted to AP Live.');
     loadReplays({ focusClipId: payload.clip && payload.clip.id ? payload.clip.id : '' });
   } catch (error) {
     setRecordingStatus(`Replay upload failed: ${error.message || 'network error'}.`, 'error');
@@ -2816,7 +2816,7 @@ async function deletePostedReplay() {
     return;
   }
 
-  if (!window.confirm('Delete this posted replay from Nova Live?')) {
+  if (!window.confirm('Delete this posted replay from AP Live?')) {
     return;
   }
 
@@ -2836,8 +2836,8 @@ async function deletePostedReplay() {
     els.deleteRecordingButton.classList.add('hidden');
     renderReplays();
     loadReplays();
-    setRecordingStatus('Replay deleted from Nova Live.', 'ready');
-    logEvent('Replay deleted from Nova Live.');
+    setRecordingStatus('Replay deleted from AP Live.', 'ready');
+    logEvent('Replay deleted from AP Live.');
   } catch (error) {
     setRecordingStatus(`Replay delete failed: ${error.message || 'network error'}.`, 'error');
     logEvent(`Replay delete failed: ${error.message || 'network error'}.`);
@@ -3224,7 +3224,7 @@ function refreshStage() {
   const hasRemote = Boolean(els.remoteVideo.srcObject);
   const hasLocal = Boolean(state.localStream);
   const isLive = Boolean(state.roomCode && (state.role === 'host' || hasRemote));
-  const title = isHost ? cleanText(els.streamTitle.value, 'Nova Live', 70) : 'Watching Nova Live';
+  const title = isHost ? cleanText(els.streamTitle.value, 'AP Live', 70) : 'Watching AP Live';
   const audioTracks = hasLocal ? state.localStream.getAudioTracks() : [];
   const videoTracks = hasLocal ? state.localStream.getVideoTracks() : [];
   const audioState = audioTracks.length ? (state.mediaMuted ? 'Muted' : 'Audio on') : 'No audio';

@@ -1454,7 +1454,7 @@
   }
 
   function roomLabel(code) {
-    return isPublicRoom(code) ? 'Public Arcade Lounge' : `Private Lounge ${code}`;
+    return isPublicRoom(code) ? 'Public AP Lounge' : `Private Lounge ${code}`;
   }
 
   function buildLoungeInviteUrl(roomCode) {

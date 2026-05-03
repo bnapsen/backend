@@ -1,10 +1,10 @@
-# Nova Arcade Google Cloud storage
+# AP Advantage Player Google Cloud storage
 
 This project now uses Google Cloud for durable backend storage:
 
 - Cloud Run for the live Node backend
 - Google Cloud Storage for uploaded songs, clips, and review metadata
-- Firestore for Arcade Lounge room persistence
+- Firestore for AP Lounge room persistence
 
 The public site can stay on GitHub Pages at `bnapsen.com` while the API and
 WebSocket backend run on Cloud Run.
@@ -25,7 +25,7 @@ WebSocket backend run on Cloud Run.
 - `clips/metadata/reports.json`
 - `reviews/metadata/reviews.json`
 
-Arcade Lounge room state is stored in Firestore collection:
+AP Lounge room state is stored in Firestore collection:
 
 - `arcadeChatRooms`
 
@@ -70,14 +70,14 @@ For the current `bnapsen` project the important values are:
 
 ## Account sign-in
 
-Nova Live and Nova Clips now use Firebase Authentication. The frontend loads
+AP Live and AP Clips now use Firebase Authentication. The frontend loads
 the Firebase web config from `GET /api/auth/config`, then sends the Firebase ID
 token to the Cloud Run backend. The backend verifies that token with
 `firebase-admin` before allowing:
 
-- Nova Live hosting, joining, and chat
-- Nova Live replay posting
-- Nova Clips uploads
+- AP Live hosting, joining, and chat
+- AP Live replay posting
+- AP Clips uploads
 - clip deletion by the owning signed-in account, with existing delete tokens
   still accepted as a fallback for older uploads
 
@@ -133,7 +133,7 @@ gcloud run deploy nova-arcade-backend `
 The repo root `Dockerfile` builds the backend and includes the City Raid
 download assets served by the backend routes.
 
-Cloud Run should be kept at at least `1 GiB` of memory for Nova Clips, since
+Cloud Run should be kept at at least `1 GiB` of memory for AP Clips, since
 clip finalize/transcode work can exceed the default `512 MiB` on larger phone
 uploads.
 
@@ -156,10 +156,10 @@ After deploy, verify:
 - `GET /api/songs` returns uploaded community songs plus the seeded track
 - `GET /api/clips` returns uploaded clips
 - uploaded media paths use `/media/songs/s3/...` and `/media/clips/s3/...`
-- Arcade Lounge messages survive a backend restart
+- AP Lounge messages survive a backend restart
 
 ## Important Cloud Run note
 
 Cloud Run has a hard request-body limit, so the legacy multipart path stays
-small. Larger Nova Clips and Nova Live replay uploads use signed direct cloud
+small. Larger AP Clips and AP Live replay uploads use signed direct cloud
 uploads instead; the current raw clip ceiling is `1.5 GB` before processing.

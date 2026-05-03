@@ -543,7 +543,7 @@
 
   function openArcadeLounge(autoShare) {
     if (!window.NovaArcadeLoungeBridge) {
-      showToast('Arcade Lounge bridge is not available.');
+      showToast('AP Lounge bridge is not available.');
       return;
     }
     if (autoShare && !(state.mode === 'online' && state.roomCode)) {
@@ -561,7 +561,7 @@
         : '',
       autoShare: Boolean(autoShare),
     });
-    showToast(autoShare ? 'Opening Arcade Lounge with your backgammon room ready to share.' : 'Opening Arcade Lounge in a new tab.');
+    showToast(autoShare ? 'Opening AP Lounge with your backgammon room ready to share.' : 'Opening AP Lounge in a new tab.');
   }
 
   function emptySeatCard(color) {
@@ -2893,7 +2893,7 @@
     const applyProfile = (profile) => {
       state.authProfile = profile || null;
       if (profile?.signedIn && !ui.nameInput.value.trim()) {
-        ui.nameInput.value = String(profile.displayName || 'Nova').slice(0, 18);
+        ui.nameInput.value = String(profile.displayName || 'AP Player').slice(0, 18);
         persistSettings();
       }
       render();
