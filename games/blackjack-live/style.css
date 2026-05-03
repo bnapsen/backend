@@ -578,6 +578,38 @@ h2 {
   transition: none;
 }
 
+.card.drag-source-anchored {
+  opacity: 1;
+  filter: brightness(0.98) drop-shadow(0 0 12px rgba(131, 235, 212, 0.18));
+}
+
+.card-drag-ghost {
+  position: fixed !important;
+  z-index: 5000 !important;
+  width: var(--seat-card-width);
+  height: var(--seat-card-height);
+  margin: 0 !important;
+  pointer-events: none;
+  translate: none !important;
+  opacity: 1;
+  filter: brightness(1.1) drop-shadow(0 22px 34px rgba(0, 0, 0, 0.45));
+  transform: translate3d(0, 0, 0) scale(1.045);
+  transition: none !important;
+  will-change: transform;
+}
+
+.card-drag-ghost,
+.card-drag-ghost .card-inner,
+.card.drag-piece.is-moved.animate-in,
+.card.drag-piece.is-moved.animate-in .card-inner,
+.card.drag-piece.dragging.animate-in,
+.card.drag-piece.dragging.animate-in .card-inner,
+.card.drag-source-anchored.animate-in,
+.card.drag-source-anchored.animate-in .card-inner {
+  animation: none !important;
+  animation-delay: 0ms !important;
+}
+
 .dragging-table-piece {
   cursor: grabbing;
 }

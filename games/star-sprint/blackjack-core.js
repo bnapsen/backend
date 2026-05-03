@@ -6,7 +6,7 @@ const SHOE_DECKS = 6;
 const SHOE_CARD_COUNT = SHOE_DECKS * SUITS.length * RANKS.length;
 const CUT_CARD_REMAINING = Math.floor(SHOE_CARD_COUNT * 0.25);
 const STARTING_STACK = 100000;
-const DEFAULT_BET = 500;
+const DEFAULT_BET = 0;
 const MAX_SEATS = 6;
 const MAX_LOG = 16;
 const MAX_SPLIT_HANDS = 4;
@@ -79,14 +79,13 @@ function pushLog(state, text, tone) {
 
 function createPlayer(id, name, seat, options = {}) {
   const walletCents = Math.max(0, Math.round(Number(options.walletCents ?? STARTING_STACK) || 0));
-  const defaultBet = Math.min(DEFAULT_BET, walletCents);
   return {
     id,
     name,
     seat,
     stack: walletCents,
     walletCents,
-    bet: defaultBet,
+    bet: 0,
     activeBet: 0,
     cards: [],
     hands: [],
@@ -197,9 +196,6 @@ function syncPlayerWallet(state, playerId, walletCents) {
   }
   if (player.bet > balance) {
     player.bet = balance;
-  }
-  if (player.bet === 0 && balance > 0 && !player.participating) {
-    player.bet = Math.min(DEFAULT_BET, balance);
   }
   return player;
 }
@@ -389,8 +385,6 @@ function settleRound(state) {
       player.status = `${player.result} Out of chips.`;
     } else if (player.bet > player.stack) {
       player.bet = player.stack;
-    } else if (player.bet === 0) {
-      player.bet = Math.min(DEFAULT_BET, player.stack);
     }
 
     pushLog(
@@ -604,6 +598,7 @@ function startRound(state, playerId) {
     const reservedBet = Math.min(player.bet, player.stack);
     player.stack -= reservedBet;
     player.walletCents = player.stack;
+    player.bet = 0;
     player.hands = [createHand(reservedBet)];
     player.activeBet = reservedBet;
     player.participating = true;

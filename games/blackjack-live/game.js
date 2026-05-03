@@ -347,6 +347,13 @@
       .replace(/>/g, '&gt;');
   }
 
+  function cssEscape(value) {
+    if (window.CSS && typeof window.CSS.escape === 'function') {
+      return window.CSS.escape(value);
+    }
+    return String(value || '').replace(/["\\]/g, '\\$&');
+  }
+
   function showToast(message) {
     window.clearTimeout(state.toastTimer);
     ui.toast.textContent = message;
@@ -1197,6 +1204,44 @@
     element.classList.toggle('is-moved', Boolean(x || y));
   }
 
+  function createCardDragGhost(element) {
+    const rect = element.getBoundingClientRect();
+    const ghost = element.cloneNode(true);
+    ghost.classList.add('card-drag-ghost');
+    ghost.classList.remove('dragging');
+    ghost.style.left = `${rect.left}px`;
+    ghost.style.top = `${rect.top}px`;
+    ghost.style.width = `${rect.width}px`;
+    ghost.style.height = `${rect.height}px`;
+    document.body.appendChild(ghost);
+    element.classList.add('drag-source-anchored');
+    return { ghost, rect };
+  }
+
+  function clampGhostDelta(startRect, dx, dy) {
+    const table = document.querySelector('.table-felt');
+    if (!table || !startRect) {
+      return { dx, dy };
+    }
+    const pad = 8;
+    const tableRect = table.getBoundingClientRect();
+    let nextDx = dx;
+    let nextDy = dy;
+    if (startRect.left + nextDx < tableRect.left + pad) {
+      nextDx += tableRect.left + pad - (startRect.left + nextDx);
+    }
+    if (startRect.right + nextDx > tableRect.right - pad) {
+      nextDx -= (startRect.right + nextDx) - (tableRect.right - pad);
+    }
+    if (startRect.top + nextDy < tableRect.top + pad) {
+      nextDy += tableRect.top + pad - (startRect.top + nextDy);
+    }
+    if (startRect.bottom + nextDy > tableRect.bottom - pad) {
+      nextDy -= (startRect.bottom + nextDy) - (tableRect.bottom - pad);
+    }
+    return { dx: nextDx, dy: nextDy };
+  }
+
   function clampDragPosition(element, position) {
     const table = document.querySelector('.table-felt');
     if (!table || !element) {
@@ -1316,6 +1361,9 @@
       id,
       element,
       surface: element.closest('.table-props, .dealer-zone, .seat-layer, .felt-actions'),
+      isCard: element.classList.contains('card'),
+      ghost: null,
+      ghostStartRect: null,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
@@ -1340,11 +1388,27 @@
     }
     if (!drag.moved) {
       drag.moved = true;
-      drag.element.classList.add('dragging');
+      if (drag.isCard) {
+        const cardGhost = createCardDragGhost(drag.element);
+        drag.ghost = cardGhost.ghost;
+        drag.ghostStartRect = cardGhost.rect;
+      } else {
+        drag.element.classList.add('dragging');
+      }
+      drag.ghost?.classList.add('dragging');
       document.body.classList.add('dragging-table-piece');
       unlockAudio();
     }
     event.preventDefault();
+    if (drag.ghost) {
+      const clamped = clampGhostDelta(drag.ghostStartRect, dx, dy);
+      drag.ghost.style.transform = `translate3d(${clamped.dx}px, ${clamped.dy}px, 0) scale(1.045)`;
+      state.tableDrag.positions[drag.id] = {
+        x: drag.baseX + clamped.dx,
+        y: drag.baseY + clamped.dy,
+      };
+      return;
+    }
     const next = clampDragPosition(drag.element, {
       x: drag.baseX + dx,
       y: drag.baseY + dy,
@@ -1358,18 +1422,22 @@
       return;
     }
     drag.element.releasePointerCapture?.(event.pointerId);
+    const target = document.querySelector(`.table-felt [data-drag-id="${cssEscape(drag.id)}"]`) || drag.element;
     if (drag.moved) {
       const finalPosition = resolveDragOverlaps(
-        drag.element,
+        target,
         state.tableDrag.positions[drag.id] || { x: drag.baseX, y: drag.baseY }
       );
       state.tableDrag.positions[drag.id] = finalPosition;
-      applyDragPosition(drag.element, finalPosition);
+      applyDragPosition(target, finalPosition);
       persistTableLayout();
       state.tableDrag.suppressClickUntil = Date.now() + 450;
       playSound('click');
     }
     drag.element.classList.remove('dragging');
+    drag.element.classList.remove('drag-source-anchored');
+    target.classList.remove('dragging', 'drag-source-anchored');
+    drag.ghost?.remove();
     drag.surface?.classList.remove('drag-surface-active');
     document.body.classList.remove('dragging-table-piece');
     state.tableDrag.active = null;
