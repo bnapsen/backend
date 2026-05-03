@@ -8,7 +8,6 @@
     setupHidden: 'royalBlackjackLive.setupHidden',
     infoHidden: 'royalBlackjackLive.infoHidden',
   };
-  const DEFAULT_MAX_SEATS = 6;
   const query = new URLSearchParams(window.location.search);
 
   const state = {
@@ -213,7 +212,7 @@
 
   function renderStatus() {
     const base = state.snapshot?.status || '';
-    ui.statusText.textContent = state.statusMessage || base || 'Host a table to create an invite link, or join with a room code to take the next open seat.';
+    ui.statusText.textContent = state.statusMessage || base || 'Host a table to create an invite link, or join with a room code to take the player spot.';
   }
 
   function persistSettings() {
@@ -328,11 +327,6 @@
     };
   }
 
-  function seatCapacity() {
-    const liveCapacity = Number(state.snapshot?.maxPlayers);
-    return Number.isFinite(liveCapacity) && liveCapacity > 0 ? liveCapacity : DEFAULT_MAX_SEATS;
-  }
-
   function getPlayerBySeat(seat) {
     if (!state.snapshot || !Array.isArray(state.snapshot.players)) {
       return null;
@@ -352,6 +346,15 @@
     return Number.isInteger(seat) ? getPlayerBySeat(seat) : null;
   }
 
+  function getDisplayPlayer() {
+    const viewer = getViewer();
+    if (viewer) {
+      return viewer;
+    }
+    const players = state.snapshot?.players || [];
+    return players.find((player) => player.id === state.playerId) || players[0] || null;
+  }
+
   function getActionPlayer() {
     if (!state.snapshot || !Number.isInteger(state.snapshot.actionSeat)) {
       return null;
@@ -361,28 +364,6 @@
 
   function canQuickSeatJoin() {
     return getViewerSeat() === null;
-  }
-
-  function relativeSeatPosition(seat) {
-    const viewerSeat = getViewerSeat();
-    const capacity = seatCapacity();
-    if (!Number.isInteger(viewerSeat)) {
-      return seat;
-    }
-    return (seat - viewerSeat + capacity) % capacity;
-  }
-
-  function seatPlacementStyle(position) {
-    const placements = [
-      { x: 50, y: 84 },
-      { x: 23, y: 74 },
-      { x: 13, y: 47 },
-      { x: 30, y: 24 },
-      { x: 70, y: 24 },
-      { x: 87, y: 47 },
-    ];
-    const slot = placements[position] || placements[position % placements.length];
-    return `--seat-x:${slot.x}%;--seat-y:${slot.y}%;`;
   }
 
   function phaseText(phase) {
@@ -475,7 +456,7 @@
     if (!player) {
       return 'empty';
     }
-    const cards = player.cards.map((card) => (card ? `${card.rank}${card.suit}` : 'XX')).join('|');
+    const cards = (player.cards || []).map((card) => (card ? `${card.rank}${card.suit}` : 'XX')).join('|');
     return `${player.id}|${cards}|${player.stack}|${player.bet}|${player.activeBet}|${player.statusText}|${player.result}`;
   }
 
@@ -499,42 +480,54 @@
     return badges.join('');
   }
 
-  function emptySeatMarkup(seat, position) {
+  function emptySeatMarkup() {
     const roomCode = sanitizeRoomCode(state.roomCode || ui.roomInput.value);
     const quickAction = canQuickSeatJoin() ? (roomCode ? 'join' : 'host') : '';
     const prompt = quickAction === 'join'
-      ? 'Click to join this table.'
+      ? 'Join this room and sit at the player spot.'
       : quickAction === 'host'
-        ? 'Click to host this table.'
-        : 'Open seat.';
-    const tag = quickAction ? 'button' : 'div';
-    const actionAttr = quickAction ? ` type="button" data-seat-action="${quickAction}" data-seat="${seat}"` : '';
-    const joinClass = quickAction ? ' joinable' : '';
+        ? 'Host a table and sit at the player spot.'
+        : 'The player spot is waiting for a signed-in SIM account.';
+    const actionButton = quickAction
+      ? `<button class="seat-join-button" type="button" data-seat-action="${quickAction}">${quickAction === 'join' ? 'Join and sit' : 'Host and sit'}</button>`
+      : '';
     return `
-      <${tag} class="seat-card empty${joinClass}"${actionAttr} style="${seatPlacementStyle(position)}">
+      <div class="seat-card empty${quickAction ? ' joinable' : ''}">
         <div class="seat-topline">
           <div>
-            <div class="seat-name">Seat ${seat + 1}</div>
+            <div class="seat-name">Your seat</div>
             <div class="seat-meta">SIM wallet</div>
           </div>
           <div class="seat-badges">
             <span class="badge">Open</span>
           </div>
         </div>
-        <div class="hole-row">
-          ${cardMarkup(null, { dim: true, extraClass: 'hole-card', style: seatCardStyle(0, 2) })}
-          ${cardMarkup(null, { dim: true, extraClass: 'hole-card', style: seatCardStyle(1, 2) })}
+        <div class="seat-play-area">
+          <div class="seat-bet-circle empty-circle">
+            <span>Betting circle</span>
+          </div>
+          <div class="hole-row">
+            ${cardMarkup(null, { dim: true, extraClass: 'hole-card', style: seatCardStyle(0, 2) })}
+            ${cardMarkup(null, { dim: true, extraClass: 'hole-card', style: seatCardStyle(1, 2) })}
+          </div>
         </div>
-        <div class="seat-cta">${prompt}</div>
-      </${tag}>
+        <div class="seat-footer">
+          <div class="seat-totals">
+            <div class="seat-score">Single player</div>
+            <div class="seat-stack">${prompt}</div>
+          </div>
+          ${actionButton}
+        </div>
+      </div>
     `;
   }
 
-  function renderSeat(player, seat, position) {
+  function renderSeat(player) {
     if (!player) {
-      return emptySeatMarkup(seat, position);
+      return emptySeatMarkup();
     }
 
+    const seat = Number.isInteger(player.seat) ? player.seat : 0;
     const classes = ['seat-card'];
     if (player.id === state.playerId) {
       classes.push('you');
@@ -544,7 +537,8 @@
     }
 
     const animate = state.renderMemo.seatSignatures.get(seat) !== seatSignature(player);
-    const seatCards = player.cards && player.cards.length ? player.cards : [null, null];
+    const playerCards = Array.isArray(player.cards) ? player.cards : [];
+    const seatCards = playerCards.length ? playerCards : [null, null];
     const cards = seatCards.map((card, index) => cardMarkup(card, {
       dim: !card,
       animate: animate && Boolean(card),
@@ -555,10 +549,10 @@
     const betLine = player.activeBet > 0
       ? `Live ${formatChips(player.activeBet)}`
       : `Next ${formatChips(player.bet)}`;
-    const scoreLine = player.cards.length ? `Hand ${player.scoreLabel}` : 'Waiting';
+    const scoreLine = playerCards.length ? `Hand ${player.scoreLabel}` : 'Waiting';
 
     return `
-      <div class="${classes.join(' ')}" style="${seatPlacementStyle(position)}">
+      <div class="${classes.join(' ')}">
         <div class="seat-topline">
           <div>
             <div class="seat-name">${player.name}</div>
@@ -568,8 +562,13 @@
             ${seatBadges(player, seat)}
           </div>
         </div>
-        <div class="hole-row">
-          ${cards.join('')}
+        <div class="seat-play-area">
+          <div class="seat-bet-circle">
+            <span>${betLine}</span>
+          </div>
+          <div class="hole-row">
+            ${cards.join('')}
+          </div>
         </div>
         <div class="seat-footer">
           <div class="seat-totals">
@@ -584,27 +583,18 @@
 
   function renderSeats() {
     const nextSignatures = new Map();
-    const seats = [];
-    for (let seat = 0; seat < seatCapacity(); seat += 1) {
-      const player = getPlayerBySeat(seat);
-      nextSignatures.set(seat, seatSignature(player));
-      seats.push({
-        seat,
-        player,
-        position: relativeSeatPosition(seat),
-      });
+    const player = getDisplayPlayer();
+    if (player) {
+      nextSignatures.set(Number.isInteger(player.seat) ? player.seat : 0, seatSignature(player));
     }
-    ui.seatLayer.innerHTML = seats
-      .sort((left, right) => left.position - right.position)
-      .map((entry) => renderSeat(entry.player, entry.seat, entry.position))
-      .join('');
+    ui.seatLayer.innerHTML = renderSeat(player);
     state.renderMemo.seatSignatures = nextSignatures;
   }
 
   function renderLog() {
     const entries = state.snapshot?.log || [];
     if (!entries.length) {
-      ui.logList.innerHTML = '<div class="log-item"><span class="log-tag">Dealer</span><p>Seat the table, set bets, and deal when ready.</p></div>';
+      ui.logList.innerHTML = '<div class="log-item"><span class="log-tag">Dealer</span><p>Sit down, set a SIM wager, and deal when ready.</p></div>';
       return;
     }
     ui.logList.innerHTML = [...entries].reverse().map((entry) => {
@@ -630,11 +620,11 @@
       ui.tableBetLabel.textContent = formatChips(0);
       ui.shoeLabel.textContent = '6 decks / 25% cut';
       ui.tableHeadline.textContent = 'AP Blackjack Live';
-      ui.tableSubline.textContent = 'Seat up, set SIM wagers, and deal when ready.';
+      ui.tableSubline.textContent = 'Sit down, set a SIM wager, and deal when ready.';
       ui.dealerScoreLabel.textContent = '?';
       ui.handLabel.textContent = '0';
       ui.tableBetAmount.textContent = formatChips(0);
-      ui.turnLabel.textContent = 'Seat players';
+      ui.turnLabel.textContent = 'Sit down';
       ui.nextBetLabel.textContent = formatChips(500);
       ui.activeBetLabel.textContent = formatChips(0);
       return;
@@ -647,7 +637,7 @@
     ui.tableHeadline.textContent = snapshot.handNumber
       ? `Hand ${snapshot.handNumber} live`
       : 'AP Blackjack Live';
-    ui.tableSubline.textContent = snapshot.status || 'Seat up and deal.';
+    ui.tableSubline.textContent = snapshot.status || 'Sit down and deal.';
     ui.dealerScoreLabel.textContent = snapshot.dealer?.scoreLabel || '?';
     ui.handLabel.textContent = String(snapshot.handNumber || 0);
     ui.tableBetAmount.textContent = formatChips(snapshot.tableBetTotal || 0);
@@ -657,7 +647,9 @@
         ? 'Payouts settled'
         : snapshot.phase === 'dealer-turn'
           ? 'Dealer playing'
-          : `${(snapshot.players || []).length}/${snapshot.maxPlayers} seated`;
+          : getDisplayPlayer()
+            ? 'Player seated'
+            : 'Sit down';
     ui.nextBetLabel.textContent = formatChips(viewer?.bet || 0);
     ui.activeBetLabel.textContent = formatChips(viewer?.activeBet || 0);
   }
@@ -709,7 +701,7 @@
     const actor = getActionPlayer();
 
     if (!snapshot) {
-      ui.actionPrompt.textContent = 'Sign in, click an open seat to host or join, then set your SIM wager before the round starts.';
+      ui.actionPrompt.textContent = 'Sign in, host or join, then use the player spot on the front rail to sit and set your SIM wager.';
       return;
     }
     if (controls.canAct) {
@@ -721,7 +713,7 @@
       return;
     }
     if (controls.canStartRound) {
-      ui.actionPrompt.textContent = 'At least one seated player has a live SIM wager. Press Deal round to put the next hand in motion.';
+      ui.actionPrompt.textContent = 'Your SIM wager is set. Press Deal round to put the next hand in motion.';
       return;
     }
     if (actor) {
@@ -732,7 +724,7 @@
       ui.actionPrompt.textContent = 'The hand is settled. Review payouts in the dealer feed, then set new wagers and deal again.';
       return;
     }
-    ui.actionPrompt.textContent = 'Seat players and place at least one SIM wager to start the table.';
+    ui.actionPrompt.textContent = 'Sit down and place at least one SIM wager to start the table.';
   }
 
   function renderChips() {

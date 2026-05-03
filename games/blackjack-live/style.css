@@ -645,22 +645,65 @@ h2 {
 
 .seat-layer {
   position: absolute;
-  inset: 0;
+  left: 50%;
+  bottom: 6.5%;
+  z-index: 4;
+  width: min(82%, 780px);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
 .seat-card {
-  position: absolute;
-  left: var(--seat-x);
-  top: var(--seat-y);
-  width: clamp(170px, 17vw, 220px);
-  padding: 14px;
-  border-radius: 24px;
+  position: relative;
+  width: 100%;
+  min-height: clamp(210px, 22vw, 260px);
+  padding: clamp(18px, 2.1vw, 26px);
+  display: grid;
+  grid-template-columns: minmax(168px, 0.9fr) minmax(260px, 1.25fr) minmax(168px, 0.9fr);
+  align-items: center;
+  gap: clamp(16px, 2vw, 28px);
+  border-radius: 30px 30px 38px 38px;
   background:
-    linear-gradient(180deg, rgba(12, 18, 27, 0.94), rgba(6, 10, 17, 0.96)),
-    radial-gradient(circle at top, rgba(239, 197, 109, 0.08), transparent 32%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: var(--shadow-lg);
-  transform: translate(-50%, -50%);
+    linear-gradient(180deg, rgba(13, 21, 26, 0.94), rgba(5, 12, 17, 0.97)),
+    radial-gradient(circle at 50% 80%, rgba(239, 197, 109, 0.14), transparent 34%),
+    radial-gradient(circle at top, rgba(131, 235, 212, 0.08), transparent 42%);
+  border: 1px solid rgba(255, 238, 196, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -10px 22px rgba(0, 0, 0, 0.28),
+    0 24px 52px rgba(0, 0, 0, 0.42);
+  pointer-events: auto;
+  transform: none;
+}
+
+.seat-card::before {
+  content: 'Player station';
+  position: absolute;
+  left: 50%;
+  top: -14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: rgba(255, 244, 218, 0.78);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  background: rgba(6, 12, 18, 0.9);
+  border: 1px solid rgba(239, 197, 109, 0.24);
+  transform: translateX(-50%);
+}
+
+.seat-card::after {
+  content: '';
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  bottom: 10px;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(239, 197, 109, 0.3), transparent);
 }
 
 .seat-card.active {
@@ -676,12 +719,15 @@ h2 {
 }
 
 .seat-card.empty {
-  background: rgba(7, 11, 18, 0.62);
+  background:
+    linear-gradient(180deg, rgba(9, 15, 22, 0.76), rgba(5, 9, 15, 0.88)),
+    radial-gradient(circle at 50% 80%, rgba(239, 197, 109, 0.08), transparent 34%);
+  border-style: dashed;
   color: var(--muted);
 }
 
 .seat-card.empty.joinable {
-  cursor: pointer;
+  cursor: default;
 }
 
 .seat-card.empty.joinable:hover {
@@ -689,6 +735,11 @@ h2 {
   box-shadow:
     var(--shadow-lg),
     0 0 24px rgba(239, 197, 109, 0.12);
+  transform: none;
+}
+
+.seat-card button:hover {
+  transform: none;
 }
 
 .seat-topline,
@@ -699,8 +750,17 @@ h2 {
   align-items: center;
 }
 
+.seat-topline {
+  align-self: stretch;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+}
+
 .seat-name {
   font-weight: 800;
+  font-size: clamp(1.02rem, 1.5vw, 1.24rem);
+  overflow-wrap: anywhere;
 }
 
 .seat-meta,
@@ -715,7 +775,7 @@ h2 {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .badge {
@@ -742,11 +802,54 @@ h2 {
   background: rgba(244, 117, 141, 0.14);
 }
 
+.seat-play-area {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 170px;
+}
+
+.seat-bet-circle {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: clamp(128px, 13vw, 164px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  border-radius: 50%;
+  color: rgba(255, 244, 218, 0.72);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+  background:
+    radial-gradient(circle, rgba(239, 197, 109, 0.16), rgba(239, 197, 109, 0.04) 58%, transparent 60%),
+    rgba(5, 14, 17, 0.28);
+  border: 2px solid rgba(239, 197, 109, 0.34);
+  box-shadow:
+    inset 0 0 28px rgba(239, 197, 109, 0.08),
+    0 0 32px rgba(0, 0, 0, 0.16);
+  transform: translateX(-50%);
+}
+
+.seat-bet-circle.empty-circle {
+  color: rgba(255, 244, 218, 0.5);
+  border-style: dashed;
+}
+
 .hole-row {
+  position: relative;
+  z-index: 1;
   display: flex;
+  justify-content: center;
+  align-items: flex-end;
   gap: 0;
-  margin: 12px 0 10px;
-  min-height: calc(var(--seat-card-height) + 10px);
+  margin: 0;
+  min-height: calc(var(--seat-card-height) + 18px);
+  transform: translateY(8px);
 }
 
 .hole-card {
@@ -757,7 +860,11 @@ h2 {
 }
 
 .seat-footer {
-  align-items: flex-end;
+  align-self: stretch;
+  display: grid;
+  justify-content: stretch;
+  align-items: center;
+  gap: 12px;
 }
 
 .seat-totals {
@@ -771,12 +878,25 @@ h2 {
 }
 
 .seat-status {
-  min-height: 2.3em;
+  min-height: 1.4em;
 }
 
 .seat-cta {
   margin-top: 8px;
   color: var(--gold);
+}
+
+.seat-join-button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 44px;
+  padding: 12px 16px;
+  border-radius: 999px;
+  color: #241209;
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--gold), #ffdc8a);
+  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.2);
 }
 
 .action-tray {
@@ -1082,13 +1202,21 @@ h2 {
   }
 
   .table-center {
-    top: 42%;
+    top: 43%;
     width: 86%;
   }
 
+  .seat-layer {
+    width: min(88%, 720px);
+    bottom: 5.5%;
+  }
+
   .seat-card {
-    width: clamp(148px, 44vw, 190px);
-    padding: 12px;
+    width: 100%;
+    grid-template-columns: minmax(132px, 0.85fr) minmax(220px, 1.2fr) minmax(132px, 0.85fr);
+    min-height: 224px;
+    padding: 18px;
+    gap: 16px;
   }
 }
 
@@ -1103,11 +1231,47 @@ h2 {
   }
 
   .table-felt {
-    min-height: 740px;
+    min-height: 760px;
+  }
+
+  .dealer-zone {
+    top: 6%;
+  }
+
+  .table-center {
+    top: 43%;
+  }
+
+  .seat-layer {
+    width: 92%;
+    bottom: 4%;
   }
 
   .seat-card {
-    width: clamp(132px, 42vw, 170px);
+    width: 100%;
+    min-height: 268px;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 18px 16px 20px;
+  }
+
+  .seat-topline {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .seat-footer {
+    gap: 10px;
+  }
+
+  .seat-play-area {
+    min-height: 124px;
+  }
+
+  .seat-bet-circle {
+    width: 122px;
+    font-size: 0.58rem;
   }
 
   .table-buttons button,
