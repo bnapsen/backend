@@ -17,6 +17,7 @@ const overlayCopy = document.getElementById("overlay-copy");
 const startButton = document.getElementById("start-button");
 const pauseButton = document.getElementById("pause-button");
 const restartButton = document.getElementById("restart-button");
+const KILLS_PER_SIM_PENNY = 10;
 
 const state = {
   width: canvas.width,
@@ -24,10 +25,10 @@ const state = {
   running: false,
   paused: false,
   awaitingStart: true,
-  gameOver: false,
   score: 0,
   stage: 1,
-  lives: 3,
+  hits: 0,
+  killsThisRun: 0,
   best: loadBestScore(),
   runId: createRunId(),
   player: {
@@ -68,8 +69,11 @@ function createRunId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function recordSimEnemyKill(killCount = 1) {
+function recordSimEnemyKill(killCount = 1, retries = 4) {
   if (!window.NovaAuth || typeof window.NovaAuth.recordEnemyKillReward !== "function") {
+    if (retries > 0) {
+      window.setTimeout(() => recordSimEnemyKill(killCount, retries - 1), 250);
+    }
     return;
   }
   window.NovaAuth.recordEnemyKillReward({
@@ -77,6 +81,27 @@ function recordSimEnemyKill(killCount = 1) {
     killCount,
     score: state.score,
     runId: state.runId,
+  }).catch(() => {});
+}
+
+function recordSimBulletHit(retries = 4) {
+  if (!window.NovaAuth || typeof window.NovaAuth.adjustSimWallet !== "function") {
+    if (retries > 0) {
+      window.setTimeout(() => recordSimBulletHit(retries - 1), 250);
+    }
+    return;
+  }
+  window.NovaAuth.adjustSimWallet({
+    amountCents: -1,
+    source: "galaga",
+    action: "bullet-hit-penalty",
+    note: "Galaga enemy bullet hit penalty",
+    metadata: {
+      game: "galaga",
+      score: state.score,
+      stage: state.stage,
+      runId: state.runId,
+    },
   }).catch(() => {});
 }
 
@@ -100,7 +125,7 @@ function updateHud() {
   scoreDisplay.textContent = String(state.score).padStart(6, "0");
   bestDisplay.textContent = String(state.best).padStart(6, "0");
   waveDisplay.textContent = String(state.stage).padStart(2, "0");
-  livesDisplay.textContent = String(state.lives);
+  livesDisplay.textContent = String(state.hits);
 }
 
 function setStatus(title, copy, duration = 0) {
@@ -185,7 +210,7 @@ function createFormation(stage) {
     offsetX,
     offsetY,
     dir: 1,
-    speed: 42 + stage * 7,
+    speed: 42 + Math.min(stage * 8, 220),
     bob: Math.random() * Math.PI * 2,
   };
 
@@ -220,14 +245,14 @@ function createFormation(stage) {
   state.enemyBullets = [];
   state.bullets = [];
   state.particles = [];
-  state.enemyFireCooldown = Math.max(0.3, 0.88 - stage * 0.05);
+  state.enemyFireCooldown = Math.max(0.16, 0.86 - Math.min(stage, 20) * 0.035);
   state.enemyFireTimer = 0.55;
-  state.diveTimer = Math.max(0.5, 1.7 - stage * 0.08);
+  state.diveTimer = Math.max(0.28, 1.55 - Math.min(stage, 20) * 0.055);
   state.waveIntro = 1.4;
   resetPlayer();
   setStatus(
     `Wave ${state.stage} live`,
-    "The center opens first. Own it before the dive-bombers decide you don't deserve it.",
+    `${KILLS_PER_SIM_PENNY} kills bank 0.01 SIM. Enemy bullets cost 0.01 SIM, but the waves never stop.`,
     3.4,
   );
 }
@@ -236,14 +261,14 @@ function startRun() {
   state.awaitingStart = false;
   state.running = true;
   state.paused = false;
-  state.gameOver = false;
   state.score = 0;
   state.stage = 1;
-  state.lives = 3;
+  state.hits = 0;
+  state.killsThisRun = 0;
   state.runId = createRunId();
   createFormation(state.stage);
   updateHud();
-  setOverlay("Wave 01", "Formation live", "Break the front line before the dive angles start to stack.", false);
+  setOverlay("Wave 01", "Endless formation", "Every 10 kills can bank 0.01 SIM. Enemy bullets cost 0.01 SIM.", false);
 }
 
 function restartRun() {
@@ -251,7 +276,7 @@ function restartRun() {
 }
 
 function togglePause() {
-  if (state.awaitingStart || state.gameOver) {
+  if (state.awaitingStart) {
     return;
   }
 
@@ -281,7 +306,7 @@ function spawnEnemyBullet(enemy) {
     y: enemy.y + 16,
     width: 5,
     height: 15,
-    speed: 220 + state.stage * 20,
+    speed: 220 + Math.min(state.stage * 22, 320),
   });
 }
 
@@ -306,7 +331,7 @@ function startDive(enemy) {
   enemy.returning = false;
   enemy.diveTime = 0;
   enemy.diveVX = (Math.random() < 0.5 ? -1 : 1) * (70 + Math.random() * 30);
-  enemy.diveVY = 146 + state.stage * 10 + Math.random() * 18;
+  enemy.diveVY = 146 + Math.min(state.stage * 12, 220) + Math.random() * 18;
 }
 
 function moveAxis(current, target, amount) {
@@ -326,30 +351,29 @@ function rectsOverlap(a, b) {
   );
 }
 
-function loseLife() {
-  if (state.player.invulnerable > 0 || state.gameOver) {
-    return;
+function handlePlayerHit(reason = "collision") {
+  if (state.player.invulnerable > 0) {
+    return false;
   }
 
-  state.lives -= 1;
+  state.hits += 1;
   spawnBurst(state.player.x, state.player.y, "#ff8c3a", 16);
-
-  if (state.lives <= 0) {
-    state.running = false;
-    state.gameOver = true;
-    if (state.score > state.best) {
-      state.best = state.score;
-      saveBestScore();
-    }
-    updateHud();
-    setOverlay("Run over", "Formation wins", "Hit restart and take a cleaner first lane next time.", false);
-    setStatus("Ship lost", "The dive pattern finally landed. Restart and steal back the first tempo.");
-    return;
+  if (state.score > state.best) {
+    state.best = state.score;
+    saveBestScore();
   }
 
   resetPlayer();
   updateHud();
-  setStatus("Ship clipped", "You still have time. Stay off the walls and rebuild the center.", 2.8);
+  if (reason === "bullet") {
+    recordSimBulletHit();
+    setStatus("Bullet hit: -0.01 SIM", "Endless mode keeps moving. Reset the lane before the next volley.", 2.8);
+  } else if (reason === "breach") {
+    setStatus("Formation breached", "The wave reset instead of ending the run. The difficulty keeps climbing.", 2.8);
+  } else {
+    setStatus("Ship clipped", "No game over here. Rebuild the center and keep stacking kills.", 2.8);
+  }
+  return true;
 }
 
 function killEnemy(enemy, bonusDive = false) {
@@ -364,8 +388,12 @@ function killEnemy(enemy, bonusDive = false) {
   }
   const colors = colorForType(enemy.type);
   spawnBurst(enemy.x, enemy.y, colors.fill, 12);
+  state.killsThisRun += 1;
   updateHud();
   recordSimEnemyKill(1);
+  if (state.killsThisRun % KILLS_PER_SIM_PENNY === 0) {
+    setStatus("+0.01 SIM kill batch", `${state.killsThisRun} kills logged this run. Keep the streak alive.`, 2.4);
+  }
 }
 
 function updateStars(deltaTime) {
@@ -424,7 +452,11 @@ function updateFormation(deltaTime) {
   }
 
   if (state.formation.offsetY > state.height - 180) {
-    loseLife();
+    if (handlePlayerHit("breach")) {
+      createFormation(state.stage);
+      updateHud();
+      setOverlay(`Wave ${String(state.stage).padStart(2, "0")}`, "Formation reset", "They reached the deck, so the same wave reforms and the run stays alive.", false);
+    }
   }
 }
 
@@ -433,11 +465,11 @@ function updateDiveLogic(deltaTime) {
   if (state.diveTimer <= 0) {
     const eligible = state.enemies.filter((enemy) => enemy.alive && !enemy.diving);
     const divingNow = state.enemies.filter((enemy) => enemy.alive && enemy.diving).length;
-    const maxDivers = Math.min(4, 1 + Math.floor(state.stage / 2));
+    const maxDivers = Math.min(7, 1 + Math.floor(state.stage / 2));
     if (eligible.length > 0 && divingNow < maxDivers) {
       startDive(eligible[Math.floor(Math.random() * eligible.length)]);
     }
-    state.diveTimer = Math.max(0.35, 1.55 - state.stage * 0.06);
+    state.diveTimer = Math.max(0.24, 1.42 - Math.min(state.stage, 20) * 0.05);
   }
 
   for (const enemy of state.enemies) {
@@ -469,7 +501,7 @@ function updateDiveLogic(deltaTime) {
     }
 
     if (rectsOverlap(enemy, state.player)) {
-      loseLife();
+      handlePlayerHit("collision");
       enemy.returning = true;
     }
   }
@@ -485,7 +517,7 @@ function updateBullets(deltaTime) {
     bullet.y += bullet.speed * deltaTime;
     if (rectsOverlap(bullet, state.player)) {
       bullet.y = state.height + 100;
-      loseLife();
+      handlePlayerHit("bullet");
     }
   }
   state.enemyBullets = state.enemyBullets.filter((bullet) => bullet.y < state.height + 24);
@@ -522,6 +554,10 @@ function updateEnemyFire(deltaTime) {
     const selected = shooters[Math.floor(Math.random() * shooters.length)];
     spawnEnemyBullet(selected);
   }
+  if (state.stage >= 8 && shooters.length > 3 && Math.random() > 0.62) {
+    const selected = shooters[Math.floor(Math.random() * shooters.length)];
+    spawnEnemyBullet(selected);
+  }
 
   state.enemyFireTimer = state.enemyFireCooldown;
 }
@@ -545,7 +581,7 @@ function updateCollisions() {
     state.stage += 1;
     createFormation(state.stage);
     updateHud();
-    setOverlay(`Wave ${String(state.stage).padStart(2, "0")}`, "New formation", "The field resets, but it comes back faster and meaner.", false);
+    setOverlay(`Wave ${String(state.stage).padStart(2, "0")}`, "Endless wave", "The field resets, but it comes back faster and meaner.", false);
   }
 }
 
@@ -578,7 +614,7 @@ function update(deltaTime) {
 
   if (state.statusTimer > 0) {
     state.statusTimer -= deltaTime;
-    if (state.statusTimer <= 0 && !state.paused && !state.gameOver) {
+    if (state.statusTimer <= 0 && !state.paused) {
       setStatus(
         "Formation steady",
         "Pick the low guard first. The second break in the wall is where the score usually opens up.",
@@ -811,7 +847,7 @@ function bindPointerControls() {
 
   canvas.addEventListener("pointerdown", (event) => {
     event.preventDefault();
-    if (state.awaitingStart || state.gameOver) {
+    if (state.awaitingStart) {
       startRun();
     }
     state.input.pointerActive = true;
@@ -835,7 +871,7 @@ function bindPointerControls() {
   canvas.addEventListener("pointerleave", stopPointerAim);
 
   overlay.addEventListener("click", () => {
-    if (state.awaitingStart || state.gameOver) {
+    if (state.awaitingStart) {
       startRun();
     }
   });
@@ -864,7 +900,7 @@ function bindPointerControls() {
 
 function bindUi() {
   startButton.addEventListener("click", () => {
-    if (state.awaitingStart || state.gameOver) {
+    if (state.awaitingStart) {
       startRun();
       return;
     }
@@ -877,11 +913,6 @@ function bindUi() {
   pauseButton.addEventListener("click", () => {
     if (state.awaitingStart) {
       startRun();
-      return;
-    }
-
-    if (state.gameOver) {
-      restartRun();
       return;
     }
 
@@ -899,7 +930,7 @@ function init() {
     "Formation steady",
     "This cabinet likes patience. Open the lane, then punish the dive path when it shows itself.",
   );
-  setOverlay("Ready", "Press Start", "Clear the formation before the sky folds in on you.", false);
+  setOverlay("Ready", "Endless Galaga", "10 kills can earn 0.01 SIM. Enemy bullets cost 0.01 SIM. There is no final wave.", false);
   bindKeyboard();
   bindPointerControls();
   bindUi();
