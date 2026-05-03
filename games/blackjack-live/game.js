@@ -21,6 +21,12 @@
     statusMessage: '',
     toastTimer: 0,
     walletRefreshTimer: 0,
+    audio: {
+      context: null,
+      unlocked: false,
+      lastDealCueAt: 0,
+      lastShuffleCueAt: 0,
+    },
     panels: {
       setupHidden: false,
       infoHidden: false,
@@ -28,6 +34,8 @@
     renderMemo: {
       dealerSignature: '',
       seatSignatures: new Map(),
+      visibleCardCount: 0,
+      outcomeKey: '',
       shoeRemaining: null,
       discardCount: null,
     },
@@ -57,8 +65,6 @@
     turnLabel: document.getElementById('turnLabel'),
     seatLayer: document.getElementById('seatLayer'),
     chipRow: document.getElementById('chipRow'),
-    nextBetLabel: document.getElementById('nextBetLabel'),
-    activeBetLabel: document.getElementById('activeBetLabel'),
     actionPrompt: document.getElementById('actionPrompt'),
     logList: document.getElementById('logList'),
     hostBtn: document.getElementById('hostBtn'),
@@ -69,7 +75,6 @@
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     toggleSetupBtn: document.getElementById('toggleSetupBtn'),
     toggleInfoBtn: document.getElementById('toggleInfoBtn'),
-    clearBetBtn: document.getElementById('clearBetBtn'),
     dealBtn: document.getElementById('dealBtn'),
     hitBtn: document.getElementById('hitBtn'),
     standBtn: document.getElementById('standBtn'),
@@ -138,6 +143,114 @@
       minimumFractionDigits: Number.isInteger(sim) ? 0 : 2,
       maximumFractionDigits: 2,
     })} SIM`;
+  }
+
+  function getAudioContext() {
+    if (state.audio.context) {
+      return state.audio.context;
+    }
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) {
+      return null;
+    }
+    state.audio.context = new AudioCtor();
+    return state.audio.context;
+  }
+
+  function unlockAudio() {
+    const context = getAudioContext();
+    if (!context) {
+      return null;
+    }
+    state.audio.unlocked = true;
+    if (context.state === 'suspended') {
+      context.resume().catch(() => {});
+    }
+    return context;
+  }
+
+  function playTone(context, frequency, startAt, duration, options = {}) {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = options.type || 'sine';
+    oscillator.frequency.setValueAtTime(frequency, startAt);
+    if (options.endFrequency) {
+      oscillator.frequency.exponentialRampToValueAtTime(options.endFrequency, startAt + duration);
+    }
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(options.volume || 0.045, startAt + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start(startAt);
+    oscillator.stop(startAt + duration + 0.025);
+  }
+
+  function playNoise(context, startAt, duration, options = {}) {
+    const sampleRate = context.sampleRate;
+    const buffer = context.createBuffer(1, Math.max(1, Math.floor(sampleRate * duration)), sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < data.length; index += 1) {
+      data[index] = (Math.random() * 2 - 1) * (1 - index / data.length);
+    }
+    const source = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    filter.type = options.filterType || 'bandpass';
+    filter.frequency.setValueAtTime(options.frequency || 1200, startAt);
+    filter.Q.setValueAtTime(options.q || 0.85, startAt);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(options.volume || 0.05, startAt + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+    source.connect(filter).connect(gain).connect(context.destination);
+    source.start(startAt);
+    source.stop(startAt + duration + 0.02);
+  }
+
+  function playSound(name) {
+    const context = unlockAudio();
+    if (!context) {
+      return;
+    }
+    const now = context.currentTime;
+    if (name === 'chip') {
+      playTone(context, 360, now, 0.055, { type: 'triangle', volume: 0.04, endFrequency: 260 });
+      playTone(context, 760, now + 0.035, 0.045, { type: 'square', volume: 0.018, endFrequency: 540 });
+      return;
+    }
+    if (name === 'deal') {
+      playNoise(context, now, 0.075, { frequency: 1900, q: 1.1, volume: 0.032 });
+      playTone(context, 520, now + 0.025, 0.04, { type: 'triangle', volume: 0.022, endFrequency: 410 });
+      return;
+    }
+    if (name === 'shuffle') {
+      for (let index = 0; index < 6; index += 1) {
+        playNoise(context, now + index * 0.045, 0.08, {
+          frequency: 520 + index * 190,
+          q: 0.7,
+          volume: 0.038,
+        });
+      }
+      playTone(context, 150, now + 0.22, 0.12, { type: 'sawtooth', volume: 0.018, endFrequency: 95 });
+      return;
+    }
+    if (name === 'win') {
+      playTone(context, 523.25, now, 0.08, { type: 'triangle', volume: 0.04, endFrequency: 659.25 });
+      playTone(context, 783.99, now + 0.09, 0.11, { type: 'triangle', volume: 0.045, endFrequency: 1046.5 });
+      playNoise(context, now + 0.04, 0.13, { frequency: 3200, q: 1.4, volume: 0.022 });
+      return;
+    }
+    if (name === 'lose') {
+      playTone(context, 220, now, 0.14, { type: 'sawtooth', volume: 0.032, endFrequency: 110 });
+      playNoise(context, now + 0.035, 0.16, { frequency: 360, q: 0.55, volume: 0.03 });
+      return;
+    }
+    if (name === 'push') {
+      playTone(context, 420, now, 0.07, { type: 'sine', volume: 0.024, endFrequency: 420 });
+      playTone(context, 420, now + 0.09, 0.06, { type: 'sine', volume: 0.02, endFrequency: 360 });
+      return;
+    }
+    playTone(context, 620, now, 0.045, { type: 'triangle', volume: 0.032, endFrequency: 460 });
   }
 
   function authProfile() {
@@ -459,6 +572,164 @@
       .join('|');
   }
 
+  function countVisibleCards(snapshot) {
+    if (!snapshot) {
+      return 0;
+    }
+    let count = (snapshot.dealer?.cards || []).filter(Boolean).length;
+    for (const player of snapshot.players || []) {
+      const hands = Array.isArray(player.hands) && player.hands.length
+        ? player.hands
+        : [{ cards: player.cards || [] }];
+      for (const hand of hands) {
+        count += (hand.cards || []).filter(Boolean).length;
+      }
+    }
+    return count;
+  }
+
+  function animateShuffleCue() {
+    const elements = [
+      ui.shoeMeter,
+      ui.discardMeter,
+      document.querySelector('.table-felt'),
+    ].filter(Boolean);
+    for (const element of elements) {
+      element.classList.remove('shuffling');
+      window.requestAnimationFrame(() => {
+        element.classList.add('shuffling');
+        window.setTimeout(() => element.classList.remove('shuffling'), 760);
+      });
+    }
+  }
+
+  function cueShuffle() {
+    const now = Date.now();
+    if (now - state.audio.lastShuffleCueAt < 420) {
+      return;
+    }
+    state.audio.lastShuffleCueAt = now;
+    animateShuffleCue();
+    if (state.audio.unlocked) {
+      playSound('shuffle');
+    }
+  }
+
+  function cueDealCards(count) {
+    const cardCount = Math.max(0, Math.min(8, Math.round(Number(count) || 0)));
+    if (!cardCount || !state.audio.unlocked) {
+      return;
+    }
+    const now = Date.now();
+    if (now - state.audio.lastDealCueAt < 70) {
+      return;
+    }
+    state.audio.lastDealCueAt = now;
+    for (let index = 0; index < cardCount; index += 1) {
+      window.setTimeout(() => playSound('deal'), index * 76);
+    }
+  }
+
+  function snapshotViewer(snapshot) {
+    if (!snapshot || !Array.isArray(snapshot.players)) {
+      return null;
+    }
+    return snapshot.players.find((player) => player.id === state.playerId) || snapshot.players[0] || null;
+  }
+
+  function playerOutcome(player) {
+    if (!player) {
+      return '';
+    }
+    const direct = String(player.lastOutcome || '').toLowerCase();
+    if (direct === 'blackjack' || direct === 'win') {
+      return 'win';
+    }
+    if (direct === 'push') {
+      return 'push';
+    }
+    if (direct === 'lose') {
+      return 'lose';
+    }
+    const resultText = [
+      player.result,
+      ...(Array.isArray(player.hands) ? player.hands.map((hand) => hand.result) : []),
+    ].join(' ').toLowerCase();
+    if (/blackjack|you beat|dealer busts|you win/.test(resultText)) {
+      return 'win';
+    }
+    if (/push/.test(resultText)) {
+      return 'push';
+    }
+    if (/dealer wins|bust|lose|dealer blackjack/.test(resultText)) {
+      return 'lose';
+    }
+    return '';
+  }
+
+  function triggerOutcomeAnimation(outcome) {
+    const tone = ['win', 'lose', 'push'].includes(outcome) ? outcome : '';
+    if (!tone) {
+      return;
+    }
+    const targets = [
+      document.querySelector('.table-felt'),
+      document.querySelector('.seat-card:not(.empty)'),
+    ].filter(Boolean);
+    for (const element of targets) {
+      element.classList.remove('result-win', 'result-lose', 'result-push');
+      window.requestAnimationFrame(() => {
+        element.classList.add(`result-${tone}`);
+        window.setTimeout(() => element.classList.remove(`result-${tone}`), 1500);
+      });
+    }
+  }
+
+  function cueOutcome(previousSnapshot, nextSnapshot) {
+    if (!nextSnapshot || nextSnapshot.phase !== 'settled') {
+      return;
+    }
+    const player = snapshotViewer(nextSnapshot);
+    const outcome = playerOutcome(player);
+    if (!outcome) {
+      return;
+    }
+    const outcomeKey = `${nextSnapshot.roomCode || state.roomCode}|${nextSnapshot.handNumber || 0}|${player.id || 'table'}|${outcome}`;
+    if (state.renderMemo.outcomeKey === outcomeKey && previousSnapshot?.phase === 'settled') {
+      return;
+    }
+    state.renderMemo.outcomeKey = outcomeKey;
+    window.setTimeout(() => {
+      triggerOutcomeAnimation(outcome);
+      if (state.audio.unlocked) {
+        playSound(outcome);
+      }
+    }, 120);
+  }
+
+  function cueSnapshotSounds(previousSnapshot, nextSnapshot, message) {
+    if (!previousSnapshot || !nextSnapshot) {
+      state.renderMemo.visibleCardCount = countVisibleCards(nextSnapshot);
+      return;
+    }
+    const previousCards = countVisibleCards(previousSnapshot);
+    const nextCards = countVisibleCards(nextSnapshot);
+    const previousShoe = Number(previousSnapshot.shoeRemaining);
+    const nextShoe = Number(nextSnapshot.shoeRemaining);
+    const tableMessage = `${message || ''} ${nextSnapshot.status || ''}`;
+    const looksShuffled = /reshuff|shuffle|fresh shoe|reset/i.test(tableMessage) ||
+      (Number.isFinite(previousShoe) && Number.isFinite(nextShoe) && nextShoe > previousShoe + 20);
+
+    if (looksShuffled) {
+      cueShuffle();
+    }
+    if (nextCards > previousCards) {
+      cueDealCards(nextCards - previousCards);
+    }
+    cueOutcome(previousSnapshot, nextSnapshot);
+    state.renderMemo.visibleCardCount = nextCards;
+  }
+
   function renderDealer() {
     const signature = dealerSignature();
     const animate = signature !== state.renderMemo.dealerSignature;
@@ -718,8 +989,6 @@
       ui.handLabel.textContent = '0';
       ui.tableBetAmount.textContent = formatChips(0);
       ui.turnLabel.textContent = 'Sit down';
-      ui.nextBetLabel.textContent = formatChips(500);
-      ui.activeBetLabel.textContent = formatChips(0);
       return;
     }
 
@@ -743,8 +1012,6 @@
           : getDisplayPlayer()
             ? 'Player seated'
             : 'Sit down';
-    ui.nextBetLabel.textContent = formatChips(viewer?.bet || 0);
-    ui.activeBetLabel.textContent = formatChips(viewer?.activeBet || 0);
   }
 
   function renderPills() {
@@ -810,7 +1077,6 @@
     ui.hostBtn.disabled = pendingConnection;
     ui.joinBtn.disabled = pendingConnection || !canJoin;
     ui.shareLoungeBtn.disabled = !(connected && state.mode === 'online' && state.roomCode);
-    ui.clearBetBtn.disabled = !(connected && controls.canClearBet);
     ui.dealBtn.disabled = !(connected && controls.canStartRound);
     ui.hitBtn.disabled = !(connected && controls.canHit);
     ui.standBtn.disabled = !(connected && controls.canStand);
@@ -913,6 +1179,8 @@
 
       if (payload.type === 'state') {
         const previousPhase = state.snapshot?.phase;
+        const previousSnapshot = state.snapshot;
+        cueSnapshotSounds(previousSnapshot, payload.snapshot, payload.message);
         state.snapshot = payload.snapshot;
         state.roomCode = payload.snapshot.roomCode;
         ui.roomInput.value = payload.snapshot.roomCode;
@@ -967,7 +1235,7 @@
 
   function sendSetBet(amount, mode) {
     if (sendMessage({ action: 'set-bet', amount, mode })) {
-      setStatusMessage(mode === 'clear' ? 'Clearing your next SIM wager...' : 'Sending your next SIM wager to the table...');
+      setStatusMessage(amount < 0 ? 'Pulling chips back from the betting circle...' : 'Sending your next SIM wager to the table...');
     }
   }
 
@@ -989,7 +1257,7 @@
     }
     const target = document.querySelector('.seat-bet-circle:not(.empty-circle)') ||
       document.querySelector('.seat-bet-circle') ||
-      ui.nextBetLabel;
+      ui.chipRow;
     if (!target) {
       return;
     }
@@ -1019,6 +1287,7 @@
   function sendResetTable() {
     if (sendMessage({ action: 'restart' })) {
       setStatusMessage('Refreshing SIM balances and loading a fresh shoe...');
+      cueShuffle();
     }
   }
 
@@ -1062,6 +1331,19 @@
   }
 
   function bindEvents() {
+    document.addEventListener('pointerdown', (event) => {
+      const button = event.target.closest('button');
+      if (!button || button.disabled) {
+        return;
+      }
+      unlockAudio();
+      button.classList.add('is-pressing');
+      window.setTimeout(() => button.classList.remove('is-pressing'), 180);
+      if (!button.classList.contains('chip-btn')) {
+        playSound('click');
+      }
+    });
+
     ui.nameInput.addEventListener('input', () => {
       persistSettings();
       render();
@@ -1091,7 +1373,6 @@
     ui.copyCodeBtn.addEventListener('click', () => copyText(state.roomCode, 'Room code copied.'));
     ui.toggleSetupBtn.addEventListener('click', () => setPanelHidden('setupHidden', !state.panels.setupHidden));
     ui.toggleInfoBtn.addEventListener('click', () => setPanelHidden('infoHidden', !state.panels.infoHidden));
-    ui.clearBetBtn.addEventListener('click', () => sendSetBet(0, 'clear'));
     ui.dealBtn.addEventListener('click', sendDeal);
     ui.hitBtn.addEventListener('click', () => sendAction('hit'));
     ui.standBtn.addEventListener('click', () => sendAction('stand'));
@@ -1106,7 +1387,10 @@
       }
       const amount = Number(trigger.getAttribute('data-chip-amount') || 0);
       if (amount > 0) {
+        playSound('chip');
         animateChipPlacement(trigger);
+      } else {
+        playSound('click');
       }
       sendSetBet(amount);
     });

@@ -83,19 +83,24 @@ button {
   border: 0;
   cursor: pointer;
   transition:
-    transform 140ms ease,
+    transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
     opacity 140ms ease,
     background 140ms ease,
     border-color 140ms ease,
-    color 140ms ease;
+    color 140ms ease,
+    box-shadow 140ms ease,
+    filter 140ms ease;
 }
 
 button:hover {
   transform: translateY(-1px);
+  filter: brightness(1.06);
 }
 
-button:active {
-  transform: translateY(0);
+button:active,
+button.is-pressing {
+  transform: translateY(2px) scale(0.985);
+  filter: brightness(0.96);
 }
 
 button:disabled {
@@ -386,7 +391,6 @@ h2 {
 .hero-actions,
 .invite-row,
 .table-buttons,
-.bet-summary,
 .wager-strip {
   display: flex;
   gap: 10px;
@@ -508,6 +512,22 @@ h2 {
   box-shadow:
     inset 0 0 0 2px rgba(244, 213, 131, 0.08),
     inset 0 -34px 40px rgba(0, 0, 0, 0.26);
+}
+
+.table-felt.shuffling {
+  animation: tableShuffle 760ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.table-felt.result-win {
+  animation: tableWin 1500ms ease both;
+}
+
+.table-felt.result-lose {
+  animation: tableLose 1300ms ease both;
+}
+
+.table-felt.result-push {
+  animation: tablePush 1200ms ease both;
 }
 
 .table-rim {
@@ -641,6 +661,10 @@ h2 {
   animation: meterPulse 420ms ease;
 }
 
+.card-meter.shuffling {
+  animation: meterShuffle 760ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 @keyframes meterPulse {
   0%,
   100% {
@@ -648,6 +672,93 @@ h2 {
   }
   45% {
     scale: 1.055;
+  }
+}
+
+@keyframes meterShuffle {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  18% {
+    filter: brightness(1.25);
+    translate: -3px 2px;
+  }
+  36% {
+    translate: 4px -2px;
+  }
+  54% {
+    translate: -2px -3px;
+  }
+  72% {
+    translate: 3px 2px;
+  }
+}
+
+@keyframes tableShuffle {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  25% {
+    filter: brightness(1.08);
+    box-shadow:
+      inset 0 0 0 2px rgba(244, 213, 131, 0.15),
+      inset 0 -34px 40px rgba(0, 0, 0, 0.22),
+      0 0 0 4px rgba(239, 197, 109, 0.05);
+  }
+  55% {
+    filter: brightness(0.96);
+  }
+}
+
+@keyframes tableWin {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 2px rgba(244, 213, 131, 0.08),
+      inset 0 -34px 40px rgba(0, 0, 0, 0.26);
+  }
+  28% {
+    box-shadow:
+      inset 0 0 0 3px rgba(239, 197, 109, 0.22),
+      inset 0 0 80px rgba(239, 197, 109, 0.16),
+      inset 0 -34px 40px rgba(0, 0, 0, 0.22),
+      0 0 44px rgba(239, 197, 109, 0.18);
+  }
+  58% {
+    box-shadow:
+      inset 0 0 0 2px rgba(131, 235, 212, 0.2),
+      inset 0 0 76px rgba(131, 235, 212, 0.11),
+      inset 0 -34px 40px rgba(0, 0, 0, 0.22);
+  }
+}
+
+@keyframes tableLose {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  35% {
+    filter: brightness(0.78) saturate(0.8);
+    box-shadow:
+      inset 0 0 0 2px rgba(244, 117, 141, 0.18),
+      inset 0 0 76px rgba(244, 117, 141, 0.11),
+      inset 0 -34px 40px rgba(0, 0, 0, 0.36);
+  }
+}
+
+@keyframes tablePush {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  42% {
+    filter: brightness(1.06);
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 255, 255, 0.13),
+      inset 0 0 56px rgba(255, 255, 255, 0.06),
+      inset 0 -34px 40px rgba(0, 0, 0, 0.24);
   }
 }
 
@@ -691,8 +802,7 @@ h2 {
 }
 
 .dealer-pill,
-.pot-chip,
-.bet-pill {
+.pot-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -705,15 +815,13 @@ h2 {
 }
 
 .dealer-pill strong,
-.pot-chip span,
-.bet-pill strong {
+.pot-chip span {
   color: var(--gold);
   font-weight: 800;
 }
 
 .dealer-pill.alt,
-.pot-chip.alt,
-.bet-pill.alt {
+.pot-chip.alt {
   background: rgba(7, 16, 17, 0.74);
 }
 
@@ -780,6 +888,18 @@ h2 {
 
 .seat-card.you {
   border-color: transparent;
+}
+
+.seat-card.result-win .seat-play-area {
+  animation: seatWin 1400ms ease both;
+}
+
+.seat-card.result-lose .seat-play-area {
+  animation: seatLose 1200ms ease both;
+}
+
+.seat-card.result-push .seat-play-area {
+  animation: seatPush 1100ms ease both;
 }
 
 .seat-card.empty {
@@ -1070,8 +1190,7 @@ h2 {
 }
 
 .felt-actions .wager-strip,
-.felt-actions .table-buttons,
-.felt-actions .bet-summary {
+.felt-actions .table-buttons {
   justify-content: center;
 }
 
@@ -1084,7 +1203,7 @@ h2 {
 }
 
 .wager-strip {
-  justify-content: space-between;
+  justify-content: center;
 }
 
 .chip-row {
@@ -1100,7 +1219,26 @@ h2 {
     radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.24), transparent 24%),
     linear-gradient(135deg, rgba(239, 197, 109, 0.22), rgba(177, 110, 47, 0.24));
   border-color: rgba(239, 197, 109, 0.26);
+  box-shadow:
+    inset 0 -5px 0 rgba(0, 0, 0, 0.22),
+    inset 0 2px 0 rgba(255, 255, 255, 0.12),
+    0 12px 24px rgba(0, 0, 0, 0.24);
   font-weight: 800;
+}
+
+.chip-btn:hover {
+  box-shadow:
+    inset 0 -4px 0 rgba(0, 0, 0, 0.2),
+    inset 0 2px 0 rgba(255, 255, 255, 0.16),
+    0 15px 28px rgba(0, 0, 0, 0.3);
+}
+
+.chip-btn:active,
+.chip-btn.is-pressing {
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 6px 12px rgba(0, 0, 0, 0.22);
 }
 
 .chip-btn.minus {
@@ -1149,8 +1287,64 @@ h2 {
   }
 }
 
+@keyframes seatWin {
+  0%,
+  100% {
+    filter: none;
+    transform: translateY(0);
+  }
+  24% {
+    filter: drop-shadow(0 0 22px rgba(239, 197, 109, 0.36));
+    transform: translateY(-8px) scale(1.025);
+  }
+  56% {
+    filter: drop-shadow(0 0 18px rgba(131, 235, 212, 0.24));
+    transform: translateY(-3px) scale(1.01);
+  }
+}
+
+@keyframes seatLose {
+  0%,
+  100% {
+    filter: none;
+    transform: translateY(0);
+  }
+  30% {
+    filter: grayscale(0.34) brightness(0.72);
+    transform: translateY(7px) scale(0.98);
+  }
+}
+
+@keyframes seatPush {
+  0%,
+  100% {
+    filter: none;
+    transform: translateY(0);
+  }
+  40% {
+    filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.18));
+    transform: translateY(-2px);
+  }
+}
+
 .table-buttons button {
   min-width: 112px;
+  box-shadow:
+    inset 0 -4px 0 rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 14px 26px rgba(0, 0, 0, 0.26);
+}
+
+.table-buttons button:active,
+.table-buttons button.is-pressing,
+.primary:active,
+.primary.is-pressing,
+.secondary:active,
+.secondary.is-pressing {
+  box-shadow:
+    inset 0 4px 10px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 5px 10px rgba(0, 0, 0, 0.22);
 }
 
 .log-list {
@@ -1547,8 +1741,7 @@ h2 {
   }
 
   .felt-actions .table-buttons,
-  .felt-actions .wager-strip,
-  .felt-actions .bet-summary {
+  .felt-actions .wager-strip {
     width: 100%;
     align-items: stretch;
     justify-content: stretch;
@@ -1563,15 +1756,6 @@ h2 {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
-  }
-
-  .felt-actions .bet-summary {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .felt-actions .bet-summary .secondary {
-    grid-column: 1 / -1;
   }
 
   .felt-actions .table-buttons {
@@ -1602,8 +1786,7 @@ h2 {
   .hero-actions,
   .invite-row,
   .table-buttons,
-  .wager-strip,
-  .bet-summary {
+  .wager-strip {
     flex-direction: column;
     align-items: stretch;
   }
