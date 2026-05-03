@@ -220,6 +220,12 @@ function recalcTableBetTotal(state) {
   for (const player of activePlayers(state)) {
     syncPlayerFromHands(player);
   }
+  if (state.phase === 'betting' || state.phase === 'settled') {
+    state.tableBetTotal = seatedPlayers(state, { includeLeavers: true })
+      .filter((player) => !player.leaving && player.stack > 0)
+      .reduce((sum, player) => sum + Math.max(0, Math.round(Number(player.bet) || 0)), 0);
+    return;
+  }
   state.tableBetTotal = activePlayers(state).reduce((sum, player) => sum + activeBetTotal(player), 0);
 }
 
@@ -365,7 +371,10 @@ function settleRound(state) {
 
     player.stack += totalPayout;
     player.walletCents = player.stack;
-    player.activeBet = activeBetTotal(player);
+    for (const hand of hands) {
+      hand.bet = 0;
+    }
+    player.activeBet = 0;
     player.lastOutcome = handOutcomes.includes('blackjack')
       ? 'blackjack'
       : handOutcomes.includes('win')
@@ -944,6 +953,9 @@ function currentHand(player) {
 }
 
 function activeBetTotal(player) {
+  if (!player || !player.participating) {
+    return 0;
+  }
   return playerHands(player).reduce((sum, hand) => sum + Math.max(0, Math.round(Number(hand.bet) || 0)), 0);
 }
 
