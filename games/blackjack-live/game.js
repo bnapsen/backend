@@ -47,6 +47,7 @@
       positions: {},
       active: null,
       suppressClickUntil: 0,
+      cardLayoutSignature: '',
     },
     betting: {
       selectedHandIndex: 0,
@@ -378,6 +379,26 @@
     renderStatus();
   }
 
+  function isCardDragId(id) {
+    return /^dealer:card:\d+$/.test(String(id || '')) ||
+      /^player:\d+:hand:\d+:card:\d+$/.test(String(id || ''));
+  }
+
+  function persistentDragPositions() {
+    return Object.fromEntries(
+      Object.entries(state.tableDrag.positions || {}).filter(([id]) => !isCardDragId(id))
+    );
+  }
+
+  function clearCardDragPositions() {
+    const positions = state.tableDrag.positions || {};
+    for (const id of Object.keys(positions)) {
+      if (isCardDragId(id)) {
+        delete positions[id];
+      }
+    }
+  }
+
   function renderStatus() {
     const base = state.snapshot?.status || '';
     ui.statusText.textContent = state.statusMessage || base || 'Host a table to create an invite link, or join with a room code to take the player spot.';
@@ -392,7 +413,7 @@
 
   function persistTableLayout() {
     try {
-      localStorage.setItem(STORAGE_KEYS.tableLayout, JSON.stringify(state.tableDrag.positions || {}));
+      localStorage.setItem(STORAGE_KEYS.tableLayout, JSON.stringify(persistentDragPositions()));
     } catch (error) {
       // Ignore layout persistence failures.
     }
@@ -401,7 +422,9 @@
   function readTableLayout() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.tableLayout) || '{}');
-      state.tableDrag.positions = saved && typeof saved === 'object' ? saved : {};
+      state.tableDrag.positions = saved && typeof saved === 'object'
+        ? Object.fromEntries(Object.entries(saved).filter(([id]) => !isCardDragId(id)))
+        : {};
     } catch (error) {
       state.tableDrag.positions = {};
     }
@@ -664,6 +687,36 @@
     return (state.snapshot.dealer?.cards || [])
       .map((card) => (card ? `${card.rank}${card.suit}` : 'XX'))
       .join('|');
+  }
+
+  function cardToken(card) {
+    return card ? `${card.rank}${card.suit}` : 'XX';
+  }
+
+  function cardLayoutSignature(snapshot) {
+    if (!snapshot) {
+      return 'empty';
+    }
+    const dealer = (snapshot.dealer?.cards || []).map((card, index) => `D${index}:${cardToken(card)}`).join(',');
+    const players = (snapshot.players || []).map((player) => {
+      const hands = Array.isArray(player.hands) && player.hands.length
+        ? player.hands
+        : [{ cards: player.cards || [] }];
+      const handTokens = hands.map((hand, handIndex) => (
+        `H${handIndex}:${(hand.cards || []).map((card, cardIndex) => `${cardIndex}:${cardToken(card)}`).join('.')}`
+      )).join('|');
+      return `P${player.seat}:${player.id}:${handTokens}`;
+    }).join(';');
+    return `${snapshot.roomCode || ''}:${snapshot.handNumber || 0}:${snapshot.phase || ''}:${dealer}:${players}`;
+  }
+
+  function syncCardDragLayout(snapshot) {
+    const signature = cardLayoutSignature(snapshot);
+    if (signature === state.tableDrag.cardLayoutSignature) {
+      return;
+    }
+    clearCardDragPositions();
+    state.tableDrag.cardLayoutSignature = signature;
   }
 
   function countVisibleCards(snapshot) {
@@ -1737,6 +1790,7 @@
         const previousPhase = state.snapshot?.phase;
         const previousSnapshot = state.snapshot;
         cueSnapshotSounds(previousSnapshot, payload.snapshot, payload.message);
+        syncCardDragLayout(payload.snapshot);
         state.snapshot = payload.snapshot;
         state.roomCode = payload.snapshot.roomCode;
         ui.roomInput.value = payload.snapshot.roomCode;
