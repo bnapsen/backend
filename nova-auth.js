@@ -93,7 +93,7 @@
     const left = source.left === null || source.left === undefined ? NaN : Number(source.left);
     const top = source.top === null || source.top === undefined ? NaN : Number(source.top);
     return {
-      hidden: false,
+      hidden: source.hidden === true,
       left: Number.isFinite(left) ? left : null,
       top: Number.isFinite(top) ? top : null,
       width,
@@ -206,7 +206,7 @@
     const prefs = state.floatingWallet && !state.floatingWallet.hidden
       ? currentFloatingWalletPlacement(state.floatingWallet)
       : loadFloatingWalletPrefs();
-    saveFloatingWalletPrefs({ ...prefs, hidden: false });
+    saveFloatingWalletPrefs({ ...prefs, hidden: hidden === true });
     renderFloatingWallet();
   }
 
@@ -1554,6 +1554,13 @@
       });
       actions.appendChild(signInButton);
     }
+    const hideButton = document.createElement('button');
+    hideButton.type = 'button';
+    hideButton.className = 'nova-floating-wallet__control';
+    hideButton.textContent = 'Hide';
+    hideButton.setAttribute('aria-label', 'Hide SIM wallet');
+    hideButton.addEventListener('click', () => setFloatingWalletHidden(true));
+    actions.appendChild(hideButton);
 
     const valueEl = document.createElement('strong');
     valueEl.className = 'nova-floating-wallet__value';
