@@ -100,8 +100,8 @@ textarea:focus-visible {
     border-radius: 26px;
     padding: 1.65rem;
     background:
-        linear-gradient(128deg, rgba(10, 20, 27, 0.68) 6%, rgba(18, 53, 63, 0.5) 52%, rgba(255, 125, 104, 0.2) 100%),
-        url("15.JPG") center/cover;
+        linear-gradient(128deg, rgba(10, 20, 27, 0.74) 6%, rgba(18, 53, 63, 0.54) 52%, rgba(255, 125, 104, 0.18) 100%),
+        url("assets/ap-advantage-hero.png") center/cover;
     box-shadow: var(--shadow);
 }
 
