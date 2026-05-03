@@ -496,37 +496,10 @@
     );
   }
 
-  function syncSimWalletDelta(amount, action, note, metadata) {
-    if (metadata && metadata.automation) {
-      return Promise.resolve(null);
-    }
-    if (!simWalletConnected() || !window.NovaAuth || typeof window.NovaAuth.adjustSimWallet !== "function") {
-      return Promise.resolve(null);
-    }
-    state.simWallet.syncing = true;
-    renderPaperBankroll();
-    return window.NovaAuth.adjustSimWallet({
-      amount: Math.round(Number(amount || 0) * 100) / 100,
-      source: "bitcoin-15m-paper",
-      action,
-      note,
-      metadata,
-    }).then(function (wallet) {
-      state.simWallet.ready = true;
-      state.simWallet.syncing = false;
-      state.simWallet.balance = Number(wallet && wallet.balance);
-      state.simWallet.startingBalance = Number(wallet && wallet.startingBalance) || state.simWallet.startingBalance;
-      state.simWallet.error = "";
-      attachSimWalletToActivePaper();
-      renderPaperBankroll();
-      return wallet;
-    }).catch(function (error) {
-      state.simWallet.syncing = false;
-      state.simWallet.error = error && error.message ? error.message : "SIM wallet sync failed.";
-      setPaperStatus("SIM wallet sync failed: " + state.simWallet.error, true);
-      renderPaperBankroll();
-      return null;
-    });
+  function syncSimWalletDelta() {
+    // Bitcoin paper trades are wallet-backed only through /api/sim/bitcoin-15m/*.
+    // The generic wallet adjustment endpoint intentionally rejects this game.
+    return Promise.resolve(null);
   }
 
   function applySimWalletFromServer(wallet) {
@@ -570,7 +543,7 @@
       });
     }).catch(function (error) {
       state.simWallet.syncing = false;
-      state.simWallet.error = error && error.message ? error.message : "Secure SIM paper sync failed.";
+      state.simWallet.error = "";
       renderPaperBankroll();
       throw error;
     });
@@ -2000,6 +1973,12 @@
       renderPaperBankroll();
       return null;
     }
+    if (!options.skipCashCheck && simWalletConnected() && !options.secureSim && !order.secureSim && !order.automation) {
+      setPaperStatus("No account SIM buy: signed-in Bitcoin paper trades must use the secure server endpoint.", true);
+      savePaperLedger();
+      renderPaperBankroll();
+      return null;
+    }
     if (!options.skipCashCheck && simWalletConnected() && Number(state.simWallet.balance || 0) + 0.0001 < entryCost) {
       setPaperStatus("No paper buy: account SIM wallet has only " + paperMoney(state.simWallet.balance) + ".", true);
       savePaperLedger();
@@ -2276,7 +2255,10 @@
       });
     }
     if (!options || !options.silent) {
-      setPaperStatus("Paper settled " + position.ticker + " as " + (wins ? "win" : "loss") + " for " + signedPaperMoney(pnl) + ".", pnl < 0, pnl >= 0 ? "pos" : "neg");
+      const legacyNote = state.simWallet.signedIn && !position.secureSim
+        ? " Local-only legacy position: account SIM was not changed."
+        : "";
+      setPaperStatus("Paper settled " + position.ticker + " as " + (wins ? "win" : "loss") + " for " + signedPaperMoney(pnl) + "." + legacyNote, pnl < 0, pnl >= 0 ? "pos" : "neg");
     }
   }
 
@@ -3242,6 +3224,9 @@
       changed = true;
       if (order.status === "syncing") return;
       if (order.action === "buy" && Number(order.lastAskCents) <= Number(order.limitCents)) {
+        if (simWalletConnected() && !order.automation) {
+          order.secureSim = true;
+        }
         if (order.secureSim) {
           fillPaperBuySecure(order, Number(order.lastAskCents), "Resting secure SIM limit buy filled");
         } else {
