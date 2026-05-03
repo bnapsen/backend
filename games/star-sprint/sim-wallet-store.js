@@ -247,12 +247,67 @@ function createSimWalletStore({
     return publicWallet(walletData);
   }
 
+  async function transactWallet(userSource, mutator) {
+    const user = normalizeUser(userSource);
+    if (typeof mutator !== 'function') {
+      const error = new Error('SIM wallet transaction mutator is required.');
+      error.code = 'sim/invalid-transaction';
+      throw error;
+    }
+
+    if (!enabled) {
+      if (!memoryWallets.has(user.uid)) {
+        memoryWallets.set(user.uid, initialWallet(user, startingBalanceCents));
+      }
+      const currentWallet = cloneValue(memoryWallets.get(user.uid));
+      const outcome = await mutator(currentWallet, {
+        enabled: false,
+        user,
+        applyAdjustment,
+        publicWallet,
+      }) || {};
+      const walletData = outcome.walletData || currentWallet;
+      memoryWallets.set(user.uid, walletData);
+      return {
+        wallet: publicWallet(walletData),
+        result: outcome.result || null,
+      };
+    }
+
+    const walletRef = firestore.collection(collectionName).doc(user.uid);
+    let walletData = null;
+    let result = null;
+    await firestore.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(walletRef);
+      const currentWallet = snapshot.exists
+        ? normalizeWalletDocument(snapshot.data(), user, startingBalanceCents)
+        : initialWallet(user, startingBalanceCents);
+      const outcome = await mutator(currentWallet, {
+        enabled: true,
+        firestore,
+        transaction,
+        walletRef,
+        user,
+        applyAdjustment,
+        publicWallet,
+      }) || {};
+      walletData = outcome.walletData || currentWallet;
+      result = outcome.result || null;
+      transaction.set(walletRef, walletData, { merge: false });
+    });
+    return {
+      wallet: publicWallet(walletData),
+      result,
+    };
+  }
+
   return {
     enabled,
     currency: DEFAULT_CURRENCY,
     startingBalanceCents,
     getOrCreateWallet,
     adjustWallet,
+    transactWallet,
   };
 }
 

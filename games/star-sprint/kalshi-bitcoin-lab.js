@@ -1339,6 +1339,46 @@ async function previewBitcoin15mOrder(options = {}) {
   });
 }
 
+async function getBitcoin15mMarketSnapshot(ticker) {
+  const cleanTicker = String(ticker || '').trim();
+  if (!cleanTicker) {
+    throw new Error('A Bitcoin 15-minute ticker is required.');
+  }
+  const data = await fetchJson(`${KALSHI_API_BASE_URL}/markets/${encodeURIComponent(cleanTicker)}`, { timeoutMs: 1_800 });
+  const market = await getFreshKalshiMarket(data && data.market ? data.market : { ticker: cleanTicker });
+  const [spot, candles] = await Promise.all([
+    getBitcoinTicker(),
+    getCoinbaseCandles(30).catch(() => []),
+  ]);
+  const window = eventWindowFromMarket(market);
+  return {
+    generatedAt: new Date().toISOString(),
+    ticker: cleanTicker,
+    title: market.title || '',
+    market,
+    chart: {
+      points: appendLivePoint(candles, spot),
+    },
+    quote: {
+      yesBidCents: Math.round((marketPrice(market, 'yes_bid_dollars', 'yes_bid') || 0) * 100),
+      yesAskCents: Math.round((marketPrice(market, 'yes_ask_dollars', 'yes_ask') || 0) * 100),
+      noBidCents: Math.round((marketPrice(market, 'no_bid_dollars', 'no_bid') || 0) * 100),
+      noAskCents: Math.round((marketPrice(market, 'no_ask_dollars', 'no_ask') || 0) * 100),
+      quoteSource: market.quoteSource || 'Kalshi REST market detail',
+      quoteTransport: market.quoteTransport || 'rest',
+      quoteReceivedAt: market.quoteReceivedAt || isoDate(Date.now()),
+    },
+    settlement: {
+      currentPrice: Number(spot.price),
+      targetPrice: Number(market.floor_strike),
+      closeTime: window.closeTime,
+      closeMs: window.closeMs,
+      secondsToClose: Math.max(0, (window.closeMs - kalshiNowMs()) / 1000),
+      method: spot && spot.source ? `${spot.source} server spot` : 'server spot',
+    },
+  };
+}
+
 async function placeBitcoin15mOrder(options = {}) {
   if (String(options.confirm || '') !== 'PLACE_ORDER') {
     return {
@@ -1580,6 +1620,7 @@ function sourceStatus() {
 
 module.exports = {
   BTC_15M_SERIES,
+  getBitcoin15mMarketSnapshot,
   placeBitcoin15mOrder,
   previewBitcoin15mOrder,
   scanBitcoin15m,

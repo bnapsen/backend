@@ -430,6 +430,9 @@
   }
 
   function syncSimWalletDelta(amount, action, note, metadata) {
+    if (metadata && metadata.automation) {
+      return Promise.resolve(null);
+    }
     if (!simWalletConnected() || !window.NovaAuth || typeof window.NovaAuth.adjustSimWallet !== "function") {
       return Promise.resolve(null);
     }
@@ -456,6 +459,53 @@
       setPaperStatus("SIM wallet sync failed: " + state.simWallet.error, true);
       renderPaperBankroll();
       return null;
+    });
+  }
+
+  function applySimWalletFromServer(wallet) {
+    if (!wallet) return;
+    state.simWallet.ready = true;
+    state.simWallet.syncing = false;
+    state.simWallet.balance = Number(wallet.balance);
+    state.simWallet.startingBalance = Number(wallet.startingBalance) || state.simWallet.startingBalance;
+    state.simWallet.error = "";
+    attachSimWalletToActivePaper();
+    if (window.NovaAuth && typeof window.NovaAuth.refreshWallet === "function") {
+      window.NovaAuth.refreshWallet().catch(function () {});
+    }
+  }
+
+  function secureSimManualOrder(order) {
+    return Boolean(simWalletConnected() && order && !order.automation);
+  }
+
+  function secureSimBitcoinRequest(action, payload) {
+    if (!window.NovaAuth || typeof window.NovaAuth.appendAuthHeaders !== "function") {
+      return Promise.reject(new Error("Sign in before using secure SIM paper trading."));
+    }
+    state.simWallet.syncing = true;
+    renderPaperBankroll();
+    return window.NovaAuth.appendAuthHeaders({
+      "Content-Type": "application/json",
+    }).then(function (headers) {
+      return fetch(defaultApiBase() + "/api/sim/bitcoin-15m/" + action, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload || {}),
+        cache: "no-store",
+      });
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok || !body.ok) {
+          throw new Error(body.error || "Secure SIM Bitcoin paper trade failed.");
+        }
+        return body;
+      });
+    }).catch(function (error) {
+      state.simWallet.syncing = false;
+      state.simWallet.error = error && error.message ? error.message : "Secure SIM paper sync failed.";
+      renderPaperBankroll();
+      throw error;
     });
   }
 
@@ -1541,8 +1591,13 @@
         setPaperStatus("No paper buy: fake cash is tied up or below this limit cost.", true);
         return;
       }
+      order.secureSim = secureSimManualOrder(order);
       if (Number(quote.askCents) <= order.limitCents) {
-        fillPaperBuy(order, quote.askCents, "Marketable limit buy filled immediately");
+        if (order.secureSim) {
+          fillPaperBuySecure(order, quote.askCents, "Marketable secure SIM limit buy filled immediately");
+        } else {
+          fillPaperBuy(order, quote.askCents, "Marketable limit buy filled immediately");
+        }
       } else {
         queuePaperOrder(order, "Waiting for ask <= " + formatCents(order.limitCents));
       }
@@ -1555,8 +1610,14 @@
       setPaperStatus("No paper sell: no unreserved open " + order.side.toUpperCase() + " contracts.", true);
       return;
     }
+    const sellSourcePosition = findPaperPosition(order.sourcePositionId);
+    order.secureSim = Boolean(sellSourcePosition && sellSourcePosition.secureSim && sellSourcePosition.serverPositionId);
     if (Number(quote.bidCents) >= order.limitCents) {
-      paperSellContracts(order.ticker, order.side, order.contracts, quote.bidCents, "Marketable limit sell filled immediately");
+      if (order.secureSim) {
+        paperSellContractsSecure(order, quote.bidCents, "Marketable secure SIM limit sell filled immediately");
+      } else {
+        paperSellContracts(order.ticker, order.side, order.contracts, quote.bidCents, "Marketable limit sell filled immediately");
+      }
     } else {
       queuePaperOrder(order, "Waiting for bid >= " + formatCents(order.limitCents));
     }
@@ -1622,10 +1683,14 @@
     setPaperStatus("Paper limit resting: " + order.action.toUpperCase() + " " + order.contracts + " " + order.side.toUpperCase() + " @ " + formatCents(order.limitCents) + ".", false);
   }
 
-  function fillPaperBuy(order, fillCents, detail) {
+  function fillPaperBuy(order, fillCents, detail, options) {
+    options = options || {};
     const entryCents = clampNumber(Number(fillCents), 1, 99);
-    const maxContracts = maxPaperContracts(state.paper.cash, entryCents);
-    const contracts = Math.min(Math.floor(Number(order.contracts || 0)), maxContracts);
+    const requestedContracts = Number.isFinite(Number(options.contracts)) ? Number(options.contracts) : Number(order.contracts || 0);
+    const maxContracts = options.skipCashCheck
+      ? Math.max(0, Math.floor(requestedContracts))
+      : maxPaperContracts(state.paper.cash, entryCents);
+    const contracts = Math.min(Math.floor(requestedContracts), maxContracts);
     if (contracts <= 0) {
       if (order.id) removePaperOrder(order.id);
       setPaperStatus("Paper buy could not fill: fake cash no longer covers it.", true);
@@ -1670,6 +1735,8 @@
       entrySpot: Number(order.entrySpot || market.currentPrice),
       entryProbability: probability,
       entryEdge: edge,
+      secureSim: Boolean(options.secureSim || order.secureSim),
+      serverPositionId: options.serverPosition && options.serverPosition.id || order.serverPositionId || "",
       lastBidCents: Number(order.lastBidCents),
       lastAskCents: Number(order.lastAskCents || fillCents),
       lastSpot: Number(order.lastSpot || market.currentPrice),
@@ -1677,7 +1744,9 @@
       lastMarkedAt: scan.generatedAt || new Date().toISOString(),
     };
     if (order.id) removePaperOrder(order.id);
-    state.paper.cash -= entryCost;
+    if (!options.skipCashDebit) {
+      state.paper.cash -= entryCost;
+    }
     state.paper.positions.unshift(position);
     addPaperHistory({
       type: "BUY",
@@ -1691,15 +1760,53 @@
     savePaperLedger();
     renderPaperBankroll();
     setPaperStatus("Paper bought " + contracts + " " + String(order.side).toUpperCase() + " @ " + formatCents(entryCents) + ".", false, "pos");
-    syncSimWalletDelta(-entryCost, "buy", "Bitcoin 15-minute paper buy", {
-      ticker: position.ticker,
-      side: position.side,
-      contracts,
-      priceCents: entryCents,
-      fee: entryFee,
-      automation: position.automation || "",
-    });
+    if (!options.skipWalletSync) {
+      syncSimWalletDelta(-entryCost, "buy", "Bitcoin 15-minute paper buy", {
+        ticker: position.ticker,
+        side: position.side,
+        contracts,
+        priceCents: entryCents,
+        fee: entryFee,
+        automation: position.automation || "",
+      });
+    }
     return position;
+  }
+
+  function fillPaperBuySecure(order, fillCents, detail) {
+    if (!secureSimManualOrder(order)) {
+      return fillPaperBuy(order, fillCents, detail);
+    }
+    order.status = "syncing";
+    setPaperStatus("Secure SIM buy is being confirmed on the server.", false);
+    savePaperLedger();
+    renderPaperBankroll();
+    return secureSimBitcoinRequest("buy", {
+      ticker: order.ticker,
+      side: order.side,
+      contracts: order.contracts,
+      limitCents: order.limitCents,
+      expectedAskCents: fillCents,
+    }).then(function (result) {
+      order.status = "open";
+      const position = fillPaperBuy(order, result.fill && result.fill.priceCents || fillCents, detail, {
+        skipWalletSync: true,
+        skipCashCheck: true,
+        skipCashDebit: true,
+        secureSim: true,
+        serverPosition: result.position,
+        contracts: result.position && result.position.contracts || order.contracts,
+      });
+      applySimWalletFromServer(result.wallet);
+      setPaperStatus("Secure SIM bought " + (result.position && result.position.contracts || order.contracts) + " " + String(order.side).toUpperCase() + " @ " + formatCents(result.fill && result.fill.priceCents || fillCents) + ".", false, "pos");
+      return position;
+    }).catch(function (error) {
+      order.status = "open";
+      setPaperStatus("Secure SIM buy rejected: " + (error && error.message ? error.message : "server rejected the fill"), true);
+      savePaperLedger();
+      renderPaperBankroll();
+      return null;
+    });
   }
 
   function paperSellPosition(id) {
@@ -1710,15 +1817,29 @@
       setPaperStatus("No paper sell: current bid is unavailable.", true);
       return;
     }
+    if (position.secureSim && position.serverPositionId) {
+      paperSellContractsSecure({
+        id: "secure-sell-" + Date.now(),
+        ticker: position.ticker,
+        side: position.side,
+        contracts: position.contracts,
+        limitCents: bidCents,
+        sourcePositionId: position.id,
+        secureSim: true,
+      }, bidCents, "Secure SIM bid-side exit before settlement");
+      return;
+    }
     paperSellContracts(position.ticker, position.side, position.contracts, bidCents, "Bid-side exit before settlement");
   }
 
-  function paperSellContracts(ticker, side, requestedContracts, exitCents, detail, orderId, sourcePositionId, sourcePositionIds, sourceAutomation) {
+  function paperSellContracts(ticker, side, requestedContracts, exitCents, detail, orderId, sourcePositionId, sourcePositionIds, sourceAutomation, options) {
+    options = options || {};
     const priceCents = clampNumber(Number(exitCents), 1, 99);
     const price = priceCents / 100;
     let remaining = Math.floor(Number(requestedContracts || 0));
     let soldContracts = 0;
     let entryCost = 0;
+    let automationSource = sourceAutomation || "";
     const sourceIdList = Array.isArray(sourcePositionIds) ? sourcePositionIds.filter(Boolean) : [];
     const positions = state.paper.positions
       .filter(function (position) {
@@ -1737,6 +1858,7 @@
       const costSlice = Number(position.entryCost || 0) * ratio;
       entryCost += costSlice;
       soldContracts += take;
+      if (!automationSource && position.automation) automationSource = position.automation;
       remaining -= take;
       if (take >= openContracts) {
         removePaperPosition(position.id);
@@ -1768,20 +1890,66 @@
     savePaperLedger();
     renderPaperBankroll();
     setPaperStatus("Paper sold " + soldContracts + " " + String(side).toUpperCase() + " @ " + formatCents(priceCents) + " for " + signedPaperMoney(pnl) + ".", pnl < 0, pnl >= 0 ? "pos" : "neg");
-    syncSimWalletDelta(proceeds, "sell", "Bitcoin 15-minute paper sell", {
-      ticker,
-      side,
-      contracts: soldContracts,
-      priceCents,
-      fee: exitFee,
-      pnl,
-      detail: detail || "",
+    if (!options.skipWalletSync && !automationSource) {
+      syncSimWalletDelta(proceeds, "sell", "Bitcoin 15-minute paper sell", {
+        ticker,
+        side,
+        contracts: soldContracts,
+        priceCents,
+        fee: exitFee,
+        pnl,
+        detail: detail || "",
+      });
+    }
+  }
+
+  function paperSellContractsSecure(order, bidCents, detail) {
+    const sourcePosition = findPaperPosition(order.sourcePositionId);
+    if (!sourcePosition || !sourcePosition.secureSim || !sourcePosition.serverPositionId) {
+      setPaperStatus("No secure SIM sell: server-backed position was not found.", true);
+      return Promise.resolve(null);
+    }
+    order.status = "syncing";
+    setPaperStatus("Secure SIM sell is being confirmed on the server.", false);
+    savePaperLedger();
+    renderPaperBankroll();
+    return secureSimBitcoinRequest("sell", {
+      positionId: sourcePosition.serverPositionId,
+      contracts: Math.min(order.contracts, sourcePosition.contracts),
+      limitCents: order.limitCents || bidCents,
+    }).then(function (result) {
+      order.status = "open";
+      paperSellContracts(
+        sourcePosition.ticker,
+        sourcePosition.side,
+        result.fill && result.fill.contracts || order.contracts,
+        result.fill && result.fill.priceCents || bidCents,
+        detail,
+        order.id,
+        sourcePosition.id,
+        "",
+        "",
+        { skipWalletSync: true },
+      );
+      applySimWalletFromServer(result.wallet);
+      setPaperStatus("Secure SIM sold " + (result.fill && result.fill.contracts || order.contracts) + " " + String(sourcePosition.side).toUpperCase() + " @ " + formatCents(result.fill && result.fill.priceCents || bidCents) + ".", false, "pos");
+      return result;
+    }).catch(function (error) {
+      order.status = "open";
+      setPaperStatus("Secure SIM sell rejected: " + (error && error.message ? error.message : "server rejected the fill"), true);
+      savePaperLedger();
+      renderPaperBankroll();
+      return null;
     });
   }
 
   function paperSettlePosition(id, options) {
     const position = findPaperPosition(id);
     if (!position) return;
+    if ((!options || !options.skipSecure) && position.secureSim && position.serverPositionId) {
+      paperSettlePositionSecure(id, options);
+      return;
+    }
     const spot = Number(position.lastSpot);
     const target = Number(position.targetPrice);
     if (!Number.isFinite(spot) || !Number.isFinite(target)) {
@@ -1804,7 +1972,7 @@
     });
     savePaperLedger();
     renderPaperBankroll();
-    if (payout > 0) {
+    if (payout > 0 && !position.automation && (!options || !options.skipWalletSync)) {
       syncSimWalletDelta(payout, "settlement", "Bitcoin 15-minute paper settlement", {
         ticker: position.ticker,
         side: position.side,
@@ -1817,6 +1985,40 @@
     if (!options || !options.silent) {
       setPaperStatus("Paper settled " + position.ticker + " as " + (wins ? "win" : "loss") + " for " + signedPaperMoney(pnl) + ".", pnl < 0, pnl >= 0 ? "pos" : "neg");
     }
+  }
+
+  function paperSettlePositionSecure(id, options) {
+    const position = findPaperPosition(id);
+    if (!position || !position.serverPositionId) return Promise.resolve(null);
+    setPaperStatus("Secure SIM settlement is being confirmed on the server.", false);
+    state.simWallet.syncing = true;
+    renderPaperBankroll();
+    return secureSimBitcoinRequest("settle", {
+      positionId: position.serverPositionId,
+    }).then(function (result) {
+      if (result.fill && Number.isFinite(Number(result.fill.finalSpot))) {
+        position.lastSpot = Number(result.fill.finalSpot);
+      }
+      if (result.fill && Number.isFinite(Number(result.fill.targetPrice))) {
+        position.targetPrice = Number(result.fill.targetPrice);
+      }
+      paperSettlePosition(id, {
+        ...(options || {}),
+        skipSecure: true,
+        skipWalletSync: true,
+      });
+      applySimWalletFromServer(result.wallet);
+      setPaperStatus("Secure SIM settled " + position.ticker + " as " + (result.fill && result.fill.won ? "win" : "loss") + ".", false, result.fill && result.fill.won ? "pos" : "neg");
+      return result;
+    }).catch(function (error) {
+      state.simWallet.syncing = false;
+      state.simWallet.error = error && error.message ? error.message : "Secure SIM settlement failed.";
+      if (!options || !options.silent) {
+        setPaperStatus("Secure SIM settlement failed: " + state.simWallet.error, true);
+      }
+      renderPaperBankroll();
+      return null;
+    });
   }
 
   function fillPaperSellTicket(id) {
@@ -2540,10 +2742,19 @@
       order.closeTime = market.closeTime || order.closeTime;
       order.lastMarkedAt = scan.generatedAt || new Date().toISOString();
       changed = true;
+      if (order.status === "syncing") return;
       if (order.action === "buy" && Number(order.lastAskCents) <= Number(order.limitCents)) {
-        fillPaperBuy(order, Number(order.lastAskCents), "Resting limit buy filled");
+        if (order.secureSim) {
+          fillPaperBuySecure(order, Number(order.lastAskCents), "Resting secure SIM limit buy filled");
+        } else {
+          fillPaperBuy(order, Number(order.lastAskCents), "Resting limit buy filled");
+        }
       } else if (order.action === "sell" && Number(order.lastBidCents) >= Number(order.limitCents)) {
-        paperSellContracts(order.ticker, order.side, order.contracts, Number(order.lastBidCents), "Resting limit sell filled", order.id, order.sourcePositionId, order.sourcePositionIds, order.sourceAutomation);
+        if (order.secureSim) {
+          paperSellContractsSecure(order, Number(order.lastBidCents), "Resting secure SIM limit sell filled");
+        } else {
+          paperSellContracts(order.ticker, order.side, order.contracts, Number(order.lastBidCents), "Resting limit sell filled", order.id, order.sourcePositionId, order.sourcePositionIds, order.sourceAutomation);
+        }
       }
     });
     if (changed) savePaperLedger();

@@ -19,6 +19,7 @@ const CarSoccer = require('./car-soccer-core.js');
 const ZombieSiege = require('./zombie-siege-core.js');
 const { createArcadeChatStore } = require('./arcade-chat-store.js');
 const { createSimWalletStore } = require('./sim-wallet-store.js');
+const { createSimBitcoinPaperStore } = require('./sim-bitcoin-paper-store.js');
 const { createReviewsStore } = require('./reviews-store.js');
 const { createSongsStore } = require('./songs-store.js');
 const {
@@ -44,6 +45,7 @@ const {
   scanWeatherMarkets,
 } = require('./kalshi-weather-lab.js');
 const {
+  getBitcoin15mMarketSnapshot,
   placeBitcoin15mOrder,
   previewBitcoin15mOrder,
   scanBitcoin15m,
@@ -162,6 +164,10 @@ const liveRooms = new Map();
 const arcadeChatStore = createArcadeChatStore();
 const simWalletStore = createSimWalletStore({
   projectId: FIREBASE_PROJECT_ID,
+});
+const simBitcoinPaperStore = createSimBitcoinPaperStore({
+  projectId: FIREBASE_PROJECT_ID,
+  simWalletStore,
 });
 const reviewsStore = createReviewsStore({
   dataDir: DATA_DIR,
@@ -488,6 +494,13 @@ async function handleSimWalletAdjustRequest(req, res) {
   }
 
   try {
+    if (String(body.source || '') === 'bitcoin-15m-paper') {
+      sendJsonResponse(req, res, 400, {
+        ok: false,
+        error: 'Bitcoin 15-minute SIM paper trades must use the secure game endpoint.',
+      });
+      return;
+    }
     const wallet = await simWalletStore.adjustWallet(auth.user, {
       amount: body.amount,
       amountCents: body.amountCents,
@@ -924,6 +937,220 @@ async function handleKalshiBitcoinPlaceOrderRequest(req, res, requestUrl) {
       payload.detail = error.stack || error.message;
     }
     sendJsonResponse(req, res, 502, payload);
+  }
+}
+
+function simBitcoinErrorStatus(error) {
+  const code = String(error && error.code || '');
+  if (code === 'sim/insufficient-funds') return 409;
+  if (code === 'sim-bitcoin/not-marketable') return 409;
+  if (code === 'sim-bitcoin/position-not-open') return 404;
+  if (code.startsWith('sim-bitcoin/') || code.startsWith('sim/')) return 400;
+  return 500;
+}
+
+function bitcoinCandidateForSide(scan, side) {
+  const wanted = String(side || '').toLowerCase() === 'no' ? 'no' : 'yes';
+  return (Array.isArray(scan && scan.candidates) ? scan.candidates : [])
+    .find((candidate) => candidate && candidate.side === wanted) || null;
+}
+
+function centsFromBody(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number) : fallback;
+}
+
+async function readSignedSimBitcoinBody(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return null;
+  }
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return null;
+  }
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return null;
+  }
+  try {
+    return {
+      auth,
+      body: await readJsonBody(req),
+    };
+  } catch (error) {
+    sendJsonResponse(req, res, error.message === 'Request body too large.' ? 413 : 400, {
+      ok: false,
+      error: error.message || 'Invalid JSON body.',
+    });
+    return null;
+  }
+}
+
+async function handleSimBitcoinPaperBuyRequest(req, res) {
+  const signed = await readSignedSimBitcoinBody(req, res);
+  if (!signed) return;
+  const { auth, body } = signed;
+
+  try {
+    const side = String(body.side || '').toLowerCase() === 'no' ? 'no' : 'yes';
+    const contracts = Math.max(1, Math.min(1000, Math.floor(Number(body.contracts || 0))));
+    const limitCents = Math.max(1, Math.min(99, centsFromBody(body.limitCents, 0)));
+    const scan = await scanBitcoin15m({
+      maxCost: Math.max(0.5, Math.min(100, Number(body.maxCost || 100))),
+      maxContracts: Math.max(1, Math.min(25, contracts)),
+      minEdge: -0.5,
+      minutes: 60,
+    });
+    const candidate = bitcoinCandidateForSide(scan, side);
+    const askCents = Math.max(1, Math.min(99, centsFromBody(candidate && candidate.askCents, 0)));
+    if (!scan.ticker || (body.ticker && String(body.ticker) !== scan.ticker)) {
+      const error = new Error('That Bitcoin 15-minute ticker is no longer the active paper market.');
+      error.code = 'sim-bitcoin/ticker-not-active';
+      throw error;
+    }
+    if (!candidate || askCents > limitCents) {
+      const error = new Error('The server ask is no longer at or below your paper limit.');
+      error.code = 'sim-bitcoin/not-marketable';
+      throw error;
+    }
+
+    const fill = await simBitcoinPaperStore.openPosition(auth.user, {
+      ticker: scan.ticker,
+      side,
+      contracts,
+      entryCents: askCents,
+      closeTime: scan.market && scan.market.closeTime,
+      targetPrice: scan.market && scan.market.targetPrice,
+      entrySpot: scan.market && scan.market.currentPrice,
+    });
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      wallet: fill.wallet,
+      position: fill.position,
+      fill: fill.fill,
+      scan: {
+        ticker: scan.ticker,
+        generatedAt: scan.generatedAt,
+        quoteSource: scan.market && scan.market.quoteSource,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, simBitcoinErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to place secure SIM Bitcoin paper buy.',
+    });
+  }
+}
+
+async function handleSimBitcoinPaperSellRequest(req, res) {
+  const signed = await readSignedSimBitcoinBody(req, res);
+  if (!signed) return;
+  const { auth, body } = signed;
+
+  try {
+    const position = await simBitcoinPaperStore.readPosition(auth.user, body.positionId);
+    if (!position || position.status !== 'open') {
+      const error = new Error('That SIM paper position is not open.');
+      error.code = 'sim-bitcoin/position-not-open';
+      throw error;
+    }
+    const scan = await scanBitcoin15m({
+      maxCost: 100,
+      maxContracts: Math.max(1, Math.min(25, Math.floor(Number(body.contracts || position.contracts || 1)))),
+      minEdge: -0.5,
+      minutes: 60,
+    });
+    if (scan.ticker !== position.ticker) {
+      const error = new Error('That paper market is no longer active. Settle it instead of selling.');
+      error.code = 'sim-bitcoin/ticker-not-active';
+      throw error;
+    }
+    const candidate = bitcoinCandidateForSide(scan, position.side);
+    const bidCents = Math.max(1, Math.min(99, centsFromBody(candidate && candidate.bidCents, 0)));
+    const limitCents = Math.max(1, Math.min(99, centsFromBody(body.limitCents, 1)));
+    if (!candidate || bidCents < limitCents) {
+      const error = new Error('The server bid is no longer at or above your paper sell limit.');
+      error.code = 'sim-bitcoin/not-marketable';
+      throw error;
+    }
+
+    const fill = await simBitcoinPaperStore.sellPosition(auth.user, {
+      positionId: position.id,
+      contracts: Math.max(1, Math.min(position.contracts, Math.floor(Number(body.contracts || position.contracts)))),
+      priceCents: bidCents,
+    });
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      wallet: fill.wallet,
+      position: fill.position,
+      fill: fill.fill,
+      scan: {
+        ticker: scan.ticker,
+        generatedAt: scan.generatedAt,
+        quoteSource: scan.market && scan.market.quoteSource,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, simBitcoinErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to place secure SIM Bitcoin paper sell.',
+    });
+  }
+}
+
+async function handleSimBitcoinPaperSettleRequest(req, res) {
+  const signed = await readSignedSimBitcoinBody(req, res);
+  if (!signed) return;
+  const { auth, body } = signed;
+
+  try {
+    const position = await simBitcoinPaperStore.readPosition(auth.user, body.positionId);
+    if (!position || position.status !== 'open') {
+      const error = new Error('That SIM paper position is not open.');
+      error.code = 'sim-bitcoin/position-not-open';
+      throw error;
+    }
+    const snapshot = await getBitcoin15mMarketSnapshot(position.ticker);
+    const closeMs = new Date(position.closeTime || snapshot.settlement.closeTime || 0).getTime();
+    if (!Number.isFinite(closeMs) || Date.now() < closeMs) {
+      const error = new Error('That Bitcoin paper position has not reached settlement yet.');
+      error.code = 'sim-bitcoin/not-settled';
+      throw error;
+    }
+    const fill = await simBitcoinPaperStore.settlePosition(auth.user, {
+      positionId: position.id,
+      finalSpot: snapshot.settlement.currentPrice,
+      targetPrice: Number.isFinite(Number(position.targetPrice)) ? Number(position.targetPrice) : snapshot.settlement.targetPrice,
+      method: snapshot.settlement.method,
+    });
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      wallet: fill.wallet,
+      position: fill.position,
+      fill: fill.fill,
+      snapshot: {
+        generatedAt: snapshot.generatedAt,
+        ticker: snapshot.ticker,
+        currentPrice: snapshot.settlement.currentPrice,
+        targetPrice: snapshot.settlement.targetPrice,
+        method: snapshot.settlement.method,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, simBitcoinErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to settle secure SIM Bitcoin paper position.',
+    });
   }
 }
 
@@ -5805,6 +6032,21 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/sim/wallet/adjust') {
     await handleSimWalletAdjustRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/sim/bitcoin-15m/buy') {
+    await handleSimBitcoinPaperBuyRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/sim/bitcoin-15m/sell') {
+    await handleSimBitcoinPaperSellRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/sim/bitcoin-15m/settle') {
+    await handleSimBitcoinPaperSettleRequest(req, res);
     return;
   }
 
