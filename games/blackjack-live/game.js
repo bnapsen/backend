@@ -2,11 +2,14 @@
   'use strict';
 
   const PROD_SERVER_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.app';
+  const DRAG_THRESHOLD_PX = 6;
+  const DRAG_COLLISION_GAP_PX = 8;
   const STORAGE_KEYS = {
     name: 'royalBlackjackLive.name',
     serverUrl: 'royalBlackjackLive.serverUrl',
     setupHidden: 'royalBlackjackLive.setupHidden',
     infoHidden: 'royalBlackjackLive.infoHidden',
+    tableLayout: 'royalBlackjackLive.tableLayout',
   };
   const query = new URLSearchParams(window.location.search);
 
@@ -38,6 +41,11 @@
       outcomeKey: '',
       shoeRemaining: null,
       discardCount: null,
+    },
+    tableDrag: {
+      positions: {},
+      active: null,
+      suppressClickUntil: 0,
     },
   };
 
@@ -330,6 +338,14 @@
     return suit === 'H' || suit === 'D' ? 'red' : 'black';
   }
 
+  function escapeAttr(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   function showToast(message) {
     window.clearTimeout(state.toastTimer);
     ui.toast.textContent = message;
@@ -354,6 +370,23 @@
     localStorage.setItem(STORAGE_KEYS.serverUrl, state.serverUrl);
     localStorage.setItem(STORAGE_KEYS.setupHidden, state.panels.setupHidden ? '1' : '0');
     localStorage.setItem(STORAGE_KEYS.infoHidden, state.panels.infoHidden ? '1' : '0');
+  }
+
+  function persistTableLayout() {
+    try {
+      localStorage.setItem(STORAGE_KEYS.tableLayout, JSON.stringify(state.tableDrag.positions || {}));
+    } catch (error) {
+      // Ignore layout persistence failures.
+    }
+  }
+
+  function readTableLayout() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.tableLayout) || '{}');
+      state.tableDrag.positions = saved && typeof saved === 'object' ? saved : {};
+    } catch (error) {
+      state.tableDrag.positions = {};
+    }
   }
 
   function setPanelHidden(key, hidden, persist) {
@@ -536,10 +569,11 @@
     const extraClass = settings.extraClass ? ` ${settings.extraClass}` : '';
     const animateClass = settings.animate ? ' animate-in' : '';
     const styleAttr = settings.style ? ` style="${settings.style}"` : '';
+    const dragAttr = settings.dragId ? ` data-drag-id="${escapeAttr(settings.dragId)}"` : '';
     if (!card) {
       const hiddenClass = settings.dim ? ' hidden' : '';
       return `
-        <div class="card back${hiddenClass}${extraClass}${animateClass}"${styleAttr}>
+        <div class="card back${hiddenClass}${extraClass}${animateClass}"${styleAttr}${dragAttr}>
           <div class="card-inner">
             <div class="card-back-face" aria-hidden="true">
               <span class="card-back-monogram">AP</span>
@@ -552,7 +586,7 @@
     const suit = suitEntity(card.suit);
     const pipMarks = Array.from({ length: 6 }, () => `<span>${suit}</span>`).join('');
     return `
-      <div class="card ${tone}${extraClass}${animateClass}"${styleAttr}>
+      <div class="card ${tone}${extraClass}${animateClass}"${styleAttr}${dragAttr}>
         <div class="card-inner">
           <div class="card-back-face" aria-hidden="true">
             <span class="card-back-monogram">AP</span>
@@ -757,6 +791,7 @@
     const rows = cards.length ? cards : [null, null];
     ui.dealerCards.innerHTML = rows.map((card, index) => cardMarkup(card, {
       animate: animate && Boolean(card),
+      dragId: card ? `dealer:card:${index}` : '',
       style: `--deal-delay:${100 + index * 70}ms;`,
     })).join('');
     state.renderMemo.dealerSignature = signature;
@@ -798,7 +833,7 @@
     const roomCode = sanitizeRoomCode(state.roomCode || ui.roomInput.value);
     const quickAction = canQuickSeatJoin() ? (roomCode ? 'join' : 'host') : '';
     const actionButton = quickAction
-      ? `<button class="seat-join-button" type="button" data-seat-action="${quickAction}">Sit down</button>`
+      ? `<button class="seat-join-button" type="button" data-seat-action="${quickAction}" data-drag-id="button:sit">Sit down</button>`
       : '';
     return `
       <div class="seat-card empty${quickAction ? ' joinable' : ''}">
@@ -818,12 +853,13 @@
     `;
   }
 
-  function renderHandCardRow(cards, animate, delayBase = 120) {
+  function renderHandCardRow(cards, animate, delayBase = 120, dragPrefix = '') {
     const seatCards = Array.isArray(cards) && cards.length ? cards : [null, null];
     return seatCards.map((card, index) => cardMarkup(card, {
       dim: !card,
       animate: animate && Boolean(card),
       extraClass: 'hole-card',
+      dragId: card && dragPrefix ? `${dragPrefix}:card:${index}` : '',
       style: `${seatCardStyle(index, seatCards.length)}--deal-delay:${delayBase + index * 60}ms;`,
     })).join('');
   }
@@ -873,7 +909,7 @@
             return `
               <div class="${splitClasses.join(' ')}">
                 <div class="hole-row split-hole-row">
-                  ${renderHandCardRow(hand.cards, animate, 110 + index * 90)}
+                  ${renderHandCardRow(hand.cards, animate, 110 + index * 90, `player:${seat}:hand:${index}`)}
                 </div>
                 <div class="split-hand-meta">
                   <span>H${index + 1} ${hand.scoreLabel || '-'}</span>
@@ -883,7 +919,7 @@
             `;
           }).join('')}
         </div>`
-      : `<div class="hole-row">${renderHandCardRow(playerCards, animate)}</div>`;
+      : `<div class="hole-row">${renderHandCardRow(playerCards, animate, 120, `player:${seat}:hand:${activeHandIndex}`)}</div>`;
 
     const betLine = player.activeBet > 0
       ? `${splitMode ? 'Total' : 'Live'} ${formatChips(player.activeBet)}`
@@ -1109,8 +1145,17 @@
     ui.chipRow.innerHTML = (controls.betPresets || [100, 500, 2500, 10000, -500]).map((amount) => {
       const sign = amount > 0 ? '+' : '';
       const className = amount < 0 ? 'chip-btn minus' : 'chip-btn';
-      return `<button class="${className}" type="button" data-chip-amount="${amount}">${sign}${formatChips(Math.abs(amount))}</button>`;
+      return `<button class="${className}" type="button" data-chip-amount="${amount}" data-drag-id="chip:${amount}">${sign}${formatChips(Math.abs(amount))}</button>`;
     }).join('');
+  }
+
+  function setTableButtonAvailable(button, available) {
+    if (!button) {
+      return;
+    }
+    button.disabled = false;
+    button.setAttribute('aria-disabled', available ? 'false' : 'true');
+    button.classList.toggle('control-disabled', !available);
   }
 
   function renderControls() {
@@ -1122,15 +1167,210 @@
     ui.hostBtn.disabled = pendingConnection;
     ui.joinBtn.disabled = pendingConnection || !canJoin;
     ui.shareLoungeBtn.disabled = !(connected && state.mode === 'online' && state.roomCode);
-    ui.dealBtn.disabled = !(connected && controls.canStartRound);
-    ui.hitBtn.disabled = !(connected && controls.canHit);
-    ui.standBtn.disabled = !(connected && controls.canStand);
-    ui.doubleBtn.disabled = !(connected && controls.canDouble);
-    ui.splitBtn.disabled = !(connected && controls.canSplit);
-    ui.resetTableBtn.disabled = !(connected && controls.canResetTable);
+    setTableButtonAvailable(ui.dealBtn, connected && controls.canStartRound);
+    setTableButtonAvailable(ui.hitBtn, connected && controls.canHit);
+    setTableButtonAvailable(ui.standBtn, connected && controls.canStand);
+    setTableButtonAvailable(ui.doubleBtn, connected && controls.canDouble);
+    setTableButtonAvailable(ui.splitBtn, connected && controls.canSplit);
+    setTableButtonAvailable(ui.resetTableBtn, connected && controls.canResetTable);
 
     renderActionPrompt();
     renderChips();
+  }
+
+  function dragPieces() {
+    return Array.from(document.querySelectorAll('.table-felt [data-drag-id]'));
+  }
+
+  function applyDragPosition(element, position) {
+    const x = Math.round(Number(position?.x) || 0);
+    const y = Math.round(Number(position?.y) || 0);
+    element.style.setProperty('--drag-x', `${x}px`);
+    element.style.setProperty('--drag-y', `${y}px`);
+    element.classList.toggle('is-moved', Boolean(x || y));
+  }
+
+  function clampDragPosition(element, position) {
+    const table = document.querySelector('.table-felt');
+    if (!table || !element) {
+      return position;
+    }
+    const next = {
+      x: Math.round(Number(position?.x) || 0),
+      y: Math.round(Number(position?.y) || 0),
+    };
+    applyDragPosition(element, next);
+    const pad = 8;
+    const tableRect = table.getBoundingClientRect();
+    let rect = element.getBoundingClientRect();
+    if (rect.left < tableRect.left + pad) {
+      next.x += tableRect.left + pad - rect.left;
+    }
+    if (rect.right > tableRect.right - pad) {
+      next.x -= rect.right - (tableRect.right - pad);
+    }
+    if (rect.top < tableRect.top + pad) {
+      next.y += tableRect.top + pad - rect.top;
+    }
+    if (rect.bottom > tableRect.bottom - pad) {
+      next.y -= rect.bottom - (tableRect.bottom - pad);
+    }
+    applyDragPosition(element, next);
+    return next;
+  }
+
+  function rectsOverlap(left, right, gap = 0) {
+    return !(
+      left.right + gap <= right.left ||
+      left.left >= right.right + gap ||
+      left.bottom + gap <= right.top ||
+      left.top >= right.bottom + gap
+    );
+  }
+
+  function hasDragCollision(element) {
+    const rect = element.getBoundingClientRect();
+    return dragPieces().some((piece) => (
+      piece !== element &&
+      piece.offsetParent !== null &&
+      rectsOverlap(rect, piece.getBoundingClientRect(), DRAG_COLLISION_GAP_PX)
+    ));
+  }
+
+  function findNearbyOpenDragPosition(element, position) {
+    const origin = {
+      x: Math.round(Number(position?.x) || 0),
+      y: Math.round(Number(position?.y) || 0),
+    };
+    for (let radius = 18; radius <= 280; radius += 18) {
+      for (let angle = 0; angle < 360; angle += 30) {
+        const radians = angle * Math.PI / 180;
+        const candidate = clampDragPosition(element, {
+          x: origin.x + Math.cos(radians) * radius,
+          y: origin.y + Math.sin(radians) * radius,
+        });
+        if (!hasDragCollision(element)) {
+          return candidate;
+        }
+      }
+    }
+    return clampDragPosition(element, origin);
+  }
+
+  function resolveDragOverlaps(element, position) {
+    let next = clampDragPosition(element, position);
+    for (let attempt = 0; attempt < 18; attempt += 1) {
+      const rect = element.getBoundingClientRect();
+      const other = dragPieces().find((piece) => (
+        piece !== element &&
+        piece.offsetParent !== null &&
+        rectsOverlap(rect, piece.getBoundingClientRect(), DRAG_COLLISION_GAP_PX)
+      ));
+      if (!other) {
+        break;
+      }
+      const otherRect = other.getBoundingClientRect();
+      const overlapX = Math.min(rect.right, otherRect.right) - Math.max(rect.left, otherRect.left);
+      const overlapY = Math.min(rect.bottom, otherRect.bottom) - Math.max(rect.top, otherRect.top);
+      const pushRight = rect.left + rect.width / 2 >= otherRect.left + otherRect.width / 2;
+      const pushDown = rect.top + rect.height / 2 >= otherRect.top + otherRect.height / 2;
+      if (overlapX <= overlapY) {
+        next.x += (pushRight ? 1 : -1) * (overlapX + DRAG_COLLISION_GAP_PX);
+      } else {
+        next.y += (pushDown ? 1 : -1) * (overlapY + DRAG_COLLISION_GAP_PX);
+      }
+      next = clampDragPosition(element, next);
+    }
+    if (hasDragCollision(element)) {
+      next = findNearbyOpenDragPosition(element, next);
+    }
+    return next;
+  }
+
+  function applyTableDragPositions() {
+    for (const element of dragPieces()) {
+      const id = element.dataset.dragId;
+      if (!id) {
+        continue;
+      }
+      element.classList.add('drag-piece');
+      const next = clampDragPosition(element, state.tableDrag.positions[id] || { x: 0, y: 0 });
+      if (next.x || next.y) {
+        state.tableDrag.positions[id] = next;
+      } else {
+        delete state.tableDrag.positions[id];
+      }
+    }
+  }
+
+  function beginTableDrag(event) {
+    const element = event.target.closest('.table-felt [data-drag-id]');
+    if (!element || event.button !== 0) {
+      return false;
+    }
+    const id = element.dataset.dragId;
+    const saved = state.tableDrag.positions[id] || { x: 0, y: 0 };
+    state.tableDrag.active = {
+      id,
+      element,
+      surface: element.closest('.table-props, .dealer-zone, .seat-layer, .felt-actions'),
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      baseX: Math.round(Number(saved.x) || 0),
+      baseY: Math.round(Number(saved.y) || 0),
+      moved: false,
+    };
+    state.tableDrag.active.surface?.classList.add('drag-surface-active');
+    element.setPointerCapture?.(event.pointerId);
+    return true;
+  }
+
+  function moveTableDrag(event) {
+    const drag = state.tableDrag.active;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) {
+      return;
+    }
+    if (!drag.moved) {
+      drag.moved = true;
+      drag.element.classList.add('dragging');
+      document.body.classList.add('dragging-table-piece');
+      unlockAudio();
+    }
+    event.preventDefault();
+    const next = clampDragPosition(drag.element, {
+      x: drag.baseX + dx,
+      y: drag.baseY + dy,
+    });
+    state.tableDrag.positions[drag.id] = next;
+  }
+
+  function endTableDrag(event) {
+    const drag = state.tableDrag.active;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    drag.element.releasePointerCapture?.(event.pointerId);
+    if (drag.moved) {
+      const finalPosition = resolveDragOverlaps(
+        drag.element,
+        state.tableDrag.positions[drag.id] || { x: drag.baseX, y: drag.baseY }
+      );
+      state.tableDrag.positions[drag.id] = finalPosition;
+      applyDragPosition(drag.element, finalPosition);
+      persistTableLayout();
+      state.tableDrag.suppressClickUntil = Date.now() + 450;
+      playSound('click');
+    }
+    drag.element.classList.remove('dragging');
+    drag.surface?.classList.remove('drag-surface-active');
+    document.body.classList.remove('dragging-table-piece');
+    state.tableDrag.active = null;
   }
 
   function render() {
@@ -1143,6 +1383,7 @@
     renderSeats();
     renderLog();
     renderControls();
+    applyTableDragPositions();
   }
 
   async function connectOnline(mode, options = {}) {
@@ -1285,12 +1526,27 @@
   }
 
   function sendDeal() {
+    if (!currentControls().canStartRound) {
+      showToast('Deal is not available yet.');
+      return;
+    }
     if (sendMessage({ action: 'start-hand' })) {
       setStatusMessage('Dealer is putting the next round in motion...');
     }
   }
 
   function sendAction(type) {
+    const controls = currentControls();
+    const allowed = {
+      hit: controls.canHit,
+      stand: controls.canStand,
+      double: controls.canDouble,
+      split: controls.canSplit,
+    };
+    if (!allowed[type]) {
+      showToast(`${type.charAt(0).toUpperCase()}${type.slice(1)} is not available right now.`);
+      return;
+    }
     if (sendMessage({ action: 'act', type })) {
       setStatusMessage(`Sending ${type} to the dealer...`);
     }
@@ -1330,6 +1586,10 @@
   }
 
   function sendResetTable() {
+    if (!currentControls().canResetTable) {
+      showToast('Reset is not available yet.');
+      return;
+    }
     if (sendMessage({ action: 'restart' })) {
       setStatusMessage('Refreshing SIM balances and loading a fresh shoe...');
       cueShuffle();
@@ -1361,6 +1621,7 @@
     ui.serverUrlInput.value = state.serverUrl;
     state.panels.setupHidden = true;
     state.panels.infoHidden = true;
+    readTableLayout();
   }
 
   function bootFromQuery() {
@@ -1376,7 +1637,19 @@
   }
 
   function bindEvents() {
+    document.addEventListener('click', (event) => {
+      if (Date.now() > state.tableDrag.suppressClickUntil) {
+        return;
+      }
+      if (!event.target.closest('[data-drag-id]')) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+
     document.addEventListener('pointerdown', (event) => {
+      beginTableDrag(event);
       const button = event.target.closest('button');
       if (!button || button.disabled) {
         return;
@@ -1388,6 +1661,10 @@
         playSound('click');
       }
     });
+
+    document.addEventListener('pointermove', moveTableDrag);
+    document.addEventListener('pointerup', endTableDrag);
+    document.addEventListener('pointercancel', endTableDrag);
 
     ui.nameInput.addEventListener('input', () => {
       persistSettings();
@@ -1426,6 +1703,9 @@
     ui.resetTableBtn.addEventListener('click', sendResetTable);
 
     ui.chipRow.addEventListener('click', (event) => {
+      if (Date.now() <= state.tableDrag.suppressClickUntil) {
+        return;
+      }
       const trigger = event.target.closest('[data-chip-amount]');
       if (!trigger) {
         return;
@@ -1441,6 +1721,9 @@
     });
 
     ui.seatLayer.addEventListener('click', (event) => {
+      if (Date.now() <= state.tableDrag.suppressClickUntil) {
+        return;
+      }
       const trigger = event.target.closest('[data-seat-action]');
       if (!trigger) {
         return;

@@ -109,6 +109,10 @@ button:disabled {
   transform: none;
 }
 
+.control-disabled {
+  opacity: 0.44;
+}
+
 input {
   width: 100%;
   padding: 14px 16px;
@@ -549,6 +553,40 @@ h2 {
   pointer-events: none;
 }
 
+.drag-piece {
+  position: relative;
+  z-index: 8;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  translate: var(--drag-x, 0px) var(--drag-y, 0px);
+  transition:
+    translate 150ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 150ms ease,
+    scale 150ms ease;
+}
+
+.drag-piece:hover {
+  filter: brightness(1.06) drop-shadow(0 10px 14px rgba(0, 0, 0, 0.2));
+}
+
+.drag-piece.dragging {
+  z-index: 60;
+  cursor: grabbing;
+  filter: brightness(1.12) drop-shadow(0 18px 26px rgba(0, 0, 0, 0.38));
+  scale: 1.045;
+  transition: none;
+}
+
+.dragging-table-piece {
+  cursor: grabbing;
+}
+
+.drag-surface-active {
+  z-index: 80 !important;
+  pointer-events: auto;
+}
+
 .shoe-prop,
 .discard-prop {
   position: absolute;
@@ -719,6 +757,7 @@ h2 {
   border-radius: 999px;
   background: rgba(5, 12, 17, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.07);
+  pointer-events: auto;
 }
 
 .count-stat small,

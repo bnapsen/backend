@@ -24,7 +24,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/blackjack-live/style.css?v=20260503l" />
+  <link rel="stylesheet" href="games/blackjack-live/style.css?v=20260503m" />
 </head>
 <body>
   <div class="page-shell">
@@ -185,8 +185,8 @@
                   <i></i>
                 </div>
                 <div id="countMeter" class="count-prop">
-                  <span class="count-stat"><small>Hi-Lo</small><strong id="runningCountLabel">0</strong></span>
-                  <span class="count-stat"><small>True</small><strong id="trueCountLabel">0.0</strong></span>
+                  <span class="count-stat" data-drag-id="count:running"><small>Hi-Lo</small><strong id="runningCountLabel">0</strong></span>
+                  <span class="count-stat" data-drag-id="count:true"><small>True</small><strong id="trueCountLabel">0.0</strong></span>
                 </div>
               </div>
 
@@ -222,12 +222,12 @@
                 </div>
 
                 <div class="table-buttons">
-                  <button id="dealBtn" class="primary" type="button">Deal</button>
-                  <button id="hitBtn" type="button">Hit</button>
-                  <button id="standBtn" type="button">Stand</button>
-                  <button id="doubleBtn" type="button">Double</button>
-                  <button id="splitBtn" type="button">Split</button>
-                  <button id="resetTableBtn" type="button">Reset</button>
+                  <button id="dealBtn" class="primary" type="button" data-drag-id="button:deal">Deal</button>
+                  <button id="hitBtn" type="button" data-drag-id="button:hit">Hit</button>
+                  <button id="standBtn" type="button" data-drag-id="button:stand">Stand</button>
+                  <button id="doubleBtn" type="button" data-drag-id="button:double">Double</button>
+                  <button id="splitBtn" type="button" data-drag-id="button:split">Split</button>
+                  <button id="resetTableBtn" type="button" data-drag-id="button:reset">Reset</button>
                 </div>
               </div>
             </div>
@@ -272,6 +272,6 @@
 
   <script src="nova-auth.js?v=20260503e"></script>
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
-  <script src="games/blackjack-live/game.js?v=20260503l"></script>
+  <script src="games/blackjack-live/game.js?v=20260503m"></script>
 </body>
 </html>
