@@ -205,21 +205,6 @@
     renderFloatingWallet();
   }
 
-  function changeFloatingWalletSize(delta) {
-    const root = ensureFloatingWallet();
-    const prefs = loadFloatingWalletPrefs();
-    const currentWidth = Number(root?.getBoundingClientRect().width || prefs.width || 244);
-    const nextPrefs = saveFloatingWalletPrefs({
-      ...prefs,
-      hidden: false,
-      width: currentWidth + delta,
-    });
-    if (root && nextPrefs.left !== null && nextPrefs.top !== null) {
-      saveFloatingWalletPrefs(clampFloatingWalletToViewport(root, nextPrefs));
-    }
-    renderFloatingWallet();
-  }
-
   function startFloatingWalletDrag(event) {
     if (event.button !== 0 || !state.floatingWallet) {
       return;
@@ -323,15 +308,6 @@
     if (wasMoving) {
       saveFloatingWalletPrefs(clampFloatingWalletToViewport(root, loadFloatingWalletPrefs()));
     }
-  }
-
-  function dockFloatingWalletPlacement() {
-    const root = ensureFloatingWallet();
-    if (!root) {
-      return;
-    }
-    saveFloatingWalletPrefs(currentFloatingWalletPlacement(root));
-    renderFloatingWallet();
   }
 
   function currentUid() {
@@ -1444,13 +1420,7 @@
       return button;
     };
 
-    if (snapshot.signedIn) {
-      const refreshButton = document.createElement('button');
-      refreshButton.type = 'button';
-      refreshButton.textContent = 'Refresh';
-      refreshButton.addEventListener('click', refreshWalletSoon);
-      actions.appendChild(refreshButton);
-    } else if (snapshot.ready) {
+    if (!snapshot.signedIn && snapshot.ready) {
       const signInButton = document.createElement('button');
       signInButton.type = 'button';
       signInButton.textContent = 'Sign in';
@@ -1459,9 +1429,6 @@
       });
       actions.appendChild(signInButton);
     }
-    actions.appendChild(makeControlButton('-', 'Make SIM wallet smaller', () => changeFloatingWalletSize(-32)));
-    actions.appendChild(makeControlButton('+', 'Make SIM wallet larger', () => changeFloatingWalletSize(32)));
-    actions.appendChild(makeControlButton('Dock', 'Keep SIM wallet docked here', dockFloatingWalletPlacement));
     actions.appendChild(makeControlButton('Hide', 'Hide SIM wallet', () => setFloatingWalletHidden(true)));
 
     const valueEl = document.createElement('strong');
