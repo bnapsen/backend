@@ -561,9 +561,9 @@ h2 {
   user-select: none;
   translate: var(--drag-x, 0px) var(--drag-y, 0px);
   transition:
-    translate 150ms cubic-bezier(0.2, 0.8, 0.2, 1),
     filter 150ms ease,
     scale 150ms ease;
+  will-change: translate;
 }
 
 .drag-piece:hover {

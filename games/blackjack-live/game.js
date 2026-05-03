@@ -41,6 +41,7 @@
       outcomeKey: '',
       shoeRemaining: null,
       discardCount: null,
+      chipSignature: '',
     },
     tableDrag: {
       positions: {},
@@ -1142,7 +1143,13 @@
 
   function renderChips() {
     const controls = currentControls();
-    ui.chipRow.innerHTML = (controls.betPresets || [100, 500, 2500, 10000, -500]).map((amount) => {
+    const presets = controls.betPresets || [100, 500, 2500, 10000, -500];
+    const signature = presets.join('|');
+    if (signature === state.renderMemo.chipSignature && ui.chipRow.children.length) {
+      return;
+    }
+    state.renderMemo.chipSignature = signature;
+    ui.chipRow.innerHTML = presets.map((amount) => {
       const sign = amount > 0 ? '+' : '';
       const className = amount < 0 ? 'chip-btn minus' : 'chip-btn';
       return `<button class="${className}" type="button" data-chip-amount="${amount}" data-drag-id="chip:${amount}">${sign}${formatChips(Math.abs(amount))}</button>`;
@@ -1294,12 +1301,7 @@
         continue;
       }
       element.classList.add('drag-piece');
-      const next = clampDragPosition(element, state.tableDrag.positions[id] || { x: 0, y: 0 });
-      if (next.x || next.y) {
-        state.tableDrag.positions[id] = next;
-      } else {
-        delete state.tableDrag.positions[id];
-      }
+      applyDragPosition(element, state.tableDrag.positions[id] || { x: 0, y: 0 });
     }
   }
 
