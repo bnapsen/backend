@@ -10,6 +10,7 @@ const DEFAULT_BET = 0;
 const MAX_SEATS = 6;
 const MAX_LOG = 16;
 const MAX_SPLIT_HANDS = 4;
+const MAX_STARTING_HANDS = 3;
 
 function formatSimCents(cents) {
   const sim = Math.round(Number(cents) || 0) / 100;
@@ -86,6 +87,8 @@ function createPlayer(id, name, seat, options = {}) {
     stack: walletCents,
     walletCents,
     bet: 0,
+    handCount: 1,
+    nextBets: [0, 0, 0],
     activeBet: 0,
     cards: [],
     hands: [],
@@ -176,6 +179,56 @@ function findPlayer(state, playerId) {
   return state.players.find((player) => player.id === playerId) || null;
 }
 
+function normalizeHandCount(value) {
+  const count = Math.round(Number(value) || 1);
+  return Math.max(1, Math.min(MAX_STARTING_HANDS, count));
+}
+
+function normalizeNextBets(player) {
+  if (!player) {
+    return Array.from({ length: MAX_STARTING_HANDS }, () => 0);
+  }
+  const source = Array.isArray(player.nextBets) ? player.nextBets : [player.bet || 0];
+  player.nextBets = Array.from({ length: MAX_STARTING_HANDS }, (_, index) => (
+    Math.max(0, Math.round(Number(source[index]) || 0))
+  ));
+  player.handCount = normalizeHandCount(player.handCount);
+  return player.nextBets;
+}
+
+function activeNextBets(player) {
+  const bets = normalizeNextBets(player);
+  return bets.slice(0, normalizeHandCount(player.handCount));
+}
+
+function syncPlayerBetPlan(player) {
+  if (!player) {
+    return 0;
+  }
+  const bets = normalizeNextBets(player);
+  const count = normalizeHandCount(player.handCount);
+  player.bet = bets.slice(0, count).reduce((sum, bet) => sum + bet, 0);
+  return player.bet;
+}
+
+function clampNextBetsToStack(player) {
+  if (!player) {
+    return;
+  }
+  const bets = normalizeNextBets(player);
+  let remaining = Math.max(0, Math.round(Number(player.stack) || 0));
+  for (let index = 0; index < bets.length; index += 1) {
+    if (index >= normalizeHandCount(player.handCount)) {
+      bets[index] = 0;
+      continue;
+    }
+    const next = Math.min(bets[index], remaining);
+    bets[index] = next;
+    remaining -= next;
+  }
+  syncPlayerBetPlan(player);
+}
+
 function syncPlayerWallet(state, playerId, walletCents) {
   const player = findPlayer(state, playerId);
   if (!player) {
@@ -194,9 +247,7 @@ function syncPlayerWallet(state, playerId, walletCents) {
   } else {
     syncPlayerFromHands(player);
   }
-  if (player.bet > balance) {
-    player.bet = balance;
-  }
+  clampNextBetsToStack(player);
   return player;
 }
 
@@ -223,7 +274,7 @@ function recalcTableBetTotal(state) {
   if (state.phase === 'betting' || state.phase === 'settled') {
     state.tableBetTotal = seatedPlayers(state, { includeLeavers: true })
       .filter((player) => !player.leaving && player.stack > 0)
-      .reduce((sum, player) => sum + Math.max(0, Math.round(Number(player.bet) || 0)), 0);
+      .reduce((sum, player) => sum + syncPlayerBetPlan(player), 0);
     return;
   }
   state.tableBetTotal = activePlayers(state).reduce((sum, player) => sum + activeBetTotal(player), 0);
@@ -537,7 +588,7 @@ function removePlayer(state, playerId) {
   return true;
 }
 
-function setBet(state, playerId, amount, mode) {
+function setBet(state, playerId, amount, mode, handIndex = 0) {
   const player = findPlayer(state, playerId);
   if (!player) {
     return { ok: false, error: 'You are not seated at the blackjack table.' };
@@ -549,19 +600,49 @@ function setBet(state, playerId, amount, mode) {
     return { ok: false, error: 'Your SIM wallet is empty.' };
   }
 
-  if (mode === 'clear') {
-    player.bet = 0;
-  } else {
-    const delta = Number(amount) || 0;
-    player.bet = Math.max(0, Math.min(player.stack, player.bet + delta));
+  normalizeNextBets(player);
+  const targetIndex = Math.max(0, Math.min(MAX_STARTING_HANDS - 1, Math.round(Number(handIndex) || 0)));
+  if (targetIndex >= normalizeHandCount(player.handCount)) {
+    return { ok: false, error: 'Add that hand before placing a wager on it.' };
   }
 
+  if (mode === 'clear') {
+    player.nextBets[targetIndex] = 0;
+  } else {
+    const delta = Number(amount) || 0;
+    const otherBets = player.nextBets.reduce((sum, bet, index) => (
+      index === targetIndex || index >= player.handCount ? sum : sum + Math.max(0, Math.round(Number(bet) || 0))
+    ), 0);
+    const maxForHand = Math.max(0, player.stack - otherBets);
+    player.nextBets[targetIndex] = Math.max(0, Math.min(maxForHand, player.nextBets[targetIndex] + delta));
+  }
+
+  syncPlayerBetPlan(player);
   player.status = player.bet > 0
-    ? `Next SIM bet ${formatSimCents(player.bet)}.`
+    ? `Next SIM wagers total ${formatSimCents(player.bet)}.`
     : 'Set a wager to join the next round.';
-  state.status = `${player.name} adjusted their bet.`;
+  state.status = `${player.name} adjusted hand ${targetIndex + 1}.`;
   recalcTableBetTotal(state);
-  return { ok: true, message: `${player.name} set the next wager to ${formatSimCents(player.bet)}.` };
+  return { ok: true, message: `${player.name} set hand ${targetIndex + 1} to ${formatSimCents(player.nextBets[targetIndex])}.` };
+}
+
+function setHandCount(state, playerId, count) {
+  const player = findPlayer(state, playerId);
+  if (!player) {
+    return { ok: false, error: 'You are not seated at the blackjack table.' };
+  }
+  if (!(state.phase === 'betting' || state.phase === 'settled')) {
+    return { ok: false, error: 'Wait for the current round to finish before changing hands.' };
+  }
+  player.handCount = normalizeHandCount(count);
+  normalizeNextBets(player);
+  clampNextBetsToStack(player);
+  player.status = player.bet > 0
+    ? `Playing ${player.handCount} hand${player.handCount === 1 ? '' : 's'} next for ${formatSimCents(player.bet)} total.`
+    : `Playing ${player.handCount} hand${player.handCount === 1 ? '' : 's'} next.`;
+  state.status = `${player.name} set ${player.handCount} starting hand${player.handCount === 1 ? '' : 's'}.`;
+  recalcTableBetTotal(state);
+  return { ok: true, message: state.status };
 }
 
 function startRound(state, playerId) {
@@ -577,7 +658,13 @@ function startRound(state, playerId) {
   cleanupLeavers(state);
   maybeReshuffle(state, false);
 
-  const eligible = seatedPlayers(state, { includeLeavers: true }).filter((player) => !player.leaving && player.stack > 0 && player.bet > 0);
+  const eligible = seatedPlayers(state, { includeLeavers: true }).filter((player) => {
+    if (player.leaving || player.stack <= 0) {
+      return false;
+    }
+    clampNextBetsToStack(player);
+    return syncPlayerBetPlan(player) > 0;
+  });
   if (!eligible.length) {
     return { ok: false, error: 'At least one seated player needs a wager before the dealer can deal.' };
   }
@@ -600,51 +687,61 @@ function startRound(state, playerId) {
     player.blackjack = false;
     player.lastOutcome = '';
     player.result = '';
-    if (player.leaving || player.stack <= 0 || player.bet <= 0) {
+    clampNextBetsToStack(player);
+    const startingBets = activeNextBets(player).filter((bet) => bet > 0);
+    const reservedTotal = startingBets.reduce((sum, bet) => sum + bet, 0);
+    if (player.leaving || player.stack <= 0 || reservedTotal <= 0) {
       player.status = player.stack > 0 ? 'Waiting for next round.' : 'Out of chips.';
       continue;
     }
-    const reservedBet = Math.min(player.bet, player.stack);
-    player.stack -= reservedBet;
+    player.stack -= reservedTotal;
     player.walletCents = player.stack;
+    player.nextBets = [0, 0, 0];
     player.bet = 0;
-    player.hands = [createHand(reservedBet)];
-    player.activeBet = reservedBet;
+    player.hands = startingBets.map((bet) => createHand(bet));
+    player.activeBet = reservedTotal;
     player.participating = true;
     player.status = 'Cards in the air...';
-    state.tableBetTotal += reservedBet;
+    state.tableBetTotal += reservedTotal;
     queueWalletEvent(
       state,
       player,
-      -reservedBet,
+      -reservedTotal,
       'blackjack-bet',
       `${player.name} posted a blackjack SIM bet.`,
       {
-        betCents: reservedBet,
+        betCents: reservedTotal,
+        handBets: startingBets,
       },
     );
   }
 
   const order = eligible.map((player) => player.seat);
   for (const seat of order) {
-    drawCard(state, currentHand(playerAtSeat(state, seat)).cards);
+    const player = playerAtSeat(state, seat);
+    for (const hand of playerHands(player)) {
+      drawCard(state, hand.cards);
+    }
   }
   drawCard(state, state.dealer.cards);
   for (const seat of order) {
-    drawCard(state, currentHand(playerAtSeat(state, seat)).cards);
+    const player = playerAtSeat(state, seat);
+    for (const hand of playerHands(player)) {
+      drawCard(state, hand.cards);
+    }
   }
   drawCard(state, state.dealer.cards);
 
   const dealerSummary = handSummary(state.dealer.cards);
   for (const player of eligible) {
-    const hand = currentHand(player);
-    const summary = handSummary(hand.cards);
-    hand.blackjack = summary.blackjack;
-    hand.done = summary.blackjack;
-    hand.status = summary.blackjack ? 'Blackjack.' : `Live on ${summary.total}.`;
-    player.blackjack = summary.blackjack;
-    player.done = summary.blackjack;
-    player.status = hand.status;
+    for (const hand of playerHands(player)) {
+      const summary = handSummary(hand.cards);
+      hand.blackjack = summary.blackjack;
+      hand.done = summary.blackjack;
+      hand.status = summary.blackjack ? 'Blackjack.' : `Live on ${summary.total}.`;
+    }
+    const firstLive = nextPlayableHandIndex(player, -1);
+    player.activeHandIndex = firstLive === -1 ? 0 : firstLive;
     syncPlayerFromHands(player);
   }
 
@@ -870,6 +967,9 @@ function resetTable(state) {
 }
 
 function computeControls(state, viewer) {
+  if (viewer) {
+    syncPlayerBetPlan(viewer);
+  }
   const canAdjustBet = Boolean(
     viewer &&
     (state.phase === 'betting' || state.phase === 'settled') &&
@@ -894,6 +994,7 @@ function computeControls(state, viewer) {
     canResetTable: Boolean(viewer),
     canAdjustBet,
     canClearBet: canAdjustBet && viewer.bet > 0,
+    canSetHandCount: canAdjustBet,
     canAct,
     canHit: canAct,
     canStand: canAct,
@@ -1151,7 +1252,9 @@ function cloneState(state, viewerId) {
         seat: player.seat,
         stack: player.stack,
         walletCents: player.walletCents ?? player.stack,
-        bet: player.bet,
+        bet: syncPlayerBetPlan(player),
+        handCount: normalizeHandCount(player.handCount),
+        nextBets: normalizeNextBets(player).map((bet) => bet),
         activeBet: activeBetTotal(player),
         activeHandIndex: player.activeHandIndex || 0,
         hands: hands.map((hand, index) => {
@@ -1193,6 +1296,7 @@ module.exports = {
   STARTING_STACK,
   DEFAULT_BET,
   MAX_SEATS,
+  MAX_STARTING_HANDS,
   SHOE_DECKS,
   SHOE_CARD_COUNT,
   CUT_CARD_REMAINING,
@@ -1201,6 +1305,7 @@ module.exports = {
   addPlayer,
   removePlayer,
   setBet,
+  setHandCount,
   startRound,
   applyAction,
   resetTable,

@@ -48,6 +48,9 @@
       active: null,
       suppressClickUntil: 0,
     },
+    betting: {
+      selectedHandIndex: 0,
+    },
   };
 
   const ui = {
@@ -76,6 +79,7 @@
     tableBetAmount: document.getElementById('tableBetAmount'),
     turnLabel: document.getElementById('turnLabel'),
     seatLayer: document.getElementById('seatLayer'),
+    handBuilder: document.getElementById('handBuilder'),
     chipRow: document.getElementById('chipRow'),
     actionPrompt: document.getElementById('actionPrompt'),
     logList: document.getElementById('logList'),
@@ -500,6 +504,7 @@
       canResetTable: false,
       canAdjustBet: false,
       canClearBet: false,
+      canSetHandCount: false,
       canAct: false,
       canHit: false,
       canStand: false,
@@ -526,6 +531,27 @@
   function getViewer() {
     const seat = getViewerSeat();
     return Number.isInteger(seat) ? getPlayerBySeat(seat) : null;
+  }
+
+  function clampHandCount(value) {
+    const count = Math.round(Number(value) || 1);
+    return Math.max(1, Math.min(3, count));
+  }
+
+  function viewerHandCount(player = getViewer()) {
+    return clampHandCount(player?.handCount || 1);
+  }
+
+  function viewerNextBets(player = getViewer()) {
+    const source = Array.isArray(player?.nextBets) ? player.nextBets : [player?.bet || 0];
+    return Array.from({ length: 3 }, (_, index) => Math.max(0, Math.round(Number(source[index]) || 0)));
+  }
+
+  function selectedBetHandIndex(player = getViewer()) {
+    const count = viewerHandCount(player);
+    const index = Math.max(0, Math.min(count - 1, Math.round(Number(state.betting.selectedHandIndex) || 0)));
+    state.betting.selectedHandIndex = index;
+    return index;
   }
 
   function getDisplayPlayer() {
@@ -820,7 +846,7 @@
           `${hand.bet}:${hand.done ? 'done' : 'live'}:${(hand.cards || []).map((card) => (card ? `${card.rank}${card.suit}` : 'XX')).join(',')}`
         )).join('|')
       : (player.cards || []).map((card) => (card ? `${card.rank}${card.suit}` : 'XX')).join('|');
-    return `${player.id}|${hands}|${player.stack}|${player.bet}|${player.activeBet}|${player.activeHandIndex}|${player.statusText}|${player.result}`;
+    return `${player.id}|${hands}|${player.stack}|${player.bet}|${player.activeBet}|${player.handCount}|${(player.nextBets || []).join(',')}|${player.activeHandIndex}|${player.statusText}|${player.result}`;
   }
 
   function seatBadges(player, seat) {
@@ -893,6 +919,17 @@
     }
 
     const animate = state.renderMemo.seatSignatures.get(seat) !== seatSignature(player);
+    const hasSettledCards = Array.isArray(player.hands) && player.hands.some((hand) => (
+      Array.isArray(hand.cards) && hand.cards.length
+    ));
+    const planning = !player.participating && (
+      state.snapshot?.phase === 'betting' ||
+      (state.snapshot?.phase === 'settled' && !hasSettledCards)
+    );
+    const pendingCount = viewerHandCount(player);
+    const pendingBets = viewerNextBets(player);
+    const pendingTotal = pendingBets.slice(0, pendingCount).reduce((sum, bet) => sum + bet, 0);
+    const selectedIndex = player.id === state.playerId ? selectedBetHandIndex(player) : 0;
     const hands = Array.isArray(player.hands) && player.hands.length
       ? player.hands
       : [{
@@ -904,50 +941,73 @@
           blackjack: player.blackjack,
         }];
     const activeHandIndex = Number.isInteger(player.activeHandIndex) ? player.activeHandIndex : 0;
-    const splitMode = hands.length > 1;
+    const splitMode = !planning && hands.length > 1;
     const activeHand = hands[Math.max(0, Math.min(hands.length - 1, activeHandIndex))] || hands[0];
     const playerCards = Array.isArray(activeHand?.cards) ? activeHand.cards : [];
-    const handRows = splitMode
-      ? `<div class="split-hands">
-          ${hands.map((hand, index) => {
-            const splitClasses = ['split-hand'];
-            if (index === activeHandIndex && state.snapshot?.actionSeat === seat && state.snapshot?.phase === 'player-turns') {
-              splitClasses.push('active');
+    const handRows = planning
+      ? `<div class="betting-hands">
+          ${Array.from({ length: pendingCount }, (_, index) => {
+            const classes = ['betting-hand'];
+            if (index === selectedIndex && player.id === state.playerId) {
+              classes.push('selected');
             }
-            if (hand.done) {
-              splitClasses.push('done');
-            }
-            if (hand.busted) {
-              splitClasses.push('bust');
+            if (pendingBets[index] > 0) {
+              classes.push('has-bet');
             }
             return `
-              <div class="${splitClasses.join(' ')}">
-                <div class="hole-row split-hole-row">
-                  ${renderHandCardRow(hand.cards, animate, 110 + index * 90, `player:${seat}:hand:${index}`)}
-                </div>
-                <div class="split-hand-meta">
-                  <span>H${index + 1} ${hand.scoreLabel || '-'}</span>
-                  <strong>${formatChips(hand.bet || 0)}</strong>
-                </div>
-              </div>
+              <button class="${classes.join(' ')}" type="button" data-bet-hand="${index}">
+                <span>Hand ${index + 1}</span>
+                <strong>${formatChips(pendingBets[index])}</strong>
+              </button>
             `;
           }).join('')}
         </div>`
-      : `<div class="hole-row">${renderHandCardRow(playerCards, animate, 120, `player:${seat}:hand:${activeHandIndex}`)}</div>`;
+      : splitMode
+        ? `<div class="split-hands">
+            ${hands.map((hand, index) => {
+              const splitClasses = ['split-hand'];
+              if (index === activeHandIndex && state.snapshot?.actionSeat === seat && state.snapshot?.phase === 'player-turns') {
+                splitClasses.push('active');
+              }
+              if (hand.done) {
+                splitClasses.push('done');
+              }
+              if (hand.busted) {
+                splitClasses.push('bust');
+              }
+              return `
+                <div class="${splitClasses.join(' ')}">
+                  <div class="hand-bet-ring"></div>
+                  <div class="hole-row split-hole-row">
+                    ${renderHandCardRow(hand.cards, animate, 110 + index * 90, `player:${seat}:hand:${index}`)}
+                  </div>
+                  <div class="split-hand-meta">
+                    <span>H${index + 1} ${hand.scoreLabel || '-'}</span>
+                    <strong>${formatChips(hand.bet || 0)}</strong>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>`
+        : `<div class="hole-row">${renderHandCardRow(playerCards, animate, 120, `player:${seat}:hand:${activeHandIndex}`)}</div>`;
 
-    const betLine = player.activeBet > 0
-      ? `${splitMode ? 'Total' : 'Live'} ${formatChips(player.activeBet)}`
-      : `Next ${formatChips(player.bet)}`;
-    const scoreLine = playerCards.length
-      ? splitMode
-        ? `Hand ${activeHandIndex + 1} ${activeHand?.scoreLabel || '-'}`
-        : `Hand ${player.scoreLabel}`
-      : 'Waiting';
+    const betLine = planning
+      ? `Next total ${formatChips(pendingTotal)}`
+      : player.activeBet > 0
+        ? `${splitMode ? 'Total' : 'Live'} ${formatChips(player.activeBet)}`
+        : `Next ${formatChips(player.bet)}`;
+    const scoreLine = planning
+      ? `${pendingCount} hand${pendingCount === 1 ? '' : 's'} ready`
+      : playerCards.length
+        ? splitMode
+          ? `Hand ${activeHandIndex + 1} ${activeHand?.scoreLabel || '-'}`
+          : `Hand ${player.scoreLabel}`
+        : 'Waiting';
 
     return `
       <div class="${classes.join(' ')}">
         <div class="seat-play-area">
-          <div class="seat-bet-circle">
+          <div class="seat-bet-circle${!planning && state.snapshot?.actionSeat === seat && state.snapshot?.phase === 'player-turns' && !splitMode ? ' active-ring' : ''}">
             <span></span>
           </div>
           ${handRows}
@@ -1169,6 +1229,49 @@
     }).join('');
   }
 
+  function renderHandBuilder() {
+    if (!ui.handBuilder) {
+      return;
+    }
+    const controls = currentControls();
+    const player = getViewer();
+    const canAdjust = Boolean(player && controls.canAdjustBet);
+    ui.handBuilder.hidden = !canAdjust;
+    if (!canAdjust) {
+      ui.handBuilder.innerHTML = '';
+      return;
+    }
+
+    const count = viewerHandCount(player);
+    const selected = selectedBetHandIndex(player);
+    const bets = viewerNextBets(player);
+    const handButtons = Array.from({ length: count }, (_, index) => {
+      const classes = ['hand-picker'];
+      if (index === selected) {
+        classes.push('selected');
+      }
+      if (bets[index] > 0) {
+        classes.push('has-bet');
+      }
+      return `
+        <button class="${classes.join(' ')}" type="button" data-bet-hand="${index}" data-drag-id="bet-hand:${index}">
+          <span>Hand ${index + 1}</span>
+          <strong>${formatChips(bets[index])}</strong>
+        </button>
+      `;
+    }).join('');
+    const removeButton = count > 1
+      ? `<button class="hand-count-btn" type="button" data-hand-count="${count - 1}">- Hand</button>`
+      : '';
+    const addButton = count < 3
+      ? `<button class="hand-count-btn add" type="button" data-hand-count="${count + 1}">+ Hand</button>`
+      : '';
+    ui.handBuilder.innerHTML = `
+      <div class="hand-picker-row">${handButtons}</div>
+      <div class="hand-count-row">${removeButton}${addButton}</div>
+    `;
+  }
+
   function setTableButtonAvailable(button, available) {
     if (!button) {
       return;
@@ -1195,6 +1298,7 @@
     setTableButtonAvailable(ui.resetTableBtn, connected && controls.canResetTable);
 
     renderActionPrompt();
+    renderHandBuilder();
     renderChips();
   }
 
@@ -1685,10 +1789,28 @@
     };
   }
 
-  function sendSetBet(amount, mode) {
-    if (sendMessage({ action: 'set-bet', amount, mode })) {
-      setStatusMessage(amount < 0 ? 'Pulling chips back from the betting circle...' : 'Sending your next SIM wager to the table...');
+  function sendSetBet(amount, mode, handIndex = selectedBetHandIndex()) {
+    if (sendMessage({ action: 'set-bet', amount, mode, handIndex })) {
+      setStatusMessage(amount < 0 ? `Pulling chips back from hand ${handIndex + 1}...` : `Sending chips to hand ${handIndex + 1}...`);
     }
+  }
+
+  function sendSetHandCount(count) {
+    const nextCount = clampHandCount(count);
+    state.betting.selectedHandIndex = Math.min(state.betting.selectedHandIndex, nextCount - 1);
+    if (sendMessage({ action: 'set-blackjack-hands', count: nextCount })) {
+      setStatusMessage(nextCount === 1 ? 'Setting up one blackjack hand...' : `Setting up ${nextCount} blackjack hands...`);
+    }
+  }
+
+  function selectBetHand(index) {
+    const player = getViewer();
+    if (!player || !currentControls().canAdjustBet) {
+      return;
+    }
+    state.betting.selectedHandIndex = Math.max(0, Math.min(viewerHandCount(player) - 1, Math.round(Number(index) || 0)));
+    renderControls();
+    renderSeats();
   }
 
   function sendDeal() {
@@ -1868,6 +1990,26 @@
     ui.splitBtn.addEventListener('click', () => sendAction('split'));
     ui.resetTableBtn.addEventListener('click', sendResetTable);
 
+    ui.handBuilder?.addEventListener('click', (event) => {
+      if (Date.now() <= state.tableDrag.suppressClickUntil) {
+        return;
+      }
+      const handTrigger = event.target.closest('[data-bet-hand]');
+      if (handTrigger) {
+        selectBetHand(handTrigger.getAttribute('data-bet-hand'));
+        playSound('click');
+        return;
+      }
+      const countTrigger = event.target.closest('[data-hand-count]');
+      if (countTrigger) {
+        const nextCount = Number(countTrigger.getAttribute('data-hand-count') || 1);
+        const previousCount = viewerHandCount();
+        state.betting.selectedHandIndex = Math.max(0, Math.min(nextCount - 1, nextCount > previousCount ? previousCount : state.betting.selectedHandIndex));
+        playSound('chip');
+        sendSetHandCount(nextCount);
+      }
+    });
+
     ui.chipRow.addEventListener('click', (event) => {
       if (Date.now() <= state.tableDrag.suppressClickUntil) {
         return;
@@ -1883,11 +2025,17 @@
       } else {
         playSound('click');
       }
-      sendSetBet(amount);
+      sendSetBet(amount, undefined, selectedBetHandIndex());
     });
 
     ui.seatLayer.addEventListener('click', (event) => {
       if (Date.now() <= state.tableDrag.suppressClickUntil) {
+        return;
+      }
+      const betHand = event.target.closest('[data-bet-hand]');
+      if (betHand) {
+        selectBetHand(betHand.getAttribute('data-bet-hand'));
+        playSound('click');
         return;
       }
       const trigger = event.target.closest('[data-seat-action]');

@@ -5346,7 +5346,7 @@ function handleSetBet(socket, payload) {
 
   refreshBlackjackPlayerWallet(room, player)
     .then(() => {
-      const result = Blackjack.setBet(room.game, player.id, payload && payload.amount, payload && payload.mode);
+      const result = Blackjack.setBet(room.game, player.id, payload && payload.amount, payload && payload.mode, payload && payload.handIndex);
       if (!result.ok) {
         sendError(socket, result.error || 'That wager could not be set.');
         return;
@@ -5356,6 +5356,26 @@ function handleSetBet(socket, payload) {
     .catch((error) => {
       sendError(socket, error && error.message ? error.message : 'Unable to refresh your SIM wallet.');
     });
+}
+
+function handleSetBlackjackHandCount(socket, payload) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'blackjack') {
+    sendError(socket, 'Hand controls are only used in blackjack rooms.');
+    return;
+  }
+
+  const result = Blackjack.setHandCount(room.game, player.id, payload && payload.count);
+  if (!result.ok) {
+    sendError(socket, result.error || 'That hand count could not be set.');
+    return;
+  }
+  broadcastState(room, result.message || `${player.name} changed their blackjack hands.`);
 }
 
 async function handleStartHand(socket) {
@@ -6829,6 +6849,9 @@ wss.on('connection', (socket) => {
         break;
       case 'set-bet':
         handleSetBet(socket, payload);
+        break;
+      case 'set-blackjack-hands':
+        handleSetBlackjackHandCount(socket, payload);
         break;
       case 'start-hand':
         handleStartHand(socket).catch((error) => {
