@@ -28,6 +28,8 @@
     renderMemo: {
       dealerSignature: '',
       seatSignatures: new Map(),
+      shoeRemaining: null,
+      discardCount: null,
     },
   };
 
@@ -48,6 +50,8 @@
     tableSubline: document.getElementById('tableSubline'),
     dealerCards: document.getElementById('dealerCards'),
     dealerScoreLabel: document.getElementById('dealerScoreLabel'),
+    shoeMeter: document.getElementById('shoeMeter'),
+    discardMeter: document.getElementById('discardMeter'),
     handLabel: document.getElementById('handLabel'),
     tableBetAmount: document.getElementById('tableBetAmount'),
     turnLabel: document.getElementById('turnLabel'),
@@ -471,8 +475,12 @@
     if (!player) {
       return 'empty';
     }
-    const cards = (player.cards || []).map((card) => (card ? `${card.rank}${card.suit}` : 'XX')).join('|');
-    return `${player.id}|${cards}|${player.stack}|${player.bet}|${player.activeBet}|${player.statusText}|${player.result}`;
+    const hands = Array.isArray(player.hands) && player.hands.length
+      ? player.hands.map((hand) => (
+          `${hand.bet}:${hand.done ? 'done' : 'live'}:${(hand.cards || []).map((card) => (card ? `${card.rank}${card.suit}` : 'XX')).join(',')}`
+        )).join('|')
+      : (player.cards || []).map((card) => (card ? `${card.rank}${card.suit}` : 'XX')).join('|');
+    return `${player.id}|${hands}|${player.stack}|${player.bet}|${player.activeBet}|${player.activeHandIndex}|${player.statusText}|${player.result}`;
   }
 
   function seatBadges(player, seat) {
@@ -519,6 +527,16 @@
     `;
   }
 
+  function renderHandCardRow(cards, animate, delayBase = 120) {
+    const seatCards = Array.isArray(cards) && cards.length ? cards : [null, null];
+    return seatCards.map((card, index) => cardMarkup(card, {
+      dim: !card,
+      animate: animate && Boolean(card),
+      extraClass: 'hole-card',
+      style: `${seatCardStyle(index, seatCards.length)}--deal-delay:${delayBase + index * 60}ms;`,
+    })).join('');
+  }
+
   function renderSeat(player) {
     if (!player) {
       return emptySeatMarkup();
@@ -534,19 +552,56 @@
     }
 
     const animate = state.renderMemo.seatSignatures.get(seat) !== seatSignature(player);
-    const playerCards = Array.isArray(player.cards) ? player.cards : [];
-    const seatCards = playerCards.length ? playerCards : [null, null];
-    const cards = seatCards.map((card, index) => cardMarkup(card, {
-      dim: !card,
-      animate: animate && Boolean(card),
-      extraClass: 'hole-card',
-      style: `${seatCardStyle(index, seatCards.length)}--deal-delay:${120 + index * 60}ms;`,
-    }));
+    const hands = Array.isArray(player.hands) && player.hands.length
+      ? player.hands
+      : [{
+          cards: Array.isArray(player.cards) ? player.cards : [],
+          bet: player.activeBet,
+          scoreLabel: player.scoreLabel,
+          done: player.done,
+          busted: player.busted,
+          blackjack: player.blackjack,
+        }];
+    const activeHandIndex = Number.isInteger(player.activeHandIndex) ? player.activeHandIndex : 0;
+    const splitMode = hands.length > 1;
+    const activeHand = hands[Math.max(0, Math.min(hands.length - 1, activeHandIndex))] || hands[0];
+    const playerCards = Array.isArray(activeHand?.cards) ? activeHand.cards : [];
+    const handRows = splitMode
+      ? `<div class="split-hands">
+          ${hands.map((hand, index) => {
+            const splitClasses = ['split-hand'];
+            if (index === activeHandIndex && state.snapshot?.actionSeat === seat && state.snapshot?.phase === 'player-turns') {
+              splitClasses.push('active');
+            }
+            if (hand.done) {
+              splitClasses.push('done');
+            }
+            if (hand.busted) {
+              splitClasses.push('bust');
+            }
+            return `
+              <div class="${splitClasses.join(' ')}">
+                <div class="hole-row split-hole-row">
+                  ${renderHandCardRow(hand.cards, animate, 110 + index * 90)}
+                </div>
+                <div class="split-hand-meta">
+                  <span>H${index + 1} ${hand.scoreLabel || '-'}</span>
+                  <strong>${formatChips(hand.bet || 0)}</strong>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>`
+      : `<div class="hole-row">${renderHandCardRow(playerCards, animate)}</div>`;
 
     const betLine = player.activeBet > 0
-      ? `Live ${formatChips(player.activeBet)}`
+      ? `${splitMode ? 'Total' : 'Live'} ${formatChips(player.activeBet)}`
       : `Next ${formatChips(player.bet)}`;
-    const scoreLine = playerCards.length ? `Hand ${player.scoreLabel}` : 'Waiting';
+    const scoreLine = playerCards.length
+      ? splitMode
+        ? `Hand ${activeHandIndex + 1} ${activeHand?.scoreLabel || '-'}`
+        : `Hand ${player.scoreLabel}`
+      : 'Waiting';
 
     return `
       <div class="${classes.join(' ')}">
@@ -554,9 +609,7 @@
           <div class="seat-bet-circle">
             <span></span>
           </div>
-          <div class="hole-row">
-            ${cards.join('')}
-          </div>
+          ${handRows}
         </div>
         <div class="seat-footer">
           <div class="seat-totals">
@@ -596,10 +649,63 @@
     }).join('');
   }
 
+  function pulseMeter(element) {
+    if (!element) {
+      return;
+    }
+    element.classList.remove('dealing');
+    window.requestAnimationFrame(() => {
+      element.classList.add('dealing');
+      window.setTimeout(() => element.classList.remove('dealing'), 420);
+    });
+  }
+
+  function renderShoeMeters(snapshot) {
+    const total = Math.max(1, Number(snapshot?.shoeCardCount) || 312);
+    const remainingRaw = Number(snapshot?.shoeRemaining);
+    const discardRaw = Number(snapshot?.discardCount);
+    const remaining = Math.max(0, Math.min(total, Number.isFinite(remainingRaw) ? remainingRaw : total));
+    const discard = Math.max(0, Math.min(total, Number.isFinite(discardRaw) ? discardRaw : 0));
+    const shoeFill = remaining / total;
+    const discardFill = discard / total;
+
+    if (ui.shoeMeter) {
+      ui.shoeMeter.style.setProperty('--fill', shoeFill.toFixed(4));
+      ui.shoeMeter.style.setProperty('--cards', String(remaining));
+      ui.shoeMeter.title = `Shoe: ${remaining} of ${total} cards remain`;
+      ui.shoeMeter.setAttribute('aria-label', ui.shoeMeter.title);
+      const label = ui.shoeMeter.querySelector('span');
+      if (label) {
+        label.textContent = `Shoe ${remaining}`;
+      }
+      if (state.renderMemo.shoeRemaining !== null && state.renderMemo.shoeRemaining !== remaining) {
+        pulseMeter(ui.shoeMeter);
+      }
+    }
+
+    if (ui.discardMeter) {
+      ui.discardMeter.style.setProperty('--fill', discardFill.toFixed(4));
+      ui.discardMeter.style.setProperty('--cards', String(discard));
+      ui.discardMeter.title = `Discard: ${discard} of ${total} cards`;
+      ui.discardMeter.setAttribute('aria-label', ui.discardMeter.title);
+      const label = ui.discardMeter.querySelector('span');
+      if (label) {
+        label.textContent = `Discard ${discard}`;
+      }
+      if (state.renderMemo.discardCount !== null && state.renderMemo.discardCount !== discard) {
+        pulseMeter(ui.discardMeter);
+      }
+    }
+
+    state.renderMemo.shoeRemaining = remaining;
+    state.renderMemo.discardCount = discard;
+  }
+
   function renderSummary() {
     const snapshot = state.snapshot;
     const actor = getActionPlayer();
     const viewer = getViewer();
+    renderShoeMeters(snapshot);
 
     if (!snapshot) {
       ui.roomCodeLabel.textContent = state.roomCode || '-';
@@ -877,6 +983,39 @@
     }
   }
 
+  function animateChipPlacement(trigger) {
+    if (!trigger || trigger.classList.contains('minus')) {
+      return;
+    }
+    const target = document.querySelector('.seat-bet-circle:not(.empty-circle)') ||
+      document.querySelector('.seat-bet-circle') ||
+      ui.nextBetLabel;
+    if (!target) {
+      return;
+    }
+
+    const from = trigger.getBoundingClientRect();
+    const to = target.getBoundingClientRect();
+    const ghost = document.createElement('div');
+    ghost.className = 'chip-flight';
+    ghost.textContent = trigger.textContent.trim().replace(/^\+/, '');
+    ghost.style.left = `${from.left + from.width / 2}px`;
+    ghost.style.top = `${from.top + from.height / 2}px`;
+    document.body.appendChild(ghost);
+
+    target.classList.add('chip-catch');
+    window.setTimeout(() => target.classList.remove('chip-catch'), 360);
+
+    const dx = to.left + to.width / 2 - (from.left + from.width / 2);
+    const dy = to.top + to.height / 2 - (from.top + from.height / 2);
+    window.requestAnimationFrame(() => {
+      ghost.style.transform = `translate(${dx}px, ${dy}px) scale(0.72) rotate(18deg)`;
+      ghost.style.opacity = '0';
+    });
+    ghost.addEventListener('transitionend', () => ghost.remove(), { once: true });
+    window.setTimeout(() => ghost.remove(), 900);
+  }
+
   function sendResetTable() {
     if (sendMessage({ action: 'restart' })) {
       setStatusMessage('Refreshing SIM balances and loading a fresh shoe...');
@@ -957,6 +1096,7 @@
     ui.hitBtn.addEventListener('click', () => sendAction('hit'));
     ui.standBtn.addEventListener('click', () => sendAction('stand'));
     ui.doubleBtn.addEventListener('click', () => sendAction('double'));
+    ui.splitBtn.addEventListener('click', () => sendAction('split'));
     ui.resetTableBtn.addEventListener('click', sendResetTable);
 
     ui.chipRow.addEventListener('click', (event) => {
@@ -964,7 +1104,11 @@
       if (!trigger) {
         return;
       }
-      sendSetBet(Number(trigger.getAttribute('data-chip-amount') || 0));
+      const amount = Number(trigger.getAttribute('data-chip-amount') || 0);
+      if (amount > 0) {
+        animateChipPlacement(trigger);
+      }
+      sendSetBet(amount);
     });
 
     ui.seatLayer.addEventListener('click', (event) => {
@@ -987,6 +1131,8 @@
         sendAction('stand');
       } else if (key === 'd') {
         sendAction('double');
+      } else if (key === 'p') {
+        sendAction('split');
       }
     });
   }

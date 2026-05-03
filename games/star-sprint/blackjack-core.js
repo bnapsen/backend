@@ -9,6 +9,7 @@ const STARTING_STACK = 100000;
 const DEFAULT_BET = 500;
 const MAX_SEATS = 6;
 const MAX_LOG = 16;
+const MAX_SPLIT_HANDS = 4;
 
 function formatSimCents(cents) {
   const sim = Math.round(Number(cents) || 0) / 100;
@@ -88,6 +89,8 @@ function createPlayer(id, name, seat, options = {}) {
     bet: defaultBet,
     activeBet: 0,
     cards: [],
+    hands: [],
+    activeHandIndex: 0,
     participating: false,
     done: false,
     busted: false,
@@ -112,6 +115,7 @@ function createGameState() {
     },
     players: [],
     shoe: createDeck(),
+    discard: [],
     cutCardRemaining: CUT_CARD_REMAINING,
     shufflePending: false,
     actionSeat: null,
@@ -183,6 +187,10 @@ function syncPlayerWallet(state, playerId, walletCents) {
   player.walletCents = balance;
   if (!player.participating) {
     player.activeBet = 0;
+    player.hands = [];
+    player.activeHandIndex = 0;
+  } else {
+    syncPlayerFromHands(player);
   }
   if (player.bet > balance) {
     player.bet = balance;
@@ -206,11 +214,14 @@ function activePlayers(state) {
 }
 
 function unresolvedPlayers(state) {
-  return activePlayers(state).filter((player) => !player.done);
+  return activePlayers(state).filter((player) => hasLiveHand(player));
 }
 
 function recalcTableBetTotal(state) {
-  state.tableBetTotal = activePlayers(state).reduce((sum, player) => sum + player.activeBet, 0);
+  for (const player of activePlayers(state)) {
+    syncPlayerFromHands(player);
+  }
+  state.tableBetTotal = activePlayers(state).reduce((sum, player) => sum + activeBetTotal(player), 0);
 }
 
 function maybeReshuffle(state, force) {
@@ -219,6 +230,7 @@ function maybeReshuffle(state, force) {
     return false;
   }
   state.shoe = createDeck();
+  state.discard = [];
   state.cutCardRemaining = cutRemaining;
   state.shufflePending = false;
   pushLog(state, 'The dealer reshuffled the shoe.', 'warn');
@@ -261,7 +273,7 @@ function nextUnresolvedSeat(state, fromSeat) {
   for (let offset = 1; offset <= MAX_SEATS; offset += 1) {
     const seat = (fromSeat + offset + MAX_SEATS) % MAX_SEATS;
     const player = playerAtSeat(state, seat);
-    if (player && player.participating && !player.done) {
+    if (player && hasLiveHand(player)) {
       return player.seat;
     }
   }
@@ -279,69 +291,99 @@ function settleRound(state) {
   const pushes = [];
 
   for (const player of activePlayers(state)) {
-    const summary = handSummary(player.cards);
-    let payout = 0;
-    let outcome = 'lose';
-    let result = 'Dealer wins.';
+    const hands = playerHands(player);
+    let totalPayout = 0;
+    const handResults = [];
+    const handOutcomes = [];
 
-    if (player.blackjack && dealerSummary.blackjack) {
-      payout = player.activeBet;
-      outcome = 'push';
-      result = 'Push with dealer blackjack.';
-      pushes.push(player.name);
-    } else if (player.blackjack) {
-      payout = Math.floor(player.activeBet * 2.5);
-      outcome = 'blackjack';
-      result = 'Blackjack pays 3:2.';
-      winners.push(player.name);
-    } else if (player.busted) {
-      payout = 0;
-      outcome = 'lose';
-      result = 'Bust.';
-    } else if (dealerSummary.total > 21) {
-      payout = player.activeBet * 2;
-      outcome = 'win';
-      result = 'Dealer busts. You win.';
-      winners.push(player.name);
-    } else if (dealerSummary.blackjack) {
-      payout = 0;
-      outcome = 'lose';
-      result = 'Dealer blackjack.';
-    } else if (summary.total > dealerSummary.total) {
-      payout = player.activeBet * 2;
-      outcome = 'win';
-      result = 'You beat the dealer.';
-      winners.push(player.name);
-    } else if (summary.total === dealerSummary.total) {
-      payout = player.activeBet;
-      outcome = 'push';
-      result = 'Push.';
-      pushes.push(player.name);
+    for (const [index, hand] of hands.entries()) {
+      const summary = handSummary(hand.cards);
+      const bet = Math.max(0, Math.round(Number(hand.bet) || 0));
+      let payout = 0;
+      let outcome = 'lose';
+      let result = 'Dealer wins.';
+
+      if (hand.blackjack && dealerSummary.blackjack) {
+        payout = bet;
+        outcome = 'push';
+        result = 'Push with dealer blackjack.';
+      } else if (hand.blackjack) {
+        payout = Math.floor(bet * 2.5);
+        outcome = 'blackjack';
+        result = 'Blackjack pays 3:2.';
+      } else if (hand.busted || summary.total > 21) {
+        payout = 0;
+        outcome = 'lose';
+        result = 'Bust.';
+      } else if (dealerSummary.total > 21) {
+        payout = bet * 2;
+        outcome = 'win';
+        result = 'Dealer busts. You win.';
+      } else if (dealerSummary.blackjack) {
+        payout = 0;
+        outcome = 'lose';
+        result = 'Dealer blackjack.';
+      } else if (summary.total > dealerSummary.total) {
+        payout = bet * 2;
+        outcome = 'win';
+        result = 'You beat the dealer.';
+      } else if (summary.total === dealerSummary.total) {
+        payout = bet;
+        outcome = 'push';
+        result = 'Push.';
+      }
+
+      totalPayout += payout;
+      hand.done = true;
+      hand.busted = hand.busted || summary.total > 21;
+      hand.result = result;
+      hand.status = `${handScoreLabel(hand)}: ${result}`;
+      handResults.push(hands.length > 1 ? `Hand ${index + 1} ${result}` : result);
+      handOutcomes.push(outcome);
+
+      if (outcome === 'blackjack' || outcome === 'win') {
+        winners.push(player.name);
+      } else if (outcome === 'push') {
+        pushes.push(player.name);
+      }
+
+      if (payout > 0) {
+        queueWalletEvent(
+          state,
+          player,
+          payout,
+          'blackjack-payout',
+          `${player.name}: ${hands.length > 1 ? `hand ${index + 1} ` : ''}${result}`,
+          {
+            outcome,
+            payoutCents: payout,
+            betCents: bet,
+            handIndex: index,
+          },
+        );
+      }
     }
 
-    player.stack += payout;
+    player.stack += totalPayout;
     player.walletCents = player.stack;
-    if (payout > 0) {
-      queueWalletEvent(
-        state,
-        player,
-        payout,
-        'blackjack-payout',
-        `${player.name}: ${result}`,
-        {
-          outcome,
-          payoutCents: payout,
-        },
-      );
-    }
-    player.lastOutcome = outcome;
-    player.result = result;
-    player.status = result;
+    player.activeBet = activeBetTotal(player);
+    player.lastOutcome = handOutcomes.includes('blackjack')
+      ? 'blackjack'
+      : handOutcomes.includes('win')
+        ? 'win'
+        : handOutcomes.includes('push') && !handOutcomes.includes('lose')
+          ? 'push'
+          : 'lose';
+    player.result = handResults.join(' ');
+    player.status = player.result;
     player.participating = false;
     player.done = true;
+    player.busted = hands.length > 0 && hands.every((hand) => hand.busted);
+    player.blackjack = hands.some((hand) => hand.blackjack);
+
     if (player.stack <= 0) {
       player.bet = 0;
-      player.status = `${result} Out of chips.`;
+      player.status = `${player.result} Out of chips.`;
     } else if (player.bet > player.stack) {
       player.bet = player.stack;
     } else if (player.bet === 0) {
@@ -350,8 +392,8 @@ function settleRound(state) {
 
     pushLog(
       state,
-      `${player.name}: ${result} ${payout ? `Payout ${formatSimCents(payout)}.` : ''}`.trim(),
-      outcome === 'lose' ? 'bad' : outcome === 'push' ? 'warn' : 'good'
+      `${player.name}: ${player.result} ${totalPayout ? `Payout ${formatSimCents(totalPayout)}.` : ''}`.trim(),
+      player.lastOutcome === 'lose' ? 'bad' : player.lastOutcome === 'push' ? 'warn' : 'good'
     );
   }
 
@@ -359,12 +401,14 @@ function settleRound(state) {
   state.phase = 'settled';
   state.actionSeat = null;
 
-  if (winners.length && pushes.length) {
-    state.status = `${winners.join(', ')} beat the dealer. ${pushes.join(', ')} pushed.`;
-  } else if (winners.length) {
-    state.status = `${winners.join(', ')} beat the dealer.`;
-  } else if (pushes.length) {
-    state.status = `${pushes.join(', ')} pushed against the dealer.`;
+  const winningNames = [...new Set(winners)];
+  const pushingNames = [...new Set(pushes)];
+  if (winningNames.length && pushingNames.length) {
+    state.status = `${winningNames.join(', ')} beat the dealer. ${pushingNames.join(', ')} pushed.`;
+  } else if (winningNames.length) {
+    state.status = `${winningNames.join(', ')} beat the dealer.`;
+  } else if (pushingNames.length) {
+    state.status = `${pushingNames.join(', ')} pushed against the dealer.`;
   } else {
     state.status = 'Dealer wins the table.';
   }
@@ -381,7 +425,10 @@ function dealerTurn(state) {
   revealDealer(state);
   pushLog(state, 'Dealer reveals the hole card.', 'info');
 
-  if (activePlayers(state).every((player) => player.busted)) {
+  const everyLiveHandBusted = activePlayers(state).every((player) => (
+    playerHands(player).every((hand) => hand.busted || handSummary(hand.cards).total > 21)
+  ));
+  if (everyLiveHandBusted) {
     settleRound(state);
     return;
   }
@@ -394,6 +441,19 @@ function dealerTurn(state) {
 }
 
 function advanceTurn(state, seat) {
+  const player = playerAtSeat(state, seat);
+  if (player && hasLiveHand(player)) {
+    const nextHandIndex = nextPlayableHandIndex(player, player.activeHandIndex);
+    if (nextHandIndex !== -1) {
+      player.activeHandIndex = nextHandIndex;
+      syncPlayerFromHands(player);
+      state.actionSeat = player.seat;
+      state.status = `${player.name} to act on hand ${nextHandIndex + 1}.`;
+      return;
+    }
+    syncPlayerFromHands(player);
+  }
+
   const nextSeat = nextUnresolvedSeat(state, seat);
   if (nextSeat === null) {
     dealerTurn(state);
@@ -401,6 +461,11 @@ function advanceTurn(state, seat) {
   }
   state.actionSeat = nextSeat;
   const nextPlayer = playerAtSeat(state, nextSeat);
+  if (nextPlayer) {
+    const handIndex = nextPlayableHandIndex(nextPlayer, -1);
+    nextPlayer.activeHandIndex = Math.max(0, handIndex);
+    syncPlayerFromHands(nextPlayer);
+  }
   state.status = nextPlayer ? `${nextPlayer.name} to act.` : state.status;
 }
 
@@ -439,6 +504,12 @@ function removePlayer(state, playerId) {
   }
 
   if (player.participating && (state.phase === 'player-turns' || state.phase === 'dealer-turn')) {
+    for (const hand of playerHands(player)) {
+      hand.done = true;
+      hand.busted = true;
+      hand.result = 'Disconnected.';
+      hand.status = 'Forfeited.';
+    }
     player.done = true;
     player.leaving = true;
     player.status = 'Disconnected. Hand forfeited.';
@@ -496,6 +567,7 @@ function startRound(state, playerId) {
     return { ok: false, error: 'Wait for the current round to finish before dealing again.' };
   }
 
+  collectTableCards(state);
   cleanupLeavers(state);
   maybeReshuffle(state, false);
 
@@ -513,6 +585,8 @@ function startRound(state, playerId) {
 
   for (const player of seatedPlayers(state, { includeLeavers: true })) {
     player.cards = [];
+    player.hands = [];
+    player.activeHandIndex = 0;
     player.activeBet = 0;
     player.participating = false;
     player.done = false;
@@ -527,6 +601,7 @@ function startRound(state, playerId) {
     const reservedBet = Math.min(player.bet, player.stack);
     player.stack -= reservedBet;
     player.walletCents = player.stack;
+    player.hands = [createHand(reservedBet)];
     player.activeBet = reservedBet;
     player.participating = true;
     player.status = 'Cards in the air...';
@@ -545,20 +620,25 @@ function startRound(state, playerId) {
 
   const order = eligible.map((player) => player.seat);
   for (const seat of order) {
-    drawCard(state, playerAtSeat(state, seat).cards);
+    drawCard(state, currentHand(playerAtSeat(state, seat)).cards);
   }
   drawCard(state, state.dealer.cards);
   for (const seat of order) {
-    drawCard(state, playerAtSeat(state, seat).cards);
+    drawCard(state, currentHand(playerAtSeat(state, seat)).cards);
   }
   drawCard(state, state.dealer.cards);
 
   const dealerSummary = handSummary(state.dealer.cards);
   for (const player of eligible) {
-    const summary = handSummary(player.cards);
+    const hand = currentHand(player);
+    const summary = handSummary(hand.cards);
+    hand.blackjack = summary.blackjack;
+    hand.done = summary.blackjack;
+    hand.status = summary.blackjack ? 'Blackjack.' : `Live on ${summary.total}.`;
     player.blackjack = summary.blackjack;
     player.done = summary.blackjack;
-    player.status = summary.blackjack ? 'Blackjack.' : `Live on ${summary.total}.`;
+    player.status = hand.status;
+    syncPlayerFromHands(player);
   }
 
   pushLog(state, `${initiator.name} dealt round ${state.handNumber}.`, 'good');
@@ -593,84 +673,166 @@ function applyAction(state, playerId, action) {
   }
 
   const type = String(action && action.type || '').trim().toLowerCase();
+  const hand = currentHand(player);
+  if (!hand || hand.done) {
+    syncPlayerFromHands(player);
+    return { ok: false, error: 'That hand cannot act right now.' };
+  }
+
   let message = '';
 
   if (type === 'hit') {
-    drawCard(state, player.cards);
-    const summary = handSummary(player.cards);
+    drawCard(state, hand.cards);
+    const summary = handSummary(hand.cards);
     if (summary.total > 21) {
-      player.busted = true;
-      player.done = true;
-      player.status = `Bust on ${summary.total}.`;
-      player.result = 'Bust.';
-      message = `${player.name} busted on ${summary.total}.`;
+      hand.busted = true;
+      hand.done = true;
+      hand.status = `Bust on ${summary.total}.`;
+      hand.result = 'Bust.';
+      syncPlayerFromHands(player);
+      message = `${player.name} busted hand ${player.activeHandIndex + 1} on ${summary.total}.`;
       pushLog(state, message, 'bad');
       advanceTurn(state, player.seat);
       return { ok: true, message };
     }
     if (summary.total === 21) {
-      player.done = true;
-      player.status = '21. Standing.';
-      message = `${player.name} hit to 21.`;
+      hand.done = true;
+      hand.status = '21. Standing.';
+      hand.result = 'Standing on 21.';
+      syncPlayerFromHands(player);
+      message = `${player.name} hit hand ${player.activeHandIndex + 1} to 21.`;
       pushLog(state, message, 'good');
       advanceTurn(state, player.seat);
       return { ok: true, message };
     }
-    player.status = `Hit to ${summary.total}.`;
-    message = `${player.name} hit to ${summary.total}.`;
-    state.status = `${player.name} can hit, stand, or double if allowed.`;
+    hand.status = `Hit to ${summary.total}.`;
+    syncPlayerFromHands(player);
+    message = `${player.name} hit hand ${player.activeHandIndex + 1} to ${summary.total}.`;
+    state.status = `${player.name} can hit, stand, double, or split if allowed.`;
     pushLog(state, message, 'info');
     return { ok: true, message };
   }
 
   if (type === 'stand') {
-    const summary = handSummary(player.cards);
-    player.done = true;
-    player.status = `Stand on ${summary.total}.`;
-    player.result = `Standing on ${summary.total}.`;
-    message = `${player.name} stands on ${summary.total}.`;
+    const summary = handSummary(hand.cards);
+    hand.done = true;
+    hand.status = `Stand on ${summary.total}.`;
+    hand.result = `Standing on ${summary.total}.`;
+    syncPlayerFromHands(player);
+    message = `${player.name} stands hand ${player.activeHandIndex + 1} on ${summary.total}.`;
     pushLog(state, message, 'info');
     advanceTurn(state, player.seat);
     return { ok: true, message };
   }
 
   if (type === 'double') {
-    if (player.cards.length !== 2) {
+    if (hand.cards.length !== 2) {
       return { ok: false, error: 'Double is only available on the first two cards.' };
     }
-    if (player.stack < player.activeBet) {
+    if (player.stack < hand.bet) {
       return { ok: false, error: 'You do not have enough SIM to double this hand.' };
     }
-    player.stack -= player.activeBet;
+    const extraBet = hand.bet;
+    player.stack -= extraBet;
     player.walletCents = player.stack;
+    hand.bet += extraBet;
+    hand.doubled = true;
+    syncPlayerFromHands(player);
     queueWalletEvent(
       state,
       player,
-      -player.activeBet,
+      -extraBet,
       'blackjack-double',
       `${player.name} doubled their blackjack SIM bet.`,
       {
-        doubleCents: player.activeBet,
+        doubleCents: extraBet,
+        handIndex: player.activeHandIndex,
       },
     );
-    player.activeBet *= 2;
     recalcTableBetTotal(state);
-    drawCard(state, player.cards);
-    const summary = handSummary(player.cards);
-    player.done = true;
+    drawCard(state, hand.cards);
+    const summary = handSummary(hand.cards);
+    hand.done = true;
     if (summary.total > 21) {
-      player.busted = true;
-      player.status = `Double bust on ${summary.total}.`;
-      player.result = 'Double bust.';
-      message = `${player.name} doubled and busted.`;
+      hand.busted = true;
+      hand.status = `Double bust on ${summary.total}.`;
+      hand.result = 'Double bust.';
+      message = `${player.name} doubled hand ${player.activeHandIndex + 1} and busted.`;
       pushLog(state, message, 'bad');
     } else {
-      player.status = `Double on ${summary.total}.`;
-      player.result = `Double on ${summary.total}.`;
-      message = `${player.name} doubled to ${formatSimCents(player.activeBet)}.`;
+      hand.status = `Double on ${summary.total}.`;
+      hand.result = `Double on ${summary.total}.`;
+      message = `${player.name} doubled hand ${player.activeHandIndex + 1} to ${formatSimCents(hand.bet)}.`;
       pushLog(state, message, 'good');
     }
+    syncPlayerFromHands(player);
     advanceTurn(state, player.seat);
+    return { ok: true, message };
+  }
+
+  if (type === 'split') {
+    if (!canSplitHand(player, hand)) {
+      return { ok: false, error: 'Split is only available on a same-value two-card hand with enough SIM for the matching bet.' };
+    }
+    const splitBet = hand.bet;
+    const [firstCard, secondCard] = hand.cards;
+    const splitAces = firstCard.rank === 'A' && secondCard.rank === 'A';
+    player.stack -= splitBet;
+    player.walletCents = player.stack;
+    hand.cards = [firstCard];
+    hand.fromSplit = true;
+    hand.splitAces = splitAces;
+    hand.blackjack = false;
+    hand.done = false;
+    hand.busted = false;
+    hand.result = '';
+    hand.status = 'Split hand.';
+    const newHand = createHand(splitBet, {
+      cards: [secondCard],
+      fromSplit: true,
+      splitAces,
+      status: 'Split hand.',
+    });
+    player.hands.splice(player.activeHandIndex + 1, 0, newHand);
+    drawCard(state, hand.cards);
+    drawCard(state, newHand.cards);
+
+    for (const splitHand of [hand, newHand]) {
+      const summary = handSummary(splitHand.cards);
+      if (splitAces) {
+        splitHand.done = true;
+        splitHand.result = `Split aces on ${summary.total}.`;
+        splitHand.status = splitHand.result;
+      } else if (summary.total === 21) {
+        splitHand.done = true;
+        splitHand.result = 'Standing on 21.';
+        splitHand.status = '21. Standing.';
+      } else {
+        splitHand.status = `Live on ${summary.total}.`;
+      }
+    }
+
+    syncPlayerFromHands(player);
+    queueWalletEvent(
+      state,
+      player,
+      -splitBet,
+      'blackjack-split',
+      `${player.name} split a blackjack hand.`,
+      {
+        splitCents: splitBet,
+        handIndex: player.activeHandIndex,
+      },
+    );
+    recalcTableBetTotal(state);
+    message = `${player.name} split into ${player.hands.length} hands.`;
+    pushLog(state, message, 'good');
+    state.status = splitAces
+      ? `${player.name} split aces; each ace gets one card.`
+      : `${player.name} split. Play hand ${player.activeHandIndex + 1}.`;
+    if (hand.done) {
+      advanceTurn(state, player.seat);
+    }
     return { ok: true, message };
   }
 
@@ -712,8 +874,9 @@ function computeControls(state, viewer) {
     state.phase === 'player-turns' &&
     state.actionSeat === viewer.seat &&
     viewer.participating &&
-    !viewer.done
+    hasLiveHand(viewer)
   );
+  const hand = currentHand(viewer);
 
   return {
     canStartRound: Boolean(
@@ -727,9 +890,161 @@ function computeControls(state, viewer) {
     canAct,
     canHit: canAct,
     canStand: canAct,
-    canDouble: Boolean(canAct && viewer.cards.length === 2 && viewer.stack >= viewer.activeBet),
+    canDouble: Boolean(canAct && canDoubleHand(viewer, hand)),
+    canSplit: Boolean(canAct && canSplitHand(viewer, hand)),
     betPresets: [100, 500, 2500, 10000, -500],
   };
+}
+
+function createHand(betCents = 0, options = {}) {
+  return {
+    id: options.id || `hand-${Math.random().toString(36).slice(2, 9)}`,
+    cards: Array.isArray(options.cards) ? options.cards : [],
+    bet: Math.max(0, Math.round(Number(betCents) || 0)),
+    done: Boolean(options.done),
+    busted: Boolean(options.busted),
+    blackjack: Boolean(options.blackjack),
+    doubled: Boolean(options.doubled),
+    fromSplit: Boolean(options.fromSplit),
+    splitAces: Boolean(options.splitAces),
+    result: options.result || '',
+    status: options.status || '',
+  };
+}
+
+function playerHands(player) {
+  if (!player) {
+    return [];
+  }
+  if (!Array.isArray(player.hands)) {
+    player.hands = [];
+  }
+  return player.hands;
+}
+
+function currentHand(player) {
+  const hands = playerHands(player);
+  if (!hands.length) {
+    return null;
+  }
+  const index = Math.max(0, Math.min(hands.length - 1, Number(player.activeHandIndex) || 0));
+  player.activeHandIndex = index;
+  return hands[index] || null;
+}
+
+function activeBetTotal(player) {
+  return playerHands(player).reduce((sum, hand) => sum + Math.max(0, Math.round(Number(hand.bet) || 0)), 0);
+}
+
+function syncPlayerFromHands(player) {
+  const hands = playerHands(player);
+  const hand = currentHand(player) || hands[0] || null;
+  player.cards = hand ? hand.cards : [];
+  player.activeBet = activeBetTotal(player);
+  if (player.participating) {
+    player.done = hands.length > 0 && hands.every((entry) => entry.done);
+    player.busted = hands.length > 0 && hands.every((entry) => entry.busted);
+    player.blackjack = hands.some((entry) => entry.blackjack);
+  } else if (!hands.length) {
+    player.done = false;
+    player.busted = false;
+    player.blackjack = false;
+  }
+  if (hand && player.participating) {
+    const summary = hand.cards.length ? handSummary(hand.cards) : null;
+    const handNumber = hands.length > 1 ? `Hand ${player.activeHandIndex + 1}: ` : '';
+    player.status = hand.status || (summary ? `${handNumber}Live on ${summary.total}.` : player.status);
+    player.result = hand.result || player.result || '';
+  }
+  return player;
+}
+
+function nextPlayableHandIndex(player, startIndex = -1) {
+  const hands = playerHands(player);
+  for (let index = startIndex + 1; index < hands.length; index += 1) {
+    if (!hands[index].done) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function hasLiveHand(player) {
+  return Boolean(player && player.participating && playerHands(player).some((hand) => !hand.done));
+}
+
+function canDoubleHand(player, hand = currentHand(player)) {
+  return Boolean(
+    player &&
+    hand &&
+    player.participating &&
+    !hand.done &&
+    hand.cards.length === 2 &&
+    player.stack >= hand.bet
+  );
+}
+
+function canSplitHand(player, hand = currentHand(player)) {
+  if (!player || !hand || !player.participating || hand.done || hand.cards.length !== 2) {
+    return false;
+  }
+  if (playerHands(player).length >= MAX_SPLIT_HANDS || player.stack < hand.bet) {
+    return false;
+  }
+  const [first, second] = hand.cards;
+  return Boolean(first && second && cardValue(first.rank) === cardValue(second.rank));
+}
+
+function discardCards(state, cards) {
+  if (!Array.isArray(state.discard)) {
+    state.discard = [];
+  }
+  for (const card of cards || []) {
+    if (card) {
+      state.discard.push(card);
+    }
+  }
+}
+
+function collectTableCards(state) {
+  discardCards(state, state.dealer.cards);
+  state.dealer.cards = [];
+  for (const player of seatedPlayers(state, { includeLeavers: true })) {
+    const hands = playerHands(player);
+    if (hands.length) {
+      for (const hand of hands) {
+        discardCards(state, hand.cards);
+        hand.cards = [];
+      }
+    } else {
+      discardCards(state, player.cards);
+    }
+    player.cards = [];
+    if (!player.participating) {
+      player.hands = [];
+      player.activeHandIndex = 0;
+    }
+  }
+}
+
+function tableCardCount(state) {
+  let count = Array.isArray(state.dealer.cards) ? state.dealer.cards.length : 0;
+  for (const player of seatedPlayers(state, { includeLeavers: true })) {
+    const hands = playerHands(player);
+    if (hands.length) {
+      count += hands.reduce((sum, hand) => sum + (Array.isArray(hand.cards) ? hand.cards.length : 0), 0);
+    } else if (Array.isArray(player.cards)) {
+      count += player.cards.length;
+    }
+  }
+  return count;
+}
+
+function handScoreLabel(hand) {
+  if (!hand || !hand.cards.length) {
+    return '-';
+  }
+  return String(handSummary(hand.cards).total);
 }
 
 function cloneState(state, viewerId) {
@@ -747,6 +1062,7 @@ function cloneState(state, viewerId) {
     actionSeat: state.actionSeat,
     tableBetTotal: state.tableBetTotal,
     shoeRemaining: state.shoe.length,
+    discardCount: (Array.isArray(state.discard) ? state.discard.length : 0) + tableCardCount(state),
     shoeDecks: SHOE_DECKS,
     shoeCardCount: SHOE_CARD_COUNT,
     cutCardRemaining: state.cutCardRemaining || CUT_CARD_REMAINING,
@@ -761,7 +1077,10 @@ function cloneState(state, viewerId) {
     },
     log: state.log.map((entry) => ({ ...entry })),
     players: seatedPlayers(state, { includeLeavers: true }).map((player) => {
-      const summary = player.cards.length ? handSummary(player.cards) : null;
+      syncPlayerFromHands(player);
+      const hands = playerHands(player);
+      const activeHand = currentHand(player);
+      const summary = activeHand && activeHand.cards.length ? handSummary(activeHand.cards) : null;
       return {
         id: player.id,
         name: player.name,
@@ -769,8 +1088,28 @@ function cloneState(state, viewerId) {
         stack: player.stack,
         walletCents: player.walletCents ?? player.stack,
         bet: player.bet,
-        activeBet: player.activeBet,
-        cards: player.cards.map(cloneCard),
+        activeBet: activeBetTotal(player),
+        activeHandIndex: player.activeHandIndex || 0,
+        hands: hands.map((hand, index) => {
+          const handInfo = hand.cards.length ? handSummary(hand.cards) : null;
+          return {
+            id: hand.id,
+            index,
+            bet: hand.bet,
+            cards: hand.cards.map(cloneCard),
+            done: hand.done,
+            busted: hand.busted,
+            blackjack: hand.blackjack,
+            doubled: hand.doubled,
+            fromSplit: hand.fromSplit,
+            splitAces: hand.splitAces,
+            result: hand.result,
+            statusText: hand.status,
+            score: handInfo ? handInfo.total : 0,
+            scoreLabel: handInfo ? String(handInfo.total) : '-',
+          };
+        }),
+        cards: (activeHand ? activeHand.cards : player.cards).map(cloneCard),
         participating: player.participating,
         done: player.done,
         busted: player.busted,
