@@ -185,6 +185,54 @@
           </span>
           <span>Waits for a stretched BTC move, buys the cheaper mean-reversion side only when edge, spread, and time filters pass, then targets average paid +6c.</span>
         </label>
+        <div class="paper-bot-card paper-sim-bot-card">
+          <label class="paper-bot-toggle">
+            <input id="paper-auto-sim-account" type="checkbox">
+            <strong>Account SIM bot</strong>
+          </label>
+          <span>Uses your signed-in SIM wallet through the secure server endpoints. Tune the filters below before arming it.</span>
+          <div class="paper-bot-controls">
+            <label>
+              Contracts
+              <input id="paper-sim-bot-contracts" type="number" min="1" max="100" step="1" value="10">
+            </label>
+            <label>
+              Min edge %
+              <input id="paper-sim-bot-min-edge" type="number" min="0" max="50" step="0.5" value="8">
+            </label>
+            <label>
+              Max ask c
+              <input id="paper-sim-bot-max-ask" type="number" min="1" max="99" step="1" value="40">
+            </label>
+            <label>
+              Max spread %
+              <input id="paper-sim-bot-max-spread" type="number" min="0.5" max="50" step="0.5" value="8">
+            </label>
+            <label>
+              Max fills
+              <input id="paper-sim-bot-max-fills" type="number" min="1" max="20" step="1" value="2">
+            </label>
+            <label>
+              Cooldown sec
+              <input id="paper-sim-bot-cooldown" type="number" min="5" max="300" step="5" value="30">
+            </label>
+            <label>
+              Max exposure
+              <input id="paper-sim-bot-max-exposure" type="number" min="1" max="1000" step="1" value="50">
+            </label>
+            <label>
+              Exit
+              <select id="paper-sim-bot-exit-mode">
+                <option value="settle">Hold to settle</option>
+                <option value="scalp">Scalp target</option>
+              </select>
+            </label>
+            <label>
+              Target c
+              <input id="paper-sim-bot-target-cents" type="number" min="1" max="50" step="1" value="10">
+            </label>
+          </div>
+        </div>
         <div id="paper-auto-status" class="paper-auto-status">Paper bots are off.</div>
       </div>
       <div class="paper-settings-row">
@@ -381,6 +429,6 @@
   </main>
 
   <script src="/nova-auth.js?v=20260502g"></script>
-  <script src="/kalshi-bitcoin-lab.js?v=20260502c"></script>
+  <script src="/kalshi-bitcoin-lab.js?v=20260502d"></script>
 </body>
 </html>

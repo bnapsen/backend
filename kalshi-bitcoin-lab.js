@@ -22,6 +22,19 @@
   const PAPER_RESEARCH_EXIT_SECONDS_TO_AVERAGE = 75;
   const PAPER_RESEARCH_DEFENSIVE_EDGE = 0.015;
   const PAPER_RESEARCH_MAX_FILLS_PER_TICKER = 2;
+  const PAPER_SIM_BOT_DEFAULTS = {
+    contracts: 10,
+    minEdgePct: 8,
+    maxAskCents: 40,
+    maxSpreadPct: 8,
+    maxFillsPerTicker: 2,
+    cooldownSeconds: 30,
+    maxExposure: 50,
+    exitMode: "settle",
+    targetCents: 10,
+    minSecondsSinceOpen: 45,
+    maxSecondsSinceOpen: 660,
+  };
   const state = {
     scan: null,
     stream: null,
@@ -68,9 +81,12 @@
       completion: false,
       scalp: false,
       research: false,
+      simAccount: false,
+      simBot: { ...PAPER_SIM_BOT_DEFAULTS },
       fills: {},
       lastAttemptAt: {},
     },
+    paperSimBotPending: {},
     simWallet: {
       ready: false,
       signedIn: false,
@@ -161,6 +177,27 @@
   const paperAutoCompletionInput = document.querySelector("#paper-auto-completion");
   const paperAutoScalpInput = document.querySelector("#paper-auto-scalp");
   const paperAutoResearchInput = document.querySelector("#paper-auto-research");
+  const paperAutoSimAccountInput = document.querySelector("#paper-auto-sim-account");
+  const paperSimBotContractsInput = document.querySelector("#paper-sim-bot-contracts");
+  const paperSimBotMinEdgeInput = document.querySelector("#paper-sim-bot-min-edge");
+  const paperSimBotMaxAskInput = document.querySelector("#paper-sim-bot-max-ask");
+  const paperSimBotMaxSpreadInput = document.querySelector("#paper-sim-bot-max-spread");
+  const paperSimBotMaxFillsInput = document.querySelector("#paper-sim-bot-max-fills");
+  const paperSimBotCooldownInput = document.querySelector("#paper-sim-bot-cooldown");
+  const paperSimBotMaxExposureInput = document.querySelector("#paper-sim-bot-max-exposure");
+  const paperSimBotExitModeInput = document.querySelector("#paper-sim-bot-exit-mode");
+  const paperSimBotTargetCentsInput = document.querySelector("#paper-sim-bot-target-cents");
+  const paperSimBotInputs = [
+    paperSimBotContractsInput,
+    paperSimBotMinEdgeInput,
+    paperSimBotMaxAskInput,
+    paperSimBotMaxSpreadInput,
+    paperSimBotMaxFillsInput,
+    paperSimBotCooldownInput,
+    paperSimBotMaxExposureInput,
+    paperSimBotExitModeInput,
+    paperSimBotTargetCentsInput,
+  ].filter(Boolean);
   const paperAutoStatusEl = document.querySelector("#paper-auto-status");
   const paperFloatButton = document.querySelector("#paper-float");
   const paperDockButton = document.querySelector("#paper-dock");
@@ -223,7 +260,11 @@
   paperAddAccountButton.addEventListener("click", addPaperAccount);
   paperCloneAccountButton.addEventListener("click", clonePaperAccountSetup);
   paperDeleteAccountButton.addEventListener("click", deleteActivePaperAccount);
-  [paperAutoCompletionInput, paperAutoScalpInput, paperAutoResearchInput].forEach(function (input) {
+  [paperAutoCompletionInput, paperAutoScalpInput, paperAutoResearchInput, paperAutoSimAccountInput].forEach(function (input) {
+    input.addEventListener("change", savePaperAutoSettings);
+  });
+  paperSimBotInputs.forEach(function (input) {
+    input.addEventListener("input", savePaperAutoSettings);
     input.addEventListener("change", savePaperAutoSettings);
   });
   [paperCurrencyInput, paperStartingBankrollInput].forEach(function (input) {
@@ -476,7 +517,7 @@
   }
 
   function secureSimManualOrder(order) {
-    return Boolean(simWalletConnected() && order && !order.automation);
+    return Boolean(simWalletConnected() && order && (!order.automation || order.secureSim === true || order.secureSimAutomation === true));
   }
 
   function secureSimBitcoinRequest(action, payload) {
@@ -1215,8 +1256,32 @@
       completion: source.completion === true,
       scalp: source.scalp === true,
       research: source.research === true,
+      simAccount: source.simAccount === true,
+      simBot: normalizePaperSimBotParams(source.simBot || {}),
       fills: source.fills && typeof source.fills === "object" && !Array.isArray(source.fills) ? source.fills : {},
       lastAttemptAt: source.lastAttemptAt && typeof source.lastAttemptAt === "object" && !Array.isArray(source.lastAttemptAt) ? source.lastAttemptAt : {},
+    };
+  }
+
+  function normalizePaperSimBotParams(saved) {
+    const source = saved || {};
+    const defaults = PAPER_SIM_BOT_DEFAULTS;
+    const numberOrDefault = function (value, fallback) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : fallback;
+    };
+    return {
+      contracts: clampNumber(Math.floor(numberOrDefault(source.contracts, defaults.contracts)), 1, 100),
+      minEdgePct: clampNumber(numberOrDefault(source.minEdgePct, defaults.minEdgePct), 0, 50),
+      maxAskCents: clampNumber(numberOrDefault(source.maxAskCents, defaults.maxAskCents), 1, 99),
+      maxSpreadPct: clampNumber(numberOrDefault(source.maxSpreadPct, defaults.maxSpreadPct), 0.5, 50),
+      maxFillsPerTicker: clampNumber(Math.floor(numberOrDefault(source.maxFillsPerTicker, defaults.maxFillsPerTicker)), 1, 20),
+      cooldownSeconds: clampNumber(numberOrDefault(source.cooldownSeconds, defaults.cooldownSeconds), 5, 300),
+      maxExposure: clampNumber(numberOrDefault(source.maxExposure, defaults.maxExposure), 1, 1000),
+      exitMode: String(source.exitMode || defaults.exitMode) === "scalp" ? "scalp" : "settle",
+      targetCents: clampNumber(numberOrDefault(source.targetCents, defaults.targetCents), 1, 50),
+      minSecondsSinceOpen: clampNumber(numberOrDefault(source.minSecondsSinceOpen, defaults.minSecondsSinceOpen), 0, 600),
+      maxSecondsSinceOpen: clampNumber(numberOrDefault(source.maxSecondsSinceOpen, defaults.maxSecondsSinceOpen), 60, 850),
     };
   }
 
@@ -1255,6 +1320,17 @@
     paperAutoCompletionInput.checked = state.paperAuto.completion;
     paperAutoScalpInput.checked = state.paperAuto.scalp;
     paperAutoResearchInput.checked = state.paperAuto.research;
+    paperAutoSimAccountInput.checked = state.paperAuto.simAccount;
+    state.paperAuto.simBot = normalizePaperSimBotParams(state.paperAuto.simBot || {});
+    paperSimBotContractsInput.value = String(state.paperAuto.simBot.contracts);
+    paperSimBotMinEdgeInput.value = String(state.paperAuto.simBot.minEdgePct);
+    paperSimBotMaxAskInput.value = String(state.paperAuto.simBot.maxAskCents);
+    paperSimBotMaxSpreadInput.value = String(state.paperAuto.simBot.maxSpreadPct);
+    paperSimBotMaxFillsInput.value = String(state.paperAuto.simBot.maxFillsPerTicker);
+    paperSimBotCooldownInput.value = String(state.paperAuto.simBot.cooldownSeconds);
+    paperSimBotMaxExposureInput.value = String(state.paperAuto.simBot.maxExposure);
+    paperSimBotExitModeInput.value = state.paperAuto.simBot.exitMode;
+    paperSimBotTargetCentsInput.value = String(state.paperAuto.simBot.targetCents);
     updatePaperAutoStatus(account.lastAutomationMessage || "", account.lastAutomationTone || "");
   }
 
@@ -1334,6 +1410,8 @@
         completion: active.auto.completion,
         scalp: active.auto.scalp,
         research: active.auto.research,
+        simAccount: false,
+        simBot: active.auto.simBot || { ...PAPER_SIM_BOT_DEFAULTS },
       },
     }, nextNumber - 1);
     state.paperAccounts.push(account);
@@ -1703,13 +1781,13 @@
     const price = entryCents / 100;
     const entryFee = kalshiFeeDollars(contracts, price);
     const entryCost = contracts * price + entryFee;
-    if (state.simWallet.signedIn && !simWalletConnected()) {
+    if (!options.skipCashCheck && state.simWallet.signedIn && !simWalletConnected()) {
       setPaperStatus("No paper buy: signed-in SIM wallet is still syncing.", true);
       savePaperLedger();
       renderPaperBankroll();
       return null;
     }
-    if (simWalletConnected() && Number(state.simWallet.balance || 0) + 0.0001 < entryCost) {
+    if (!options.skipCashCheck && simWalletConnected() && Number(state.simWallet.balance || 0) + 0.0001 < entryCost) {
       setPaperStatus("No paper buy: account SIM wallet has only " + paperMoney(state.simWallet.balance) + ".", true);
       savePaperLedger();
       renderPaperBankroll();
@@ -1947,6 +2025,8 @@
     const position = findPaperPosition(id);
     if (!position) return;
     if ((!options || !options.skipSecure) && position.secureSim && position.serverPositionId) {
+      if (position.settlementPending) return;
+      position.settlementPending = true;
       paperSettlePositionSecure(id, options);
       return;
     }
@@ -2011,6 +2091,7 @@
       setPaperStatus("Secure SIM settled " + position.ticker + " as " + (result.fill && result.fill.won ? "win" : "loss") + ".", false, result.fill && result.fill.won ? "pos" : "neg");
       return result;
     }).catch(function (error) {
+      position.settlementPending = false;
       state.simWallet.syncing = false;
       state.simWallet.error = error && error.message ? error.message : "Secure SIM settlement failed.";
       if (!options || !options.silent) {
@@ -2082,9 +2163,25 @@
     state.paperAuto.completion = paperAutoCompletionInput.checked;
     state.paperAuto.scalp = paperAutoScalpInput.checked;
     state.paperAuto.research = paperAutoResearchInput.checked;
+    state.paperAuto.simAccount = paperAutoSimAccountInput.checked;
+    state.paperAuto.simBot = readPaperSimBotInputs();
     persistPaperAutoSettings();
     renderPaperAccounts();
     updatePaperAutoStatus();
+  }
+
+  function readPaperSimBotInputs() {
+    return normalizePaperSimBotParams({
+      contracts: paperSimBotContractsInput.value,
+      minEdgePct: paperSimBotMinEdgeInput.value,
+      maxAskCents: paperSimBotMaxAskInput.value,
+      maxSpreadPct: paperSimBotMaxSpreadInput.value,
+      maxFillsPerTicker: paperSimBotMaxFillsInput.value,
+      cooldownSeconds: paperSimBotCooldownInput.value,
+      maxExposure: paperSimBotMaxExposureInput.value,
+      exitMode: paperSimBotExitModeInput.value,
+      targetCents: paperSimBotTargetCentsInput.value,
+    });
   }
 
   function persistPaperAutoSettings() {
@@ -2142,12 +2239,16 @@
   }
 
   function evaluatePaperAutomation(scan) {
-    if (!state.paperAuto.completion && !state.paperAuto.scalp && !state.paperAuto.research) {
+    if (!state.paperAuto.completion && !state.paperAuto.scalp && !state.paperAuto.research && !state.paperAuto.simAccount) {
       updatePaperAutoStatus();
       return { message: "", tone: "" };
     }
     const results = [];
     let researchExitFilled = false;
+    if (state.paperAuto.simAccount) {
+      const simExitResult = managePaperSimAccountBotExits(scan);
+      if (simExitResult && simExitResult.message) results.push(simExitResult);
+    }
     if (state.paperAuto.research) {
       const exitResult = managePaperResearchExits(scan);
       if (exitResult && exitResult.message) {
@@ -2160,6 +2261,9 @@
     }
     if (state.paperAuto.research && !researchExitFilled) {
       results.push(runPaperResearchStrategy(scan));
+    }
+    if (state.paperAuto.simAccount) {
+      results.push(runPaperSimAccountBot(scan));
     }
     const visible = results.filter(function (item) { return item && item.message; });
     const filled = visible.some(function (item) { return item.filled; });
@@ -2324,6 +2428,151 @@
     return { filled: true, message: label + ": bought 10 " + side.toUpperCase() + " @ " + formatCents(position.entryCents) + "; grouped target " + formatCents(group.limitCents) + " on " + group.contracts + " contracts from avg " + formatCents(group.averageCents) + " (buy #" + (fills + 1) + ")." };
   }
 
+  function runPaperSimAccountBot(scan) {
+    const settings = normalizePaperSimBotParams(state.paperAuto.simBot || {});
+    state.paperAuto.simBot = settings;
+    const label = "Account SIM bot";
+    if (!state.simWallet.signedIn) {
+      return { filled: false, error: true, message: label + ": sign in first so the bot can use your account SIM wallet." };
+    }
+    if (!simWalletConnected()) {
+      return { filled: false, error: true, message: label + ": waiting for the signed-in SIM wallet to sync." };
+    }
+    const signal = buildPaperSimBotSignal(scan, settings);
+    if (!signal.ok) {
+      return { filled: false, message: label + ": " + signal.reason };
+    }
+
+    const key = paperAutoKey("sim-account", signal.ticker);
+    const pendingKey = paperAutoKey("sim-account-pending", signal.ticker);
+    if (state.paperSimBotPending[pendingKey]) {
+      return { filled: false, message: label + ": secure server fill is still pending for this market." };
+    }
+    const fills = paperAutoFillCount("sim-account", signal.ticker);
+    if (fills >= settings.maxFillsPerTicker) {
+      return { filled: false, message: label + ": already used " + fills + " fills on this market; waiting for the next 15-minute ticker." };
+    }
+    const nowMs = Date.now();
+    const cooldownMs = settings.cooldownSeconds * 1000;
+    const lastAttempt = Number(state.paperAuto.lastAttemptAt[key] || 0);
+    if (lastAttempt > 0 && nowMs - lastAttempt < cooldownMs) {
+      return { filled: false, message: label + ": cooling down " + formatDuration((cooldownMs - (nowMs - lastAttempt)) / 1000) + " before another account SIM fill." };
+    }
+
+    state.paperAuto.lastAttemptAt[key] = nowMs;
+    state.paperSimBotPending[pendingKey] = true;
+    persistPaperAutoSettings();
+    const market = scan && scan.market || {};
+    const order = {
+      id: "paper-auto-sim-account-" + Date.now() + "-" + Math.floor(Math.random() * 100000),
+      status: "open",
+      action: "buy",
+      side: signal.side,
+      contracts: settings.contracts,
+      limitCents: signal.limitCents,
+      ticker: signal.ticker,
+      createdAt: new Date().toISOString(),
+      closeTime: market.closeTime || "",
+      targetPrice: Number(market.targetPrice),
+      entrySpot: Number(market.currentPrice),
+      lastSpot: Number(market.currentPrice),
+      lastBidCents: Number(signal.bidCents),
+      lastAskCents: Number(signal.askCents),
+      lastModelProbability: Number(signal.probability),
+      lastModelEdge: Number(signal.edge),
+      automation: "sim-account",
+      secureSim: true,
+      secureSimAutomation: true,
+    };
+    Promise.resolve(fillPaperBuySecure(order, signal.askCents, label + " auto entry: " + signal.summary)).then(function (position) {
+      delete state.paperSimBotPending[pendingKey];
+      if (position) {
+        state.paperAuto.fills[key] = paperAutoFillCount("sim-account", signal.ticker) + 1;
+        persistPaperAutoSettings();
+        if (settings.exitMode === "scalp") {
+          setPaperStatus(label + ": bought " + position.contracts + " " + signal.side.toUpperCase() + " @ " + formatCents(position.entryCents) + "; watching for +" + formatCents(settings.targetCents) + " scalp.", false, "pos");
+        }
+      }
+      renderPaperBankroll();
+    });
+    return { filled: true, message: label + ": sent secure buy for " + settings.contracts + " " + signal.side.toUpperCase() + " @ limit " + formatCents(signal.limitCents) + " (" + signal.summary + ")." };
+  }
+
+  function buildPaperSimBotSignal(scan, settings) {
+    const rows = Array.isArray(scan && scan.candidates) ? scan.candidates : [];
+    const market = scan && scan.market || {};
+    const model = scan && scan.model || {};
+    const ticker = scan && scan.ticker || "";
+    if (!ticker || !rows.length) return { ok: false, reason: "waiting for a live 15-minute market and quotes." };
+
+    const secondsSinceOpen = paperSecondsSinceOpen(market);
+    const secondsToAverageStart = paperSecondsToAverageStart(market, model);
+    if (Number.isFinite(secondsSinceOpen) && secondsSinceOpen < settings.minSecondsSinceOpen) {
+      return { ok: false, reason: "waiting until " + formatDuration(settings.minSecondsSinceOpen) + " after market open before using account SIM." };
+    }
+    if (Number.isFinite(secondsSinceOpen) && secondsSinceOpen > settings.maxSecondsSinceOpen) {
+      return { ok: false, reason: "past the account SIM entry window for this ticker." };
+    }
+    if (Number.isFinite(secondsToAverageStart) && secondsToAverageStart < 45) {
+      return { ok: false, reason: "too close to final averaging for a new account SIM entry." };
+    }
+
+    const minEdge = settings.minEdgePct / 100;
+    const maxSpread = settings.maxSpreadPct / 100;
+    const candidates = rows.map(function (row) {
+      const side = row && row.side === "no" ? "no" : "yes";
+      const askCents = Number(row && row.askCents);
+      const bidCents = Number(row && row.bidCents);
+      const probability = Number(row && row.probability);
+      const fallbackEdge = Number.isFinite(probability) && Number.isFinite(askCents) ? probability - askCents / 100 : NaN;
+      const edge = Number.isFinite(Number(row && row.edge)) ? Number(row.edge) : fallbackEdge;
+      const spread = Number.isFinite(Number(row && row.spread)) ? Number(row.spread) : (askCents - bidCents) / 100;
+      return { row, side, askCents, bidCents, probability, edge, spread };
+    }).filter(function (candidate) {
+      return Number.isFinite(candidate.askCents) && candidate.askCents > 0
+        && Number.isFinite(candidate.bidCents) && candidate.bidCents > 0
+        && Number.isFinite(candidate.probability)
+        && Number.isFinite(candidate.edge);
+    }).sort(function (left, right) {
+      return right.edge - left.edge;
+    });
+    const candidate = candidates[0];
+    if (!candidate) return { ok: false, reason: "waiting for a candidate with usable model odds, bid, and ask." };
+
+    const maxEdgeEntryCents = maxEntryLimitCents(candidate.probability, minEdge);
+    const blockers = [];
+    if (candidate.edge < minEdge) blockers.push("best edge " + pct(candidate.edge) + " is below " + pct(minEdge));
+    if (candidate.askCents > settings.maxAskCents) blockers.push("ask " + formatCents(candidate.askCents) + " is above max ask " + formatCents(settings.maxAskCents));
+    if (candidate.askCents > maxEdgeEntryCents) blockers.push("ask " + formatCents(candidate.askCents) + " is above edge-safe price " + formatCents(maxEdgeEntryCents));
+    if (candidate.spread > maxSpread) blockers.push("spread " + pct(candidate.spread) + " is wider than " + pct(maxSpread));
+    const entryCost = settings.contracts * candidate.askCents / 100 + kalshiFeeDollars(settings.contracts, candidate.askCents / 100);
+    if (Number(state.simWallet.balance || 0) + 0.0001 < entryCost) blockers.push("wallet has only " + paperMoney(state.simWallet.balance));
+    const openRisk = paperSimAccountOpenRisk();
+    if (openRisk + entryCost > settings.maxExposure + 0.0001) blockers.push("account SIM bot exposure would be " + paperMoney(openRisk + entryCost) + " above max " + paperMoney(settings.maxExposure));
+    if (blockers.length) return { ok: false, reason: blockers.join("; ") + "." };
+
+    const limitCents = clampNumber(Math.min(Math.ceil(candidate.askCents), settings.maxAskCents, maxEdgeEntryCents), 1, 99);
+    return {
+      ok: true,
+      ticker,
+      side: candidate.side,
+      probability: candidate.probability,
+      edge: candidate.edge,
+      askCents: candidate.askCents,
+      bidCents: candidate.bidCents,
+      spread: candidate.spread,
+      limitCents,
+      summary: "model " + pct(candidate.probability) + " vs ask " + formatCents(candidate.askCents) + ", edge " + pct(candidate.edge) + ", spread " + pct(candidate.spread),
+    };
+  }
+
+  function paperSimAccountOpenRisk() {
+    return state.paper.positions.reduce(function (sum, position) {
+      if (position.status !== "open" || position.automation !== "sim-account") return sum;
+      return sum + Number(position.entryCost || 0);
+    }, 0);
+  }
+
   function buildPaperResearchSignal(scan) {
     const rows = Array.isArray(scan && scan.candidates) ? scan.candidates : [];
     const market = scan && scan.market || {};
@@ -2414,6 +2663,41 @@
     const settleMs = new Date(market && market.settlementAveragingStart || 0).getTime();
     const nowMs = new Date(market && market.clockTime || Date.now()).getTime();
     return Number.isFinite(settleMs) && settleMs > 0 && Number.isFinite(nowMs) ? (settleMs - nowMs) / 1000 : NaN;
+  }
+
+  function managePaperSimAccountBotExits(scan) {
+    const settings = normalizePaperSimBotParams(state.paperAuto.simBot || {});
+    if (settings.exitMode !== "scalp") return null;
+    if (!simWalletConnected()) return null;
+    const ticker = scan && scan.ticker || "";
+    const rows = Array.isArray(scan && scan.candidates) ? scan.candidates : [];
+    if (!ticker || !rows.length) return null;
+    const messages = [];
+    state.paper.positions.slice().forEach(function (position) {
+      if (position.status !== "open" || position.automation !== "sim-account" || !position.secureSim || !position.serverPositionId || position.ticker !== ticker) return;
+      const candidate = rows.find(function (row) { return row.side === position.side; });
+      const bidCents = Number(candidate && candidate.bidCents);
+      if (!Number.isFinite(bidCents) || bidCents <= 0) return;
+      const targetCents = clampNumber(Number(position.entryCents || 0) + settings.targetCents, 1, 99);
+      if (bidCents < targetCents) return;
+      const pendingKey = "sell:" + String(position.serverPositionId || position.id);
+      if (state.paperSimBotPending[pendingKey]) return;
+      state.paperSimBotPending[pendingKey] = true;
+      paperSellContractsSecure({
+        id: "paper-auto-sim-account-sell-" + Date.now() + "-" + Math.floor(Math.random() * 100000),
+        ticker: position.ticker,
+        side: position.side,
+        contracts: position.contracts,
+        limitCents: targetCents,
+        sourcePositionId: position.id,
+        secureSim: true,
+      }, bidCents, "Account SIM bot scalp exit: entry " + formatCents(position.entryCents) + " + target " + formatCents(settings.targetCents)).then(function () {
+        delete state.paperSimBotPending[pendingKey];
+        renderPaperBankroll();
+      });
+      messages.push("sent scalp exit for " + position.contracts + " " + String(position.side).toUpperCase() + " @ " + formatCents(targetCents));
+    });
+    return messages.length ? { filled: true, message: "Account SIM bot: " + messages.join("; ") + "." } : null;
   }
 
   function managePaperResearchExits(scan) {
@@ -2627,7 +2911,8 @@
     if (state.paperAuto.completion) active.push("completion");
     if (state.paperAuto.scalp) active.push("scalp");
     if (state.paperAuto.research) active.push("research fade");
-    paperAutoStatusEl.textContent = message || (active.length ? "Paper bots armed: " + active.join(" + ") + ". Each auto fill buys exactly 10 contracts; research fade uses its own stretch, edge, spread, and time filters." : "Paper bots are off.");
+    if (state.paperAuto.simAccount) active.push("account SIM");
+    paperAutoStatusEl.textContent = message || (active.length ? "Paper bots armed: " + active.join(" + ") + ". Local bots use sandbox paper; account SIM uses the secure signed-in wallet and adjustable filters." : "Paper bots are off.");
     paperAutoStatusEl.className = "paper-auto-status " + (tone || "");
   }
 
@@ -2880,6 +3165,7 @@
   function paperAutomationEntryLabel(position) {
     if (position.automation === "scalp") return "scalp avg group";
     if (position.automation === "research") return "research fade avg";
+    if (position.automation === "sim-account") return "account SIM bot";
     return "limit";
   }
 
@@ -2887,6 +3173,7 @@
     if (strategy === "research") return "Research fade";
     if (strategy === "scalp") return "Scalp";
     if (strategy === "completion") return "Completion";
+    if (strategy === "sim-account") return "Account SIM";
     return "Paper";
   }
 

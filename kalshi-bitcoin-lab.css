@@ -633,7 +633,7 @@ button:disabled {
 
 .paper-bots {
   display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr)) minmax(220px, 1.15fr);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 10px;
   align-items: stretch;
   padding: 14px;
@@ -652,7 +652,18 @@ button:disabled {
   cursor: pointer;
 }
 
+.paper-sim-bot-card {
+  grid-column: 1 / -1;
+  cursor: default;
+}
+
 .paper-bot-card span:last-child {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.paper-sim-bot-card > span {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.4;
@@ -672,6 +683,29 @@ button:disabled {
 
 .paper-bot-toggle strong {
   font-size: 15px;
+}
+
+.paper-bot-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(88px, 1fr));
+  gap: 8px;
+}
+
+.paper-bot-controls label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.paper-bot-controls input,
+.paper-bot-controls select {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 4px;
+  padding: 7px 8px;
+  border: 1px solid rgba(237, 244, 241, 0.12);
+  border-radius: 6px;
+  background: #070b10;
+  color: var(--text);
 }
 
 .paper-auto-status {
@@ -1457,6 +1491,7 @@ th {
   .paper-ticket-preview,
   .paper-ticket-actions,
   .paper-summary,
+  .paper-bot-controls,
   .trade-grid,
   .auto-grid,
   .split {
