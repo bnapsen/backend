@@ -183,9 +183,12 @@ function syncPlayerWallet(state, playerId, walletCents) {
     return null;
   }
   const balance = Math.max(0, Math.round(Number(walletCents) || 0));
+  const hasVisibleTableCards = playerHands(player).some((hand) => (
+    Array.isArray(hand.cards) && hand.cards.some(Boolean)
+  )) || (Array.isArray(player.cards) && player.cards.some(Boolean));
   player.stack = balance;
   player.walletCents = balance;
-  if (!player.participating) {
+  if (!player.participating && !hasVisibleTableCards) {
     player.activeBet = 0;
     player.hands = [];
     player.activeHandIndex = 0;
@@ -896,6 +899,19 @@ function computeControls(state, viewer) {
   };
 }
 
+function hiLoValue(card) {
+  if (!card || !card.rank) {
+    return 0;
+  }
+  if (['2', '3', '4', '5', '6'].includes(card.rank)) {
+    return 1;
+  }
+  if (['10', 'J', 'Q', 'K', 'A'].includes(card.rank)) {
+    return -1;
+  }
+  return 0;
+}
+
 function createHand(betCents = 0, options = {}) {
   return {
     id: options.id || `hand-${Math.random().toString(36).slice(2, 9)}`,
@@ -1040,6 +1056,42 @@ function tableCardCount(state) {
   return count;
 }
 
+function visibleTableCards(state) {
+  const cards = [];
+  for (const [index, card] of (state.dealer.cards || []).entries()) {
+    if (card && !(state.dealer.hiddenHole && index === 1)) {
+      cards.push(card);
+    }
+  }
+  for (const player of seatedPlayers(state, { includeLeavers: true })) {
+    const hands = playerHands(player);
+    if (hands.length) {
+      for (const hand of hands) {
+        cards.push(...(hand.cards || []).filter(Boolean));
+      }
+    } else if (Array.isArray(player.cards)) {
+      cards.push(...player.cards.filter(Boolean));
+    }
+  }
+  return cards;
+}
+
+function countInfo(state) {
+  const visibleCards = visibleTableCards(state);
+  const discardCardsSeen = Array.isArray(state.discard) ? state.discard.filter(Boolean) : [];
+  const seenCards = [...discardCardsSeen, ...visibleCards];
+  const runningCount = seenCards.reduce((sum, card) => sum + hiLoValue(card), 0);
+  const decksRemaining = Math.max(0.25, (state.shoe.length || 0) / (SUITS.length * RANKS.length));
+  const trueCount = runningCount / decksRemaining;
+  return {
+    visibleThisHand: visibleCards.length,
+    seenCards: seenCards.length,
+    runningCount,
+    trueCount: Math.round(trueCount * 10) / 10,
+    decksRemaining: Math.round(decksRemaining * 10) / 10,
+  };
+}
+
 function handScoreLabel(hand) {
   if (!hand || !hand.cards.length) {
     return '-';
@@ -1067,6 +1119,7 @@ function cloneState(state, viewerId) {
     shoeCardCount: SHOE_CARD_COUNT,
     cutCardRemaining: state.cutCardRemaining || CUT_CARD_REMAINING,
     shufflePending: Boolean(state.shufflePending),
+    countInfo: countInfo(state),
     viewerSeat: viewer ? viewer.seat : null,
     controls: computeControls(state, viewer),
     dealer: {

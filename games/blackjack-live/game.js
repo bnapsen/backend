@@ -60,6 +60,10 @@
     dealerScoreLabel: document.getElementById('dealerScoreLabel'),
     shoeMeter: document.getElementById('shoeMeter'),
     discardMeter: document.getElementById('discardMeter'),
+    countMeter: document.getElementById('countMeter'),
+    visibleCountLabel: document.getElementById('visibleCountLabel'),
+    runningCountLabel: document.getElementById('runningCountLabel'),
+    trueCountLabel: document.getElementById('trueCountLabel'),
     handLabel: document.getElementById('handLabel'),
     tableBetAmount: document.getElementById('tableBetAmount'),
     turnLabel: document.getElementById('turnLabel'),
@@ -998,11 +1002,28 @@
     state.renderMemo.discardCount = discard;
   }
 
+  function renderCountMeter(snapshot) {
+    if (!ui.countMeter) {
+      return;
+    }
+    const info = snapshot?.countInfo || {};
+    const visibleThisHand = Math.max(0, Math.round(Number(info.visibleThisHand) || 0));
+    const seenCards = Math.max(0, Math.round(Number(info.seenCards) || visibleThisHand));
+    const runningCount = Math.round(Number(info.runningCount) || 0);
+    const trueCount = Number.isFinite(Number(info.trueCount)) ? Number(info.trueCount) : 0;
+    ui.visibleCountLabel.textContent = `${visibleThisHand}/${seenCards}`;
+    ui.runningCountLabel.textContent = runningCount > 0 ? `+${runningCount}` : String(runningCount);
+    ui.trueCountLabel.textContent = trueCount > 0 ? `+${trueCount.toFixed(1)}` : trueCount.toFixed(1);
+    ui.countMeter.dataset.tone = runningCount > 0 ? 'positive' : runningCount < 0 ? 'negative' : 'neutral';
+    ui.countMeter.title = `Visible cards this hand: ${visibleThisHand}. Seen cards since shuffle: ${seenCards}. True count uses the current shoe depth.`;
+  }
+
   function renderSummary() {
     const snapshot = state.snapshot;
     const actor = getActionPlayer();
     const viewer = getViewer();
     renderShoeMeters(snapshot);
+    renderCountMeter(snapshot);
 
     if (!snapshot) {
       ui.roomCodeLabel.textContent = state.roomCode || '-';
