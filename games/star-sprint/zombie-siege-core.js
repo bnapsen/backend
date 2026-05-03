@@ -10,6 +10,8 @@
   const ARENA = { width: 304, depth: 304 };
   const MAX_PLAYERS = 4;
   const MAX_EVENTS = 28;
+  const SIM_COIN_KILLS_PER_DROP = 10;
+  const SIM_COIN_VALUE_CENTS = 1;
   const PLAYER_COLORS = ['#73d9ff', '#ffd57a', '#ff9fc5', '#91f5a8'];
   const PLAYER_SPEED = 7.35;
   const PLAYER_SPRINT_SPEED = 10.8;
@@ -976,6 +978,28 @@
     });
   }
 
+  function spawnSimCoinPickup(state, player, zombie) {
+    state.pickups.push({
+      id: nextEntityId(state),
+      type: 'sim-coin',
+      x: zombie.x,
+      z: zombie.z,
+      y: groundHeightAt(zombie.x, zombie.z),
+      radius: 1.05,
+      valueCents: SIM_COIN_VALUE_CENTS,
+      ttl: 18,
+      rotation: rand(0, Math.PI * 2),
+      ownerId: player.id,
+    });
+    pushEvent(state, 'sim-coin-drop', {
+      playerId: player.id,
+      playerName: player.name,
+      valueCents: SIM_COIN_VALUE_CENTS,
+      killsPerDrop: SIM_COIN_KILLS_PER_DROP,
+      wave: state.wave,
+    });
+  }
+
   function awardKill(state, player, zombie) {
     player.kills += 1;
     player.score += zombie.score;
@@ -987,11 +1011,15 @@
       player.health = Math.min(player.maxHealth, player.health + 16);
     }
     maybeSpawnPickup(state, zombie);
+    if (player.kills % SIM_COIN_KILLS_PER_DROP === 0) {
+      spawnSimCoinPickup(state, player, zombie);
+    }
     pushEvent(state, 'enemy-down', {
       playerId: player.id,
       playerName: player.name,
       enemyType: zombie.type,
       wave: state.wave,
+      kills: player.kills,
     });
   }
 
@@ -1691,8 +1719,22 @@
         continue;
       }
       for (const player of livingPlayers(state)) {
+        if (pickup.ownerId && pickup.ownerId !== player.id) {
+          continue;
+        }
         if (distanceSquared(player.x, player.z, pickup.x, pickup.z) > Math.pow(player.radius + pickup.radius, 2)) {
           continue;
+        }
+        if (pickup.type === 'sim-coin') {
+          state.pickups.splice(index, 1);
+          pushEvent(state, 'pickup', {
+            playerId: player.id,
+            playerName: player.name,
+            pickupType: pickup.type,
+            valueCents: pickup.valueCents || SIM_COIN_VALUE_CENTS,
+          });
+          setStatus(state, `${player.name} banked a SIM coin.`);
+          break;
         }
         player.health = Math.min(player.maxHealth, player.health + pickup.heal);
         state.pickups.splice(index, 1);

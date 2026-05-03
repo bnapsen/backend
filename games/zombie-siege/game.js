@@ -74,6 +74,7 @@
     lastInputSentAt: 0,
     nextUiRefreshAt: 0,
     lastEventId: 0,
+    simCoinClaims: new Set(),
     hasYawSeed: false,
     movement: {
       active: false,
@@ -198,17 +199,56 @@
     return game.players.find((player) => player.id === state.yourPlayerId) || null;
   }
 
-  function recordSimEnemyKill(killCount = 1) {
-    if (!window.NovaAuth || typeof window.NovaAuth.recordEnemyKillReward !== 'function') {
+  function simCoinClaimKey(event = {}) {
+    return [
+      state.mode || 'solo',
+      state.roomCode || 'local',
+      state.yourPlayerId || 'player',
+      event.id || `${event.playerId || 'unknown'}-${event.valueCents || 1}`,
+    ].join(':');
+  }
+
+  function claimSimCoinReward(event = {}, retries = 5) {
+    const claimKey = simCoinClaimKey(event);
+    if (state.simCoinClaims.has(claimKey)) {
       return;
     }
+
+    const auth = window.NovaAuth;
+    if (!auth || typeof auth.recordEnemyKillReward !== 'function') {
+      if (retries > 0) {
+        window.setTimeout(() => claimSimCoinReward(event, retries - 1), 350);
+      } else {
+        showToast('Sign in to bank SIM coins.');
+      }
+      return;
+    }
+    if (typeof auth.isSignedIn === 'function' && !auth.isSignedIn()) {
+      showToast('Sign in to bank SIM coins.');
+      return;
+    }
+
+    state.simCoinClaims.add(claimKey);
     const game = currentGame();
-    window.NovaAuth.recordEnemyKillReward({
+    Promise.resolve(auth.recordEnemyKillReward({
       game: 'zombie-siege',
-      killCount,
+      killCount: 10,
       score: game?.score || 0,
       runId: state.roomCode || state.yourPlayerId || '',
-    }).catch(() => {});
+    })).then(() => (
+      typeof auth.flushEnemyKillRewards === 'function'
+        ? auth.flushEnemyKillRewards()
+        : null
+    )).then((rewards) => {
+      const reward = Array.isArray(rewards)
+        ? rewards.find((entry) => entry && entry.game === 'zombie-siege')
+        : null;
+      const cents = Math.max(1, Number(reward?.awardCents || event.valueCents || 1));
+      showToast(`SIM coin banked: +${(cents / 100).toFixed(2)} SIM.`);
+    }).catch(() => {
+      state.simCoinClaims.delete(claimKey);
+      showToast('SIM coin pickup will retry when your wallet syncs.');
+    });
   }
 
   function remainingThreats(game) {
@@ -383,6 +423,15 @@
       case 'success':
         scheduleOscillator(context, { type: 'triangle', frequency: 320, frequencyEnd: 640, duration: 0.18, gain: 0.05 });
         scheduleOscillator(context, { type: 'triangle', frequency: 480, frequencyEnd: 960, start: now + 0.12, duration: 0.26, gain: 0.05 });
+        break;
+      case 'coin-drop':
+        scheduleOscillator(context, { type: 'triangle', frequency: 720, frequencyEnd: 1180, duration: 0.12, gain: 0.042 });
+        scheduleOscillator(context, { type: 'sine', frequency: 1180, frequencyEnd: 860, start: now + 0.08, duration: 0.16, gain: 0.035 });
+        break;
+      case 'coin':
+        scheduleOscillator(context, { type: 'triangle', frequency: 680, frequencyEnd: 1080, duration: 0.09, gain: 0.048 });
+        scheduleOscillator(context, { type: 'triangle', frequency: 920, frequencyEnd: 1460, start: now + 0.07, duration: 0.14, gain: 0.046 });
+        scheduleOscillator(context, { type: 'sine', frequency: 1380, frequencyEnd: 1760, start: now + 0.17, duration: 0.16, gain: 0.035 });
         break;
       case 'pickup':
         scheduleOscillator(context, { type: 'sine', frequency: 560, frequencyEnd: 920, duration: 0.14, gain: 0.05 });
@@ -2251,6 +2300,63 @@
 
   function createPickupMesh(pickup) {
     const group = new THREE.Group();
+    if (pickup.type === 'sim-coin') {
+      const coinMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffc84f,
+        roughness: 0.18,
+        metalness: 0.86,
+        emissive: 0x9a5200,
+        emissiveIntensity: 0.48,
+      });
+      const markMaterial = new THREE.MeshStandardMaterial({
+        color: 0xfff0a8,
+        roughness: 0.12,
+        metalness: 0.92,
+        emissive: 0xf5a400,
+        emissiveIntensity: 0.32,
+      });
+      const glowMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffd76a,
+        transparent: true,
+        opacity: 0.58,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.12, 56), coinMaterial);
+      coin.position.y = 0.78;
+      const faceRing = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.024, 10, 34), markMaterial);
+      faceRing.rotation.x = Math.PI / 2;
+      faceRing.position.y = 0.846;
+      const centerDot = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.018, 24), markMaterial);
+      centerDot.position.y = 0.858;
+      const halo = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.045, 12, 48), glowMaterial);
+      halo.rotation.x = Math.PI / 2;
+      halo.position.y = 0.1;
+      const label = createLabelSprite('+0.01 SIM', '#ffd76a');
+      label.scale.set(1.58, 0.5, 1);
+      label.position.y = 1.72;
+      [coin, faceRing, centerDot].forEach((mesh) => {
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+      });
+      group.add(halo, label);
+      group.userData = {
+        type: 'sim-coin',
+        targetX: pickup.x,
+        targetY: pickup.y || 0,
+        targetZ: pickup.z,
+        rotation: pickup.rotation || 0,
+        coin,
+        halo,
+        label,
+        coinMaterial,
+        glowMaterial,
+        ring: halo,
+      };
+      return group;
+    }
+
     const body = new THREE.Mesh(
       new THREE.BoxGeometry(0.9, 0.28, 0.9),
       new THREE.MeshStandardMaterial({
@@ -2287,6 +2393,7 @@
     });
     group.add(ring);
     group.userData = {
+      type: pickup.type || 'medkit',
       targetX: pickup.x,
       targetY: pickup.y || 0,
       targetZ: pickup.z,
@@ -3182,10 +3289,23 @@
       mesh.userData.eyeMat.emissiveIntensity = (mesh.userData.type === 'spitter' ? 2.2 : 1.35) + Math.sin(mesh.userData.stridePhase * 0.8) * 0.52 + flash * 1.05;
     }
 
+    const nowMs = performance.now();
     for (const mesh of state.world.pickups.values()) {
       mesh.position.x = lerp(mesh.position.x, mesh.userData.targetX, blend);
-      mesh.position.y = (mesh.userData.targetY || 0) + 0.58 + Math.sin(performance.now() * 0.003 + mesh.userData.targetX) * 0.08;
       mesh.position.z = lerp(mesh.position.z, mesh.userData.targetZ, blend);
+      if (mesh.userData.type === 'sim-coin') {
+        const pulse = Math.sin(nowMs * 0.006 + mesh.userData.targetX);
+        mesh.position.y = (mesh.userData.targetY || 0) + 0.82 + pulse * 0.16;
+        mesh.rotation.y += dt * 3.8;
+        mesh.userData.coin.rotation.y += dt * 6.2;
+        mesh.userData.halo.rotation.z += dt * 2.1;
+        mesh.userData.halo.scale.setScalar(1 + Math.max(0, pulse) * 0.12);
+        mesh.userData.label.position.y = 1.68 + Math.max(0, pulse) * 0.14;
+        mesh.userData.coinMaterial.emissiveIntensity = 0.36 + Math.max(0, pulse) * 0.42;
+        mesh.userData.glowMaterial.opacity = 0.46 + Math.max(0, pulse) * 0.28;
+        continue;
+      }
+      mesh.position.y = (mesh.userData.targetY || 0) + 0.58 + Math.sin(nowMs * 0.003 + mesh.userData.targetX) * 0.08;
       mesh.rotation.y += dt * 1.1;
       mesh.userData.ring.rotation.z += dt * 0.6;
     }
@@ -3459,9 +3579,14 @@
         return `Relay ${event.active}/${event.total} is online.`;
       case 'enemy-down':
         return `${event.playerName} dropped a ${event.enemyType}.`;
+      case 'sim-coin-drop':
+        return `${event.playerName} shook loose a SIM coin.`;
       case 'nest-destroyed':
         return `${event.playerName} destroyed a plague nest (${event.destroyed}/${event.total}).`;
       case 'pickup':
+        if (event.pickupType === 'sim-coin') {
+          return `${event.playerName} banked a SIM coin.`;
+        }
         return `${event.playerName} grabbed a med kit.`;
       case 'player-down':
         return `${event.playerName} went down.`;
@@ -3505,8 +3630,9 @@
       } else if (event.type === 'relay-online') {
         showToast(`Relay ${event.active}/${event.total} online.`);
         playSound('relay');
-      } else if (event.type === 'enemy-down' && event.playerId === state.yourPlayerId) {
-        recordSimEnemyKill(1);
+      } else if (event.type === 'sim-coin-drop' && event.playerId === state.yourPlayerId) {
+        showToast('SIM coin dropped. Pick it up to bank +0.01 SIM.');
+        playSound('coin-drop');
       } else if (event.type === 'nest-destroyed') {
         showToast(`Nest destroyed ${event.destroyed}/${event.total}.`);
         playSound('objective');
@@ -3521,7 +3647,12 @@
       } else if (event.type === 'wave-start') {
         playSound('wave');
       } else if (event.type === 'pickup' && event.playerId === state.yourPlayerId) {
-        playSound('pickup');
+        if (event.pickupType === 'sim-coin') {
+          playSound('coin');
+          claimSimCoinReward(event);
+        } else {
+          playSound('pickup');
+        }
       } else if (event.type === 'game-over') {
         showToast(`Run over on wave ${event.wave}.`);
         playSound('down');
