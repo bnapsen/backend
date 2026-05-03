@@ -84,11 +84,16 @@
     if (explicit) {
       return sanitizeServerUrl(explicit);
     }
+    return canonicalServerUrl();
+  }
+
+  function isLocalPageHost() {
     const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'ws://127.0.0.1:8081';
-    }
-    return PROD_SERVER_URL;
+    return host === 'localhost' || host === '127.0.0.1';
+  }
+
+  function canonicalServerUrl() {
+    return isLocalPageHost() ? 'ws://127.0.0.1:8081' : PROD_SERVER_URL;
   }
 
   function sanitizeServerUrl(value) {
@@ -103,6 +108,14 @@
       return trimmed.replace(/^http/i, 'ws');
     }
     return `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${trimmed}`;
+  }
+
+  function productionSafeServerUrl(value) {
+    const requested = sanitizeServerUrl(value || canonicalServerUrl());
+    if (query.get('server') || isLocalPageHost()) {
+      return requested;
+    }
+    return canonicalServerUrl();
   }
 
   function getPlayerName() {
@@ -768,7 +781,7 @@
     renderControls();
   }
 
-  async function connectOnline(mode) {
+  async function connectOnline(mode, options = {}) {
     if (!signedInForSim(mode === 'host' ? 'host SIM blackjack' : 'join SIM blackjack')) {
       return;
     }
@@ -795,7 +808,8 @@
     state.snapshot = null;
     state.playerId = '';
     state.roomCode = roomCode;
-    state.serverUrl = sanitizeServerUrl(ui.serverUrlInput.value);
+    state.serverUrl = productionSafeServerUrl(ui.serverUrlInput.value);
+    ui.serverUrlInput.value = state.serverUrl;
     if (!state.panels.setupHidden) {
       state.panels.setupHidden = true;
     }
@@ -856,8 +870,25 @@
       }
 
       if (payload.type === 'error') {
-        setStatusMessage(payload.message || 'That blackjack action could not be completed.');
-        showToast(payload.message || 'That blackjack action could not be completed.');
+        const message = payload.message || 'That blackjack action could not be completed.';
+        if (
+          !options.retriedCanonicalServer
+          && /account sign-in is not configured/i.test(message)
+          && state.serverUrl !== canonicalServerUrl()
+        ) {
+          state.serverUrl = canonicalServerUrl();
+          ui.serverUrlInput.value = state.serverUrl;
+          persistSettings();
+          disconnectSocket();
+          setStatusMessage('Switching blackjack to the current SIM server and trying again...');
+          showToast('Switching to the current SIM server...');
+          connectOnline(mode, { retriedCanonicalServer: true }).catch(() => {
+            showToast('Could not reconnect to the current SIM blackjack server.');
+          });
+          return;
+        }
+        setStatusMessage(message);
+        showToast(message);
         render();
       }
     };
@@ -923,7 +954,7 @@
 
   function hydrateSettings() {
     ui.nameInput.value = localStorage.getItem(STORAGE_KEYS.name) || '';
-    state.serverUrl = sanitizeServerUrl(localStorage.getItem(STORAGE_KEYS.serverUrl) || defaultServerUrl());
+    state.serverUrl = productionSafeServerUrl(localStorage.getItem(STORAGE_KEYS.serverUrl) || defaultServerUrl());
     ui.serverUrlInput.value = state.serverUrl;
     state.panels.setupHidden = localStorage.getItem(STORAGE_KEYS.setupHidden) === '1';
     state.panels.infoHidden = localStorage.getItem(STORAGE_KEYS.infoHidden) === '1';
