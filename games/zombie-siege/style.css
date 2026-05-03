@@ -21,6 +21,10 @@ body {
   min-height: 100%;
 }
 
+html {
+  background: #040609;
+}
+
 body {
   margin: 0;
   color: var(--text);
@@ -615,5 +619,326 @@ button.compact.muted {
   .brand-block {
     order: -1;
     width: 100%;
+  }
+}
+
+body.zombie-focus {
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 184, 102, 0.08), transparent 34%),
+    linear-gradient(180deg, #070a0f, #040609 62%, #020305);
+}
+
+body.zombie-focus::before {
+  opacity: 0.08;
+}
+
+.zombie-focus .page-shell {
+  width: 100%;
+  height: 100vh;
+  min-height: 100vh;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.zombie-focus .topbar {
+  position: static;
+  top: auto;
+  min-height: 0;
+  padding: 7px 10px;
+  border-radius: 14px;
+  box-shadow: none;
+  background: rgba(10, 14, 18, 0.9);
+}
+
+.zombie-focus .back-link {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.zombie-focus .brand-block strong {
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+}
+
+.zombie-focus .brand-block .eyebrow,
+.zombie-focus .hero > .eyebrow,
+.zombie-focus .hero .lede,
+.zombie-focus .step-strip,
+.zombie-focus .setup-column > .panel:not(.hero),
+.zombie-focus .invite-panel,
+.zombie-focus .advanced-panel,
+.zombie-focus .sidebar {
+  display: none;
+}
+
+.zombie-focus .topbar-status {
+  gap: 6px;
+}
+
+.zombie-focus .status-pill,
+.zombie-focus button.compact {
+  padding: 0.42rem 0.62rem;
+  border-radius: 10px;
+  font-size: 0.7rem;
+}
+
+.zombie-focus .layout {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: stretch;
+}
+
+.zombie-focus.zombie-in-run .layout {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.zombie-focus.zombie-in-run .setup-column {
+  display: none;
+}
+
+.zombie-focus .setup-column,
+.zombie-focus .arena-column {
+  height: 100%;
+  min-height: 0;
+}
+
+.zombie-focus .hero {
+  min-height: 0;
+  padding: 7px;
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) auto minmax(180px, 1fr);
+  align-items: end;
+  gap: 8px;
+  box-shadow: none;
+  background: rgba(10, 14, 18, 0.86);
+}
+
+.zombie-focus .hero h1 {
+  display: none;
+}
+
+.zombie-focus .field-grid {
+  grid-template-columns: minmax(120px, 170px) minmax(120px, 170px);
+  gap: 7px;
+}
+
+.zombie-focus label {
+  gap: 3px;
+  font-size: 0.72rem;
+}
+
+.zombie-focus input,
+.zombie-focus button {
+  min-height: 34px;
+  padding: 0.44rem 0.62rem;
+  border-radius: 10px;
+}
+
+.zombie-focus .hero-actions {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.zombie-focus .status-text {
+  min-width: 0;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zombie-focus .panel {
+  border-radius: 16px;
+  box-shadow: none;
+}
+
+.zombie-focus .arena-panel {
+  height: 100%;
+  min-height: 0;
+  padding: 7px;
+  display: flex;
+  flex-direction: column;
+}
+
+.zombie-focus .arena-header {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.zombie-focus .hud-card,
+.zombie-focus .feed-card,
+.zombie-focus .feed-mini {
+  padding: 6px 8px;
+  border-radius: 12px;
+}
+
+.zombie-focus .label {
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+}
+
+.zombie-focus .hud-value {
+  margin: 1px 0 0;
+  font-size: clamp(0.82rem, 1.1vw, 0.98rem);
+  line-height: 1.05;
+}
+
+.zombie-focus .combat-strip {
+  grid-template-columns: minmax(0, 1.3fr) minmax(132px, 0.45fr) minmax(150px, 0.65fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.zombie-focus .feed-text,
+.zombie-focus .mini-copy {
+  margin-top: 2px;
+  font-size: 0.82rem;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zombie-focus .arena-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  aspect-ratio: auto;
+  margin-top: 6px;
+  border-radius: 16px;
+  box-shadow: none;
+}
+
+.zombie-focus #gameCanvas {
+  width: 100%;
+  height: 100%;
+}
+
+.zombie-focus .arena-overlay {
+  padding: 12px;
+}
+
+.zombie-focus .overlay-card {
+  width: min(540px, calc(100% - 12px));
+  padding: 16px;
+  border-radius: 16px;
+}
+
+.zombie-focus .overlay-title {
+  font-size: clamp(1.55rem, 3vw, 2.25rem);
+}
+
+.zombie-focus .overlay-copy,
+.zombie-focus .overlay-meta {
+  margin: 8px 0;
+  line-height: 1.35;
+}
+
+.zombie-focus .arena-footer {
+  margin-top: 6px;
+  gap: 8px;
+}
+
+.zombie-focus .arena-footer .label {
+  display: none;
+}
+
+.zombie-focus .footer-copy {
+  max-width: 100%;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zombie-focus .arena-actions {
+  flex-wrap: nowrap;
+}
+
+.zombie-focus .toast {
+  right: 10px;
+  bottom: 10px;
+}
+
+@media (max-width: 980px) {
+  body.zombie-focus {
+    height: auto;
+    min-height: 100dvh;
+    overflow: auto;
+  }
+
+  .zombie-focus .page-shell {
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .zombie-focus .layout,
+  .zombie-focus.zombie-in-run .layout {
+    height: auto;
+    grid-template-rows: auto;
+  }
+
+  .zombie-focus.zombie-in-run .setup-column {
+    display: block;
+  }
+
+  .zombie-focus .topbar,
+  .zombie-focus .hero,
+  .zombie-focus .arena-footer {
+    align-items: stretch;
+  }
+
+  .zombie-focus .topbar,
+  .zombie-focus .hero {
+    grid-template-columns: 1fr;
+    flex-wrap: wrap;
+  }
+
+  .zombie-focus .hero {
+    display: grid;
+  }
+
+  .zombie-focus .field-grid,
+  .zombie-focus .hero-actions,
+  .zombie-focus .arena-header {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .zombie-focus .combat-strip {
+    display: none;
+  }
+
+  .zombie-focus .arena-stage {
+    height: min(68dvh, 620px);
+    min-height: 420px;
+  }
+
+  .zombie-focus .footer-copy {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 560px) {
+  .zombie-focus .field-grid,
+  .zombie-focus .hero-actions,
+  .zombie-focus .arena-header {
+    grid-template-columns: 1fr;
   }
 }

@@ -3585,7 +3585,7 @@
 
     if (!game) {
       ui.overlayTitle.textContent = 'Zombie Siege 3D Live';
-      ui.overlayCopy.textContent = 'Host a room, join a friend, or start solo. Turn with Q/E or Left/Right, aim with the mouse, climb the upper decks, jump with Space, and click to fire.';
+      ui.overlayCopy.textContent = 'Host, join, or start solo from the compact bar above. Turn with Q/E or Left/Right, aim with the mouse, climb the upper decks, jump with Space, and click to fire.';
       ui.overlayMeta.textContent = 'Controls: WASD move, Q/E or Left/Right turns, move the mouse to aim, Left Click fires, Shift throws a grenade, Ctrl sprints, Space jumps, 1 2 3 swaps weapons.';
       ui.startBtn.textContent = 'Start solo instantly';
       return;
@@ -3659,7 +3659,9 @@
 
     ui.controlHint.textContent = 'WASD moves. Q/E or Left/Right turns. Move the mouse to aim. Left Click fires. Shift throws a grenade. Ctrl sprints. Space jumps. Press 1, 2, or 3 for rifle, SMG, and shotgun.';
     ui.restartBtn.disabled = !game;
-    ui.stage.classList.toggle('live', Boolean(game && !game.gameOver));
+    const runIsLive = Boolean(game && !game.gameOver);
+    ui.stage.classList.toggle('live', runIsLive);
+    document.body.classList.toggle('zombie-in-run', runIsLive);
     updateInviteUi();
     renderPlayersPanel(game);
     renderFeed(game);
