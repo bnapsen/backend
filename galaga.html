@@ -15,7 +15,7 @@
   <meta name="twitter:title" content="Galaga | AP Advantage Player" />
   <meta name="twitter:description" content="Play endless Galaga in the browser on AP Advantage Player." />
   <meta name="twitter:image" content="https://bnapsen.com/galaga-cover.svg" />
-  <link rel="stylesheet" href="public/galaga.css?v=20260503d">
+  <link rel="stylesheet" href="public/galaga.css?v=20260503e">
 </head>
 <body class="galaga-focus">
   <main class="galaga-shell" aria-label="Galaga arcade game">
@@ -46,11 +46,11 @@
 
     <section class="playfield" aria-label="Game screen">
       <div class="screen-frame">
-        <canvas id="game-canvas" width="480" height="640" aria-label="Galaga game screen"></canvas>
+        <canvas id="game-canvas" width="540" height="720" aria-label="Galaga game screen"></canvas>
         <div class="screen-overlay" id="screen-overlay">
           <p class="overlay-kicker" id="overlay-kicker">Ready</p>
           <h2 id="overlay-title">Press Start</h2>
-          <p id="overlay-copy">Clear formations forever. Ten kills can bank a penny of SIM; enemy bullets cost one.</p>
+          <p id="overlay-copy">Clear formations forever. Every tenth kill drops a SIM coin; catch it near the bottom to bank it.</p>
         </div>
       </div>
     </section>
@@ -67,7 +67,7 @@
     </section>
   </main>
 
-  <script src="public/galaga.js?v=20260503d" type="module"></script>
+  <script src="public/galaga.js?v=20260503e" type="module"></script>
   <script src="nova-auth.js?v=20260503c" defer></script>
 </body>
 </html>

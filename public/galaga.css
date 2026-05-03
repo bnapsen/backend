@@ -39,17 +39,17 @@ a {
   height: 100svh;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: 8px;
-  padding: 8px;
+  gap: 5px;
+  padding: 5px;
 }
 
 .galaga-hud {
-  min-height: 58px;
+  min-height: 50px;
   display: grid;
   grid-template-columns: auto repeat(4, minmax(74px, 1fr)) auto;
   align-items: stretch;
-  gap: 6px;
-  padding: 6px;
+  gap: 5px;
+  padding: 5px;
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(5, 9, 20, 0.86), rgba(3, 5, 12, 0.62));
 }
@@ -75,8 +75,8 @@ a {
 }
 
 .hud-button {
-  min-height: 44px;
-  padding: 0 14px;
+  min-height: 40px;
+  padding: 0 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -107,7 +107,7 @@ a {
   display: grid;
   align-content: center;
   gap: 1px;
-  padding: 6px 10px;
+  padding: 5px 9px;
   border-left: 1px solid rgba(125, 249, 255, 0.11);
   background: rgba(255, 255, 255, 0.02);
 }
@@ -144,7 +144,7 @@ a {
 .screen-frame {
   position: relative;
   width: min(100%, calc((100svh - 132px) * 0.75));
-  max-width: min(100%, 720px);
+  max-width: min(100%, 820px);
   height: min(calc(100svh - 132px), calc(100vw * 1.333333));
   max-height: calc(100svh - 132px);
   display: grid;
@@ -197,7 +197,7 @@ a {
 }
 
 .status-line {
-  min-height: 28px;
+  min-height: 22px;
   display: flex;
   justify-content: center;
   gap: 12px;

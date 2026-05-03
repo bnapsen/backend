@@ -18,6 +18,11 @@ const startButton = document.getElementById("start-button");
 const pauseButton = document.getElementById("pause-button");
 const restartButton = document.getElementById("restart-button");
 const KILLS_PER_SIM_PENNY = 10;
+const SIM_COIN_VALUE_CENTS = 1;
+const SIM_COIN_COLLECT_RADIUS = 42;
+const SIM_COIN_DROP_SPEED = 310;
+const SIM_COIN_LAND_PADDING = 58;
+const SIM_COIN_LANDED_TTL = 18;
 
 const state = {
   width: canvas.width,
@@ -44,8 +49,14 @@ const state = {
   enemies: [],
   bullets: [],
   enemyBullets: [],
+  simCoins: [],
   particles: [],
   stars: [],
+  coinSerial: 0,
+  audio: {
+    context: null,
+    lastFireSoundAt: 0,
+  },
   input: {
     left: false,
     right: false,
@@ -62,6 +73,10 @@ const state = {
   lastTime: 0,
 };
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function createRunId() {
   if (window.crypto && typeof window.crypto.randomUUID === "function") {
     return window.crypto.randomUUID();
@@ -69,19 +84,109 @@ function createRunId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function recordSimEnemyKill(killCount = 1, retries = 4) {
+function ensureAudioContext() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) {
+    return null;
+  }
+  if (!state.audio.context) {
+    state.audio.context = new AudioContext();
+  }
+  if (state.audio.context.state === "suspended") {
+    state.audio.context.resume().catch(() => {});
+  }
+  return state.audio.context;
+}
+
+function playTone({
+  frequency = 440,
+  slideTo = 0,
+  type = "sine",
+  gain = 0.04,
+  duration = 0.08,
+  delay = 0,
+} = {}) {
+  const audio = ensureAudioContext();
+  if (!audio) {
+    return;
+  }
+  const start = audio.currentTime + delay;
+  const oscillator = audio.createOscillator();
+  const volume = audio.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, start);
+  if (slideTo > 0) {
+    oscillator.frequency.exponentialRampToValueAtTime(slideTo, start + duration);
+  }
+  volume.gain.setValueAtTime(0.0001, start);
+  volume.gain.exponentialRampToValueAtTime(gain, start + 0.012);
+  volume.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  oscillator.connect(volume);
+  volume.connect(audio.destination);
+  oscillator.start(start);
+  oscillator.stop(start + duration + 0.03);
+}
+
+function playLaserSound() {
+  if (state.time - state.audio.lastFireSoundAt < 0.06) {
+    return;
+  }
+  state.audio.lastFireSoundAt = state.time;
+  playTone({ frequency: 840, slideTo: 1320, type: "square", gain: 0.025, duration: 0.055 });
+}
+
+function playExplosionSound() {
+  playTone({ frequency: 140, slideTo: 55, type: "sawtooth", gain: 0.045, duration: 0.13 });
+  playTone({ frequency: 260, slideTo: 90, type: "triangle", gain: 0.028, duration: 0.11, delay: 0.018 });
+}
+
+function playCoinDropSound() {
+  playTone({ frequency: 720, slideTo: 540, type: "triangle", gain: 0.036, duration: 0.12 });
+  playTone({ frequency: 1120, slideTo: 880, type: "sine", gain: 0.022, duration: 0.1, delay: 0.055 });
+}
+
+function playCoinPickupSound() {
+  playTone({ frequency: 660, slideTo: 980, type: "triangle", gain: 0.048, duration: 0.11 });
+  playTone({ frequency: 990, slideTo: 1480, type: "sine", gain: 0.036, duration: 0.12, delay: 0.07 });
+}
+
+function playHitSound() {
+  playTone({ frequency: 180, slideTo: 70, type: "sawtooth", gain: 0.07, duration: 0.18 });
+}
+
+function playWaveSound() {
+  playTone({ frequency: 330, slideTo: 495, type: "triangle", gain: 0.032, duration: 0.12 });
+  playTone({ frequency: 495, slideTo: 740, type: "triangle", gain: 0.034, duration: 0.14, delay: 0.09 });
+}
+
+function recordSimCoinPickup(coin, retries = 4) {
   if (!window.NovaAuth || typeof window.NovaAuth.recordEnemyKillReward !== "function") {
     if (retries > 0) {
-      window.setTimeout(() => recordSimEnemyKill(killCount, retries - 1), 250);
+      window.setTimeout(() => recordSimCoinPickup(coin, retries - 1), 250);
+    } else {
+      setStatus("Coin caught locally", "Sign in before collecting to bank SIM on your account.", 2.8);
     }
     return;
   }
-  window.NovaAuth.recordEnemyKillReward({
+  if (typeof window.NovaAuth.isSignedIn === "function" && !window.NovaAuth.isSignedIn()) {
+    setStatus("Coin caught locally", "Sign in before collecting to bank SIM on your account.", 2.8);
+    return;
+  }
+  Promise.resolve(window.NovaAuth.recordEnemyKillReward({
     game: "galaga",
-    killCount,
+    killCount: KILLS_PER_SIM_PENNY,
     score: state.score,
     runId: state.runId,
-  }).catch(() => {});
+  }))
+    .then(() => {
+      if (typeof window.NovaAuth.flushEnemyKillRewards === "function") {
+        return window.NovaAuth.flushEnemyKillRewards();
+      }
+      return null;
+    })
+    .catch(() => {
+      setStatus("Coin pickup queued", "Your SIM wallet will retry the pickup when it syncs.", 2.8);
+    });
 }
 
 function recordSimBulletHit(retries = 4) {
@@ -250,9 +355,10 @@ function createFormation(stage) {
   state.diveTimer = Math.max(0.28, 1.55 - Math.min(stage, 20) * 0.055);
   state.waveIntro = 1.4;
   resetPlayer();
+  playWaveSound();
   setStatus(
     `Wave ${state.stage} live`,
-    `${KILLS_PER_SIM_PENNY} kills bank 0.01 SIM. Enemy bullets cost 0.01 SIM, but the waves never stop.`,
+    `Every ${KILLS_PER_SIM_PENNY}th kill drops a SIM coin. Catch it in the lower lane to bank 0.01 SIM.`,
     3.4,
   );
 }
@@ -266,9 +372,12 @@ function startRun() {
   state.hits = 0;
   state.killsThisRun = 0;
   state.runId = createRunId();
+  state.simCoins = [];
+  state.coinSerial = 0;
+  ensureAudioContext();
   createFormation(state.stage);
   updateHud();
-  setOverlay("Wave 01", "Endless formation", "Every 10 kills can bank 0.01 SIM. Enemy bullets cost 0.01 SIM.", false);
+  setOverlay("Wave 01", "Endless formation", "Every 10th kill drops a SIM coin. Move into it near the bottom to bank 0.01 SIM.", false);
 }
 
 function restartRun() {
@@ -291,6 +400,7 @@ function togglePause() {
 }
 
 function spawnPlayerBullet() {
+  playLaserSound();
   state.bullets.push({
     x: state.player.x,
     y: state.player.y - 14,
@@ -308,6 +418,27 @@ function spawnEnemyBullet(enemy) {
     height: 15,
     speed: 220 + Math.min(state.stage * 22, 320),
   });
+}
+
+function spawnSimCoin(enemy) {
+  const targetY = state.height - SIM_COIN_LAND_PADDING;
+  const startX = clamp(enemy.x, 32, state.width - 32);
+  state.simCoins.push({
+    id: ++state.coinSerial,
+    x: startX,
+    y: clamp(enemy.y, 38, targetY),
+    vx: clamp((state.player.x - enemy.x) * 0.045, -38, 38),
+    vy: SIM_COIN_DROP_SPEED + Math.min(state.stage * 16, 190),
+    targetY,
+    radius: 13,
+    collectRadius: SIM_COIN_COLLECT_RADIUS,
+    landed: false,
+    ttl: SIM_COIN_LANDED_TTL,
+    phase: Math.random() * Math.PI * 2,
+    valueCents: SIM_COIN_VALUE_CENTS,
+  });
+  playCoinDropSound();
+  setStatus("SIM coin dropped", "Get under it. It will fall to the lower lane and wait briefly.", 2.6);
 }
 
 function spawnBurst(x, y, color, amount = 10) {
@@ -357,6 +488,7 @@ function handlePlayerHit(reason = "collision") {
   }
 
   state.hits += 1;
+  playHitSound();
   spawnBurst(state.player.x, state.player.y, "#ff8c3a", 16);
   if (state.score > state.best) {
     state.best = state.score;
@@ -387,12 +519,12 @@ function killEnemy(enemy, bonusDive = false) {
     saveBestScore();
   }
   const colors = colorForType(enemy.type);
+  playExplosionSound();
   spawnBurst(enemy.x, enemy.y, colors.fill, 12);
   state.killsThisRun += 1;
   updateHud();
-  recordSimEnemyKill(1);
   if (state.killsThisRun % KILLS_PER_SIM_PENNY === 0) {
-    setStatus("+0.01 SIM kill batch", `${state.killsThisRun} kills logged this run. Keep the streak alive.`, 2.4);
+    spawnSimCoin(enemy);
   }
 }
 
@@ -585,6 +717,50 @@ function updateCollisions() {
   }
 }
 
+function coinOverlapsPlayer(coin) {
+  return (
+    Math.abs(coin.x - state.player.x) <= state.player.width / 2 + coin.collectRadius &&
+    Math.abs(coin.y - state.player.y) <= state.player.height / 2 + coin.collectRadius
+  );
+}
+
+function collectSimCoin(coin) {
+  coin.collected = true;
+  state.score += 25;
+  spawnBurst(coin.x, coin.y, "#ffd166", 14);
+  playCoinPickupSound();
+  updateHud();
+  setStatus("+0.01 SIM coin caught", `Coin ${coin.id} banked from ${state.killsThisRun} total kills this run.`, 2.8);
+  recordSimCoinPickup(coin);
+}
+
+function updateSimCoins(deltaTime) {
+  for (const coin of state.simCoins) {
+    coin.phase += deltaTime * 6;
+    if (!coin.landed) {
+      coin.x = clamp(coin.x + coin.vx * deltaTime, 28, state.width - 28);
+      coin.y += coin.vy * deltaTime;
+      coin.vx *= 0.986;
+      if (coin.y >= coin.targetY) {
+        coin.y = coin.targetY;
+        coin.vx = 0;
+        coin.vy = 0;
+        coin.landed = true;
+        coin.ttl = SIM_COIN_LANDED_TTL;
+        spawnBurst(coin.x, coin.y, "#ffd166", 8);
+      }
+    } else {
+      coin.ttl -= deltaTime;
+    }
+
+    if (coinOverlapsPlayer(coin)) {
+      collectSimCoin(coin);
+    }
+  }
+
+  state.simCoins = state.simCoins.filter((coin) => !coin.collected && coin.ttl > 0);
+}
+
 function updateParticles(deltaTime) {
   for (const particle of state.particles) {
     particle.x += particle.vx * deltaTime;
@@ -628,6 +804,7 @@ function update(deltaTime) {
   updateBullets(deltaTime);
   updateEnemyFire(deltaTime);
   updateCollisions();
+  updateSimCoins(deltaTime);
   updateParticles(deltaTime);
 }
 
@@ -736,6 +913,69 @@ function drawBullets() {
   }
 }
 
+function drawSimCoin(coin) {
+  const pulse = Math.sin(state.time * 7 + coin.phase);
+  const displayY = coin.y + (coin.landed ? pulse * 3 : 0);
+
+  ctx.save();
+  if (!coin.landed) {
+    ctx.strokeStyle = "rgba(255, 209, 102, 0.22)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([7, 11]);
+    ctx.beginPath();
+    ctx.moveTo(coin.x, coin.y + 15);
+    ctx.lineTo(coin.x, coin.targetY + 12);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = "rgba(255, 209, 102, 0.12)";
+    ctx.beginPath();
+    ctx.ellipse(coin.x, coin.targetY + 14, 34, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.translate(coin.x, displayY);
+  ctx.fillStyle = `rgba(255, 209, 102, ${coin.landed ? 0.14 : 0.1})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, coin.collectRadius + Math.max(0, pulse) * 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.shadowBlur = 22;
+  ctx.shadowColor = "#ffd166";
+  ctx.fillStyle = "rgba(255, 209, 102, 0.24)";
+  ctx.beginPath();
+  ctx.arc(0, 0, coin.radius + 11, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.scale(0.58 + Math.abs(Math.cos(state.time * 5 + coin.phase)) * 0.42, 1);
+  const gradient = ctx.createRadialGradient(-4, -5, 3, 0, 0, coin.radius);
+  gradient.addColorStop(0, "#fff3b0");
+  gradient.addColorStop(0.52, "#ffd166");
+  gradient.addColorStop(1, "#b86c16");
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(0, 0, coin.radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(255, 247, 190, 0.9)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, coin.radius - 4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = "#20130a";
+  ctx.font = "800 8px Trebuchet MS, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("SIM", 0, 1);
+  ctx.restore();
+}
+
+function drawSimCoins() {
+  for (const coin of state.simCoins) {
+    drawSimCoin(coin);
+  }
+}
+
 function drawParticles() {
   for (const particle of state.particles) {
     ctx.globalAlpha = Math.max(0, particle.life * 1.8);
@@ -780,6 +1020,7 @@ function render() {
   }
 
   drawBullets();
+  drawSimCoins();
   drawPlayer();
   drawParticles();
 }
@@ -928,9 +1169,9 @@ function init() {
   updateHud();
   setStatus(
     "Formation steady",
-    "This cabinet likes patience. Open the lane, then punish the dive path when it shows itself.",
+    "Every tenth enemy drops a SIM coin. Shoot clean, then move into the lower lane to catch it.",
   );
-  setOverlay("Ready", "Endless Galaga", "10 kills can earn 0.01 SIM. Enemy bullets cost 0.01 SIM. There is no final wave.", false);
+  setOverlay("Ready", "Endless Galaga", "Every tenth kill drops a SIM coin. Collect it near the bottom to bank 0.01 SIM.", false);
   bindKeyboard();
   bindPointerControls();
   bindUi();
