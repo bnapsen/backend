@@ -592,6 +592,13 @@
       owner.score += scoreGain;
       owner.combo += 1;
       applyLevelUps(state, owner, xpGain);
+      pushEvent(state, 'enemy_down', {
+        playerId: owner.id,
+        name: owner.name,
+        enemyType: enemy.type,
+        wave: state.wave,
+        scoreGain,
+      });
     }
     state.score += scoreGain;
     if (enemy.type === 'boss') {

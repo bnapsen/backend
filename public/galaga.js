@@ -27,6 +27,7 @@ const state = {
   stage: 1,
   lives: 3,
   best: loadBestScore(),
+  runId: createRunId(),
   player: {
     x: canvas.width / 2,
     y: canvas.height - 56,
@@ -55,6 +56,25 @@ const state = {
   time: 0,
   lastTime: 0,
 };
+
+function createRunId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function recordSimEnemyKill(killCount = 1) {
+  if (!window.NovaAuth || typeof window.NovaAuth.recordEnemyKillReward !== "function") {
+    return;
+  }
+  window.NovaAuth.recordEnemyKillReward({
+    game: "galaga",
+    killCount,
+    score: state.score,
+    runId: state.runId,
+  }).catch(() => {});
+}
 
 function loadBestScore() {
   try {
@@ -202,6 +222,7 @@ function startRun() {
   state.score = 0;
   state.stage = 1;
   state.lives = 3;
+  state.runId = createRunId();
   createFormation(state.stage);
   updateHud();
   setOverlay("Wave 01", "Formation live", "Break the front line before the dive angles start to stack.", false);
@@ -326,6 +347,7 @@ function killEnemy(enemy, bonusDive = false) {
   const colors = colorForType(enemy.type);
   spawnBurst(enemy.x, enemy.y, colors.fill, 12);
   updateHud();
+  recordSimEnemyKill(1);
 }
 
 function updateStars(deltaTime) {

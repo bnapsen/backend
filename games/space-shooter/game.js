@@ -152,6 +152,18 @@
     return ui.nameInput.value.trim().slice(0, 18) || 'Pilot';
   }
 
+  function recordSimEnemyKill(killCount = 1) {
+    if (!window.NovaAuth || typeof window.NovaAuth.recordEnemyKillReward !== 'function') {
+      return;
+    }
+    window.NovaAuth.recordEnemyKillReward({
+      game: 'space-shooter',
+      killCount,
+      score: state.game?.score || 0,
+      runId: state.roomCode || state.yourPlayerId || '',
+    }).catch(() => {});
+  }
+
   function escapeHtml(value) {
     return String(value)
       .replace(/&/g, '&amp;')
@@ -694,6 +706,8 @@
       } else if (event.type === 'level_up') {
         playLevelUpSound();
         showToast(`${event.name} reached level ${event.level}`);
+      } else if (event.type === 'enemy_down' && event.playerId === state.yourPlayerId) {
+        recordSimEnemyKill(1);
       } else if (event.type === 'boss_spawn') {
         playBossAlertSound();
         showToast(`Boss wave ${event.wave} incoming`);

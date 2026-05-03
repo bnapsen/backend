@@ -59,6 +59,22 @@ const COLORS = ['white', 'black'];
 const TICK_MS = 50;
 const BACKGAMMON_MAX_WAGER_CENTS = 100000;
 const BACKGAMMON_WAGER_SOURCE = 'backgammon';
+const SIM_KILL_REWARD_CENTS = Math.max(1, Math.min(25, Math.round(Number(process.env.SIM_KILL_REWARD_CENTS || 1))));
+const SIM_KILL_REWARD_DAILY_CAP_CENTS = Math.max(
+  SIM_KILL_REWARD_CENTS,
+  Math.round(Number(process.env.SIM_KILL_REWARD_DAILY_CAP_CENTS || 1000)),
+);
+const SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS = Math.max(
+  SIM_KILL_REWARD_CENTS,
+  Math.round(Number(process.env.SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS || 500)),
+);
+const SIM_KILL_REWARD_MAX_KILLS_PER_REQUEST = 25;
+const SIM_KILL_REWARD_TIME_ZONE = String(process.env.SIM_KILL_REWARD_TIME_ZONE || 'America/Los_Angeles').trim();
+const SIM_KILL_REWARD_GAMES = Object.freeze({
+  'zombie-siege': { label: 'Zombie Siege' },
+  galaga: { label: 'Galaga' },
+  'space-shooter': { label: 'Space Shooter' },
+});
 const ALLOWED_HTTP_ORIGIN_HOSTS = new Set([
   'bnapsen.com',
   'www.bnapsen.com',
@@ -421,6 +437,86 @@ function simWalletErrorStatus(error) {
   return 500;
 }
 
+function normalizeSimAdjustmentCents(body = {}) {
+  const amountCents = Object.prototype.hasOwnProperty.call(body, 'amountCents')
+    ? Number(body.amountCents)
+    : Number(body.amount) * 100;
+  return Number.isFinite(amountCents) ? Math.round(amountCents) : 0;
+}
+
+function canClientCreditSim(body = {}, amountCents = normalizeSimAdjustmentCents(body)) {
+  if (amountCents <= 0) {
+    return true;
+  }
+  const source = String(body.source || '').trim();
+  const action = String(body.action || '').trim();
+  if (source === 'backgammon-solo' && action === 'wager-payout') {
+    return amountCents > 0 && amountCents <= BACKGAMMON_MAX_WAGER_CENTS * 2;
+  }
+  if (source === 'backgammon-solo' && action === 'stake-refund') {
+    return amountCents > 0 && amountCents <= BACKGAMMON_MAX_WAGER_CENTS;
+  }
+  return false;
+}
+
+function simRewardDayKey(date = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: SIM_KILL_REWARD_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date).reduce((carry, part) => {
+      carry[part.type] = part.value;
+      return carry;
+    }, {});
+    if (parts.year && parts.month && parts.day) {
+      return `${parts.year}-${parts.month}-${parts.day}`;
+    }
+  } catch {
+    // Fall back to UTC if the configured time zone is unavailable.
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeKillRewardState(source, dayKey = simRewardDayKey()) {
+  const current = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+  if (String(current.dayKey || '') !== dayKey) {
+    return {
+      dayKey,
+      totalRewardCents: 0,
+      games: {},
+    };
+  }
+  const games = current.games && typeof current.games === 'object' && !Array.isArray(current.games)
+    ? current.games
+    : {};
+  const nextGames = {};
+  for (const [game, entry] of Object.entries(games)) {
+    nextGames[String(game).slice(0, 60)] = {
+      kills: Math.max(0, Math.floor(Number(entry && entry.kills) || 0)),
+      rewardCents: Math.max(0, Math.round(Number(entry && entry.rewardCents) || 0)),
+    };
+  }
+  return {
+    dayKey,
+    totalRewardCents: Math.max(0, Math.round(Number(current.totalRewardCents) || 0)),
+    games: nextGames,
+  };
+}
+
+function normalizeKillRewardGame(rawGame) {
+  return String(rawGame || '').trim().toLowerCase().replace(/_/g, '-').slice(0, 60);
+}
+
+function normalizeKillRewardCount(rawCount) {
+  const count = Math.floor(Number(rawCount || 1));
+  if (!Number.isFinite(count) || count < 1) {
+    return 1;
+  }
+  return Math.min(SIM_KILL_REWARD_MAX_KILLS_PER_REQUEST, count);
+}
+
 async function handleSimWalletRequest(req, res) {
   if (!isAllowedHttpOrigin(req)) {
     sendJsonResponse(req, res, 403, {
@@ -501,6 +597,14 @@ async function handleSimWalletAdjustRequest(req, res) {
       });
       return;
     }
+    const amountCents = normalizeSimAdjustmentCents(body);
+    if (amountCents > 0 && !canClientCreditSim(body, amountCents)) {
+      sendJsonResponse(req, res, 403, {
+        ok: false,
+        error: 'SIM credits must come from the starter grant or a secure game reward.',
+      });
+      return;
+    }
     const wallet = await simWalletStore.adjustWallet(auth.user, {
       amount: body.amount,
       amountCents: body.amountCents,
@@ -521,6 +625,152 @@ async function handleSimWalletAdjustRequest(req, res) {
     sendJsonResponse(req, res, simWalletErrorStatus(error), {
       ok: false,
       error: error && error.message ? error.message : 'Unable to update SIM wallet.',
+    });
+  }
+}
+
+async function handleSimEnemyKillRewardRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return;
+  }
+
+  let body = {};
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Invalid JSON body.',
+    });
+    return;
+  }
+
+  const game = normalizeKillRewardGame(body.game);
+  const gameDef = SIM_KILL_REWARD_GAMES[game];
+  if (!gameDef) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'That game does not earn SIM enemy rewards.',
+    });
+    return;
+  }
+
+  const requestedKills = normalizeKillRewardCount(body.killCount);
+  const dayKey = simRewardDayKey();
+
+  try {
+    const tx = await simWalletStore.transactWallet(auth.user, async (wallet, context) => {
+      const rewardState = normalizeKillRewardState(wallet.killRewards, dayKey);
+      const gameState = rewardState.games[game] || { kills: 0, rewardCents: 0 };
+      const requestedRewardCents = requestedKills * SIM_KILL_REWARD_CENTS;
+      const dayRemainingCents = Math.max(0, SIM_KILL_REWARD_DAILY_CAP_CENTS - rewardState.totalRewardCents);
+      const gameRemainingCents = Math.max(0, SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS - gameState.rewardCents);
+      const awardCents = Math.max(0, Math.min(requestedRewardCents, dayRemainingCents, gameRemainingCents));
+      const creditedKills = Math.floor(awardCents / SIM_KILL_REWARD_CENTS);
+
+      if (awardCents <= 0 || creditedKills <= 0) {
+        return {
+          walletData: {
+            ...wallet,
+            killRewards: rewardState,
+          },
+          result: {
+            game,
+            gameLabel: gameDef.label,
+            killCount: requestedKills,
+            creditedKills: 0,
+            awardCents: 0,
+            award: 0,
+            capped: true,
+            dayKey,
+            rewardCentsPerKill: SIM_KILL_REWARD_CENTS,
+            dailyCapCents: SIM_KILL_REWARD_DAILY_CAP_CENTS,
+            gameDailyCapCents: SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS,
+            dayRemainingCents,
+            gameRemainingCents,
+          },
+        };
+      }
+
+      const nextWallet = context.applyAdjustment(wallet, {
+        amountCents: awardCents,
+        source: 'game-kill-reward',
+        action: 'enemy-kill-reward',
+        note: `${gameDef.label} enemy kill reward`,
+        metadata: {
+          game,
+          gameLabel: gameDef.label,
+          requestedKills,
+          creditedKills,
+          rewardCentsPerKill: SIM_KILL_REWARD_CENTS,
+          dayKey,
+          score: Math.max(0, Math.round(Number(body.score) || 0)),
+          runId: String(body.runId || '').slice(0, 80),
+        },
+      });
+
+      const nextRewardState = {
+        dayKey,
+        totalRewardCents: rewardState.totalRewardCents + awardCents,
+        games: {
+          ...rewardState.games,
+          [game]: {
+            kills: gameState.kills + creditedKills,
+            rewardCents: gameState.rewardCents + awardCents,
+          },
+        },
+      };
+      nextWallet.killRewards = nextRewardState;
+
+      return {
+        walletData: nextWallet,
+        result: {
+          game,
+          gameLabel: gameDef.label,
+          killCount: requestedKills,
+          creditedKills,
+          awardCents,
+          award: awardCents / 100,
+          capped: awardCents < requestedRewardCents,
+          dayKey,
+          rewardCentsPerKill: SIM_KILL_REWARD_CENTS,
+          dailyCapCents: SIM_KILL_REWARD_DAILY_CAP_CENTS,
+          gameDailyCapCents: SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS,
+          dayRemainingCents: Math.max(0, dayRemainingCents - awardCents),
+          gameRemainingCents: Math.max(0, gameRemainingCents - awardCents),
+        },
+      };
+    });
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      wallet: tx.wallet,
+      reward: tx.result,
+      store: {
+        enabled: simWalletStore.enabled,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, simWalletErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to award SIM.',
     });
   }
 }
@@ -6032,6 +6282,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/sim/wallet/adjust') {
     await handleSimWalletAdjustRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/sim/enemy-kill') {
+    await handleSimEnemyKillRewardRequest(req, res);
     return;
   }
 

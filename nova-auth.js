@@ -12,7 +12,12 @@
   const FLOATING_WALLET_MIN_WIDTH = 190;
   const FLOATING_WALLET_MAX_WIDTH = 420;
   const FLOATING_WALLET_MARGIN = 12;
+  const KILL_REWARD_FLUSH_MS = 2400;
+  const KILL_REWARD_FLUSH_COUNT = 10;
   const CLIENT_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const killRewardQueue = new Map();
+  let killRewardTimer = 0;
+  let killRewardFlushInFlight = false;
 
   if (window.location.hostname.toLowerCase() === `www.${CANONICAL_SITE_HOST}`) {
     window.location.replace(`https://${CANONICAL_SITE_HOST}${window.location.pathname}${window.location.search}${window.location.hash}`);
@@ -637,6 +642,137 @@
     broadcastWallet(wallet);
     requestWalletRefresh('wallet-adjusted');
     return state.simWallet;
+  }
+
+  function queuedKillRewardCount() {
+    let total = 0;
+    killRewardQueue.forEach((entry) => {
+      total += Math.max(0, Number(entry.killCount) || 0);
+    });
+    return total;
+  }
+
+  function dispatchSimReward(reward) {
+    if (!reward || !Number(reward.awardCents)) {
+      return;
+    }
+    try {
+      window.dispatchEvent(new CustomEvent('nova-sim-reward', {
+        detail: {
+          reward,
+          wallet: state.simWallet,
+        },
+      }));
+    } catch {
+      // Reward events are a nicety; the wallet balance is the source of truth.
+    }
+  }
+
+  async function flushEnemyKillRewards() {
+    if (killRewardFlushInFlight) {
+      return null;
+    }
+    if (killRewardTimer) {
+      window.clearTimeout(killRewardTimer);
+      killRewardTimer = 0;
+    }
+    if (!state.user || !killRewardQueue.size) {
+      killRewardQueue.clear();
+      return null;
+    }
+
+    const entries = [];
+    killRewardQueue.forEach((entry) => {
+      let remaining = Math.max(0, Math.floor(Number(entry.killCount) || 0));
+      while (remaining > 0) {
+        entries.push({
+          ...entry,
+          killCount: Math.min(25, remaining),
+        });
+        remaining -= 25;
+      }
+    });
+    killRewardQueue.clear();
+    killRewardFlushInFlight = true;
+    const rewards = [];
+
+    try {
+      for (const entry of entries) {
+        const payload = await simWalletRequest('/api/sim/enemy-kill', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(entry),
+        });
+        const wallet = applySimWallet(payload.wallet);
+        if (payload.reward) {
+          rewards.push(payload.reward);
+          dispatchSimReward(payload.reward);
+        }
+        emitChange();
+        broadcastWallet(wallet);
+      }
+      if (rewards.length) {
+        requestWalletRefresh('enemy-kill-reward');
+      }
+      return rewards;
+    } catch (error) {
+      for (const entry of entries) {
+        const current = killRewardQueue.get(entry.game) || { ...entry, killCount: 0 };
+        current.killCount += Math.max(0, Math.floor(Number(entry.killCount) || 0));
+        current.score = Math.max(Number(current.score) || 0, Number(entry.score) || 0);
+        killRewardQueue.set(entry.game, current);
+      }
+      window.clearTimeout(killRewardTimer);
+      killRewardTimer = window.setTimeout(() => {
+        flushEnemyKillRewards().catch(() => {});
+      }, KILL_REWARD_FLUSH_MS * 2);
+      return null;
+    } finally {
+      killRewardFlushInFlight = false;
+    }
+  }
+
+  function recordEnemyKillReward(details = {}) {
+    const game = cleanText(typeof details === 'string' ? details : details.game, '', 60)
+      .toLowerCase()
+      .replace(/_/g, '-');
+    if (!game) {
+      return Promise.resolve(null);
+    }
+    if (!state.ready && state.readyPromise) {
+      return state.readyPromise
+        .then(() => recordEnemyKillReward(details))
+        .catch(() => null);
+    }
+    if (!state.user) {
+      return Promise.resolve(null);
+    }
+
+    const killCount = Math.min(25, Math.max(1, Math.floor(Number(details.killCount || 1) || 1)));
+    const current = killRewardQueue.get(game) || {
+      game,
+      killCount: 0,
+      score: 0,
+      runId: cleanText(details.runId, '', 80),
+    };
+    current.killCount += killCount;
+    current.score = Math.max(Number(current.score) || 0, Number(details.score) || 0);
+    if (details.runId) {
+      current.runId = cleanText(details.runId, current.runId, 80);
+    }
+    killRewardQueue.set(game, current);
+
+    if (queuedKillRewardCount() >= KILL_REWARD_FLUSH_COUNT) {
+      return flushEnemyKillRewards();
+    }
+    if (!killRewardTimer) {
+      killRewardTimer = window.setTimeout(() => {
+        flushEnemyKillRewards().catch(() => {});
+      }, KILL_REWARD_FLUSH_MS);
+    }
+    return Promise.resolve(null);
   }
 
   function formatSimWallet(wallet = state.simWallet) {
@@ -1485,6 +1621,8 @@
       return loadSimWallet({ broadcast: true });
     },
     adjustSimWallet,
+    recordEnemyKillReward,
+    flushEnemyKillRewards,
     formatSimWallet,
     requireSignedIn,
     signInWithGoogle() {

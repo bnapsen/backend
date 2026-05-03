@@ -198,6 +198,19 @@
     return game.players.find((player) => player.id === state.yourPlayerId) || null;
   }
 
+  function recordSimEnemyKill(killCount = 1) {
+    if (!window.NovaAuth || typeof window.NovaAuth.recordEnemyKillReward !== 'function') {
+      return;
+    }
+    const game = currentGame();
+    window.NovaAuth.recordEnemyKillReward({
+      game: 'zombie-siege',
+      killCount,
+      score: game?.score || 0,
+      runId: state.roomCode || state.yourPlayerId || '',
+    }).catch(() => {});
+  }
+
   function remainingThreats(game) {
     if (!game) {
       return 0;
@@ -3492,6 +3505,8 @@
       } else if (event.type === 'relay-online') {
         showToast(`Relay ${event.active}/${event.total} online.`);
         playSound('relay');
+      } else if (event.type === 'enemy-down' && event.playerId === state.yourPlayerId) {
+        recordSimEnemyKill(1);
       } else if (event.type === 'nest-destroyed') {
         showToast(`Nest destroyed ${event.destroyed}/${event.total}.`);
         playSound('objective');

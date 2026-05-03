@@ -104,14 +104,20 @@ account creation when those providers are enabled in Firebase Authentication.
 
 Signed-in accounts get a shared SIM wallet the first time the backend sees the
 account. The default grant is `1,000 SIM`; the wallet is stored in Firestore and
-is used by the 15-minute Bitcoin paper trader now, with the same API available
-for future games.
+is used by the 15-minute Bitcoin paper trader and site games.
 
 - `GET /api/sim/wallet` verifies the Firebase ID token, creates the wallet if
   needed, and returns the current SIM balance.
-- `POST /api/sim/wallet/adjust` records debits and credits in cents, rejects
-  overdrafts, and keeps a capped recent transaction list on the wallet document.
+- `POST /api/sim/wallet/adjust` records wallet debits, allowed game payouts, and
+  refunds in cents, rejects overdrafts, and keeps a capped recent transaction
+  list on the wallet document.
+- `POST /api/sim/enemy-kill` awards the server-controlled enemy kill reward for
+  Zombie Siege, Galaga, and Space Shooter. The default reward is `0.01 SIM` per
+  credited kill, capped at `5 SIM` per game per day and `10 SIM` per account per
+  day.
 - `SIM_STARTING_BALANCE` can override the starter grant.
+- `SIM_KILL_REWARD_CENTS`, `SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS`, and
+  `SIM_KILL_REWARD_DAILY_CAP_CENTS` can tune the kill-reward economy.
 - `SIM_WALLET_FIRESTORE_COLLECTION` can override the default `simWallets`
   collection.
 

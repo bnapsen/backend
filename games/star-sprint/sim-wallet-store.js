@@ -78,6 +78,27 @@ function publicTransaction(entry) {
   };
 }
 
+function publicKillRewards(source) {
+  const rewards = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+  const games = rewards.games && typeof rewards.games === 'object' && !Array.isArray(rewards.games)
+    ? rewards.games
+    : {};
+  const publicGames = {};
+  for (const [game, entry] of Object.entries(games)) {
+    publicGames[cleanText(game, 'game', 60)] = {
+      kills: Math.max(0, Math.floor(Number(entry && entry.kills) || 0)),
+      rewardCents: normalizeCents(entry && entry.rewardCents),
+      reward: normalizeCents(entry && entry.rewardCents) / 100,
+    };
+  }
+  return {
+    dayKey: cleanText(rewards.dayKey, '', 30),
+    totalRewardCents: normalizeCents(rewards.totalRewardCents),
+    totalReward: normalizeCents(rewards.totalRewardCents) / 100,
+    games: publicGames,
+  };
+}
+
 function publicWallet(wallet) {
   const balanceCents = normalizeCents(wallet && wallet.balanceCents);
   const startingBalanceCents = normalizeCents(wallet && wallet.startingBalanceCents);
@@ -91,6 +112,7 @@ function publicWallet(wallet) {
     balanceCents,
     startingBalance: startingBalanceCents / 100,
     startingBalanceCents,
+    killRewards: publicKillRewards(wallet && wallet.killRewards),
     createdAt: cleanText(wallet && wallet.createdAt, '', 40),
     updatedAt: cleanText(wallet && wallet.updatedAt, '', 40),
     recentTransactions: transactions,
@@ -108,6 +130,7 @@ function normalizeWalletDocument(data, user, startingBalanceCents) {
     currency: DEFAULT_CURRENCY,
     balanceCents: normalizeCents(data && data.balanceCents, startingBalanceCents),
     startingBalanceCents: normalizeCents(data && data.startingBalanceCents, startingBalanceCents),
+    killRewards: publicKillRewards(data && data.killRewards),
     createdAt,
     updatedAt: cleanText(data && data.updatedAt, createdAt, 40),
     recentTransactions: Array.isArray(data && data.recentTransactions)
@@ -127,6 +150,7 @@ function initialWallet(user, startingBalanceCents) {
     currency: DEFAULT_CURRENCY,
     balanceCents: startingBalanceCents,
     startingBalanceCents,
+    killRewards: publicKillRewards(),
     createdAt,
     updatedAt: createdAt,
     recentTransactions: [{
