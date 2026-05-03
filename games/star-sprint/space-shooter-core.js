@@ -13,6 +13,8 @@
   const MAX_PLAYERS = 2;
   const BOSS_WAVE_INTERVAL = 4;
   const MAX_EVENTS = 24;
+  const SIM_COIN_KILLS_PER_DROP = 10;
+  const SIM_COIN_VALUE_CENTS = 1;
   const PLAYER_COLORS = ['#67e8f9', '#ffd166'];
   const ENEMY_COLORS = {
     drone: '#ff7a90',
@@ -105,6 +107,7 @@
       shield: 3,
       score: 0,
       combo: 0,
+      kills: 0,
       xp: 0,
       level: 1,
       nextLevelXp: 60,
@@ -137,6 +140,7 @@
       shield: player.shield,
       score: player.score,
       combo: player.combo,
+      kills: player.kills,
       xp: player.xp,
       level: player.level,
       nextLevelXp: player.nextLevelXp,
@@ -156,7 +160,7 @@
 
   function createGameState() {
     return {
-      title: 'Starline Defense Co-Op',
+      title: 'Space Shooter Defense',
       arena: { ...ARENA },
       roomCode: '',
       status: 'Host a squad room, invite a wingmate, or launch solo.',
@@ -472,6 +476,31 @@
     });
   }
 
+  function spawnSimCoinPickup(state, x, y, owner) {
+    if (!owner) {
+      return;
+    }
+    state.pickups.push({
+      id: state.nextEntityId++,
+      type: 'sim-coin',
+      x,
+      y,
+      r: 19,
+      ttl: 14,
+      valueCents: SIM_COIN_VALUE_CENTS,
+      ownerId: owner.id,
+      killsPerDrop: SIM_COIN_KILLS_PER_DROP,
+      phase: rand(0, Math.PI * 2),
+    });
+    pushEvent(state, 'sim_coin_drop', {
+      playerId: owner.id,
+      name: owner.name,
+      valueCents: SIM_COIN_VALUE_CENTS,
+      killsPerDrop: SIM_COIN_KILLS_PER_DROP,
+      wave: state.wave,
+    });
+  }
+
   function spawnPlayerBullet(state, player, offset, damageScale) {
     const angle = player.angle + offset;
     const speed = 720 + player.level * 14 + (player.overdriveTimer > 0 ? 90 : 0);
@@ -591,13 +620,18 @@
     if (owner) {
       owner.score += scoreGain;
       owner.combo += 1;
+      owner.kills += 1;
       applyLevelUps(state, owner, xpGain);
+      if (owner.kills % SIM_COIN_KILLS_PER_DROP === 0) {
+        spawnSimCoinPickup(state, enemy.x, enemy.y, owner);
+      }
       pushEvent(state, 'enemy_down', {
         playerId: owner.id,
         name: owner.name,
         enemyType: enemy.type,
         wave: state.wave,
         scoreGain,
+        kills: owner.kills,
       });
     }
     state.score += scoreGain;
@@ -892,11 +926,16 @@
         if (!player.alive) {
           continue;
         }
+        if (pickup.ownerId && pickup.ownerId !== player.id) {
+          continue;
+        }
         const hitRadius = pickup.r + player.r;
         if (distanceSquared(pickup.x, pickup.y, player.x, player.y) > hitRadius * hitRadius) {
           continue;
         }
-        if (pickup.type === 'heal') {
+        if (pickup.type === 'sim-coin') {
+          state.status = `${player.name} banked a SIM coin.`;
+        } else if (pickup.type === 'heal') {
           player.hp = clamp(player.hp + 4, 0, player.maxHp);
           player.shield = clamp(player.shield + 1, 0, 6);
           state.status = `${player.name} grabbed a repair cache.`;
@@ -913,6 +952,8 @@
           playerId: player.id,
           name: player.name,
           pickup: pickup.type,
+          valueCents: pickup.valueCents || 0,
+          wave: state.wave,
         });
         state.pickups.splice(index, 1);
         break;

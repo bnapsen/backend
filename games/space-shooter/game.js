@@ -101,6 +101,7 @@
     nextUiRefreshAt: 0,
     cameraShake: 0,
     knownHealth: new Map(),
+    simCoinClaims: new Set(),
     lastEnemyCount: 0,
     lastEventId: 0,
     lastLocalBulletCount: 0,
@@ -152,16 +153,56 @@
     return ui.nameInput.value.trim().slice(0, 18) || 'Pilot';
   }
 
-  function recordSimEnemyKill(killCount = 1) {
-    if (!window.NovaAuth || typeof window.NovaAuth.recordEnemyKillReward !== 'function') {
+  function simCoinClaimKey(event = {}) {
+    return [
+      state.mode || 'solo',
+      state.roomCode || 'local',
+      state.yourPlayerId || 'pilot',
+      event.id || `${event.playerId || 'unknown'}-${event.valueCents || 1}`,
+    ].join(':');
+  }
+
+  function claimSimCoinReward(event = {}, retries = 5) {
+    const claimKey = simCoinClaimKey(event);
+    if (state.simCoinClaims.has(claimKey)) {
       return;
     }
-    window.NovaAuth.recordEnemyKillReward({
-      game: 'space-shooter',
-      killCount,
-      score: state.game?.score || 0,
-      runId: state.roomCode || state.yourPlayerId || '',
-    }).catch(() => {});
+
+    const auth = window.NovaAuth;
+    if (!auth || typeof auth.adjustSimWallet !== 'function') {
+      if (retries > 0) {
+        window.setTimeout(() => claimSimCoinReward(event, retries - 1), 350);
+      } else {
+        showToast('Sign in to bank SIM coins.');
+      }
+      return;
+    }
+    if (typeof auth.isSignedIn === 'function' && !auth.isSignedIn()) {
+      showToast('Sign in to bank SIM coins.');
+      return;
+    }
+
+    const game = currentGame();
+    state.simCoinClaims.add(claimKey);
+    auth.adjustSimWallet({
+      amountCents: 1,
+      source: 'space-shooter',
+      action: 'sim-coin-pickup',
+      note: 'Space Shooter Defense SIM coin pickup',
+      metadata: {
+        game: 'space-shooter',
+        pickup: 'sim-coin',
+        wave: event.wave || game?.wave || 0,
+        score: game?.score || 0,
+        runId: state.roomCode || state.yourPlayerId || '',
+        playerId: state.yourPlayerId || '',
+      },
+    }).then(() => {
+      showToast('SIM coin banked: +0.01 SIM.');
+    }).catch(() => {
+      state.simCoinClaims.delete(claimKey);
+      showToast('SIM coin pickup will retry when your wallet syncs.');
+    });
   }
 
   function escapeHtml(value) {
@@ -271,6 +312,17 @@
   function playPickupSound() {
     scheduleTone({ from: 540, to: 720, duration: 0.12, gain: 0.05, type: 'triangle' });
     scheduleTone({ from: 720, to: 980, duration: 0.14, gain: 0.035, type: 'sine', delay: 0.03 });
+  }
+
+  function playCoinDropSound() {
+    scheduleTone({ from: 760, to: 1140, duration: 0.12, gain: 0.04, type: 'triangle' });
+    scheduleTone({ from: 1120, to: 880, duration: 0.16, gain: 0.032, type: 'sine', delay: 0.08 });
+  }
+
+  function playCoinPickupSound() {
+    scheduleTone({ from: 680, to: 1040, duration: 0.09, gain: 0.052, type: 'triangle' });
+    scheduleTone({ from: 960, to: 1480, duration: 0.14, gain: 0.046, type: 'triangle', delay: 0.07 });
+    scheduleTone({ from: 1420, to: 1760, duration: 0.16, gain: 0.034, type: 'sine', delay: 0.17 });
   }
 
   function playLevelUpSound() {
@@ -410,7 +462,7 @@
       roomCode: state.mode === 'online' ? state.roomCode : '',
       inviteUrl: state.mode === 'online' ? inviteUrl() : '',
       note: state.mode === 'online' && state.roomCode
-        ? `Join my Starline Defense co-op run in room ${state.roomCode}.`
+        ? `Join my Space Shooter Defense co-op run in room ${state.roomCode}.`
         : '',
       autoShare: Boolean(autoShare),
     });
@@ -702,12 +754,18 @@
       }
       state.lastEventId = event.id;
       if (event.type === 'pickup') {
-        playPickupSound();
+        if (event.pickup === 'sim-coin' && event.playerId === state.yourPlayerId) {
+          playCoinPickupSound();
+          claimSimCoinReward(event);
+        } else {
+          playPickupSound();
+        }
       } else if (event.type === 'level_up') {
         playLevelUpSound();
         showToast(`${event.name} reached level ${event.level}`);
-      } else if (event.type === 'enemy_down' && event.playerId === state.yourPlayerId) {
-        recordSimEnemyKill(1);
+      } else if (event.type === 'sim_coin_drop' && event.playerId === state.yourPlayerId) {
+        playCoinDropSound();
+        showToast('SIM coin dropped. Fly through it to bank +0.01 SIM.');
       } else if (event.type === 'boss_spawn') {
         playBossAlertSound();
         showToast(`Boss wave ${event.wave} incoming`);
@@ -1089,6 +1147,42 @@
 
   function drawPickup(pickup) {
     ctx.save();
+    if (pickup.type === 'sim-coin') {
+      const time = performance.now() * 0.006 + (pickup.phase || pickup.id || 0);
+      const bob = Math.sin(time) * 5;
+      const flip = 0.38 + Math.abs(Math.cos(time * 1.3)) * 0.62;
+      ctx.translate(pickup.x, pickup.y + bob);
+      ctx.rotate(Math.sin(time * 0.7) * 0.08);
+      ctx.shadowBlur = 28;
+      ctx.shadowColor = '#ffd166';
+      ctx.fillStyle = 'rgba(255, 209, 102, 0.18)';
+      ctx.beginPath();
+      ctx.arc(0, 0, pickup.r + 12 + Math.max(0, Math.sin(time)) * 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.scale(flip, 1);
+      const gradient = ctx.createRadialGradient(-5, -6, 4, 0, 0, pickup.r);
+      gradient.addColorStop(0, '#fff3b0');
+      gradient.addColorStop(0.48, '#ffd166');
+      gradient.addColorStop(1, '#b86c16');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(0, 0, pickup.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255, 247, 190, 0.92)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, pickup.r - 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#20130a';
+      ctx.font = '800 11px "Space Grotesk", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('SIM', 0, 1);
+      ctx.restore();
+      return;
+    }
+
     ctx.translate(pickup.x, pickup.y);
     ctx.shadowBlur = 18;
     ctx.shadowColor = pickup.type === 'heal' ? '#68f0a8' : '#ffd166';
@@ -1178,7 +1272,7 @@
     ctx.fillStyle = '#f3fbff';
     ctx.textAlign = 'center';
     ctx.font = '700 54px Syncopate, sans-serif';
-    ctx.fillText('STARLINE DEFENSE', ARENA.width / 2, ARENA.height / 2 - 26);
+    ctx.fillText('SPACE SHOOTER DEFENSE', ARENA.width / 2, ARENA.height / 2 - 26);
     ctx.font = '500 24px "Space Grotesk", sans-serif';
     ctx.fillStyle = 'rgba(232, 243, 255, 0.82)';
     ctx.fillText('Host a squad room, join with an invite code, or launch solo.', ARENA.width / 2, ARENA.height / 2 + 22);
@@ -1311,6 +1405,7 @@
 
   function renderPanels() {
     const game = currentGame();
+    document.body.classList.toggle('space-shooter-in-run', Boolean(game && !game.gameOver));
     ui.statusText.textContent = defaultStatusText();
     ui.missionText.textContent = game?.status || 'Spin up a room and launch the squad.';
     ui.objectiveText.textContent = game?.objective || 'Survive the first surge and build squad momentum.';

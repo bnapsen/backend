@@ -273,7 +273,7 @@ const GAME_DEFS = {
   },
   'space-shooter': {
     id: 'space-shooter',
-    title: 'Starline Defense Co-Op',
+    title: 'Space Shooter Defense',
     maxPlayers: 2,
     createGameState: () => Shooter.createGameState(),
     cloneState: (game) => Shooter.cloneState(game),
@@ -451,6 +451,9 @@ function canClientCreditSim(body = {}, amountCents = normalizeSimAdjustmentCents
   }
   if (source === 'backgammon-solo' && action === 'stake-refund') {
     return amountCents > 0 && amountCents <= BACKGAMMON_MAX_WAGER_CENTS;
+  }
+  if (source === 'space-shooter' && action === 'sim-coin-pickup') {
+    return amountCents === 1;
   }
   return false;
 }
@@ -4975,7 +4978,7 @@ async function handleMove(socket, payload) {
 
   const { room, player } = context;
   if (room.gameType === 'space-shooter') {
-    sendError(socket, 'Movement in Starline Defense uses realtime input, not turn-based moves.');
+    sendError(socket, 'Movement in Space Shooter Defense uses realtime input, not turn-based moves.');
     return;
   }
   if (room.gameType === 'zombie-siege') {
