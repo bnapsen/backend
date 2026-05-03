@@ -15,11 +15,13 @@
     mode: 'idle',
     socket: null,
     snapshot: null,
+    authProfile: null,
     playerId: '',
     roomCode: '',
     serverUrl: '',
     statusMessage: '',
     toastTimer: 0,
+    walletRefreshTimer: 0,
     panels: {
       setupHidden: false,
       infoHidden: false,
@@ -38,6 +40,7 @@
     statusText: document.getElementById('statusText'),
     networkStatus: document.getElementById('networkStatus'),
     modePill: document.getElementById('modePill'),
+    walletStatus: document.getElementById('walletStatus'),
     roomCodeLabel: document.getElementById('roomCodeLabel'),
     phaseLabel: document.getElementById('phaseLabel'),
     tableBetLabel: document.getElementById('tableBetLabel'),
@@ -104,12 +107,75 @@
   }
 
   function getPlayerName() {
-    return ui.nameInput.value.trim().slice(0, 18) || 'Player';
+    const typedName = ui.nameInput.value.trim().slice(0, 18);
+    if (typedName) {
+      return typedName;
+    }
+    return state.authProfile?.displayName?.slice(0, 18) || 'Player';
   }
 
   function formatChips(value) {
-    const amount = Number.isFinite(Number(value)) ? Number(value) : 0;
-    return `$${amount.toLocaleString('en-US')}`;
+    const cents = Number.isFinite(Number(value)) ? Math.round(Number(value)) : 0;
+    const sim = cents / 100;
+    return `${sim.toLocaleString('en-US', {
+      minimumFractionDigits: Number.isInteger(sim) ? 0 : 2,
+      maximumFractionDigits: 2,
+    })} SIM`;
+  }
+
+  function authProfile() {
+    if (window.NovaAuth && typeof window.NovaAuth.profile === 'function') {
+      state.authProfile = window.NovaAuth.profile();
+    }
+    return state.authProfile || {
+      ready: false,
+      signedIn: false,
+      displayName: '',
+      simWallet: { balanceCents: null, currency: 'SIM' },
+    };
+  }
+
+  function signedInForSim(actionLabel) {
+    if (!window.NovaAuth) {
+      showToast('SIM wallet is still loading. Try again in a moment.');
+      return false;
+    }
+    const profile = authProfile();
+    if (profile.signedIn) {
+      return true;
+    }
+    window.NovaAuth.requireSignedIn(actionLabel);
+    showToast(`Sign in to ${actionLabel}.`);
+    render();
+    return false;
+  }
+
+  async function authPayloadForTable() {
+    if (!window.NovaAuth) {
+      throw new Error('SIM wallet is not available yet.');
+    }
+    await window.NovaAuth.init();
+    const token = await window.NovaAuth.getIdToken(true);
+    if (!token) {
+      throw new Error('Sign in to use your SIM wallet.');
+    }
+    state.authProfile = window.NovaAuth.profile();
+    return { authToken: token };
+  }
+
+  function refreshWalletSoon() {
+    if (!window.NovaAuth || typeof window.NovaAuth.refreshWallet !== 'function') {
+      return;
+    }
+    window.clearTimeout(state.walletRefreshTimer);
+    state.walletRefreshTimer = window.setTimeout(() => {
+      window.NovaAuth.refreshWallet()
+        .then(() => {
+          state.authProfile = window.NovaAuth.profile();
+          renderPills();
+        })
+        .catch(() => {});
+    }, 220);
   }
 
   function suitEntity(suit) {
@@ -241,7 +307,7 @@
       roomCode: state.mode === 'online' ? state.roomCode : '',
       inviteUrl: state.mode === 'online' ? inviteUrl() : '',
       note: state.mode === 'online' && state.roomCode
-        ? `Join my Royal SuperSplash Blackjack table in room ${state.roomCode}.`
+        ? `Join my AP Blackjack SIM table in room ${state.roomCode}.`
         : '',
       autoShare: Boolean(autoShare),
     });
@@ -258,7 +324,7 @@
       canHit: false,
       canStand: false,
       canDouble: false,
-      betPresets: [5, 25, 100, -25],
+      betPresets: [100, 500, 2500, 10000, -500],
     };
   }
 
@@ -449,7 +515,7 @@
         <div class="seat-topline">
           <div>
             <div class="seat-name">Seat ${seat + 1}</div>
-            <div class="seat-meta">Buy-in 1,000</div>
+            <div class="seat-meta">SIM wallet</div>
           </div>
           <div class="seat-badges">
             <span class="badge">Open</span>
@@ -496,7 +562,7 @@
         <div class="seat-topline">
           <div>
             <div class="seat-name">${player.name}</div>
-            <div class="seat-meta">${formatChips(player.stack)} stack</div>
+            <div class="seat-meta">${formatChips(player.walletCents ?? player.stack)} wallet</div>
           </div>
           <div class="seat-badges">
             ${seatBadges(player, seat)}
@@ -562,14 +628,14 @@
       ui.roomCodeLabel.textContent = state.roomCode || '-';
       ui.phaseLabel.textContent = 'Waiting';
       ui.tableBetLabel.textContent = formatChips(0);
-      ui.shoeLabel.textContent = '312 cards';
-      ui.tableHeadline.textContent = 'Royal SuperSplash Blackjack Live';
-      ui.tableSubline.textContent = 'Seat up, set wagers, and deal when ready.';
+      ui.shoeLabel.textContent = '6 decks / 25% cut';
+      ui.tableHeadline.textContent = 'AP Blackjack Live';
+      ui.tableSubline.textContent = 'Seat up, set SIM wagers, and deal when ready.';
       ui.dealerScoreLabel.textContent = '?';
       ui.handLabel.textContent = '0';
       ui.tableBetAmount.textContent = formatChips(0);
       ui.turnLabel.textContent = 'Seat players';
-      ui.nextBetLabel.textContent = formatChips(25);
+      ui.nextBetLabel.textContent = formatChips(500);
       ui.activeBetLabel.textContent = formatChips(0);
       return;
     }
@@ -577,10 +643,10 @@
     ui.roomCodeLabel.textContent = state.roomCode || snapshot.roomCode || '-';
     ui.phaseLabel.textContent = phaseText(snapshot.phase);
     ui.tableBetLabel.textContent = formatChips(snapshot.tableBetTotal || 0);
-    ui.shoeLabel.textContent = `${snapshot.shoeRemaining || 0} cards`;
+    ui.shoeLabel.textContent = `${snapshot.shoeRemaining || 0} cards${snapshot.shufflePending ? ' - shuffle next' : ''}`;
     ui.tableHeadline.textContent = snapshot.handNumber
       ? `Hand ${snapshot.handNumber} live`
-      : 'Royal SuperSplash Blackjack Live';
+      : 'AP Blackjack Live';
     ui.tableSubline.textContent = snapshot.status || 'Seat up and deal.';
     ui.dealerScoreLabel.textContent = snapshot.dealer?.scoreLabel || '?';
     ui.handLabel.textContent = String(snapshot.handNumber || 0);
@@ -613,9 +679,28 @@
 
     if (state.mode === 'online') {
       ui.modePill.textContent = state.roomCode ? `Live table ${state.roomCode}` : 'Online setup';
+    } else {
+      ui.modePill.textContent = 'No table connected';
+    }
+
+    const profile = authProfile();
+    const wallet = profile.simWallet || {};
+    if (!ui.walletStatus) {
       return;
     }
-    ui.modePill.textContent = 'No table connected';
+    if (!profile.ready) {
+      ui.walletStatus.dataset.tone = 'busy';
+      ui.walletStatus.textContent = 'SIM wallet loading';
+    } else if (!profile.signedIn) {
+      ui.walletStatus.dataset.tone = 'offline';
+      ui.walletStatus.textContent = 'Sign in for SIM';
+    } else if (wallet.error) {
+      ui.walletStatus.dataset.tone = 'offline';
+      ui.walletStatus.textContent = 'SIM wallet unavailable';
+    } else {
+      ui.walletStatus.dataset.tone = 'online';
+      ui.walletStatus.textContent = `Wallet ${formatChips(wallet.balanceCents ?? 0)}`;
+    }
   }
 
   function renderActionPrompt() {
@@ -624,7 +709,7 @@
     const actor = getActionPlayer();
 
     if (!snapshot) {
-      ui.actionPrompt.textContent = 'Click an open seat to host or join. Once seated, set your next wager and deal the round when the table is ready.';
+      ui.actionPrompt.textContent = 'Sign in, click an open seat to host or join, then set your SIM wager before the round starts.';
       return;
     }
     if (controls.canAct) {
@@ -632,11 +717,11 @@
       return;
     }
     if (controls.canAdjustBet) {
-      ui.actionPrompt.textContent = 'Your seat is ready for the next deal. Adjust your wager with the chip buttons, then deal when the table is set.';
+      ui.actionPrompt.textContent = 'Your seat is ready for the next deal. Adjust your SIM wager with the chip buttons, then deal when the table is set.';
       return;
     }
     if (controls.canStartRound) {
-      ui.actionPrompt.textContent = 'At least one seated player has a live wager. Press Deal round to put the next hand in motion.';
+      ui.actionPrompt.textContent = 'At least one seated player has a live SIM wager. Press Deal round to put the next hand in motion.';
       return;
     }
     if (actor) {
@@ -647,12 +732,12 @@
       ui.actionPrompt.textContent = 'The hand is settled. Review payouts in the dealer feed, then set new wagers and deal again.';
       return;
     }
-    ui.actionPrompt.textContent = 'Seat players and place at least one wager to start the table.';
+    ui.actionPrompt.textContent = 'Seat players and place at least one SIM wager to start the table.';
   }
 
   function renderChips() {
     const controls = currentControls();
-    ui.chipRow.innerHTML = (controls.betPresets || [5, 25, 100, -25]).map((amount) => {
+    ui.chipRow.innerHTML = (controls.betPresets || [100, 500, 2500, 10000, -500]).map((amount) => {
       const sign = amount > 0 ? '+' : '';
       const className = amount < 0 ? 'chip-btn minus' : 'chip-btn';
       return `<button class="${className}" type="button" data-chip-amount="${amount}">${sign}${formatChips(Math.abs(amount))}</button>`;
@@ -691,11 +776,25 @@
     renderControls();
   }
 
-  function connectOnline(mode) {
+  async function connectOnline(mode) {
+    if (!signedInForSim(mode === 'host' ? 'host SIM blackjack' : 'join SIM blackjack')) {
+      return;
+    }
     const name = getPlayerName();
     const roomCode = sanitizeRoomCode(ui.roomInput.value);
     if (mode === 'join' && !roomCode) {
       showToast('Enter the room code from the host first.');
+      return;
+    }
+
+    let authPayload;
+    try {
+      authPayload = await authPayloadForTable();
+    } catch (error) {
+      const message = error.message || 'Sign in to use your SIM wallet.';
+      setStatusMessage(message);
+      showToast(message);
+      render();
       return;
     }
 
@@ -708,10 +807,13 @@
     if (!state.panels.setupHidden) {
       state.panels.setupHidden = true;
     }
+    if (!ui.nameInput.value.trim() && state.authProfile?.displayName) {
+      ui.nameInput.value = state.authProfile.displayName.slice(0, 18);
+    }
     persistSettings();
     setStatusMessage(mode === 'host'
-      ? 'Opening your blackjack table and creating an invite link...'
-      : 'Joining the blackjack table and syncing the felt...');
+      ? 'Opening your SIM blackjack table and creating an invite link...'
+      : 'Joining the SIM blackjack table and syncing the felt...');
     render();
 
     const socket = new WebSocket(state.serverUrl);
@@ -724,6 +826,7 @@
         mode,
         name,
         roomCode,
+        ...authPayload,
       }));
       render();
     };
@@ -741,16 +844,21 @@
         state.roomCode = payload.roomCode || state.roomCode;
         ui.roomInput.value = state.roomCode;
         setStatusMessage('You are seated. Share the invite link and deal once the table is ready.');
+        refreshWalletSoon();
         render();
         return;
       }
 
       if (payload.type === 'state') {
+        const previousPhase = state.snapshot?.phase;
         state.snapshot = payload.snapshot;
         state.roomCode = payload.snapshot.roomCode;
         ui.roomInput.value = payload.snapshot.roomCode;
         setStatusMessage(payload.message || payload.snapshot.status || 'Table updated.');
         persistSettings();
+        if (payload.snapshot.phase !== previousPhase || payload.message) {
+          refreshWalletSoon();
+        }
         render();
         return;
       }
@@ -765,7 +873,7 @@
     socket.onclose = () => {
       if (state.socket === socket) {
         state.socket = null;
-        setStatusMessage('The live blackjack table disconnected. Host again or rejoin the same room code to continue.');
+        setStatusMessage('The SIM blackjack table disconnected. Host again or rejoin the same room code to continue.');
         render();
       }
     };
@@ -780,7 +888,7 @@
 
   function sendSetBet(amount, mode) {
     if (sendMessage({ action: 'set-bet', amount, mode })) {
-      setStatusMessage(mode === 'clear' ? 'Clearing your next wager...' : 'Sending your next wager to the table...');
+      setStatusMessage(mode === 'clear' ? 'Clearing your next SIM wager...' : 'Sending your next SIM wager to the table...');
     }
   }
 
@@ -798,11 +906,11 @@
 
   function sendResetTable() {
     if (sendMessage({ action: 'restart' })) {
-      setStatusMessage('Reloading fresh stacks and a fresh shoe...');
+      setStatusMessage('Refreshing SIM balances and loading a fresh shoe...');
     }
   }
 
-  function handleSeatJoinRequest() {
+  async function handleSeatJoinRequest() {
     if (state.socket && state.socket.readyState === WebSocket.CONNECTING) {
       showToast('Connection already in progress.');
       return;
@@ -815,10 +923,10 @@
     const roomCode = sanitizeRoomCode(state.roomCode || ui.roomInput.value);
     if (roomCode) {
       ui.roomInput.value = roomCode;
-      connectOnline('join');
+      await connectOnline('join');
       return;
     }
-    connectOnline('host');
+    await connectOnline('host');
   }
 
   function hydrateSettings() {
@@ -833,7 +941,9 @@
     const roomCode = sanitizeRoomCode(query.get('room') || '');
     if (roomCode) {
       ui.roomInput.value = roomCode;
-      connectOnline('join');
+      connectOnline('join').catch(() => {
+        showToast('Could not join the SIM blackjack table.');
+      });
       return;
     }
     renderStatus();
@@ -857,8 +967,12 @@
       updateInviteUi();
     });
 
-    ui.hostBtn.addEventListener('click', () => connectOnline('host'));
-    ui.joinBtn.addEventListener('click', () => connectOnline('join'));
+    ui.hostBtn.addEventListener('click', () => {
+      connectOnline('host').catch(() => showToast('Could not host the SIM blackjack table.'));
+    });
+    ui.joinBtn.addEventListener('click', () => {
+      connectOnline('join').catch(() => showToast('Could not join the SIM blackjack table.'));
+    });
     ui.openLoungeBtn.addEventListener('click', () => openArcadeLounge(false));
     ui.shareLoungeBtn.addEventListener('click', () => openArcadeLounge(true));
     ui.copyBtn.addEventListener('click', () => copyText(inviteUrl(), 'Invite link copied.'));
@@ -885,7 +999,7 @@
       if (!trigger) {
         return;
       }
-      handleSeatJoinRequest();
+      handleSeatJoinRequest().catch(() => showToast('Could not sit at the SIM blackjack table.'));
     });
 
     window.addEventListener('keydown', (event) => {
@@ -904,11 +1018,40 @@
     });
   }
 
+  async function initAuth() {
+    if (!window.NovaAuth || typeof window.NovaAuth.init !== 'function') {
+      return;
+    }
+    try {
+      await window.NovaAuth.init({
+        onChange(profile) {
+          state.authProfile = profile;
+          if (!ui.nameInput.value.trim() && profile.signedIn && profile.displayName) {
+            ui.nameInput.value = profile.displayName.slice(0, 18);
+            persistSettings();
+          }
+          render();
+        },
+      });
+      state.authProfile = window.NovaAuth.profile();
+      if (!ui.nameInput.value.trim() && state.authProfile.signedIn && state.authProfile.displayName) {
+        ui.nameInput.value = state.authProfile.displayName.slice(0, 18);
+        persistSettings();
+      }
+    } catch (error) {
+      state.authProfile = window.NovaAuth.profile();
+      setStatusMessage(error.message || 'SIM wallet sign-in is not ready yet.');
+    }
+  }
+
   function init() {
     hydrateSettings();
     bindEvents();
     render();
-    bootFromQuery();
+    initAuth().then(() => {
+      render();
+      bootFromQuery();
+    });
   }
 
   init();

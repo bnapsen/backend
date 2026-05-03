@@ -3,10 +3,20 @@
 const SUITS = ['S', 'H', 'D', 'C'];
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const SHOE_DECKS = 6;
-const STARTING_STACK = 1000;
-const DEFAULT_BET = 25;
+const SHOE_CARD_COUNT = SHOE_DECKS * SUITS.length * RANKS.length;
+const CUT_CARD_REMAINING = Math.floor(SHOE_CARD_COUNT * 0.25);
+const STARTING_STACK = 100000;
+const DEFAULT_BET = 500;
 const MAX_SEATS = 6;
 const MAX_LOG = 16;
+
+function formatSimCents(cents) {
+  const sim = Math.round(Number(cents) || 0) / 100;
+  return `${sim.toLocaleString('en-US', {
+    minimumFractionDigits: Number.isInteger(sim) ? 0 : 2,
+    maximumFractionDigits: 2,
+  })} SIM`;
+}
 
 function cloneCard(card) {
   return card ? { rank: card.rank, suit: card.suit } : null;
@@ -66,13 +76,16 @@ function pushLog(state, text, tone) {
   }
 }
 
-function createPlayer(id, name, seat) {
+function createPlayer(id, name, seat, options = {}) {
+  const walletCents = Math.max(0, Math.round(Number(options.walletCents ?? STARTING_STACK) || 0));
+  const defaultBet = Math.min(DEFAULT_BET, walletCents);
   return {
     id,
     name,
     seat,
-    stack: STARTING_STACK,
-    bet: DEFAULT_BET,
+    stack: walletCents,
+    walletCents,
+    bet: defaultBet,
     activeBet: 0,
     cards: [],
     participating: false,
@@ -88,27 +101,65 @@ function createPlayer(id, name, seat) {
 
 function createGameState() {
   const state = {
-    title: 'Royal SuperSplash Blackjack Live',
+    title: 'AP Blackjack Live',
     roomCode: '',
     phase: 'betting',
     handNumber: 0,
-    status: 'Seat players, set wagers, and press Deal when the table is ready.',
+    status: 'Seat signed-in players, set SIM wagers, and press Deal when the table is ready.',
     dealer: {
       cards: [],
       hiddenHole: true,
     },
     players: [],
     shoe: createDeck(),
+    cutCardRemaining: CUT_CARD_REMAINING,
+    shufflePending: false,
     actionSeat: null,
     tableBetTotal: 0,
+    pendingWalletEvents: [],
     log: [
       createLogEntry(
-        'Royal SuperSplash Blackjack Live is ready. Seat up to six players and play against the dealer.',
+        'AP Blackjack Live is ready. Bets debit and credit your signed-in SIM wallet.',
         'info'
       ),
     ],
   };
   return state;
+}
+
+function queueWalletEvent(state, player, amountCents, action, note, metadata = {}) {
+  if (!player || !amountCents) {
+    return;
+  }
+  if (!Array.isArray(state.pendingWalletEvents)) {
+    state.pendingWalletEvents = [];
+  }
+  state.pendingWalletEvents.push({
+    playerId: player.id,
+    amountCents: Math.round(Number(amountCents) || 0),
+    action,
+    note,
+    metadata: {
+      seat: player.seat,
+      handNumber: state.handNumber,
+      activeBet: player.activeBet,
+      ...metadata,
+    },
+  });
+}
+
+function drainWalletEvents(state) {
+  const events = Array.isArray(state.pendingWalletEvents)
+    ? state.pendingWalletEvents.map((event) => ({
+        playerId: event.playerId,
+        amountCents: Math.round(Number(event.amountCents) || 0),
+        action: String(event.action || 'adjust'),
+        note: String(event.note || ''),
+        metadata: event.metadata && typeof event.metadata === 'object' ? { ...event.metadata } : {},
+      })).filter((event) => event.playerId && event.amountCents)
+    : [];
+  state.pendingWalletEvents = [];
+  return events;
 }
 
 function seatedPlayers(state, options) {
@@ -120,6 +171,26 @@ function seatedPlayers(state, options) {
 
 function findPlayer(state, playerId) {
   return state.players.find((player) => player.id === playerId) || null;
+}
+
+function syncPlayerWallet(state, playerId, walletCents) {
+  const player = findPlayer(state, playerId);
+  if (!player) {
+    return null;
+  }
+  const balance = Math.max(0, Math.round(Number(walletCents) || 0));
+  player.stack = balance;
+  player.walletCents = balance;
+  if (!player.participating) {
+    player.activeBet = 0;
+  }
+  if (player.bet > balance) {
+    player.bet = balance;
+  }
+  if (player.bet === 0 && balance > 0 && !player.participating) {
+    player.bet = Math.min(DEFAULT_BET, balance);
+  }
+  return player;
 }
 
 function playerAtSeat(state, seat) {
@@ -143,19 +214,27 @@ function recalcTableBetTotal(state) {
 }
 
 function maybeReshuffle(state, force) {
-  if (!force && state.shoe.length >= 52) {
+  const cutRemaining = Math.max(1, Math.round(Number(state.cutCardRemaining) || CUT_CARD_REMAINING));
+  if (!force && !state.shufflePending && state.shoe.length > cutRemaining) {
     return false;
   }
   state.shoe = createDeck();
+  state.cutCardRemaining = cutRemaining;
+  state.shufflePending = false;
   pushLog(state, 'The dealer reshuffled the shoe.', 'warn');
   return true;
 }
 
 function drawCard(state, target) {
-  maybeReshuffle(state, false);
+  if (!state.shoe.length) {
+    maybeReshuffle(state, true);
+  }
   const card = state.shoe.pop();
   if (card) {
     target.push(card);
+    if (state.shoe.length <= Math.max(1, Math.round(Number(state.cutCardRemaining) || CUT_CARD_REMAINING))) {
+      state.shufflePending = true;
+    }
   }
   return card || null;
 }
@@ -241,6 +320,20 @@ function settleRound(state) {
     }
 
     player.stack += payout;
+    player.walletCents = player.stack;
+    if (payout > 0) {
+      queueWalletEvent(
+        state,
+        player,
+        payout,
+        'blackjack-payout',
+        `${player.name}: ${result}`,
+        {
+          outcome,
+          payoutCents: payout,
+        },
+      );
+    }
     player.lastOutcome = outcome;
     player.result = result;
     player.status = result;
@@ -257,7 +350,7 @@ function settleRound(state) {
 
     pushLog(
       state,
-      `${player.name}: ${result} ${payout ? `Payout ${payout}.` : ''}`.trim(),
+      `${player.name}: ${result} ${payout ? `Payout ${formatSimCents(payout)}.` : ''}`.trim(),
       outcome === 'lose' ? 'bad' : outcome === 'push' ? 'warn' : 'good'
     );
   }
@@ -277,6 +370,9 @@ function settleRound(state) {
   }
 
   cleanupLeavers(state);
+  if (state.shufflePending) {
+    pushLog(state, 'Cut card reached. The shoe will reshuffle before the next hand.', 'warn');
+  }
 }
 
 function dealerTurn(state) {
@@ -312,12 +408,17 @@ function addPlayer(state, info) {
   const existing = findPlayer(state, info.id);
   if (existing) {
     existing.name = info.name;
+    if (Number.isFinite(Number(info.walletCents))) {
+      syncPlayerWallet(state, existing.id, info.walletCents);
+    }
     return existing;
   }
 
   for (let seat = 0; seat < MAX_SEATS; seat += 1) {
     if (!playerAtSeat(state, seat)) {
-      const player = createPlayer(info.id, info.name, seat);
+      const player = createPlayer(info.id, info.name, seat, {
+        walletCents: info.walletCents,
+      });
       state.players.push(player);
       state.players.sort((left, right) => left.seat - right.seat);
       state.status = state.players.length > 1
@@ -368,7 +469,7 @@ function setBet(state, playerId, amount, mode) {
     return { ok: false, error: 'Wait for the current round to finish before changing your bet.' };
   }
   if (player.stack <= 0) {
-    return { ok: false, error: 'You are out of chips. Reset the table for fresh stacks.' };
+    return { ok: false, error: 'Your SIM wallet is empty.' };
   }
 
   if (mode === 'clear') {
@@ -379,11 +480,11 @@ function setBet(state, playerId, amount, mode) {
   }
 
   player.status = player.bet > 0
-    ? `Next bet ${player.bet}.`
+    ? `Next SIM bet ${formatSimCents(player.bet)}.`
     : 'Set a wager to join the next round.';
   state.status = `${player.name} adjusted their bet.`;
   recalcTableBetTotal(state);
-  return { ok: true, message: `${player.name} set the next wager to ${player.bet}.` };
+  return { ok: true, message: `${player.name} set the next wager to ${formatSimCents(player.bet)}.` };
 }
 
 function startRound(state, playerId) {
@@ -425,10 +526,21 @@ function startRound(state, playerId) {
     }
     const reservedBet = Math.min(player.bet, player.stack);
     player.stack -= reservedBet;
+    player.walletCents = player.stack;
     player.activeBet = reservedBet;
     player.participating = true;
     player.status = 'Cards in the air...';
     state.tableBetTotal += reservedBet;
+    queueWalletEvent(
+      state,
+      player,
+      -reservedBet,
+      'blackjack-bet',
+      `${player.name} posted a blackjack SIM bet.`,
+      {
+        betCents: reservedBet,
+      },
+    );
   }
 
   const order = eligible.map((player) => player.seat);
@@ -527,9 +639,20 @@ function applyAction(state, playerId, action) {
       return { ok: false, error: 'Double is only available on the first two cards.' };
     }
     if (player.stack < player.activeBet) {
-      return { ok: false, error: 'You do not have enough chips to double this hand.' };
+      return { ok: false, error: 'You do not have enough SIM to double this hand.' };
     }
     player.stack -= player.activeBet;
+    player.walletCents = player.stack;
+    queueWalletEvent(
+      state,
+      player,
+      -player.activeBet,
+      'blackjack-double',
+      `${player.name} doubled their blackjack SIM bet.`,
+      {
+        doubleCents: player.activeBet,
+      },
+    );
     player.activeBet *= 2;
     recalcTableBetTotal(state);
     drawCard(state, player.cards);
@@ -544,7 +667,7 @@ function applyAction(state, playerId, action) {
     } else {
       player.status = `Double on ${summary.total}.`;
       player.result = `Double on ${summary.total}.`;
-      message = `${player.name} doubled to ${player.activeBet}.`;
+      message = `${player.name} doubled to ${formatSimCents(player.activeBet)}.`;
       pushLog(state, message, 'good');
     }
     advanceTurn(state, player.seat);
@@ -561,16 +684,19 @@ function resetTable(state) {
     id: player.id,
     name: player.name,
     seat: player.seat,
+    walletCents: player.walletCents ?? player.stack,
   }));
   const fresh = createGameState();
   Object.assign(state, fresh);
   state.title = title;
   state.roomCode = roomCode;
-  state.players = players.map((player) => createPlayer(player.id, player.name, player.seat));
+  state.players = players.map((player) => createPlayer(player.id, player.name, player.seat, {
+    walletCents: player.walletCents,
+  }));
   state.status = state.players.length
-    ? 'Fresh shoe loaded. Set wagers and press Deal.'
+    ? 'Fresh shoe loaded. SIM balances refreshed. Set wagers and press Deal.'
     : 'Table reset. Seat players to begin.';
-  pushLog(state, 'The blackjack table was reset to fresh stacks.', 'warn');
+  pushLog(state, 'The blackjack table was reset with a fresh six-deck shoe.', 'warn');
   return { ok: true };
 }
 
@@ -602,7 +728,7 @@ function computeControls(state, viewer) {
     canHit: canAct,
     canStand: canAct,
     canDouble: Boolean(canAct && viewer.cards.length === 2 && viewer.stack >= viewer.activeBet),
-    betPresets: [5, 25, 100, -25],
+    betPresets: [100, 500, 2500, 10000, -500],
   };
 }
 
@@ -621,6 +747,10 @@ function cloneState(state, viewerId) {
     actionSeat: state.actionSeat,
     tableBetTotal: state.tableBetTotal,
     shoeRemaining: state.shoe.length,
+    shoeDecks: SHOE_DECKS,
+    shoeCardCount: SHOE_CARD_COUNT,
+    cutCardRemaining: state.cutCardRemaining || CUT_CARD_REMAINING,
+    shufflePending: Boolean(state.shufflePending),
     viewerSeat: viewer ? viewer.seat : null,
     controls: computeControls(state, viewer),
     dealer: {
@@ -637,6 +767,7 @@ function cloneState(state, viewerId) {
         name: player.name,
         seat: player.seat,
         stack: player.stack,
+        walletCents: player.walletCents ?? player.stack,
         bet: player.bet,
         activeBet: player.activeBet,
         cards: player.cards.map(cloneCard),
@@ -659,6 +790,9 @@ module.exports = {
   STARTING_STACK,
   DEFAULT_BET,
   MAX_SEATS,
+  SHOE_DECKS,
+  SHOE_CARD_COUNT,
+  CUT_CARD_REMAINING,
   createGameState,
   cloneState,
   addPlayer,
@@ -667,4 +801,6 @@ module.exports = {
   startRound,
   applyAction,
   resetTable,
+  drainWalletEvents,
+  syncPlayerWallet,
 };

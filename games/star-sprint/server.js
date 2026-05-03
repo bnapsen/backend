@@ -4914,6 +4914,7 @@ function addPlayerToGame(room, player) {
     const result = Blackjack.addPlayer(room.game, {
       id: player.id,
       name: player.name,
+      walletCents: player.walletCents,
     });
     if (result) {
       player.seat = result.seat;
@@ -4971,6 +4972,21 @@ async function handleJoin(socket, payload) {
       return;
     }
   }
+  let blackjackWallet = null;
+  if (room.gameType === 'blackjack') {
+    const authUser = await authenticateSocketPayload(socket, source, {
+      required: true,
+    });
+    if (!authUser) {
+      return;
+    }
+    try {
+      blackjackWallet = await simWalletStore.getOrCreateWallet(authUser);
+    } catch (error) {
+      sendError(socket, error && error.message ? error.message : 'Unable to load your SIM wallet for blackjack.');
+      return;
+    }
+  }
 
   if (room.players.size >= room.maxPlayers) {
     sendError(socket, 'That room is already full.');
@@ -4989,6 +5005,7 @@ async function handleJoin(socket, payload) {
     color: identity === true ? null : identity,
     socket,
     authUser: socket.authUser || null,
+    walletCents: blackjackWallet ? Math.max(0, Math.round(Number(blackjackWallet.balanceCents) || 0)) : null,
     voiceJoined: false,
     voiceMuted: false,
     voicePreset: 'Clean Comms',
@@ -5162,7 +5179,116 @@ async function handleMove(socket, payload) {
   broadcastState(room, wagerMessage || undefined);
 }
 
-function handleTableAction(socket, payload) {
+function clonePlainGameState(game) {
+  return JSON.parse(JSON.stringify(game));
+}
+
+function restoreRoomGame(room, snapshotState) {
+  room.game = snapshotState;
+  room.game.roomCode = room.code;
+}
+
+async function refreshBlackjackPlayerWallet(room, player) {
+  if (!player || !player.authUser) {
+    const error = new Error('Sign in is required to bet SIM at blackjack.');
+    error.code = 'sim/missing-user';
+    throw error;
+  }
+  const wallet = await simWalletStore.getOrCreateWallet(player.authUser);
+  const balanceCents = Math.max(0, Math.round(Number(wallet.balanceCents) || 0));
+  player.walletCents = balanceCents;
+  Blackjack.syncPlayerWallet(room.game, player.id, balanceCents);
+  return wallet;
+}
+
+async function refreshBlackjackWallets(room) {
+  const jobs = [];
+  for (const player of room.players.values()) {
+    if (player.authUser) {
+      jobs.push(refreshBlackjackPlayerWallet(room, player).catch(() => null));
+    }
+  }
+  await Promise.all(jobs);
+}
+
+async function rollbackBlackjackWalletEvents(room, appliedEvents) {
+  for (const entry of appliedEvents.slice().reverse()) {
+    try {
+      const wallet = await simWalletStore.adjustWallet(entry.player.authUser, {
+        amountCents: -entry.amountCents,
+        source: 'blackjack',
+        action: 'blackjack-rollback',
+        note: `Rollback for blackjack hand in room ${room.code}.`,
+        metadata: {
+          roomCode: room.code,
+          game: 'blackjack',
+          originalAction: entry.action,
+          originalAmountCents: entry.amountCents,
+        },
+      });
+      const balanceCents = Math.max(0, Math.round(Number(wallet.balanceCents) || 0));
+      entry.player.walletCents = balanceCents;
+    } catch (error) {
+      console.warn('Blackjack wallet rollback failed:', error && error.message ? error.message : error);
+    }
+  }
+}
+
+async function applyBlackjackWalletEvents(room, events) {
+  const applied = [];
+  for (const event of events) {
+    const player = room.players.get(event.playerId);
+    if (!player || !player.authUser) {
+      const error = new Error('A signed-in blackjack player could not be matched to a SIM wallet.');
+      error.code = 'sim/missing-user';
+      throw error;
+    }
+    const wallet = await simWalletStore.adjustWallet(player.authUser, {
+      amountCents: event.amountCents,
+      source: 'blackjack',
+      action: event.action,
+      note: event.note || `Blackjack SIM update in room ${room.code}.`,
+      metadata: {
+        roomCode: room.code,
+        game: 'blackjack',
+        ...event.metadata,
+      },
+    });
+    const balanceCents = Math.max(0, Math.round(Number(wallet.balanceCents) || 0));
+    player.walletCents = balanceCents;
+    Blackjack.syncPlayerWallet(room.game, player.id, balanceCents);
+    applied.push({
+      player,
+      amountCents: event.amountCents,
+      action: event.action,
+    });
+  }
+  return applied;
+}
+
+async function runBlackjackWalletMutation(room, mutate) {
+  const previousState = clonePlainGameState(room.game);
+  const result = mutate();
+  if (!result || !result.ok) {
+    Blackjack.drainWalletEvents(room.game);
+    return result;
+  }
+  const events = Blackjack.drainWalletEvents(room.game);
+  if (!events.length) {
+    return result;
+  }
+  const applied = [];
+  try {
+    applied.push(...await applyBlackjackWalletEvents(room, events));
+  } catch (error) {
+    await rollbackBlackjackWalletEvents(room, applied);
+    restoreRoomGame(room, previousState);
+    throw error;
+  }
+  return result;
+}
+
+async function handleTableAction(socket, payload) {
   const context = requirePlayer(socket);
   if (!context) {
     return;
@@ -5170,9 +5296,16 @@ function handleTableAction(socket, payload) {
 
   const { room, player } = context;
   if (room.gameType === 'blackjack') {
-    const result = Blackjack.applyAction(room.game, player.id, {
-      type: payload.type,
-    });
+    let result;
+    try {
+      await refreshBlackjackPlayerWallet(room, player);
+      result = await runBlackjackWalletMutation(room, () => Blackjack.applyAction(room.game, player.id, {
+        type: payload.type,
+      }));
+    } catch (error) {
+      sendError(socket, error && error.message ? error.message : 'That SIM blackjack action could not be stored.');
+      return;
+    }
     if (!result.ok) {
       sendError(socket, result.error || 'That action could not be played.');
       return;
@@ -5211,16 +5344,21 @@ function handleSetBet(socket, payload) {
     return;
   }
 
-  const result = Blackjack.setBet(room.game, player.id, payload && payload.amount, payload && payload.mode);
-  if (!result.ok) {
-    sendError(socket, result.error || 'That wager could not be set.');
-    return;
-  }
-
-  broadcastState(room, result.message || `${player.name} changed their wager.`);
+  refreshBlackjackPlayerWallet(room, player)
+    .then(() => {
+      const result = Blackjack.setBet(room.game, player.id, payload && payload.amount, payload && payload.mode);
+      if (!result.ok) {
+        sendError(socket, result.error || 'That wager could not be set.');
+        return;
+      }
+      broadcastState(room, result.message || `${player.name} changed their SIM wager.`);
+    })
+    .catch((error) => {
+      sendError(socket, error && error.message ? error.message : 'Unable to refresh your SIM wallet.');
+    });
 }
 
-function handleStartHand(socket) {
+async function handleStartHand(socket) {
   const context = requirePlayer(socket);
   if (!context) {
     return;
@@ -5228,7 +5366,14 @@ function handleStartHand(socket) {
 
   const { room, player } = context;
   if (room.gameType === 'blackjack') {
-    const result = Blackjack.startRound(room.game, player.id);
+    let result;
+    try {
+      await refreshBlackjackWallets(room);
+      result = await runBlackjackWalletMutation(room, () => Blackjack.startRound(room.game, player.id));
+    } catch (error) {
+      sendError(socket, error && error.message ? error.message : 'The SIM wagers could not be locked for that hand.');
+      return;
+    }
     if (!result.ok) {
       sendError(socket, result.error || 'The round could not be started.');
       return;
@@ -6154,6 +6299,7 @@ async function handleRestart(socket) {
     room.nextBotActionAt = 0;
     room.botActorId = '';
   } else if (room.gameType === 'blackjack') {
+    await refreshBlackjackWallets(room);
     Blackjack.resetTable(room.game);
   } else {
     room.game = room.gameDef.createGameState(room.options);
@@ -6676,13 +6822,19 @@ wss.on('connection', (socket) => {
         handleUndo(socket);
         break;
       case 'act':
-        handleTableAction(socket, payload);
+        handleTableAction(socket, payload).catch((error) => {
+          console.error('Table action failed:', error.message);
+          sendError(socket, 'Unable to play that table action right now.');
+        });
         break;
       case 'set-bet':
         handleSetBet(socket, payload);
         break;
       case 'start-hand':
-        handleStartHand(socket);
+        handleStartHand(socket).catch((error) => {
+          console.error('Start hand failed:', error.message);
+          sendError(socket, 'Unable to start that hand right now.');
+        });
         break;
       case 'fill-bots':
         handleFillBots(socket, payload);
