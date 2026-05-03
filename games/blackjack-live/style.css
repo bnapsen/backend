@@ -39,6 +39,7 @@
 html,
 body {
   min-height: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -133,6 +134,14 @@ input:focus {
   flex-wrap: wrap;
 }
 
+.topbar-status,
+.view-controls,
+.setup-column,
+.sidebar,
+.table-header {
+  display: none;
+}
+
 .topbar {
   justify-content: space-between;
   gap: 16px;
@@ -197,17 +206,17 @@ input:focus {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr) minmax(260px, 300px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
 
 .layout.setup-hidden {
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .layout.info-hidden {
-  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .layout.setup-hidden.info-hidden {
@@ -225,6 +234,11 @@ input:focus {
   display: grid;
   gap: 18px;
   align-self: start;
+}
+
+.setup-column,
+.sidebar {
+  display: none;
 }
 
 .panel {
@@ -255,6 +269,9 @@ input:focus {
 
 .table-panel {
   padding: 16px;
+  max-width: 1480px;
+  width: 100%;
+  margin: 0 auto;
   background:
     linear-gradient(180deg, rgba(12, 17, 25, 0.95), rgba(6, 9, 16, 0.96)),
     radial-gradient(circle at top, rgba(239, 197, 109, 0.08), transparent 26%);
@@ -439,7 +456,7 @@ h2 {
 }
 
 .table-header {
-  display: grid;
+  display: none;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 14px;
@@ -502,25 +519,11 @@ h2 {
 }
 
 .table-markings {
-  position: absolute;
-  left: 50%;
-  top: 16%;
-  transform: translateX(-50%);
-  width: min(78%, 720px);
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 14px;
-  color: rgba(255, 236, 193, 0.78);
-  font-size: 0.68rem;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
+  display: none;
 }
 
 .table-props {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+  display: none;
 }
 
 .shoe-prop,
@@ -545,6 +548,11 @@ h2 {
     0 14px 24px rgba(0, 0, 0, 0.28);
 }
 
+.shoe-prop span,
+.discard-prop span {
+  display: none;
+}
+
 .shoe-prop {
   top: 24%;
   right: 10%;
@@ -563,7 +571,7 @@ h2 {
 .dealer-zone {
   position: absolute;
   left: 50%;
-  top: 10%;
+  top: 15%;
   transform: translateX(-50%);
   width: min(74%, 620px);
   display: grid;
@@ -572,7 +580,7 @@ h2 {
 }
 
 .dealer-copy {
-  text-align: center;
+  display: none;
 }
 
 .dealer-copy h2 {
@@ -592,7 +600,7 @@ h2 {
 }
 
 .dealer-pills {
-  display: flex;
+  display: none;
   gap: 10px;
   flex-wrap: wrap;
   justify-content: center;
@@ -801,6 +809,10 @@ h2 {
   transform: translateX(-50%);
 }
 
+.seat-bet-circle span {
+  display: none;
+}
+
 .seat-bet-circle.empty-circle {
   color: rgba(255, 244, 218, 0.5);
   border-style: dashed;
@@ -889,7 +901,7 @@ h2 {
 }
 
 .felt-actions .tray-copy {
-  display: grid;
+  display: none;
   justify-items: center;
 }
 
@@ -1235,6 +1247,15 @@ h2 {
 }
 
 @media (max-width: 720px) {
+  .page-shell {
+    padding: 14px 0 24px;
+    overflow-x: hidden;
+  }
+
+  .topbar {
+    padding: 0 12px;
+  }
+
   .field-grid,
   .table-header {
     grid-template-columns: 1fr;
@@ -1244,8 +1265,32 @@ h2 {
     align-items: stretch;
   }
 
+  .table-column,
+  .table-panel,
+  .felt-shell,
+  .table-felt {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .table-panel {
+    padding: 8px 0;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .felt-shell {
+    width: min(100%, calc(100vw - 20px));
+    max-width: calc(100vw - 20px);
+    margin: 0 auto;
+    padding: 10px;
+    border-radius: 28px;
+  }
+
   .table-felt {
     min-height: 980px;
+    width: 100%;
   }
 
   .dealer-zone {
@@ -1290,7 +1335,7 @@ h2 {
   }
 
   .felt-actions {
-    width: 84%;
+    width: 74%;
     bottom: 3%;
     gap: 8px;
   }

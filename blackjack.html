@@ -24,19 +24,19 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/blackjack-live/style.css?v=20260503e" />
+  <link rel="stylesheet" href="games/blackjack-live/style.css?v=20260503f" />
 </head>
 <body>
   <div class="page-shell">
     <header class="topbar">
       <div class="topbar-main">
         <a class="back-link" href="index.html">Back to AP Advantage Player</a>
-        <div class="view-controls">
+        <div class="view-controls" aria-hidden="true">
           <button id="toggleSetupBtn" class="view-toggle" type="button">Hide setup</button>
           <button id="toggleInfoBtn" class="view-toggle" type="button">Hide feed</button>
         </div>
       </div>
-      <div class="topbar-status">
+      <div class="topbar-status" aria-hidden="true">
         <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
         <div class="status-pill ghost" id="modePill">No table connected</div>
         <div class="status-pill wallet-pill" id="walletStatus">SIM wallet loading</div>
@@ -152,7 +152,7 @@
 
       <section class="table-column">
         <section class="table-panel panel">
-          <div class="table-header">
+          <div class="table-header" aria-hidden="true">
             <div class="hud-card">
               <p class="label">Room</p>
               <p class="hud-value room-code" id="roomCodeLabel">-</p>
@@ -174,11 +174,7 @@
           <div class="felt-shell">
             <div class="table-felt">
               <div class="table-rim" aria-hidden="true"></div>
-              <div class="table-markings" aria-hidden="true">
-                <span>BLACKJACK PAYS 3 TO 2</span>
-                <span>DEALER STANDS ON ALL 17</span>
-                <span>6 DECK SHOE - 25% CUT</span>
-              </div>
+              <div class="table-markings" aria-hidden="true"></div>
               <div class="table-props" aria-hidden="true">
                 <div class="shoe-prop"><span>Shoe</span></div>
                 <div class="discard-prop"><span>Discard</span></div>
@@ -191,7 +187,7 @@
                   <p id="tableSubline">Sit down, set a SIM wager, and deal when ready.</p>
                 </div>
                 <div class="dealer-row" id="dealerCards"></div>
-                <div class="dealer-pills">
+                <div class="dealer-pills" aria-hidden="true">
                   <span class="dealer-pill">Dealer score <strong id="dealerScoreLabel">?</strong></span>
                   <span class="dealer-pill alt">Hand <strong id="handLabel">0</strong></span>
                 </div>
@@ -208,7 +204,7 @@
 
               <div class="action-tray felt-actions">
                 <div class="tray-copy">
-                  <p class="tray-line" id="actionPrompt">Host or join, sit at the player spot, set your SIM wager, and deal the round when ready.</p>
+                  <p class="tray-line" id="actionPrompt"></p>
                 </div>
 
                 <div class="wager-strip">
@@ -271,6 +267,6 @@
 
   <script src="nova-auth.js?v=20260503e"></script>
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
-  <script src="games/blackjack-live/game.js?v=20260503e"></script>
+  <script src="games/blackjack-live/game.js?v=20260503f"></script>
 </body>
 </html>

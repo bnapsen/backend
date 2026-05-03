@@ -498,28 +498,14 @@
   function emptySeatMarkup() {
     const roomCode = sanitizeRoomCode(state.roomCode || ui.roomInput.value);
     const quickAction = canQuickSeatJoin() ? (roomCode ? 'join' : 'host') : '';
-    const prompt = quickAction === 'join'
-      ? 'Join this room and sit at the player spot.'
-      : quickAction === 'host'
-        ? 'Host a table and sit at the player spot.'
-        : 'The player spot is waiting for a signed-in SIM account.';
     const actionButton = quickAction
-      ? `<button class="seat-join-button" type="button" data-seat-action="${quickAction}">${quickAction === 'join' ? 'Join and sit' : 'Host and sit'}</button>`
+      ? `<button class="seat-join-button" type="button" data-seat-action="${quickAction}">Sit down</button>`
       : '';
     return `
       <div class="seat-card empty${quickAction ? ' joinable' : ''}">
-        <div class="seat-topline">
-          <div>
-            <div class="seat-name">Your seat</div>
-            <div class="seat-meta">SIM wallet</div>
-          </div>
-          <div class="seat-badges">
-            <span class="badge">Open</span>
-          </div>
-        </div>
         <div class="seat-play-area">
           <div class="seat-bet-circle empty-circle">
-            <span>Betting circle</span>
+            <span></span>
           </div>
           <div class="hole-row">
             ${cardMarkup(null, { dim: true, extraClass: 'hole-card', style: seatCardStyle(0, 2) })}
@@ -527,10 +513,6 @@
           </div>
         </div>
         <div class="seat-footer">
-          <div class="seat-totals">
-            <div class="seat-score">Single player</div>
-            <div class="seat-stack">${prompt}</div>
-          </div>
           ${actionButton}
         </div>
       </div>
@@ -568,18 +550,9 @@
 
     return `
       <div class="${classes.join(' ')}">
-        <div class="seat-topline">
-          <div>
-            <div class="seat-name">${player.name}</div>
-            <div class="seat-meta">${formatChips(player.walletCents ?? player.stack)} wallet</div>
-          </div>
-          <div class="seat-badges">
-            ${seatBadges(player, seat)}
-          </div>
-        </div>
         <div class="seat-play-area">
           <div class="seat-bet-circle">
-            <span>${betLine}</span>
+            <span></span>
           </div>
           <div class="hole-row">
             ${cards.join('')}
@@ -590,7 +563,6 @@
             <div class="seat-score">${scoreLine}</div>
             <div class="seat-stack">${betLine}</div>
           </div>
-          <div class="seat-status">${player.statusText || player.result || ''}</div>
         </div>
       </div>
     `;
@@ -711,35 +683,7 @@
   }
 
   function renderActionPrompt() {
-    const snapshot = state.snapshot;
-    const controls = currentControls();
-    const actor = getActionPlayer();
-
-    if (!snapshot) {
-      ui.actionPrompt.textContent = 'Sign in, host or join, then use the player spot on the front rail to sit and set your SIM wager.';
-      return;
-    }
-    if (controls.canAct) {
-      ui.actionPrompt.textContent = 'Action is on you. Hit to draw, stand to hold, or double if this is still your opening two-card hand.';
-      return;
-    }
-    if (controls.canAdjustBet) {
-      ui.actionPrompt.textContent = 'Your seat is ready for the next deal. Adjust your SIM wager with the chip buttons, then deal when the table is set.';
-      return;
-    }
-    if (controls.canStartRound) {
-      ui.actionPrompt.textContent = 'Your SIM wager is set. Press Deal round to put the next hand in motion.';
-      return;
-    }
-    if (actor) {
-      ui.actionPrompt.textContent = `${actor.name} is acting. Watch the dealer feed and wait for the next hand or your turn.`;
-      return;
-    }
-    if (snapshot.phase === 'settled') {
-      ui.actionPrompt.textContent = 'The hand is settled. Review payouts in the dealer feed, then set new wagers and deal again.';
-      return;
-    }
-    ui.actionPrompt.textContent = 'Sit down and place at least one SIM wager to start the table.';
+    ui.actionPrompt.textContent = '';
   }
 
   function renderChips() {
@@ -815,6 +759,9 @@
     ui.serverUrlInput.value = state.serverUrl;
     if (!state.panels.setupHidden) {
       state.panels.setupHidden = true;
+    }
+    if (!state.panels.infoHidden) {
+      state.panels.infoHidden = true;
     }
     if (!ui.nameInput.value.trim() && state.authProfile?.displayName) {
       ui.nameInput.value = state.authProfile.displayName.slice(0, 18);
@@ -959,8 +906,8 @@
     ui.nameInput.value = localStorage.getItem(STORAGE_KEYS.name) || '';
     state.serverUrl = productionSafeServerUrl(localStorage.getItem(STORAGE_KEYS.serverUrl) || defaultServerUrl());
     ui.serverUrlInput.value = state.serverUrl;
-    state.panels.setupHidden = localStorage.getItem(STORAGE_KEYS.setupHidden) === '1';
-    state.panels.infoHidden = localStorage.getItem(STORAGE_KEYS.infoHidden) === '1';
+    state.panels.setupHidden = true;
+    state.panels.infoHidden = true;
   }
 
   function bootFromQuery() {
