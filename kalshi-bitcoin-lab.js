@@ -265,6 +265,10 @@
   paperSideNoButton.addEventListener("click", function () { setPaperSide("no"); });
   paperFillLimitButton.addEventListener("click", fillPaperLimitFromMarket);
   paperUsePlanButton.addEventListener("click", fillPaperTicketFromPlan);
+  paperBuyBestButton.addEventListener("pointerdown", pressPaperLimitButton);
+  paperBuyBestButton.addEventListener("keydown", function (event) {
+    if (event.key === "Enter" || event.key === " ") pressPaperLimitButton();
+  });
   paperBuyBestButton.addEventListener("click", paperBuyPlan);
   paperFloatButton.addEventListener("click", floatPaperPanel);
   paperDockButton.addEventListener("click", dockPaperPanel);
@@ -683,11 +687,59 @@
     return state.sound.context;
   }
 
+  function playCashRegisterSound(ctx, now) {
+    const notes = [
+      [880, 0, 0.055, 0.035],
+      [1320, 0.055, 0.07, 0.042],
+      [1760, 0.13, 0.095, 0.032],
+    ];
+    notes.forEach(function (note, index) {
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = index === notes.length - 1 ? "triangle" : "sine";
+      oscillator.frequency.setValueAtTime(note[0], now + note[1]);
+      gain.gain.setValueAtTime(0.0001, now + note[1]);
+      gain.gain.exponentialRampToValueAtTime(note[3], now + note[1] + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + note[1] + note[2]);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start(now + note[1]);
+      oscillator.stop(now + note[1] + note[2] + 0.03);
+    });
+
+    const duration = 0.055;
+    const frameCount = Math.max(1, Math.floor(ctx.sampleRate * duration));
+    const buffer = ctx.createBuffer(1, frameCount, ctx.sampleRate);
+    const channel = buffer.getChannelData(0);
+    for (let index = 0; index < frameCount; index += 1) {
+      const fade = 1 - index / frameCount;
+      channel[index] = (Math.random() * 2 - 1) * fade * fade;
+    }
+    const source = ctx.createBufferSource();
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    filter.type = "highpass";
+    filter.frequency.setValueAtTime(1800, now + 0.02);
+    gain.gain.setValueAtTime(0.0001, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.018, now + 0.028);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.02 + duration);
+    source.buffer = buffer;
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    source.start(now + 0.02);
+    source.stop(now + 0.02 + duration);
+  }
+
   function playSound(kind) {
     if (!state.sound.enabled || !soundToggle.checked) return;
     const ctx = unlockAudio();
     if (!ctx) return;
     const now = ctx.currentTime;
+    if (kind === "cash") {
+      playCashRegisterSound(ctx, now);
+      return;
+    }
     const patterns = {
       arm: [[520, 0, 0.06], [760, 0.065, 0.08]],
       up: [[880, 0, 0.045], [1180, 0.045, 0.04]],
@@ -1748,6 +1800,7 @@
     const totalLabel = action === "buy" ? "Est. cost" : "Est. proceeds";
     paperFillLimitButton.textContent = action === "buy" ? "Ask" : "Bid";
     paperBuyBestButton.textContent = action === "buy" ? "Place Buy Limit" : "Place Sell Limit";
+    paperBuyBestButton.classList.toggle("sell", action === "sell");
     paperTicketPreviewEl.innerHTML = [
       paperTicketMetric(currentLabel, formatCents(quotePrice), quote ? "Bid " + formatCents(quote.bidCents) + " / Ask " + formatCents(quote.askCents) : "Waiting for quote"),
       paperTicketMetric(totalLabel, paperMoney(total), contracts + " contract" + (contracts === 1 ? "" : "s") + " incl est. fee " + paperMoney(fee)),
@@ -1783,6 +1836,28 @@
     setPaperStatus("Paper ticket loaded: " + String(plan.side || "yes").toUpperCase() + " limit " + formatCents(plan.entry.limitCents || plan.entry.askCents) + ".", false);
   }
 
+  function pressPaperLimitButton() {
+    if (!paperBuyBestButton || paperBuyBestButton.disabled) return;
+    paperBuyBestButton.classList.remove("is-pressing");
+    void paperBuyBestButton.offsetWidth;
+    paperBuyBestButton.classList.add("is-pressing");
+    window.setTimeout(function () {
+      paperBuyBestButton.classList.remove("is-pressing");
+    }, 170);
+  }
+
+  function confirmPaperLimitButton(action) {
+    if (!paperBuyBestButton) return;
+    paperBuyBestButton.classList.remove("is-order-placed", "is-order-sell");
+    void paperBuyBestButton.offsetWidth;
+    paperBuyBestButton.classList.add("is-order-placed");
+    if (action === "sell") paperBuyBestButton.classList.add("is-order-sell");
+    window.setTimeout(function () {
+      paperBuyBestButton.classList.remove("is-order-placed", "is-order-sell");
+    }, 720);
+    playSound(action === "sell" ? "sell" : "cash");
+  }
+
   function paperBuyPlan() {
     const order = paperTicketOrder();
     if (!order) return;
@@ -1805,12 +1880,15 @@
       order.secureSim = secureSimManualOrder(order);
       if (Number(quote.askCents) <= order.limitCents) {
         if (order.secureSim) {
+          confirmPaperLimitButton("buy");
           fillPaperBuySecure(order, quote.askCents, "Marketable secure SIM limit buy filled immediately");
         } else {
-          fillPaperBuy(order, quote.askCents, "Marketable limit buy filled immediately");
+          const position = fillPaperBuy(order, quote.askCents, "Marketable limit buy filled immediately");
+          if (position) confirmPaperLimitButton("buy");
         }
       } else {
         queuePaperOrder(order, "Waiting for ask <= " + formatCents(order.limitCents));
+        confirmPaperLimitButton("buy");
       }
       return;
     }
@@ -1824,6 +1902,7 @@
     const sellSourcePosition = findPaperPosition(order.sourcePositionId);
     order.secureSim = Boolean(sellSourcePosition && sellSourcePosition.secureSim && sellSourcePosition.serverPositionId);
     if (Number(quote.bidCents) >= order.limitCents) {
+      confirmPaperLimitButton("sell");
       if (order.secureSim) {
         paperSellContractsSecure(order, quote.bidCents, "Marketable secure SIM limit sell filled immediately");
       } else {
@@ -1831,6 +1910,7 @@
       }
     } else {
       queuePaperOrder(order, "Waiting for bid >= " + formatCents(order.limitCents));
+      confirmPaperLimitButton("sell");
     }
   }
 
