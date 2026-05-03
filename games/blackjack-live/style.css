@@ -1129,7 +1129,7 @@ h2 {
 }
 
 .seat-card button:hover {
-  transform: none;
+  transform: translateY(-2px);
 }
 
 .seat-topline,
@@ -1354,16 +1354,54 @@ h2 {
 }
 
 .seat-join-button {
+  position: relative;
   display: inline-flex;
   justify-content: center;
   align-items: center;
   min-height: 44px;
-  padding: 12px 16px;
+  padding: 13px 20px 14px;
   border-radius: 999px;
   color: #241209;
-  font-weight: 900;
-  background: linear-gradient(135deg, var(--gold), #ffdc8a);
-  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.2);
+  font-size: 0.9rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgba(255, 246, 204, 0.55);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 214, 0.62), transparent 28%),
+    linear-gradient(145deg, #ffe39a 0%, var(--gold) 48%, #a96522 100%);
+  border: 1px solid rgba(255, 230, 154, 0.58);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.42),
+    inset 0 -6px 0 rgba(99, 49, 14, 0.38),
+    0 14px 0 rgba(42, 19, 7, 0.42),
+    0 24px 30px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.seat-join-button::before {
+  content: '';
+  position: absolute;
+  inset: 2px 12px auto;
+  height: 38%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.48), transparent);
+  pointer-events: none;
+}
+
+.seat-join-button:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+}
+
+.seat-join-button:active,
+.seat-join-button.is-pressing {
+  transform: translateY(8px) scale(0.985);
+  box-shadow:
+    inset 0 4px 10px rgba(76, 35, 8, 0.42),
+    inset 0 -2px 0 rgba(99, 49, 14, 0.3),
+    0 6px 0 rgba(42, 19, 7, 0.42),
+    0 12px 16px rgba(0, 0, 0, 0.24);
 }
 
 .action-tray {
@@ -1409,7 +1447,7 @@ h2 {
 }
 
 .felt-actions .table-buttons button {
-  min-width: 86px;
+  min-width: 94px;
 }
 
 .wager-strip {
@@ -1538,23 +1576,117 @@ h2 {
 }
 
 .table-buttons button {
+  position: relative;
   min-width: 112px;
+  min-height: 48px;
+  padding: 13px 18px 15px;
+  color: rgba(255, 246, 224, 0.96);
+  font-size: 0.82rem;
+  font-weight: 950;
+  letter-spacing: 0.095em;
+  text-transform: uppercase;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.58);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.13), transparent 28%),
+    linear-gradient(145deg, rgba(41, 64, 75, 0.98), rgba(10, 18, 28, 0.98) 48%, rgba(3, 7, 13, 0.98));
+  border: 1px solid rgba(255, 244, 218, 0.18);
   box-shadow:
-    inset 0 -4px 0 rgba(0, 0, 0, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.09),
-    0 14px 26px rgba(0, 0, 0, 0.26);
+    inset 0 2px 0 rgba(255, 255, 255, 0.13),
+    inset 0 -7px 0 rgba(0, 0, 0, 0.34),
+    0 10px 0 rgba(0, 0, 0, 0.36),
+    0 21px 28px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+}
+
+.table-buttons button::before {
+  content: '';
+  position: absolute;
+  inset: 2px 12px auto;
+  height: 38%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent);
+  pointer-events: none;
+}
+
+.table-buttons button:hover {
+  transform: translateY(-3px);
+  border-color: rgba(131, 235, 212, 0.28);
+  filter: brightness(1.08) saturate(1.06);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -7px 0 rgba(0, 0, 0, 0.3),
+    0 13px 0 rgba(0, 0, 0, 0.34),
+    0 26px 34px rgba(0, 0, 0, 0.36),
+    0 0 20px rgba(131, 235, 212, 0.08);
+}
+
+.table-buttons .primary,
+.table-buttons button#dealBtn {
+  color: #2a1807;
+  text-shadow: 0 1px 0 rgba(255, 248, 214, 0.62);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.36), transparent 30%),
+    linear-gradient(145deg, #ffe19a 0%, var(--gold) 48%, var(--gold-deep) 100%);
+  border-color: rgba(255, 230, 154, 0.48);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.36),
+    inset 0 -7px 0 rgba(110, 58, 17, 0.38),
+    0 10px 0 rgba(68, 31, 8, 0.5),
+    0 21px 28px rgba(0, 0, 0, 0.32);
+}
+
+.table-buttons button#hitBtn {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 28%),
+    linear-gradient(145deg, rgba(40, 96, 92, 0.98), rgba(10, 45, 42, 0.98) 48%, rgba(4, 20, 24, 0.98));
+}
+
+.table-buttons button#standBtn {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 28%),
+    linear-gradient(145deg, rgba(70, 58, 98, 0.98), rgba(34, 28, 60, 0.98) 48%, rgba(12, 11, 24, 0.98));
+}
+
+.table-buttons button#doubleBtn,
+.table-buttons button#splitBtn {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 28%),
+    linear-gradient(145deg, rgba(103, 64, 43, 0.98), rgba(57, 29, 19, 0.98) 48%, rgba(18, 10, 8, 0.98));
+}
+
+.table-buttons button#resetTableBtn {
+  color: rgba(255, 222, 228, 0.95);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 28%),
+    linear-gradient(145deg, rgba(88, 37, 52, 0.98), rgba(40, 16, 26, 0.98) 48%, rgba(13, 7, 12, 0.98));
 }
 
 .table-buttons button:active,
 .table-buttons button.is-pressing,
-.primary:active,
-.primary.is-pressing,
-.secondary:active,
-.secondary.is-pressing {
+.table-buttons .primary:active,
+.table-buttons .primary.is-pressing,
+.table-buttons .secondary:active,
+.table-buttons .secondary.is-pressing {
+  transform: translateY(7px) scale(0.985);
+  filter: brightness(0.96);
   box-shadow:
-    inset 0 4px 10px rgba(0, 0, 0, 0.34),
+    inset 0 5px 12px rgba(0, 0, 0, 0.42),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.24),
+    0 4px 0 rgba(0, 0, 0, 0.32),
+    0 10px 15px rgba(0, 0, 0, 0.26);
+}
+
+.table-buttons button.control-disabled,
+.table-buttons button:disabled {
+  transform: none;
+  filter: grayscale(0.18);
+  box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 5px 10px rgba(0, 0, 0, 0.22);
+    inset 0 -4px 0 rgba(0, 0, 0, 0.24),
+    0 6px 0 rgba(0, 0, 0, 0.22),
+    0 13px 18px rgba(0, 0, 0, 0.22);
 }
 
 .log-list {

@@ -847,7 +847,7 @@
     const roomCode = sanitizeRoomCode(state.roomCode || ui.roomInput.value);
     const quickAction = canQuickSeatJoin() ? (roomCode ? 'join' : 'host') : '';
     const actionButton = quickAction
-      ? `<button class="seat-join-button" type="button" data-seat-action="${quickAction}" data-drag-id="button:sit">Sit down</button>`
+      ? `<button class="seat-join-button" type="button" data-seat-action="${quickAction}">Sit down</button>`
       : '';
     return `
       <div class="seat-card empty${quickAction ? ' joinable' : ''}">
@@ -1894,6 +1894,11 @@
       if (!trigger) {
         return;
       }
+      event.preventDefault();
+      event.stopPropagation();
+      playSound('click');
+      trigger.classList.add('is-pressing');
+      window.setTimeout(() => trigger.classList.remove('is-pressing'), 180);
       handleSeatJoinRequest().catch(() => showToast('Could not sit at the SIM blackjack table.'));
     });
 
