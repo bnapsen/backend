@@ -188,6 +188,7 @@
     heroSoloBtn: document.getElementById('heroSoloBtn'),
     heroHostBtn: document.getElementById('heroHostBtn'),
     heroJoinBtn: document.getElementById('heroJoinBtn'),
+    startWagerButtons: Array.from(document.querySelectorAll('[data-start-wager-cents]')),
     startHint: document.getElementById('startHint'),
     die1: document.getElementById('die1'),
     die2: document.getElementById('die2'),
@@ -796,6 +797,11 @@
     if (ui.heroJoinBtn) {
       ui.heroJoinBtn.disabled = pendingConnection;
     }
+    ui.startWagerButtons.forEach((button) => {
+      const cents = normalizeWagerCents(button.dataset.startWagerCents || 0);
+      button.disabled = pendingConnection;
+      button.classList.toggle('is-selected', selectedWagerCents() === cents);
+    });
     if (!ui.startHint) {
       return;
     }
@@ -807,7 +813,7 @@
       ui.startHint.textContent = `Room ${sanitizeRoomCode(ui.roomInput.value)} is ready to join.`;
       return;
     }
-    ui.startHint.textContent = 'Solo starts instantly. Hosting creates a room code you can copy and send.';
+    ui.startHint.textContent = 'Choose 10, 20, or 50 SIM to start a staked bot match immediately.';
   }
 
   function audioSupported() {
@@ -2744,9 +2750,15 @@
     ui.soloBtn.addEventListener('click', () => startSolo().catch((error) => {
       showToast(error && error.message ? error.message : 'Could not start that solo match.');
     }));
-    ui.heroSoloBtn?.addEventListener('click', () => startSolo().catch((error) => {
-      showToast(error && error.message ? error.message : 'Could not start that solo match.');
-    }));
+    ui.startWagerButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        setWagerInputCents(Number(button.dataset.startWagerCents || 0));
+        render();
+        startSolo().catch((error) => {
+          showToast(error && error.message ? error.message : 'Could not start that solo match.');
+        });
+      });
+    });
     ui.heroHostBtn?.addEventListener('click', () => {
       revealSetup();
       connectOnline('host').catch((error) => {
