@@ -4,114 +4,59 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Galaga</title>
-  <link rel="stylesheet" href="/galaga.css">
+  <link rel="stylesheet" href="/galaga.css?v=20260503c">
 </head>
-<body>
-  <main class="page-shell">
-    <div class="utility-bar">
-      <a class="back-link" href="/">All games</a>
-      <span class="utility-pill">Arcade shooter prototype</span>
-    </div>
+<body class="galaga-focus">
+  <main class="galaga-shell" aria-label="Galaga arcade game">
+    <header class="galaga-hud">
+      <a class="hud-back" href="/" aria-label="Back to all games">&larr;</a>
+      <div class="hud-stat">
+        <span>Wave</span>
+        <strong id="wave-display">01</strong>
+      </div>
+      <div class="hud-stat">
+        <span>Lives</span>
+        <strong id="lives-display">3</strong>
+      </div>
+      <div class="hud-stat">
+        <span>Score</span>
+        <strong id="score-display">000000</strong>
+      </div>
+      <div class="hud-stat">
+        <span>Best</span>
+        <strong id="best-display">000000</strong>
+      </div>
+      <div class="hud-actions">
+        <button class="hud-button primary" id="start-button" type="button">Start</button>
+        <button class="hud-button" id="pause-button" type="button">Pause</button>
+        <button class="hud-button" id="restart-button" type="button">Restart</button>
+      </div>
+    </header>
 
-    <section class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow">Arcade pressure test</p>
-        <h1>Galaga</h1>
-        <p class="lede">
-          One ship, no cover, and a sky full of dive-bombers. Clear the formation, survive the
-          breakaways, and keep the run alive long enough to make the board feel unfair in your favor.
-        </p>
-        <div class="hero-actions">
-          <button class="button primary" id="start-button" type="button">Start run</button>
-          <button class="button secondary" id="pause-button" type="button">Pause</button>
+    <section class="playfield" aria-label="Game screen">
+      <div class="screen-frame">
+        <canvas id="game-canvas" width="480" height="640" aria-label="Galaga game screen"></canvas>
+        <div class="screen-overlay" id="screen-overlay">
+          <p class="overlay-kicker" id="overlay-kicker">Ready</p>
+          <h2 id="overlay-title">Press Start</h2>
+          <p id="overlay-copy">Clear the formation before the sky folds in on you.</p>
         </div>
       </div>
-
-      <aside class="hero-note">
-        <p class="note-label">How it plays</p>
-        <h2>Classic lane pressure, sharper rhythm</h2>
-        <ul class="note-list">
-          <li>Move with <strong>Arrow keys</strong> or <strong>A / D</strong>.</li>
-          <li>Fire with <strong>Space</strong>, <strong>W</strong>, or the on-screen trigger.</li>
-          <li>Press <strong>P</strong> to pause and settle the screen.</li>
-        </ul>
-      </aside>
     </section>
 
-    <section class="game-layout">
-      <div class="cabinet panel">
-        <div class="cabinet-head">
-          <div>
-            <p class="label">Wave</p>
-            <p class="cabinet-value" id="wave-display">01</p>
-          </div>
-          <div>
-            <p class="label">Lives</p>
-            <p class="cabinet-value" id="lives-display">3</p>
-          </div>
-          <div>
-            <p class="label">Score</p>
-            <p class="cabinet-value" id="score-display">000000</p>
-          </div>
-          <div>
-            <p class="label">Best</p>
-            <p class="cabinet-value" id="best-display">000000</p>
-          </div>
-        </div>
+    <section class="status-line" aria-live="polite">
+      <h2 id="status-title">Formation steady</h2>
+      <p id="status-copy">Take the center lane early.</p>
+    </section>
 
-        <div class="screen-frame">
-          <canvas id="game-canvas" width="480" height="640" aria-label="Galaga game screen"></canvas>
-          <div class="screen-overlay" id="screen-overlay">
-            <p class="overlay-kicker" id="overlay-kicker">Ready</p>
-            <h2 id="overlay-title">Press Start</h2>
-            <p id="overlay-copy">Clear the formation before the sky folds in on you.</p>
-          </div>
-        </div>
-
-        <div class="mobile-controls" aria-label="Touch controls">
-          <button class="control-button" data-control="left" type="button">Left</button>
-          <button class="control-button control-button-fire" data-control="fire" type="button">Fire</button>
-          <button class="control-button" data-control="right" type="button">Right</button>
-        </div>
-      </div>
-
-      <aside class="status-panel panel">
-        <section class="status-block">
-          <p class="label">Run status</p>
-          <h2 id="status-title">Formation steady</h2>
-          <p class="status-copy" id="status-copy">
-            Take the center lane early. The dive-bombers get meaner when they think they own the
-            edges.
-          </p>
-        </section>
-
-        <section class="status-block">
-          <p class="label">Scoring</p>
-          <div class="scoring-list">
-            <div><span>Drone</span><strong>80</strong></div>
-            <div><span>Guard</span><strong>120</strong></div>
-            <div><span>Boss</span><strong>180</strong></div>
-            <div><span>Dive kill</span><strong>+70</strong></div>
-          </div>
-        </section>
-
-        <section class="status-block">
-          <p class="label">Build notes</p>
-          <ul class="build-notes">
-            <li>Formation speed climbs each wave.</li>
-            <li>Dive attacks retarget while you drift.</li>
-            <li>Best score saves in this browser.</li>
-          </ul>
-        </section>
-
-        <section class="status-block compact-actions">
-          <button class="button tertiary" id="restart-button" type="button">Restart run</button>
-        </section>
-      </aside>
+    <section class="mobile-controls" aria-label="Touch controls">
+      <button class="control-button" data-control="left" type="button">Left</button>
+      <button class="control-button control-button-fire" data-control="fire" type="button">Fire</button>
+      <button class="control-button" data-control="right" type="button">Right</button>
     </section>
   </main>
 
-  <script src="/galaga.js?v=20260503b" type="module"></script>
+  <script src="/galaga.js?v=20260503c" type="module"></script>
   <script src="../nova-auth.js?v=20260503b" defer></script>
 </body>
 </html>

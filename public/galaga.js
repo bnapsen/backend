@@ -1,6 +1,8 @@
 const STORAGE_KEY = "bnapsen:galaga:best";
 const canvas = document.getElementById("game-canvas");
 const ctx = canvas.getContext("2d");
+const playfield = document.querySelector(".playfield");
+const screenFrame = document.querySelector(".screen-frame");
 
 const scoreDisplay = document.getElementById("score-display");
 const bestDisplay = document.getElementById("best-display");
@@ -47,6 +49,8 @@ const state = {
     left: false,
     right: false,
     fire: false,
+    pointerActive: false,
+    pointerX: canvas.width / 2,
   },
   enemyFireCooldown: 0.7,
   enemyFireTimer: 0.4,
@@ -110,6 +114,20 @@ function setOverlay(kicker, title, copy, hidden = false) {
   overlayTitle.textContent = title;
   overlayCopy.textContent = copy;
   overlay.classList.toggle("hidden", hidden);
+}
+
+function resizeScreenFrame() {
+  if (!playfield || !screenFrame) {
+    return;
+  }
+  const rect = playfield.getBoundingClientRect();
+  const maxWidth = Math.max(0, rect.width);
+  const maxHeight = Math.max(0, rect.height);
+  const ratio = state.width / state.height;
+  const width = Math.max(1, Math.floor(Math.min(maxWidth, maxHeight * ratio)));
+  const height = Math.max(1, Math.floor(width / ratio));
+  screenFrame.style.width = `${width}px`;
+  screenFrame.style.height = `${height}px`;
 }
 
 function createStars() {
@@ -361,8 +379,12 @@ function updateStars(deltaTime) {
 }
 
 function updatePlayer(deltaTime) {
-  const direction = (state.input.right ? 1 : 0) - (state.input.left ? 1 : 0);
-  state.player.x += direction * state.player.speed * deltaTime;
+  if (state.input.pointerActive) {
+    state.player.x = moveAxis(state.player.x, state.input.pointerX, state.player.speed * 1.35 * deltaTime);
+  } else {
+    const direction = (state.input.right ? 1 : 0) - (state.input.left ? 1 : 0);
+    state.player.x += direction * state.player.speed * deltaTime;
+  }
   state.player.x = Math.max(22, Math.min(state.width - 22, state.player.x));
 
   if (state.player.fireCooldown > 0) {
@@ -772,6 +794,52 @@ function bindKeyboard() {
 }
 
 function bindPointerControls() {
+  const pointerXFromEvent = (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const ratio = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0.5;
+    return Math.max(22, Math.min(state.width - 22, ratio * state.width));
+  };
+
+  const updatePointerAim = (event) => {
+    state.input.pointerX = pointerXFromEvent(event);
+  };
+
+  const stopPointerAim = () => {
+    state.input.pointerActive = false;
+    state.input.fire = false;
+  };
+
+  canvas.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    if (state.awaitingStart || state.gameOver) {
+      startRun();
+    }
+    state.input.pointerActive = true;
+    state.input.fire = true;
+    updatePointerAim(event);
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture is best effort; movement still works while over the canvas.
+    }
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (!state.input.pointerActive) {
+      return;
+    }
+    event.preventDefault();
+    updatePointerAim(event);
+  });
+  canvas.addEventListener("pointerup", stopPointerAim);
+  canvas.addEventListener("pointercancel", stopPointerAim);
+  canvas.addEventListener("pointerleave", stopPointerAim);
+
+  overlay.addEventListener("click", () => {
+    if (state.awaitingStart || state.gameOver) {
+      startRun();
+    }
+  });
+
   for (const button of document.querySelectorAll("[data-control]")) {
     const control = button.getAttribute("data-control");
     const activate = (pressed) => {
@@ -825,6 +893,7 @@ function bindUi() {
 
 function init() {
   createStars();
+  resizeScreenFrame();
   updateHud();
   setStatus(
     "Formation steady",
@@ -834,6 +903,9 @@ function init() {
   bindKeyboard();
   bindPointerControls();
   bindUi();
+  window.addEventListener("load", resizeScreenFrame);
+  window.addEventListener("resize", resizeScreenFrame);
+  window.addEventListener("orientationchange", () => window.setTimeout(resizeScreenFrame, 120));
   window.requestAnimationFrame(frame);
 }
 
