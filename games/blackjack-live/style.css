@@ -578,9 +578,32 @@ h2 {
   transition: none;
 }
 
+.card.drag-piece,
+.card.drag-piece:hover,
+.card.drag-piece.dragging,
 .card.drag-source-anchored {
-  opacity: 1;
-  filter: brightness(0.98) drop-shadow(0 0 12px rgba(131, 235, 212, 0.18));
+  opacity: 1 !important;
+  visibility: visible !important;
+  filter: none !important;
+}
+
+.card.drag-piece .card-inner,
+.card.drag-piece .card-face,
+.card.drag-piece .card-back-face,
+.card-drag-ghost .card-inner,
+.card-drag-ghost .card-face,
+.card-drag-ghost .card-back-face {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.card.drag-piece:hover .card-inner,
+.card.drag-piece.dragging .card-inner,
+.card.drag-source-anchored .card-inner {
+  box-shadow:
+    0 22px 34px rgba(0, 0, 0, 0.38),
+    0 0 18px rgba(131, 235, 212, 0.16),
+    0 3px 0 rgba(118, 79, 38, 0.42);
 }
 
 .card-drag-ghost {
@@ -593,13 +616,22 @@ h2 {
   translate: none !important;
   opacity: 1;
   filter: brightness(1.1) drop-shadow(0 22px 34px rgba(0, 0, 0, 0.45));
+  transform-style: preserve-3d;
   transform: translate3d(0, 0, 0) scale(1.045);
   transition: none !important;
   will-change: transform;
 }
 
+.card-chuck-ghost {
+  z-index: 5200 !important;
+  opacity: 1 !important;
+  filter: drop-shadow(0 26px 34px rgba(0, 0, 0, 0.44));
+}
+
 .card-drag-ghost,
+.card-chuck-ghost,
 .card-drag-ghost .card-inner,
+.card-chuck-ghost .card-inner,
 .card.drag-piece.is-moved.animate-in,
 .card.drag-piece.is-moved.animate-in .card-inner,
 .card.drag-piece.dragging.animate-in,
@@ -608,6 +640,10 @@ h2 {
 .card.drag-source-anchored.animate-in .card-inner {
   animation: none !important;
   animation-delay: 0ms !important;
+}
+
+.dealer-zone.card-impact .dealer-row {
+  animation: dealerCardImpact 760ms cubic-bezier(0.16, 0.86, 0.2, 1);
 }
 
 .dragging-table-piece {
@@ -915,6 +951,24 @@ h2 {
       inset 0 0 0 2px rgba(255, 255, 255, 0.13),
       inset 0 0 56px rgba(255, 255, 255, 0.06),
       inset 0 -34px 40px rgba(0, 0, 0, 0.24);
+  }
+}
+
+@keyframes dealerCardImpact {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+    filter: none;
+  }
+  34% {
+    transform: translateY(9px) rotate(-1.2deg);
+    filter: drop-shadow(0 0 16px rgba(239, 197, 109, 0.18));
+  }
+  58% {
+    transform: translateY(-5px) rotate(0.7deg);
+  }
+  76% {
+    transform: translateY(2px) rotate(-0.25deg);
   }
 }
 

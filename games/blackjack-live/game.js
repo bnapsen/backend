@@ -235,6 +235,12 @@
       playTone(context, 520, now + 0.025, 0.04, { type: 'triangle', volume: 0.022, endFrequency: 410 });
       return;
     }
+    if (name === 'throw') {
+      playNoise(context, now, 0.12, { frequency: 2400, q: 1.6, volume: 0.034 });
+      playTone(context, 180, now + 0.15, 0.055, { type: 'triangle', volume: 0.028, endFrequency: 105 });
+      playTone(context, 420, now + 0.205, 0.045, { type: 'sine', volume: 0.018, endFrequency: 320 });
+      return;
+    }
     if (name === 'shuffle') {
       for (let index = 0; index < 6; index += 1) {
         playNoise(context, now + index * 0.045, 0.08, {
@@ -1242,6 +1248,82 @@
     return { dx: nextDx, dy: nextDy };
   }
 
+  function updateDragVelocity(drag, event) {
+    const now = performance.now();
+    const elapsed = Math.max(16, now - (drag.lastTime || now));
+    drag.velocityX = ((event.clientX - drag.lastX) / elapsed) * 1000;
+    drag.velocityY = ((event.clientY - drag.lastY) / elapsed) * 1000;
+    drag.lastX = event.clientX;
+    drag.lastY = event.clientY;
+    drag.lastTime = now;
+  }
+
+  function shouldChuckCard(drag) {
+    if (!drag?.isCard || !drag.moved || !drag.ghost) {
+      return false;
+    }
+    const position = state.tableDrag.positions[drag.id] || { x: drag.baseX, y: drag.baseY };
+    const dx = Math.round(Number(position.x) || 0) - drag.baseX;
+    const dy = Math.round(Number(position.y) || 0) - drag.baseY;
+    const speed = Math.hypot(drag.velocityX || 0, drag.velocityY || 0);
+    return speed > 760 && (drag.velocityY < -220 || dy < -58 || Math.hypot(dx, dy) > 150);
+  }
+
+  function animateCardChuck(drag) {
+    const ghost = drag?.ghost;
+    if (!ghost) {
+      return;
+    }
+    const currentRect = ghost.getBoundingClientRect();
+    const dealerTarget = document.querySelector('.dealer-row') ||
+      document.querySelector('.dealer-zone') ||
+      document.querySelector('.table-felt');
+    const dealerRect = dealerTarget?.getBoundingClientRect();
+    const startCenterX = currentRect.left + currentRect.width / 2;
+    const startCenterY = currentRect.top + currentRect.height / 2;
+    const targetCenterX = dealerRect
+      ? dealerRect.left + dealerRect.width / 2 + Math.max(-26, Math.min(26, (drag.velocityX || 0) * 0.018))
+      : startCenterX;
+    const targetCenterY = dealerRect
+      ? dealerRect.top + Math.min(dealerRect.height * 0.58, currentRect.height * 0.7)
+      : startCenterY - 160;
+    const targetX = targetCenterX - startCenterX;
+    const targetY = targetCenterY - startCenterY;
+    const spin = Math.max(-42, Math.min(42, (drag.velocityX || 0) * 0.04));
+    const arcY = targetY - Math.min(150, Math.max(72, Math.abs(targetY) * 0.45));
+    const bounceX = Math.max(-18, Math.min(18, (drag.velocityX || 0) * 0.012));
+
+    ghost.classList.add('card-chuck-ghost');
+    ghost.style.left = `${currentRect.left}px`;
+    ghost.style.top = `${currentRect.top}px`;
+    ghost.style.width = `${currentRect.width}px`;
+    ghost.style.height = `${currentRect.height}px`;
+    ghost.style.transform = 'translate3d(0, 0, 0) rotate(0deg) scale(1.045)';
+
+    const dealerZone = document.querySelector('.dealer-zone');
+    dealerZone?.classList.add('card-impact');
+    window.setTimeout(() => dealerZone?.classList.remove('card-impact'), 820);
+
+    if (typeof ghost.animate === 'function') {
+      const animation = ghost.animate([
+        { transform: 'translate3d(0, 0, 0) rotate(0deg) scale(1.045)', offset: 0 },
+        { transform: `translate3d(${targetX * 0.52}px, ${arcY}px, 0) rotate(${spin * 0.7}deg) scale(1.08)`, offset: 0.52 },
+        { transform: `translate3d(${targetX}px, ${targetY}px, 0) rotate(${spin + 12}deg) scale(0.96)`, offset: 0.78 },
+        { transform: `translate3d(${targetX + bounceX}px, ${targetY - 20}px, 0) rotate(${spin - 8}deg) scale(0.99)`, offset: 0.9 },
+        { transform: `translate3d(${targetX + bounceX * 0.25}px, ${targetY + 2}px, 0) rotate(${spin}deg) scale(0.94)`, offset: 1 },
+      ], {
+        duration: 780,
+        easing: 'cubic-bezier(0.16, 0.86, 0.2, 1)',
+        fill: 'forwards',
+      });
+      animation.onfinish = () => ghost.remove();
+    } else {
+      ghost.style.transform = `translate3d(${targetX}px, ${targetY}px, 0) rotate(${spin}deg) scale(0.94)`;
+      window.setTimeout(() => ghost.remove(), 820);
+    }
+    playSound('throw');
+  }
+
   function clampDragPosition(element, position) {
     const table = document.querySelector('.table-felt');
     if (!table || !element) {
@@ -1367,6 +1449,11 @@
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      lastTime: performance.now(),
+      velocityX: 0,
+      velocityY: 0,
       baseX: Math.round(Number(saved.x) || 0),
       baseY: Math.round(Number(saved.y) || 0),
       moved: false,
@@ -1381,6 +1468,7 @@
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
     }
+    updateDragVelocity(drag, event);
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
     if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) {
@@ -1424,15 +1512,23 @@
     drag.element.releasePointerCapture?.(event.pointerId);
     const target = document.querySelector(`.table-felt [data-drag-id="${cssEscape(drag.id)}"]`) || drag.element;
     if (drag.moved) {
-      const finalPosition = resolveDragOverlaps(
-        target,
-        state.tableDrag.positions[drag.id] || { x: drag.baseX, y: drag.baseY }
-      );
-      state.tableDrag.positions[drag.id] = finalPosition;
-      applyDragPosition(target, finalPosition);
+      if (shouldChuckCard(drag)) {
+        const originalPosition = { x: drag.baseX, y: drag.baseY };
+        state.tableDrag.positions[drag.id] = originalPosition;
+        applyDragPosition(target, originalPosition);
+        animateCardChuck(drag);
+        drag.ghost = null;
+      } else {
+        const finalPosition = resolveDragOverlaps(
+          target,
+          state.tableDrag.positions[drag.id] || { x: drag.baseX, y: drag.baseY }
+        );
+        state.tableDrag.positions[drag.id] = finalPosition;
+        applyDragPosition(target, finalPosition);
+        playSound('click');
+      }
       persistTableLayout();
       state.tableDrag.suppressClickUntil = Date.now() + 450;
-      playSound('click');
     }
     drag.element.classList.remove('dragging');
     drag.element.classList.remove('drag-source-anchored');
