@@ -29,11 +29,6 @@ body {
     linear-gradient(180deg, #050817 0%, var(--bg) 100%);
 }
 
-.galaga-focus .nova-floating-wallet,
-.galaga-focus .nova-floating-wallet-restore {
-  display: none !important;
-}
-
 button,
 a {
   font: inherit;

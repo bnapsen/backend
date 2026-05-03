@@ -112,12 +112,11 @@ is used by the 15-minute Bitcoin paper trader and site games.
   refunds in cents, rejects overdrafts, and keeps a capped recent transaction
   list on the wallet document.
 - `POST /api/sim/enemy-kill` awards the server-controlled enemy kill reward for
-  Zombie Siege, Galaga, and Space Shooter. The default reward is `0.01 SIM` per
-  credited kill, capped at `5 SIM` per game per day and `10 SIM` per account per
-  day.
+  Zombie Siege, Galaga, and Space Shooter. The default reward is `0.01 SIM`
+  after every `10` credited kills, with no daily or per-game earning cap.
 - `SIM_STARTING_BALANCE` can override the starter grant.
-- `SIM_KILL_REWARD_CENTS`, `SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS`, and
-  `SIM_KILL_REWARD_DAILY_CAP_CENTS` can tune the kill-reward economy.
+- `SIM_KILL_REWARD_CENTS` and `SIM_KILL_REWARD_KILLS_PER_CREDIT` can tune the
+  kill-reward economy.
 - `SIM_WALLET_FIRESTORE_COLLECTION` can override the default `simWallets`
   collection.
 

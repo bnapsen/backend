@@ -87,12 +87,14 @@ function publicKillRewards(source) {
   for (const [game, entry] of Object.entries(games)) {
     publicGames[cleanText(game, 'game', 60)] = {
       kills: Math.max(0, Math.floor(Number(entry && entry.kills) || 0)),
+      pendingKills: Math.max(0, Math.floor(Number(entry && entry.pendingKills) || 0)),
       rewardCents: normalizeCents(entry && entry.rewardCents),
       reward: normalizeCents(entry && entry.rewardCents) / 100,
     };
   }
   return {
     dayKey: cleanText(rewards.dayKey, '', 30),
+    lastUpdatedDayKey: cleanText(rewards.lastUpdatedDayKey, '', 30),
     totalRewardCents: normalizeCents(rewards.totalRewardCents),
     totalReward: normalizeCents(rewards.totalRewardCents) / 100,
     games: publicGames,

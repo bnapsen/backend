@@ -60,14 +60,10 @@ const TICK_MS = 50;
 const BACKGAMMON_MAX_WAGER_CENTS = 100000;
 const BACKGAMMON_WAGER_SOURCE = 'backgammon';
 const SIM_KILL_REWARD_CENTS = Math.max(1, Math.min(25, Math.round(Number(process.env.SIM_KILL_REWARD_CENTS || 1))));
-const SIM_KILL_REWARD_DAILY_CAP_CENTS = Math.max(
-  SIM_KILL_REWARD_CENTS,
-  Math.round(Number(process.env.SIM_KILL_REWARD_DAILY_CAP_CENTS || 1000)),
-);
-const SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS = Math.max(
-  SIM_KILL_REWARD_CENTS,
-  Math.round(Number(process.env.SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS || 500)),
-);
+const SIM_KILL_REWARD_KILLS_PER_CREDIT = Math.max(2, Math.min(
+  500,
+  Math.round(Number(process.env.SIM_KILL_REWARD_KILLS_PER_CREDIT || 10)),
+));
 const SIM_KILL_REWARD_MAX_KILLS_PER_REQUEST = 25;
 const SIM_KILL_REWARD_TIME_ZONE = String(process.env.SIM_KILL_REWARD_TIME_ZONE || 'America/Los_Angeles').trim();
 const SIM_KILL_REWARD_GAMES = Object.freeze({
@@ -481,13 +477,6 @@ function simRewardDayKey(date = new Date()) {
 
 function normalizeKillRewardState(source, dayKey = simRewardDayKey()) {
   const current = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
-  if (String(current.dayKey || '') !== dayKey) {
-    return {
-      dayKey,
-      totalRewardCents: 0,
-      games: {},
-    };
-  }
   const games = current.games && typeof current.games === 'object' && !Array.isArray(current.games)
     ? current.games
     : {};
@@ -496,10 +485,12 @@ function normalizeKillRewardState(source, dayKey = simRewardDayKey()) {
     nextGames[String(game).slice(0, 60)] = {
       kills: Math.max(0, Math.floor(Number(entry && entry.kills) || 0)),
       rewardCents: Math.max(0, Math.round(Number(entry && entry.rewardCents) || 0)),
+      pendingKills: Math.max(0, Math.floor(Number(entry && entry.pendingKills) || 0)),
     };
   }
   return {
     dayKey,
+    lastUpdatedDayKey: String(current.lastUpdatedDayKey || current.dayKey || dayKey).slice(0, 30),
     totalRewardCents: Math.max(0, Math.round(Number(current.totalRewardCents) || 0)),
     games: nextGames,
   };
@@ -678,33 +669,46 @@ async function handleSimEnemyKillRewardRequest(req, res) {
   try {
     const tx = await simWalletStore.transactWallet(auth.user, async (wallet, context) => {
       const rewardState = normalizeKillRewardState(wallet.killRewards, dayKey);
-      const gameState = rewardState.games[game] || { kills: 0, rewardCents: 0 };
-      const requestedRewardCents = requestedKills * SIM_KILL_REWARD_CENTS;
-      const dayRemainingCents = Math.max(0, SIM_KILL_REWARD_DAILY_CAP_CENTS - rewardState.totalRewardCents);
-      const gameRemainingCents = Math.max(0, SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS - gameState.rewardCents);
-      const awardCents = Math.max(0, Math.min(requestedRewardCents, dayRemainingCents, gameRemainingCents));
-      const creditedKills = Math.floor(awardCents / SIM_KILL_REWARD_CENTS);
+      const gameState = rewardState.games[game] || { kills: 0, rewardCents: 0, pendingKills: 0 };
+      const pendingBefore = Math.max(0, Math.floor(Number(gameState.pendingKills) || 0));
+      const bankedKills = pendingBefore + requestedKills;
+      const rewardUnits = Math.floor(bankedKills / SIM_KILL_REWARD_KILLS_PER_CREDIT);
+      const awardCents = Math.max(0, rewardUnits * SIM_KILL_REWARD_CENTS);
+      const creditedKills = rewardUnits * SIM_KILL_REWARD_KILLS_PER_CREDIT;
+      const pendingKills = bankedKills % SIM_KILL_REWARD_KILLS_PER_CREDIT;
+      const nextRewardState = {
+        dayKey,
+        lastUpdatedDayKey: dayKey,
+        totalRewardCents: rewardState.totalRewardCents + awardCents,
+        games: {
+          ...rewardState.games,
+          [game]: {
+            kills: gameState.kills + requestedKills,
+            rewardCents: gameState.rewardCents + awardCents,
+            pendingKills,
+          },
+        },
+      };
 
       if (awardCents <= 0 || creditedKills <= 0) {
         return {
           walletData: {
             ...wallet,
-            killRewards: rewardState,
+            updatedAt: new Date().toISOString(),
+            killRewards: nextRewardState,
           },
           result: {
             game,
             gameLabel: gameDef.label,
             killCount: requestedKills,
             creditedKills: 0,
+            pendingKills,
             awardCents: 0,
             award: 0,
-            capped: true,
+            capped: false,
             dayKey,
-            rewardCentsPerKill: SIM_KILL_REWARD_CENTS,
-            dailyCapCents: SIM_KILL_REWARD_DAILY_CAP_CENTS,
-            gameDailyCapCents: SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS,
-            dayRemainingCents,
-            gameRemainingCents,
+            rewardCents: SIM_KILL_REWARD_CENTS,
+            killsPerReward: SIM_KILL_REWARD_KILLS_PER_CREDIT,
           },
         };
       }
@@ -719,24 +723,14 @@ async function handleSimEnemyKillRewardRequest(req, res) {
           gameLabel: gameDef.label,
           requestedKills,
           creditedKills,
-          rewardCentsPerKill: SIM_KILL_REWARD_CENTS,
+          pendingKills,
+          rewardCents: SIM_KILL_REWARD_CENTS,
+          killsPerReward: SIM_KILL_REWARD_KILLS_PER_CREDIT,
           dayKey,
           score: Math.max(0, Math.round(Number(body.score) || 0)),
           runId: String(body.runId || '').slice(0, 80),
         },
       });
-
-      const nextRewardState = {
-        dayKey,
-        totalRewardCents: rewardState.totalRewardCents + awardCents,
-        games: {
-          ...rewardState.games,
-          [game]: {
-            kills: gameState.kills + creditedKills,
-            rewardCents: gameState.rewardCents + awardCents,
-          },
-        },
-      };
       nextWallet.killRewards = nextRewardState;
 
       return {
@@ -746,15 +740,13 @@ async function handleSimEnemyKillRewardRequest(req, res) {
           gameLabel: gameDef.label,
           killCount: requestedKills,
           creditedKills,
+          pendingKills,
           awardCents,
           award: awardCents / 100,
-          capped: awardCents < requestedRewardCents,
+          capped: false,
           dayKey,
-          rewardCentsPerKill: SIM_KILL_REWARD_CENTS,
-          dailyCapCents: SIM_KILL_REWARD_DAILY_CAP_CENTS,
-          gameDailyCapCents: SIM_KILL_REWARD_GAME_DAILY_CAP_CENTS,
-          dayRemainingCents: Math.max(0, dayRemainingCents - awardCents),
-          gameRemainingCents: Math.max(0, gameRemainingCents - awardCents),
+          rewardCents: SIM_KILL_REWARD_CENTS,
+          killsPerReward: SIM_KILL_REWARD_KILLS_PER_CREDIT,
         },
       };
     });
