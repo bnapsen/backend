@@ -793,23 +793,30 @@
         state.pickups.splice(index, 1);
         continue;
       }
-      if (pickup.type === 'sim-coin' && pickup.ownerId) {
-        const owner = findPlayer(state, pickup.ownerId);
-        if (!owner || !owner.alive) {
-          continue;
-        }
-        const dx = owner.x - pickup.x;
-        const dy = owner.y - pickup.y;
-        const distance = Math.hypot(dx, dy);
+      if (pickup.type === 'sim-coin') {
         const magnetRadius = pickup.magnetRadius || SIM_COIN_MAGNET_RADIUS;
-        if (distance > 0.1 && distance < magnetRadius) {
-          const pull = clamp(1 - distance / magnetRadius, 0.12, 1);
+        let closestPlayer = null;
+        let closestDistance = Infinity;
+        for (const player of state.players) {
+          if (!player.alive) {
+            continue;
+          }
+          const distance = Math.hypot(player.x - pickup.x, player.y - pickup.y);
+          if (distance < closestDistance && distance < magnetRadius) {
+            closestPlayer = player;
+            closestDistance = distance;
+          }
+        }
+        if (closestPlayer && closestDistance > 0.1) {
+          const dx = closestPlayer.x - pickup.x;
+          const dy = closestPlayer.y - pickup.y;
+          const pull = clamp(1 - closestDistance / magnetRadius, 0.12, 1);
           const stepDistance = Math.min(
-            distance,
+            closestDistance,
             (pickup.magnetSpeed || SIM_COIN_MAGNET_SPEED) * pull * dt
           );
-          pickup.x += (dx / distance) * stepDistance;
-          pickup.y += (dy / distance) * stepDistance;
+          pickup.x += (dx / closestDistance) * stepDistance;
+          pickup.y += (dy / closestDistance) * stepDistance;
         }
       }
     }
@@ -950,9 +957,6 @@
       const pickup = state.pickups[index];
       for (const player of state.players) {
         if (!player.alive) {
-          continue;
-        }
-        if (pickup.ownerId && pickup.ownerId !== player.id) {
           continue;
         }
         const pickupRadius = pickup.collectRadius || pickup.r;

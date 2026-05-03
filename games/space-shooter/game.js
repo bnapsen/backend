@@ -763,9 +763,13 @@
       } else if (event.type === 'level_up') {
         playLevelUpSound();
         showToast(`${event.name} reached level ${event.level}`);
-      } else if (event.type === 'sim_coin_drop' && event.playerId === state.yourPlayerId) {
+      } else if (event.type === 'sim_coin_drop') {
         playCoinDropSound();
-        showToast('SIM coin dropped. Fly through it to bank +0.01 SIM.');
+        if (event.playerId === state.yourPlayerId) {
+          showToast('SIM coin dropped. First pilot through it banks +0.01 SIM.');
+        } else {
+          showToast(`${event.name || 'A pilot'} dropped a SIM coin. First one there banks it.`);
+        }
       } else if (event.type === 'boss_spawn') {
         playBossAlertSound();
         showToast(`Boss wave ${event.wave} incoming`);
