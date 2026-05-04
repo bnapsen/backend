@@ -23,6 +23,7 @@
     serverUrl: '',
     statusMessage: '',
     toastTimer: 0,
+    resultCalloutTimer: 0,
     walletRefreshTimer: 0,
     audio: {
       context: null,
@@ -100,6 +101,7 @@
     resetTableBtn: document.getElementById('resetTableBtn'),
     toast: document.getElementById('toast'),
     layoutShell: document.getElementById('layoutShell'),
+    resultCallout: document.getElementById('resultCallout'),
   };
 
   function sanitizeRoomCode(value) {
@@ -814,10 +816,56 @@
     return '';
   }
 
-  function triggerOutcomeAnimation(outcome) {
+  function playerHasBust(player) {
+    if (!player) {
+      return false;
+    }
+    if (player.busted) {
+      return true;
+    }
+    if (Array.isArray(player.hands) && player.hands.some((hand) => hand?.busted)) {
+      return true;
+    }
+    const resultText = [
+      player.result,
+      ...(Array.isArray(player.hands) ? player.hands.map((hand) => hand.result) : []),
+    ].join(' ').toLowerCase();
+    return /\bbust(?:ed|s)?\b/.test(resultText) && !/dealer busts/.test(resultText);
+  }
+
+  function triggerResultCallout(kind) {
+    if (!ui.resultCallout) {
+      return;
+    }
+    const tone = kind === 'win' ? 'win' : kind === 'bust' ? 'bust' : '';
+    if (!tone) {
+      return;
+    }
+    const label = tone === 'win' ? 'WIN' : 'BUST';
+    const word = ui.resultCallout.querySelector('span');
+    window.clearTimeout(state.resultCalloutTimer);
+    ui.resultCallout.classList.remove('show', 'win', 'bust');
+    ui.resultCallout.setAttribute('aria-hidden', 'false');
+    if (word) {
+      word.textContent = label;
+    }
+    void ui.resultCallout.offsetWidth;
+    window.requestAnimationFrame(() => {
+      ui.resultCallout.classList.add('show', tone);
+    });
+    state.resultCalloutTimer = window.setTimeout(() => {
+      ui.resultCallout.classList.remove('show', 'win', 'bust');
+      ui.resultCallout.setAttribute('aria-hidden', 'true');
+    }, 1450);
+  }
+
+  function triggerOutcomeAnimation(outcome, callout) {
     const tone = ['win', 'lose', 'push'].includes(outcome) ? outcome : '';
     if (!tone) {
       return;
+    }
+    if (callout) {
+      triggerResultCallout(callout);
     }
     const targets = [
       document.querySelector('.table-felt'),
@@ -832,7 +880,46 @@
     }
   }
 
-  function cueOutcome(previousSnapshot, nextSnapshot) {
+  function bustedHandKeys(snapshot) {
+    const player = snapshotViewer(snapshot);
+    if (!snapshot || !player) {
+      return new Set();
+    }
+    const hands = Array.isArray(player.hands) && player.hands.length
+      ? player.hands
+      : [{
+          busted: player.busted,
+          cards: player.cards || [],
+        }];
+    const keys = new Set();
+    hands.forEach((hand, index) => {
+      if (hand?.busted) {
+        keys.add(`${snapshot.roomCode || state.roomCode}|${snapshot.handNumber || 0}|${player.id || 'table'}|${index}`);
+      }
+    });
+    return keys;
+  }
+
+  function cueFreshBust(previousSnapshot, nextSnapshot) {
+    if (!previousSnapshot || !nextSnapshot) {
+      return false;
+    }
+    const previousBusts = bustedHandKeys(previousSnapshot);
+    const nextBusts = bustedHandKeys(nextSnapshot);
+    const freshBust = [...nextBusts].find((key) => !previousBusts.has(key));
+    if (!freshBust) {
+      return false;
+    }
+    window.setTimeout(() => {
+      triggerResultCallout('bust');
+      if (state.audio.unlocked) {
+        playSound('lose');
+      }
+    }, 90);
+    return true;
+  }
+
+  function cueOutcome(previousSnapshot, nextSnapshot, suppressBustCue = false) {
     if (!nextSnapshot || nextSnapshot.phase !== 'settled') {
       return;
     }
@@ -847,8 +934,13 @@
     }
     state.renderMemo.outcomeKey = outcomeKey;
     window.setTimeout(() => {
-      triggerOutcomeAnimation(outcome);
-      if (state.audio.unlocked) {
+      const callout = outcome === 'win'
+        ? 'win'
+        : outcome === 'lose' && playerHasBust(player) && !suppressBustCue
+          ? 'bust'
+          : '';
+      triggerOutcomeAnimation(outcome, callout);
+      if (state.audio.unlocked && !(suppressBustCue && outcome === 'lose')) {
         playSound(outcome);
       }
     }, 120);
@@ -873,7 +965,8 @@
     if (nextCards > previousCards) {
       cueDealCards(nextCards - previousCards);
     }
-    cueOutcome(previousSnapshot, nextSnapshot);
+    const freshBust = cueFreshBust(previousSnapshot, nextSnapshot);
+    cueOutcome(previousSnapshot, nextSnapshot, freshBust);
     state.renderMemo.visibleCardCount = nextCards;
   }
 
