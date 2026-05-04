@@ -98,6 +98,8 @@
     standBtn: document.getElementById('standBtn'),
     doubleBtn: document.getElementById('doubleBtn'),
     splitBtn: document.getElementById('splitBtn'),
+    insuranceBtn: document.getElementById('insuranceBtn'),
+    declineInsuranceBtn: document.getElementById('declineInsuranceBtn'),
     resetTableBtn: document.getElementById('resetTableBtn'),
     toast: document.getElementById('toast'),
     layoutShell: document.getElementById('layoutShell'),
@@ -535,6 +537,10 @@
       canStand: false,
       canDouble: false,
       canSplit: false,
+      canTakeInsurance: false,
+      canDeclineInsurance: false,
+      insuranceAmount: 0,
+      insurancePayout: 0,
       betPresets: [100, 500, 2500, 10000, -500],
     };
   }
@@ -605,6 +611,8 @@
         return 'Betting';
       case 'player-turns':
         return 'Player turns';
+      case 'insurance':
+        return 'Insurance';
       case 'dealer-turn':
         return 'Dealer turn';
       case 'settled':
@@ -992,7 +1000,7 @@
           `${hand.bet}:${hand.done ? 'done' : 'live'}:${(hand.cards || []).map((card) => (card ? `${card.rank}${card.suit}` : 'XX')).join(',')}`
         )).join('|')
       : (player.cards || []).map((card) => (card ? `${card.rank}${card.suit}` : 'XX')).join('|');
-    return `${player.id}|${hands}|${player.stack}|${player.bet}|${player.activeBet}|${player.handCount}|${(player.nextBets || []).join(',')}|${player.activeHandIndex}|${player.statusText}|${player.result}`;
+    return `${player.id}|${hands}|${player.stack}|${player.bet}|${player.activeBet}|${player.insuranceBet || 0}|${player.insuranceDecision || ''}|${player.insuranceResult || ''}|${player.handCount}|${(player.nextBets || []).join(',')}|${player.activeHandIndex}|${player.statusText}|${player.result}`;
   }
 
   function seatBadges(player, seat) {
@@ -1100,6 +1108,16 @@
     }
     const activeHand = hands[Math.max(0, Math.min(hands.length - 1, activeHandIndex))] || hands[0];
     const playerCards = Array.isArray(activeHand?.cards) ? activeHand.cards : [];
+    const insuranceText = player.insuranceBet > 0
+      ? `Insurance ${formatChips(player.insuranceBet)}`
+      : player.insuranceDecision === 'offered'
+        ? 'Insurance offered'
+        : player.insuranceDecision === 'declined'
+          ? 'No insurance'
+          : '';
+    const insuranceMarkup = insuranceText
+      ? `<div class="insurance-marker ${player.insuranceBet > 0 ? 'taken' : ''}">${insuranceText}</div>`
+      : '';
     const handRows = planning
       ? `<div class="betting-hands">
           ${Array.from({ length: pendingCount }, (_, index) => {
@@ -1174,6 +1192,7 @@
     return `
       <div class="${classes.join(' ')}">
         <div class="seat-play-area">
+          ${insuranceMarkup}
           ${!planning && !settledPlanning && !splitMode
             ? `<div class="seat-bet-circle${state.snapshot?.actionSeat === seat && state.snapshot?.phase === 'player-turns' ? ' active-ring' : ''}">
                 <span></span>
@@ -1323,6 +1342,8 @@
     ui.tableBetAmount.textContent = formatChips(snapshot.tableBetTotal || 0);
     ui.turnLabel.textContent = actor
       ? `${actor.name} to act`
+      : snapshot.phase === 'insurance'
+        ? 'Insurance decision'
       : snapshot.phase === 'settled'
         ? 'Payouts settled'
         : snapshot.phase === 'dealer-turn'
@@ -1374,6 +1395,11 @@
   }
 
   function renderActionPrompt() {
+    const controls = currentControls();
+    if (controls.canTakeInsurance || controls.canDeclineInsurance) {
+      ui.actionPrompt.textContent = `Dealer shows an ace. Insurance costs ${formatChips(controls.insuranceAmount || 0)} and pays ${formatChips(controls.insurancePayout || 0)} if dealer has blackjack.`;
+      return;
+    }
     ui.actionPrompt.textContent = '';
   }
 
@@ -1440,7 +1466,14 @@
     setTableButtonAvailable(ui.standBtn, connected && controls.canStand);
     setTableButtonAvailable(ui.doubleBtn, connected && controls.canDouble);
     setTableButtonAvailable(ui.splitBtn, connected && controls.canSplit);
+    setTableButtonAvailable(ui.insuranceBtn, connected && controls.canTakeInsurance);
+    setTableButtonAvailable(ui.declineInsuranceBtn, connected && controls.canDeclineInsurance);
     setTableButtonAvailable(ui.resetTableBtn, connected && controls.canResetTable);
+    if (ui.insuranceBtn) {
+      ui.insuranceBtn.textContent = controls.insuranceAmount > 0
+        ? `Insurance ${formatChips(controls.insuranceAmount)}`
+        : 'Insurance';
+    }
 
     renderActionPrompt();
     renderHandBuilder();
@@ -1976,9 +2009,15 @@
       stand: controls.canStand,
       double: controls.canDouble,
       split: controls.canSplit,
+      insurance: controls.canTakeInsurance,
+      'decline-insurance': controls.canDeclineInsurance,
     };
     if (!allowed[type]) {
-      showToast(`${type.charAt(0).toUpperCase()}${type.slice(1)} is not available right now.`);
+      const labels = {
+        insurance: 'Insurance',
+        'decline-insurance': 'No insurance',
+      };
+      showToast(`${labels[type] || `${type.charAt(0).toUpperCase()}${type.slice(1)}`} is not available right now.`);
       return;
     }
     if (sendMessage({ action: 'act', type })) {
@@ -2136,6 +2175,8 @@
     ui.standBtn.addEventListener('click', () => sendAction('stand'));
     ui.doubleBtn.addEventListener('click', () => sendAction('double'));
     ui.splitBtn.addEventListener('click', () => sendAction('split'));
+    ui.insuranceBtn?.addEventListener('click', () => sendAction('insurance'));
+    ui.declineInsuranceBtn?.addEventListener('click', () => sendAction('decline-insurance'));
     ui.resetTableBtn.addEventListener('click', sendResetTable);
 
     ui.handBuilder?.addEventListener('click', (event) => {
@@ -2212,6 +2253,10 @@
         sendAction('double');
       } else if (key === 'p') {
         sendAction('split');
+      } else if (key === 'i') {
+        sendAction('insurance');
+      } else if (key === 'n') {
+        sendAction('decline-insurance');
       }
     });
   }

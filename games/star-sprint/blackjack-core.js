@@ -11,6 +11,8 @@ const MAX_SEATS = 6;
 const MAX_LOG = 16;
 const MAX_SPLIT_HANDS = 4;
 const MAX_STARTING_HANDS = 3;
+const INSURANCE_PAYOUT_NUMERATOR = 3;
+const INSURANCE_PAYOUT_DENOMINATOR = 2;
 
 function formatSimCents(cents) {
   const sim = Math.round(Number(cents) || 0) / 100;
@@ -90,6 +92,9 @@ function createPlayer(id, name, seat, options = {}) {
     handCount: 1,
     nextBets: [0, 0, 0],
     activeBet: 0,
+    insuranceBet: 0,
+    insuranceDecision: '',
+    insuranceResult: '',
     cards: [],
     hands: [],
     activeHandIndex: 0,
@@ -282,7 +287,9 @@ function recalcTableBetTotal(state) {
       .reduce((sum, player) => sum + syncPlayerBetPlan(player), 0);
     return;
   }
-  state.tableBetTotal = activePlayers(state).reduce((sum, player) => sum + activeBetTotal(player), 0);
+  state.tableBetTotal = activePlayers(state).reduce((sum, player) => (
+    sum + activeBetTotal(player) + insuranceBet(player)
+  ), 0);
 }
 
 function maybeReshuffle(state, force) {
@@ -343,6 +350,98 @@ function nextUnresolvedSeat(state, fromSeat) {
 
 function revealDealer(state) {
   state.dealer.hiddenHole = false;
+}
+
+function beginInsuranceOffer(state) {
+  if (!dealerShowsAce(state)) {
+    return false;
+  }
+  const players = insurancePlayers(state);
+  if (!players.length) {
+    return false;
+  }
+  for (const player of players) {
+    player.insuranceBet = 0;
+    player.insuranceDecision = 'offered';
+    player.insuranceResult = '';
+  }
+  state.phase = 'insurance';
+  state.actionSeat = nextInsuranceSeat(state, players[players.length - 1].seat);
+  const player = playerAtSeat(state, state.actionSeat);
+  state.status = player
+    ? `Dealer shows an ace. ${player.name} may buy insurance up to ${formatSimCents(maxInsuranceBet(player))}; insurance pays 3:2.`
+    : 'Dealer shows an ace. Insurance pays 3:2.';
+  pushLog(state, 'Dealer ace showing. Insurance is open and pays 3:2.', 'warn');
+  recalcTableBetTotal(state);
+  return true;
+}
+
+function continueAfterInsurance(state) {
+  const dealerSummary = handSummary(state.dealer.cards);
+  if (dealerSummary.blackjack || activePlayers(state).every((player) => player.done)) {
+    settleRound(state);
+    return;
+  }
+
+  state.phase = 'player-turns';
+  const order = participantOrder(state);
+  const firstSeat = nextUnresolvedSeat(state, order.length ? order[order.length - 1] : -1);
+  state.actionSeat = firstSeat;
+  const firstPlayer = firstSeat === null ? null : playerAtSeat(state, firstSeat);
+  state.status = firstPlayer
+    ? `Insurance closed. Dealer has no blackjack. ${firstPlayer.name} to act.`
+    : 'Insurance closed. Dealer has no blackjack.';
+}
+
+function resolveInsuranceAndContinue(state) {
+  const dealerSummary = handSummary(state.dealer.cards);
+  const dealerHasBlackjack = dealerSummary.blackjack;
+  for (const player of insurancePlayers(state)) {
+    const bet = insuranceBet(player);
+    if (bet <= 0) {
+      if (player.insuranceDecision === 'offered') {
+        player.insuranceDecision = 'declined';
+      }
+      player.insuranceResult = player.insuranceDecision === 'declined' ? 'No insurance.' : '';
+      continue;
+    }
+
+    if (dealerHasBlackjack) {
+      const payout = insurancePayout(bet);
+      player.stack += payout;
+      player.walletCents = player.stack;
+      player.insuranceResult = `Insurance paid 3:2 for ${formatSimCents(payout)}.`;
+      queueWalletEvent(
+        state,
+        player,
+        payout,
+        'blackjack-insurance-payout',
+        `${player.name}: insurance paid 3:2.`,
+        {
+          insuranceBetCents: bet,
+          payoutCents: payout,
+        },
+      );
+      pushLog(state, `${player.name} won insurance for ${formatSimCents(payout)}.`, 'good');
+    } else {
+      player.insuranceResult = 'Insurance lost. Dealer has no blackjack.';
+      pushLog(state, `${player.name} lost the insurance side bet.`, 'bad');
+    }
+  }
+  continueAfterInsurance(state);
+}
+
+function advanceInsurance(state, seat) {
+  const nextSeat = nextInsuranceSeat(state, seat);
+  if (nextSeat !== null) {
+    state.actionSeat = nextSeat;
+    const player = playerAtSeat(state, nextSeat);
+    state.status = player
+      ? `Dealer shows an ace. ${player.name} may buy insurance up to ${formatSimCents(maxInsuranceBet(player))}; insurance pays 3:2.`
+      : 'Dealer shows an ace. Insurance pays 3:2.';
+    return;
+  }
+  resolveInsuranceAndContinue(state);
 }
 
 function settleRound(state) {
@@ -565,7 +664,7 @@ function removePlayer(state, playerId) {
     return false;
   }
 
-  if (player.participating && (state.phase === 'player-turns' || state.phase === 'dealer-turn')) {
+  if (player.participating && (state.phase === 'insurance' || state.phase === 'player-turns' || state.phase === 'dealer-turn')) {
     for (const hand of playerHands(player)) {
       hand.done = true;
       hand.busted = true;
@@ -578,7 +677,10 @@ function removePlayer(state, playerId) {
     player.result = 'Disconnected.';
     player.busted = true;
     pushLog(state, `${player.name} disconnected and forfeited the hand.`, 'warn');
-    if (state.phase === 'player-turns' && state.actionSeat === player.seat) {
+    if (state.phase === 'insurance' && state.actionSeat === player.seat) {
+      player.insuranceDecision = 'declined';
+      advanceInsurance(state, player.seat);
+    } else if (state.phase === 'player-turns' && state.actionSeat === player.seat) {
       advanceTurn(state, player.seat);
     }
     return true;
@@ -690,6 +792,9 @@ function startRound(state, playerId) {
     player.done = false;
     player.busted = false;
     player.blackjack = false;
+    player.insuranceBet = 0;
+    player.insuranceDecision = '';
+    player.insuranceResult = '';
     player.lastOutcome = '';
     player.result = '';
     clampNextBetsToStack(player);
@@ -752,6 +857,10 @@ function startRound(state, playerId) {
 
   pushLog(state, `${initiator.name} dealt round ${state.handNumber}.`, 'good');
 
+  if (dealerShowsAce(state) && beginInsuranceOffer(state)) {
+    return { ok: true, message: `${initiator.name} dealt round ${state.handNumber}. Dealer shows an ace; insurance is open.` };
+  }
+
   if (dealerSummary.blackjack || eligible.every((player) => player.done)) {
     settleRound(state);
     return { ok: true, message: `${initiator.name} dealt round ${state.handNumber}.` };
@@ -771,6 +880,53 @@ function applyAction(state, playerId, action) {
   if (!player) {
     return { ok: false, error: 'You are not seated at the blackjack table.' };
   }
+  const type = String(action && action.type || '').trim().toLowerCase();
+  if (state.phase === 'insurance') {
+    if (state.actionSeat !== player.seat) {
+      return { ok: false, error: 'It is not your insurance decision yet.' };
+    }
+    if (!hasInsurancePending(player)) {
+      return { ok: false, error: 'Insurance is not available for that seat.' };
+    }
+    if (type === 'insurance') {
+      const maxBet = maxInsuranceBet(player);
+      const wager = Math.max(0, Math.min(maxBet, Math.round(Number(action && action.amount) || maxBet), player.stack));
+      if (wager <= 0) {
+        return { ok: false, error: 'You do not have enough SIM for insurance.' };
+      }
+      player.stack -= wager;
+      player.walletCents = player.stack;
+      player.insuranceBet = wager;
+      player.insuranceDecision = 'taken';
+      player.insuranceResult = `Insurance booked for ${formatSimCents(wager)}.`;
+      queueWalletEvent(
+        state,
+        player,
+        -wager,
+        'blackjack-insurance-bet',
+        `${player.name} bought blackjack insurance.`,
+        {
+          insuranceBetCents: wager,
+          maxInsuranceCents: maxBet,
+        },
+      );
+      recalcTableBetTotal(state);
+      const message = `${player.name} bought insurance for ${formatSimCents(wager)}.`;
+      pushLog(state, message, 'warn');
+      advanceInsurance(state, player.seat);
+      return { ok: true, message };
+    }
+    if (type === 'decline-insurance' || type === 'no-insurance' || type === 'pass-insurance') {
+      player.insuranceBet = 0;
+      player.insuranceDecision = 'declined';
+      player.insuranceResult = 'No insurance.';
+      const message = `${player.name} declined insurance.`;
+      pushLog(state, message, 'info');
+      advanceInsurance(state, player.seat);
+      return { ok: true, message };
+    }
+    return { ok: false, error: 'Choose insurance or no insurance.' };
+  }
   if (state.phase !== 'player-turns') {
     return { ok: false, error: 'There is no live blackjack round right now.' };
   }
@@ -780,8 +936,6 @@ function applyAction(state, playerId, action) {
   if (!player.participating || player.done) {
     return { ok: false, error: 'That seat cannot act right now.' };
   }
-
-  const type = String(action && action.type || '').trim().toLowerCase();
   const hand = currentHand(player);
   if (!hand || hand.done) {
     syncPlayerFromHands(player);
@@ -989,7 +1143,16 @@ function computeControls(state, viewer) {
     viewer.participating &&
     hasLiveHand(viewer)
   );
+  const canDecideInsurance = Boolean(
+    viewer &&
+    state.phase === 'insurance' &&
+    state.actionSeat === viewer.seat &&
+    hasInsurancePending(viewer)
+  );
   const hand = currentHand(viewer);
+  const insuranceAmount = canDecideInsurance
+    ? Math.min(maxInsuranceBet(viewer), Math.max(0, Math.round(Number(viewer.stack) || 0)))
+    : 0;
 
   return {
     canStartRound: Boolean(
@@ -1010,6 +1173,10 @@ function computeControls(state, viewer) {
     canStand: canAct,
     canDouble: Boolean(canAct && canDoubleHand(viewer, hand)),
     canSplit: Boolean(canAct && canSplitHand(viewer, hand)),
+    canTakeInsurance: Boolean(canDecideInsurance && insuranceAmount > 0),
+    canDeclineInsurance: canDecideInsurance,
+    insuranceAmount,
+    insurancePayout: insurancePayout(insuranceAmount),
     betPresets: [100, 500, 2500, 10000, -500],
   };
 }
@@ -1068,6 +1235,58 @@ function activeBetTotal(player) {
     return 0;
   }
   return playerHands(player).reduce((sum, hand) => sum + Math.max(0, Math.round(Number(hand.bet) || 0)), 0);
+}
+
+function insuranceBet(player) {
+  return Math.max(0, Math.round(Number(player && player.insuranceBet) || 0));
+}
+
+function insuranceBaseBet(player) {
+  return activeBetTotal(player);
+}
+
+function maxInsuranceBet(player) {
+  return Math.floor(insuranceBaseBet(player) / 2);
+}
+
+function insurancePayout(insuranceCents) {
+  const bet = Math.max(0, Math.round(Number(insuranceCents) || 0));
+  return bet + Math.floor((bet * INSURANCE_PAYOUT_NUMERATOR) / INSURANCE_PAYOUT_DENOMINATOR);
+}
+
+function dealerShowsAce(state) {
+  const upCard = state && state.dealer && Array.isArray(state.dealer.cards)
+    ? state.dealer.cards[0]
+    : null;
+  return Boolean(upCard && upCard.rank === 'A' && state.dealer.hiddenHole);
+}
+
+function hasInsurancePending(player) {
+  return Boolean(
+    player &&
+    player.participating &&
+    player.insuranceDecision === 'offered' &&
+    insuranceBaseBet(player) > 0
+  );
+}
+
+function insurancePlayers(state) {
+  return activePlayers(state).filter((player) => insuranceBaseBet(player) > 0);
+}
+
+function nextInsuranceSeat(state, fromSeat = -1) {
+  const players = insurancePlayers(state);
+  if (!players.length) {
+    return null;
+  }
+  for (let offset = 1; offset <= MAX_SEATS; offset += 1) {
+    const seat = (fromSeat + offset + MAX_SEATS) % MAX_SEATS;
+    const player = playerAtSeat(state, seat);
+    if (hasInsurancePending(player)) {
+      return player.seat;
+    }
+  }
+  return null;
 }
 
 function syncPlayerFromHands(player) {
@@ -1276,6 +1495,10 @@ function cloneState(state, viewerId) {
         handCount: normalizeHandCount(player.handCount),
         nextBets: normalizeNextBets(player).map((bet) => bet),
         activeBet: activeBetTotal(player),
+        insuranceBet: insuranceBet(player),
+        insuranceDecision: String(player.insuranceDecision || ''),
+        insuranceResult: String(player.insuranceResult || ''),
+        maxInsuranceBet: maxInsuranceBet(player),
         activeHandIndex: player.activeHandIndex || 0,
         hands: hands.map((hand, index) => {
           const handInfo = hand.cards.length ? handSummary(hand.cards) : null;

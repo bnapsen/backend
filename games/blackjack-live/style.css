@@ -1307,6 +1307,40 @@ h2 {
   min-height: clamp(146px, 15vw, 192px);
 }
 
+.insurance-marker {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 126px;
+  min-height: 30px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: rgba(255, 244, 218, 0.92);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  background: rgba(8, 13, 22, 0.82);
+  border: 1px solid rgba(239, 197, 109, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 20px rgba(0, 0, 0, 0.24);
+  transform: translate(-50%, -78%);
+}
+
+.insurance-marker.taken {
+  color: #2a1807;
+  text-shadow: 0 1px 0 rgba(255, 248, 214, 0.58);
+  background: linear-gradient(145deg, #ffe3a3, #d99a2f 54%, #8b4514);
+  border-color: rgba(255, 221, 141, 0.5);
+}
+
 .seat-card.multi-hand,
 .seat-card.planning {
   width: min(100%, 760px);
@@ -1954,10 +1988,26 @@ h2 {
 }
 
 .table-buttons button#doubleBtn,
-.table-buttons button#splitBtn {
+.table-buttons button#splitBtn,
+.table-buttons button#insuranceBtn {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 28%),
     linear-gradient(145deg, rgba(103, 64, 43, 0.98), rgba(57, 29, 19, 0.98) 48%, rgba(18, 10, 8, 0.98));
+}
+
+.table-buttons button#insuranceBtn {
+  color: #251605;
+  text-shadow: 0 1px 0 rgba(255, 248, 214, 0.56);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), transparent 30%),
+    linear-gradient(145deg, #ffe3a3 0%, #d99a2f 46%, #7b3d12 100%);
+  border-color: rgba(255, 221, 141, 0.45);
+}
+
+.table-buttons button#declineInsuranceBtn {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 28%),
+    linear-gradient(145deg, rgba(68, 76, 92, 0.98), rgba(28, 35, 48, 0.98) 48%, rgba(8, 13, 21, 0.98));
 }
 
 .table-buttons button#resetTableBtn {
@@ -2527,6 +2577,13 @@ h2 {
 
   .seat-card.settled-planning .seat-play-area {
     min-height: 212px;
+  }
+
+  .insurance-marker {
+    min-width: 0;
+    padding: 5px 9px;
+    font-size: 0.64rem;
+    transform: translate(-50%, -64%);
   }
 
   .seat-bet-circle {
