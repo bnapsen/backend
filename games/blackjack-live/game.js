@@ -1068,10 +1068,12 @@
     const hasVisibleCards = Array.isArray(player.hands) && player.hands.some((hand) => (
       Array.isArray(hand.cards) && hand.cards.length
     ));
-    const planning = !player.participating && (
+    const canPlanNextHand = !player.participating && (
       state.snapshot?.phase === 'betting' ||
-      (state.snapshot?.phase === 'settled' && !hasVisibleCards)
+      state.snapshot?.phase === 'settled'
     );
+    const settledPlanning = canPlanNextHand && state.snapshot?.phase === 'settled' && hasVisibleCards;
+    const planning = canPlanNextHand && !settledPlanning;
     const pendingCount = viewerHandCount(player);
     const pendingBets = viewerNextBets(player);
     const selectedIndex = player.id === state.playerId ? selectedBetHandIndex(player) : 0;
@@ -1086,9 +1088,12 @@
           blackjack: player.blackjack,
         }];
     const activeHandIndex = Number.isInteger(player.activeHandIndex) ? player.activeHandIndex : 0;
-    const splitMode = !planning && hands.length > 1;
-    if (planning) {
+    const splitMode = !canPlanNextHand && hands.length > 1;
+    if (planning || settledPlanning) {
       classes.push('planning');
+    }
+    if (settledPlanning) {
+      classes.push('settled-planning');
     }
     if (splitMode) {
       classes.push('multi-hand');
@@ -1113,6 +1118,34 @@
             `;
           }).join('')}
         </div>`
+      : settledPlanning
+        ? `<div class="settled-betting-hands">
+            ${Array.from({ length: pendingCount }, (_, index) => {
+              const hand = hands[index] || { cards: [] };
+              const classes = ['betting-hand', 'settled-betting-hand'];
+              if (index === selectedIndex && player.id === state.playerId) {
+                classes.push('selected');
+              }
+              if (pendingBets[index] > 0) {
+                classes.push('has-bet');
+              }
+              if (hand.done) {
+                classes.push('done');
+              }
+              if (hand.busted) {
+                classes.push('bust');
+              }
+              return `
+                <button class="${classes.join(' ')}" type="button" data-bet-hand="${index}">
+                  <div class="hole-row settled-card-row">
+                    ${renderHandCardRow(hand.cards, false, 0, `player:${seat}:hand:${index}`)}
+                  </div>
+                  <span>Hand ${index + 1}</span>
+                  <strong>${formatChips(pendingBets[index])}</strong>
+                </button>
+              `;
+            }).join('')}
+          </div>`
       : splitMode
         ? `<div class="split-hands">
             ${hands.map((hand, index) => {
@@ -1141,7 +1174,7 @@
     return `
       <div class="${classes.join(' ')}">
         <div class="seat-play-area">
-          ${!planning && !splitMode
+          ${!planning && !settledPlanning && !splitMode
             ? `<div class="seat-bet-circle${state.snapshot?.actionSeat === seat && state.snapshot?.phase === 'player-turns' ? ' active-ring' : ''}">
                 <span></span>
               </div>`

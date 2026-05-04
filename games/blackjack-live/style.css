@@ -1318,6 +1318,10 @@ h2 {
   min-height: clamp(160px, 16vw, 210px);
 }
 
+.seat-card.settled-planning .seat-play-area {
+  min-height: clamp(226px, 23vw, 306px);
+}
+
 .seat-bet-circle,
 .hand-bet-ring {
   position: absolute;
@@ -1473,6 +1477,17 @@ h2 {
   transform: translateY(-2px);
 }
 
+.settled-betting-hands {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: clamp(8px, 1.4vw, 16px);
+  width: min(100%, 760px);
+  min-height: clamp(220px, 22vw, 292px);
+}
+
 .betting-hand {
   position: relative;
   display: grid;
@@ -1491,6 +1506,31 @@ h2 {
   box-shadow:
     inset 0 0 28px rgba(239, 197, 109, 0.08),
     0 0 30px rgba(0, 0, 0, 0.15);
+}
+
+.settled-betting-hand {
+  align-content: end;
+  justify-items: center;
+  overflow: visible;
+  padding-bottom: clamp(18px, 1.8vw, 24px);
+}
+
+.settled-betting-hand .settled-card-row {
+  position: absolute;
+  left: 50%;
+  bottom: 56%;
+  z-index: 2;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(8px);
+}
+
+.settled-betting-hand span,
+.settled-betting-hand strong {
+  transform: translateY(clamp(18px, 1.8vw, 24px));
+}
+
+.settled-betting-hand.bust {
+  filter: saturate(0.82) drop-shadow(0 0 12px rgba(244, 117, 141, 0.16));
 }
 
 .betting-hand span,
@@ -2485,6 +2525,10 @@ h2 {
     min-height: 124px;
   }
 
+  .seat-card.settled-planning .seat-play-area {
+    min-height: 212px;
+  }
+
   .seat-bet-circle {
     width: 122px;
     font-size: 0.58rem;
@@ -2503,6 +2547,19 @@ h2 {
   .seat-card.multi-hand .hand-bet-ring,
   .seat-card.planning .betting-hand {
     width: 92px;
+  }
+
+  .settled-betting-hands {
+    gap: 4px;
+    min-height: 204px;
+  }
+
+  .settled-betting-hand {
+    padding-bottom: 14px;
+  }
+
+  .settled-betting-hand .settled-card-row {
+    bottom: 58%;
   }
 
   .table-buttons button,
