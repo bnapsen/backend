@@ -4,9 +4,11 @@ const crypto = require('crypto');
 const { Firestore } = require('@google-cloud/firestore');
 
 const DEFAULT_COLLECTION = 'simBitcoinPaperPositions';
+const DEFAULT_STATE_COLLECTION = 'simBitcoinPaperState';
 const MAX_CONTRACTS = 1000;
 const MIN_PRICE_CENTS = 1;
 const MAX_PRICE_CENTS = 99;
+const MAX_STATE_BYTES = 240_000;
 
 function nowIso() {
   return new Date().toISOString();
@@ -78,9 +80,25 @@ function positionRef(firestore, collectionName, id) {
   return firestore.collection(collectionName).doc(id);
 }
 
+function stateRef(firestore, collectionName, user) {
+  return firestore.collection(collectionName).doc(cleanText(user && user.uid, '', 160).replace(/[\/.#\[\]]/g, '_'));
+}
+
+function normalizeAccountState(raw) {
+  const cloned = cloneValue(raw || {});
+  const json = JSON.stringify(cloned);
+  if (json.length > MAX_STATE_BYTES) {
+    const error = new Error('Bitcoin paper account state is too large to save.');
+    error.code = 'sim-bitcoin/state-too-large';
+    throw error;
+  }
+  return cloned;
+}
+
 function createSimBitcoinPaperStore({
   projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '',
   collectionName = process.env.SIM_BITCOIN_PAPER_COLLECTION || DEFAULT_COLLECTION,
+  stateCollectionName = process.env.SIM_BITCOIN_PAPER_STATE_COLLECTION || DEFAULT_STATE_COLLECTION,
   simWalletStore,
 } = {}) {
   if (!simWalletStore || typeof simWalletStore.transactWallet !== 'function') {
@@ -95,6 +113,44 @@ function createSimBitcoinPaperStore({
     })
     : null;
   const memoryPositions = new Map();
+  const memoryStates = new Map();
+
+  async function readAccountState(user) {
+    const uid = cleanText(user && user.uid, '', 160);
+    if (!uid) return null;
+    if (!enabled) {
+      const state = memoryStates.get(uid);
+      return state ? cloneValue(state) : null;
+    }
+    const snapshot = await stateRef(firestore, stateCollectionName, user).get();
+    if (!snapshot.exists) return null;
+    const data = snapshot.data() || {};
+    return data && data.uid === uid && data.state ? cloneValue(data.state) : null;
+  }
+
+  async function saveAccountState(user, state) {
+    const uid = cleanText(user && user.uid, '', 160);
+    if (!uid) {
+      const error = new Error('Authentication token did not include a user id.');
+      error.code = 'sim-bitcoin/missing-uid';
+      throw error;
+    }
+    const savedAt = nowIso();
+    const cleanState = normalizeAccountState({
+      ...(state || {}),
+      savedAt,
+    });
+    if (!enabled) {
+      memoryStates.set(uid, cloneValue(cleanState));
+      return cloneValue(cleanState);
+    }
+    await stateRef(firestore, stateCollectionName, user).set({
+      uid,
+      state: cleanState,
+      updatedAt: savedAt,
+    }, { merge: false });
+    return cloneValue(cleanState);
+  }
 
   async function readPosition(user, id) {
     const cleanId = cleanText(id, '', 100);
@@ -372,6 +428,8 @@ function createSimBitcoinPaperStore({
 
   return {
     enabled,
+    readAccountState,
+    saveAccountState,
     readPosition,
     openPosition,
     sellPosition,

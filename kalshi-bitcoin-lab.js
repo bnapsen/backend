@@ -2,8 +2,12 @@
   "use strict";
 
   const PROD_API_BASE = "https://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app";
-  const LIVE_REFRESH_MS = 300;
-  const FALLBACK_REFRESH_MS = 500;
+  const LIVE_REFRESH_MS = 650;
+  const FALLBACK_REFRESH_MS = 1000;
+  const CHART_RENDER_MIN_MS = 850;
+  const HEAVY_RENDER_MIN_MS = 2500;
+  const PAPER_EVAL_IDLE_MS = 1500;
+  const PAPER_EVAL_BOT_MS = 650;
   const PAPER_STORAGE_KEY = "kalshiBtcPaperLedger";
   const PAPER_AUTO_STORAGE_KEY = "kalshiBtcPaperBots";
   const PAPER_ACCOUNTS_STORAGE_KEY = "kalshiBtcPaperAccounts";
@@ -64,6 +68,16 @@
     activePaperAccountId: PAPER_DEFAULT_ACCOUNT_ID,
     paperUiMuted: false,
     paperCollapse: {},
+    paperBookUpdatedAt: "",
+    paperAccountSync: {
+      loading: false,
+      saving: false,
+      saveTimer: null,
+      saveQueuedAt: 0,
+      applyingRemote: false,
+      lastLoadedUid: "",
+      error: "",
+    },
     paper: {
       currency: "SIM",
       startingBankroll: 1000,
@@ -98,6 +112,16 @@
       startingBalance: 1000,
       error: "",
       paperAccountId: PAPER_DEFAULT_ACCOUNT_ID,
+    },
+    paint: {
+      pendingScan: null,
+      frame: 0,
+      lastChartAt: 0,
+      chartKey: "",
+      lastHeavyAt: 0,
+      heavyKey: "",
+      lastPaperEvalAt: 0,
+      lastPaperTicker: "",
     },
   };
 
@@ -366,7 +390,7 @@
       startStream();
     } else {
       loadScan();
-      state.fallbackTimer = setInterval(loadScan, 750);
+      state.fallbackTimer = setInterval(loadScan, FALLBACK_REFRESH_MS);
     }
   }
 
@@ -387,8 +411,11 @@
     state.stream = source;
     source.addEventListener("scan", function (event) {
       try {
-        render(JSON.parse(event.data));
-        setStatus("Live stream connected - quote/spot refresh target about " + (LIVE_REFRESH_MS / 1000).toFixed(1) + "s.");
+        const payload = JSON.parse(event.data);
+        queueRender(payload);
+        const refreshMs = payload && payload.stream && Number(payload.stream.refreshMs) || LIVE_REFRESH_MS;
+        const mode = payload && payload.stream && payload.stream.mode === "patch" ? "compact" : "full";
+        setStatus("Live stream connected - " + mode + " backend tick about " + (refreshMs / 1000).toFixed(1) + "s.");
       } catch (error) {
         setStatus("Live stream returned malformed data.", true);
       }
@@ -404,8 +431,8 @@
   async function loadScan() {
     try {
       setStatus("Refreshing Bitcoin market...");
-      render(await fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/scan")));
-      setStatus(streamToggle.checked ? "Polling live every 0.5s." : "Manual refresh complete.");
+      queueRender(await fetchJson(bitcoinEndpoint("/api/kalshi/bitcoin/scan")));
+      setStatus(streamToggle.checked ? "Polling live every 1.0s." : "Manual refresh complete.");
     } catch (error) {
       setStatus(error.message || "Unable to load Bitcoin scan.", true);
     }
@@ -469,6 +496,10 @@
       attachSimWalletToActivePaper();
     } else {
       syncPaperInputsFromActive();
+    }
+    if (signedIn && profile && profile.uid && state.paperAccountSync.lastLoadedUid !== profile.uid) {
+      state.paperAccountSync.lastLoadedUid = profile.uid;
+      loadBitcoinPaperAccountState();
     }
     renderPaperBankroll();
   }
@@ -549,6 +580,133 @@
     });
   }
 
+  function bitcoinPaperAccountPayload() {
+    syncActivePaperAccount();
+    return {
+      version: 1,
+      updatedAt: state.paperBookUpdatedAt || new Date().toISOString(),
+      activeId: state.activePaperAccountId,
+      accounts: state.paperAccounts.map(function (account) {
+        return {
+          id: account.id,
+          name: account.name,
+          paper: account.paper,
+          auto: account.auto,
+          lastAutomationMessage: account.lastAutomationMessage || "",
+          lastAutomationTone: account.lastAutomationTone || "",
+        };
+      }),
+    };
+  }
+
+  function loadBitcoinPaperAccountState() {
+    if (!window.NovaAuth || typeof window.NovaAuth.appendAuthHeaders !== "function" || state.paperAccountSync.loading) return;
+    state.paperAccountSync.loading = true;
+    window.NovaAuth.appendAuthHeaders({})
+      .then(function (headers) {
+        return fetch(defaultApiBase() + "/api/sim/bitcoin-15m/state", {
+          method: "GET",
+          headers,
+          cache: "no-store",
+        });
+      })
+      .then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (body) {
+          if (!response.ok || !body.ok) throw new Error(body.error || "Account paper state sync failed.");
+          return body.state || null;
+        });
+      })
+      .then(function (remoteState) {
+        const remoteUpdated = new Date(remoteState && (remoteState.updatedAt || remoteState.savedAt) || 0).getTime();
+        const localUpdated = new Date(state.paperBookUpdatedAt || 0).getTime();
+        if (remoteState && Number.isFinite(remoteUpdated) && remoteUpdated > localUpdated) {
+          applyRemoteBitcoinPaperState(remoteState);
+          return;
+        }
+        scheduleBitcoinPaperAccountSave(200);
+      })
+      .catch(function (error) {
+        state.paperAccountSync.error = error && error.message ? error.message : "Account paper state sync failed.";
+      })
+      .finally(function () {
+        state.paperAccountSync.loading = false;
+      });
+  }
+
+  function applyRemoteBitcoinPaperState(remoteState) {
+    const accounts = Array.isArray(remoteState && remoteState.accounts)
+      ? remoteState.accounts.map(normalizePaperAccount).filter(Boolean)
+      : [];
+    if (!accounts.length) return;
+    state.paperAccountSync.applyingRemote = true;
+    state.paperAccounts = accounts;
+    state.activePaperAccountId = accounts.some(function (account) { return account.id === remoteState.activeId; })
+      ? remoteState.activeId
+      : accounts[0].id;
+    state.paperBookUpdatedAt = remoteState.updatedAt || remoteState.savedAt || new Date().toISOString();
+    bindActivePaperAccount();
+    if (state.simWallet.signedIn && Number.isFinite(Number(state.simWallet.balance))) {
+      state.paper.currency = "SIM";
+      state.paper.startingBankroll = Math.max(1, Number(state.simWallet.startingBalance || 1000));
+      state.paper.cash = Math.max(0, Number(state.simWallet.balance || 0));
+      syncActivePaperAccount();
+    }
+    syncPaperInputsFromActive();
+    renderPaperAccounts();
+    renderPaperBankroll();
+    state.paperAccountSync.applyingRemote = false;
+    savePaperLedger({ skipAccountSync: true });
+  }
+
+  function scheduleBitcoinPaperAccountSave(delayMs) {
+    if (state.paperAccountSync.applyingRemote) return;
+    if (!state.simWallet.signedIn || !window.NovaAuth || typeof window.NovaAuth.appendAuthHeaders !== "function") return;
+    const now = Date.now();
+    if (!state.paperAccountSync.saveQueuedAt) {
+      state.paperAccountSync.saveQueuedAt = now;
+    }
+    if (state.paperAccountSync.saveTimer) {
+      clearTimeout(state.paperAccountSync.saveTimer);
+    }
+    const normalDelay = Math.max(100, Number(delayMs || 2000));
+    const maxWait = 10_000;
+    const elapsed = now - state.paperAccountSync.saveQueuedAt;
+    const nextDelay = elapsed >= maxWait ? 100 : Math.min(normalDelay, Math.max(100, maxWait - elapsed));
+    state.paperAccountSync.saveTimer = window.setTimeout(saveBitcoinPaperAccountState, nextDelay);
+  }
+
+  function saveBitcoinPaperAccountState() {
+    state.paperAccountSync.saveTimer = null;
+    state.paperAccountSync.saveQueuedAt = 0;
+    if (state.paperAccountSync.saving || !state.simWallet.signedIn || !window.NovaAuth || typeof window.NovaAuth.appendAuthHeaders !== "function") return;
+    state.paperAccountSync.saving = true;
+    const payload = bitcoinPaperAccountPayload();
+    window.NovaAuth.appendAuthHeaders({
+      "Content-Type": "application/json",
+    })
+      .then(function (headers) {
+        return fetch(defaultApiBase() + "/api/sim/bitcoin-15m/state", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ state: payload }),
+          cache: "no-store",
+        });
+      })
+      .then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (body) {
+          if (!response.ok || !body.ok) throw new Error(body.error || "Unable to save Bitcoin paper state.");
+          state.paperAccountSync.error = "";
+          return body;
+        });
+      })
+      .catch(function (error) {
+        state.paperAccountSync.error = error && error.message ? error.message : "Unable to save Bitcoin paper state.";
+      })
+      .finally(function () {
+        state.paperAccountSync.saving = false;
+      });
+  }
+
   function openKalshiWindow(url) {
     if (!url) return false;
     const opened = window.open(
@@ -562,23 +720,158 @@
     return true;
   }
 
+  function queueRender(incomingScan) {
+    state.paint.pendingScan = mergeScanPatch(state.scan, incomingScan);
+    if (state.paint.frame) return;
+    const schedule = window.requestAnimationFrame || function (callback) { return window.setTimeout(callback, 16); };
+    state.paint.frame = schedule(function () {
+      state.paint.frame = 0;
+      const scan = state.paint.pendingScan;
+      state.paint.pendingScan = null;
+      if (scan) render(scan);
+    });
+  }
+
+  function mergeScanPatch(previousScan, incomingScan) {
+    if (!incomingScan || !incomingScan.chart || incomingScan.chart.patch !== true) {
+      return incomingScan;
+    }
+    const previousChart = previousScan && previousScan.chart || {};
+    const previousPoints = Array.isArray(previousChart.points) ? previousChart.points : [];
+    const patchPoints = Array.isArray(incomingScan.chart.points) ? incomingScan.chart.points : [];
+    if (!previousPoints.length) {
+      return {
+        ...incomingScan,
+        chart: {
+          ...incomingScan.chart,
+          patch: false,
+        },
+      };
+    }
+    return {
+      ...previousScan,
+      ...incomingScan,
+      market: {
+        ...(previousScan && previousScan.market || {}),
+        ...(incomingScan.market || {}),
+      },
+      model: {
+        ...(previousScan && previousScan.model || {}),
+        ...(incomingScan.model || {}),
+      },
+      source: {
+        ...(previousScan && previousScan.source || {}),
+        ...(incomingScan.source || {}),
+      },
+      chart: {
+        ...previousChart,
+        ...incomingScan.chart,
+        points: mergeChartPoints(previousPoints, patchPoints),
+      },
+    };
+  }
+
+  function mergeChartPoints(existingPoints, patchPoints) {
+    const byTime = new Map();
+    existingPoints.slice(-420).forEach(function (point) {
+      const timeMs = Number(point && point.timeMs);
+      if (Number.isFinite(timeMs)) byTime.set(timeMs, point);
+    });
+    patchPoints.forEach(function (point) {
+      const timeMs = Number(point && point.timeMs);
+      if (Number.isFinite(timeMs)) byTime.set(timeMs, point);
+    });
+    return Array.from(byTime.values())
+      .sort(function (left, right) { return Number(left.timeMs) - Number(right.timeMs); })
+      .slice(-420);
+  }
+
   function render(scan) {
     state.scan = scan;
     if (scan.error) {
       setStatus(scan.error, true);
     }
+    const now = nowForPaint();
     renderSummary(scan);
     renderMarketStrip(scan);
     renderCandidates(scan);
     renderExecutionPlan(scan);
     renderPaperTicket();
-    evaluateAllPaperAccounts(scan);
+    if (shouldEvaluatePaper(scan, now)) {
+      evaluateAllPaperAccounts(scan);
+      state.paint.lastPaperEvalAt = now;
+      state.paint.lastPaperTicker = scan && scan.ticker || "";
+    }
     renderPaperBankroll();
-    renderChart(scan);
-    renderReasons(scan);
-    renderRules(scan);
+    if (shouldRenderChart(scan, now)) {
+      renderChart(scan);
+      state.paint.chartKey = chartRenderKey(scan);
+      state.paint.lastChartAt = now;
+    }
+    if (shouldRenderHeavy(scan, now)) {
+      renderReasons(scan);
+      renderRules(scan);
+      state.paint.heavyKey = heavyRenderKey(scan);
+      state.paint.lastHeavyAt = now;
+    }
     evaluateAutoPilot(scan);
     handleSoundEffects(scan);
+  }
+
+  function nowForPaint() {
+    return window.performance && typeof window.performance.now === "function" ? window.performance.now() : Date.now();
+  }
+
+  function shouldRenderChart(scan, now) {
+    const key = chartRenderKey(scan);
+    return key !== state.paint.chartKey || now - state.paint.lastChartAt >= CHART_RENDER_MIN_MS;
+  }
+
+  function chartRenderKey(scan) {
+    const chart = scan && scan.chart || {};
+    const plan = state.executionPlan || {};
+    return [
+      scan && scan.ticker || "",
+      chart.closeTime || "",
+      chart.targetPrice || "",
+      plan.actionClass || "",
+      plan.side || "",
+      plan.entry && Number(plan.entry.limitCents || 0).toFixed(2) || "",
+    ].join("|");
+  }
+
+  function shouldRenderHeavy(scan, now) {
+    const key = heavyRenderKey(scan);
+    return key !== state.paint.heavyKey || now - state.paint.lastHeavyAt >= HEAVY_RENDER_MIN_MS;
+  }
+
+  function heavyRenderKey(scan) {
+    const model = scan && scan.model || {};
+    const source = scan && scan.source || {};
+    const rules = scan && scan.rules || {};
+    return [
+      scan && scan.ticker || "",
+      source.tickerSource || "",
+      source.tickerMode || "",
+      source.kalshiWebsocketStatus || "",
+      rules.settlementSource || "",
+      model.caveat || "",
+    ].join("|");
+  }
+
+  function shouldEvaluatePaper(scan, now) {
+    const interval = hasActivePaperAutomation() ? PAPER_EVAL_BOT_MS : PAPER_EVAL_IDLE_MS;
+    const ticker = scan && scan.ticker || "";
+    return !state.paint.lastPaperEvalAt
+      || now - state.paint.lastPaperEvalAt >= interval
+      || ticker !== state.paint.lastPaperTicker;
+  }
+
+  function hasActivePaperAutomation() {
+    return state.paperAccounts.some(function (account) {
+      const auto = account && account.auto || {};
+      return Boolean(auto.completion || auto.scalp || auto.research || auto.simAccount);
+    }) || Boolean(state.paperAuto.completion || state.paperAuto.scalp || state.paperAuto.research || state.paperAuto.simAccount);
   }
 
   function renderSummary(scan) {
@@ -1222,6 +1515,7 @@
     state.activePaperAccountId = accounts.some(function (account) { return account.id === savedBook.activeId; })
       ? savedBook.activeId
       : accounts[0].id;
+    state.paperBookUpdatedAt = savedBook.updatedAt || savedBook.savedAt || "";
     bindActivePaperAccount();
     syncPaperInputsFromActive();
     applyPaperLayout();
@@ -1340,24 +1634,15 @@
     }
   }
 
-  function savePaperLedger() {
-    syncActivePaperAccount();
-    const payload = {
-      activeId: state.activePaperAccountId,
-      accounts: state.paperAccounts.map(function (account) {
-        return {
-          id: account.id,
-          name: account.name,
-          paper: account.paper,
-          auto: account.auto,
-          lastAutomationMessage: account.lastAutomationMessage || "",
-          lastAutomationTone: account.lastAutomationTone || "",
-        };
-      }),
-    };
+  function savePaperLedger(options) {
+    state.paperBookUpdatedAt = new Date().toISOString();
+    const payload = bitcoinPaperAccountPayload();
     localStorage.setItem(PAPER_ACCOUNTS_STORAGE_KEY, JSON.stringify(payload));
     localStorage.setItem(PAPER_STORAGE_KEY, JSON.stringify(state.paper));
     localStorage.setItem(PAPER_AUTO_STORAGE_KEY, JSON.stringify(state.paperAuto));
+    if (!options || options.skipAccountSync !== true) {
+      scheduleBitcoinPaperAccountSave();
+    }
   }
 
   function migrateLegacyPaperAccount() {

@@ -182,6 +182,16 @@ const simBitcoinPaperStore = createSimBitcoinPaperStore({
   projectId: FIREBASE_PROJECT_ID,
   simWalletStore,
 });
+const BITCOIN_SCAN_CACHE_MS = 550;
+const BITCOIN_STREAM_REFRESH_MS = 650;
+const BITCOIN_STREAM_FULL_EVERY_MS = 5_000;
+const BITCOIN_STREAM_PATCH_POINTS = 18;
+const bitcoinScanSharedCache = {
+  key: '',
+  payload: null,
+  at: 0,
+  promise: null,
+};
 const reviewsStore = createReviewsStore({
   dataDir: DATA_DIR,
   maxReviews: MAX_REVIEWS,
@@ -1027,6 +1037,74 @@ async function handleKalshiWeatherResolveRequest(req, res, requestUrl) {
   }
 }
 
+function bitcoinScanOptionsFromRequest(requestUrl) {
+  return {
+    minEdge: readFloatParam(requestUrl, 'minEdge', 0.02),
+    maxCost: readFloatParam(requestUrl, 'maxCost', 5),
+    minutes: readFloatParam(requestUrl, 'minutes', 180),
+  };
+}
+
+function bitcoinScanCacheKey(options = {}) {
+  return [
+    Number(options.minEdge || 0).toFixed(4),
+    Number(options.maxCost || 0).toFixed(2),
+    Math.round(Number(options.minutes || 0)),
+  ].join('|');
+}
+
+async function getSharedBitcoinScan(options = {}, { maxAgeMs = BITCOIN_SCAN_CACHE_MS } = {}) {
+  const key = bitcoinScanCacheKey(options);
+  const now = Date.now();
+  if (bitcoinScanSharedCache.payload && bitcoinScanSharedCache.key === key && now - bitcoinScanSharedCache.at < maxAgeMs) {
+    return bitcoinScanSharedCache.payload;
+  }
+  if (bitcoinScanSharedCache.promise && bitcoinScanSharedCache.key === key) {
+    return bitcoinScanSharedCache.promise;
+  }
+
+  const promise = scanBitcoin15m(options)
+    .then((payload) => {
+      if (bitcoinScanSharedCache.promise === promise || bitcoinScanSharedCache.key === key) {
+        bitcoinScanSharedCache.key = key;
+        bitcoinScanSharedCache.payload = payload;
+        bitcoinScanSharedCache.at = Date.now();
+      }
+      return payload;
+    })
+    .finally(() => {
+      if (bitcoinScanSharedCache.promise === promise) {
+        bitcoinScanSharedCache.promise = null;
+      }
+    });
+  bitcoinScanSharedCache.key = key;
+  bitcoinScanSharedCache.promise = promise;
+  return promise;
+}
+
+function compactBitcoinStreamPayload(payload, { forceFull = false } = {}) {
+  const chart = payload && payload.chart || {};
+  const points = Array.isArray(chart.points) ? chart.points : [];
+  const compactChart = forceFull
+    ? { ...chart, patch: false }
+    : {
+      ...chart,
+      points: points.slice(-BITCOIN_STREAM_PATCH_POINTS),
+      patch: true,
+      basePointCount: points.length,
+    };
+  return {
+    ...payload,
+    stream: {
+      mode: forceFull ? 'full' : 'patch',
+      refreshMs: BITCOIN_STREAM_REFRESH_MS,
+      fullEveryMs: BITCOIN_STREAM_FULL_EVERY_MS,
+      generatedAt: new Date().toISOString(),
+    },
+    chart: compactChart,
+  };
+}
+
 async function handleKalshiBitcoinScanRequest(req, res, requestUrl) {
   if (req.method !== 'GET') {
     sendJsonResponse(req, res, 405, { error: 'Method not allowed.' });
@@ -1038,11 +1116,7 @@ async function handleKalshiBitcoinScanRequest(req, res, requestUrl) {
   }
 
   try {
-    sendJsonResponse(req, res, 200, await scanBitcoin15m({
-      minEdge: readFloatParam(requestUrl, 'minEdge', 0.02),
-      maxCost: readFloatParam(requestUrl, 'maxCost', 5),
-      minutes: readFloatParam(requestUrl, 'minutes', 180),
-    }));
+    sendJsonResponse(req, res, 200, await getSharedBitcoinScan(bitcoinScanOptionsFromRequest(requestUrl)));
   } catch (error) {
     const payload = { error: 'Unable to scan Kalshi Bitcoin 15-minute market right now.' };
     if (process.env.DEBUG_ERRORS === 'true') {
@@ -1072,10 +1146,13 @@ async function handleKalshiBitcoinStreamRequest(req, res, requestUrl) {
   if (typeof res.flushHeaders === 'function') {
     res.flushHeaders();
   }
-  res.write('retry: 500\n\n');
+  res.write(`retry: ${BITCOIN_STREAM_REFRESH_MS}\n\n`);
 
   let closed = false;
   let refreshing = false;
+  let lastFullSentAt = 0;
+  let lastTicker = '';
+  let lastCloseTime = '';
   req.on('close', () => {
     closed = true;
   });
@@ -1084,12 +1161,19 @@ async function handleKalshiBitcoinStreamRequest(req, res, requestUrl) {
     if (closed || refreshing) return;
     refreshing = true;
     try {
-      const payload = await scanBitcoin15m({
-        minEdge: readFloatParam(requestUrl, 'minEdge', 0.02),
-        maxCost: readFloatParam(requestUrl, 'maxCost', 5),
-        minutes: readFloatParam(requestUrl, 'minutes', 180),
-      });
-      res.write(`event: scan\ndata: ${JSON.stringify(payload)}\n\n`);
+      const payload = await getSharedBitcoinScan(bitcoinScanOptionsFromRequest(requestUrl));
+      const closeTime = payload && payload.market && payload.market.closeTime || '';
+      const forceFull = !lastFullSentAt
+        || Date.now() - lastFullSentAt >= BITCOIN_STREAM_FULL_EVERY_MS
+        || lastTicker !== (payload && payload.ticker || '')
+        || lastCloseTime !== closeTime;
+      const streamPayload = compactBitcoinStreamPayload(payload, { forceFull });
+      if (forceFull) {
+        lastFullSentAt = Date.now();
+        lastTicker = payload && payload.ticker || '';
+        lastCloseTime = closeTime;
+      }
+      res.write(`event: scan\ndata: ${JSON.stringify(streamPayload)}\n\n`);
     } catch (error) {
       res.write(`event: error\ndata: ${JSON.stringify({ error: 'Unable to refresh Bitcoin scan.' })}\n\n`);
     } finally {
@@ -1100,7 +1184,7 @@ async function handleKalshiBitcoinStreamRequest(req, res, requestUrl) {
   await sendScan();
   const interval = setInterval(() => {
     sendScan().catch(() => {});
-  }, 300);
+  }, BITCOIN_STREAM_REFRESH_MS);
   req.on('close', () => {
     clearInterval(interval);
   });
@@ -1396,6 +1480,53 @@ async function handleSimBitcoinPaperSettleRequest(req, res) {
     sendJsonResponse(req, res, simBitcoinErrorStatus(error), {
       ok: false,
       error: error && error.message ? error.message : 'Unable to settle secure SIM Bitcoin paper position.',
+    });
+  }
+}
+
+async function handleSimBitcoinPaperStateRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) return;
+
+  try {
+    if (req.method === 'GET') {
+      sendJsonResponse(req, res, 200, {
+        ok: true,
+        state: await simBitcoinPaperStore.readAccountState(auth.user),
+        storage: {
+          enabled: simBitcoinPaperStore.enabled,
+        },
+      });
+      return;
+    }
+
+    const body = await readJsonBody(req);
+    const state = await simBitcoinPaperStore.saveAccountState(auth.user, body && body.state || {});
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      state,
+      storage: {
+        enabled: simBitcoinPaperStore.enabled,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, simBitcoinErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to sync Bitcoin paper account state.',
     });
   }
 }
@@ -6571,6 +6702,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/sim/bitcoin-15m/settle') {
     await handleSimBitcoinPaperSettleRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/sim/bitcoin-15m/state') {
+    await handleSimBitcoinPaperStateRequest(req, res);
     return;
   }
 
