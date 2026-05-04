@@ -201,6 +201,11 @@ function activeNextBets(player) {
   return bets.slice(0, normalizeHandCount(player.handCount));
 }
 
+function hasCompleteBetPlan(player) {
+  const bets = activeNextBets(player);
+  return bets.length > 0 && bets.every((bet) => bet > 0);
+}
+
 function syncPlayerBetPlan(player) {
   if (!player) {
     return 0;
@@ -663,10 +668,10 @@ function startRound(state, playerId) {
       return false;
     }
     clampNextBetsToStack(player);
-    return syncPlayerBetPlan(player) > 0;
+    return hasCompleteBetPlan(player);
   });
   if (!eligible.length) {
-    return { ok: false, error: 'At least one seated player needs a wager before the dealer can deal.' };
+    return { ok: false, error: 'Every selected blackjack hand needs a wager before the dealer can deal.' };
   }
 
   state.handNumber += 1;
@@ -688,9 +693,9 @@ function startRound(state, playerId) {
     player.lastOutcome = '';
     player.result = '';
     clampNextBetsToStack(player);
-    const startingBets = activeNextBets(player).filter((bet) => bet > 0);
+    const startingBets = activeNextBets(player);
     const reservedTotal = startingBets.reduce((sum, bet) => sum + bet, 0);
-    if (player.leaving || player.stack <= 0 || reservedTotal <= 0) {
+    if (player.leaving || player.stack <= 0 || !hasCompleteBetPlan(player)) {
       player.status = player.stack > 0 ? 'Waiting for next round.' : 'Out of chips.';
       continue;
     }
@@ -989,7 +994,11 @@ function computeControls(state, viewer) {
     canStartRound: Boolean(
       viewer &&
       (state.phase === 'betting' || state.phase === 'settled') &&
-      seatedPlayers(state, { includeLeavers: true }).some((player) => !player.leaving && player.stack > 0 && player.bet > 0)
+      seatedPlayers(state, { includeLeavers: true }).some((player) => (
+        !player.leaving &&
+        player.stack > 0 &&
+        hasCompleteBetPlan(player)
+      ))
     ),
     canResetTable: Boolean(viewer),
     canAdjustBet,

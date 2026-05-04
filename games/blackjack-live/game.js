@@ -972,12 +972,9 @@
     }
 
     const animate = state.renderMemo.seatSignatures.get(seat) !== seatSignature(player);
-    const hasSettledCards = Array.isArray(player.hands) && player.hands.some((hand) => (
-      Array.isArray(hand.cards) && hand.cards.length
-    ));
     const planning = !player.participating && (
       state.snapshot?.phase === 'betting' ||
-      (state.snapshot?.phase === 'settled' && !hasSettledCards)
+      state.snapshot?.phase === 'settled'
     );
     const pendingCount = viewerHandCount(player);
     const pendingBets = viewerNextBets(player);
