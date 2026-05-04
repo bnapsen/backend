@@ -121,7 +121,6 @@
       balance: null,
       startingBalance: 1000,
       error: "",
-      paperAccountId: PAPER_DEFAULT_ACCOUNT_ID,
     },
     paint: {
       pendingScan: null,
@@ -510,11 +509,7 @@
     state.simWallet.balance = Number.isFinite(Number(wallet.balance)) ? Number(wallet.balance) : null;
     state.simWallet.startingBalance = Number.isFinite(Number(wallet.startingBalance)) ? Number(wallet.startingBalance) : 1000;
     state.simWallet.error = signedIn ? String(wallet.error || "") : "";
-    if (signedIn && state.simWallet.ready && !state.simWallet.error && Number.isFinite(Number(state.simWallet.balance))) {
-      attachSimWalletToActivePaper();
-    } else {
-      syncPaperInputsFromActive();
-    }
+    syncPaperInputsFromActive();
     if (signedIn && profile && profile.uid && state.paperAccountSync.lastLoadedUid !== profile.uid) {
       state.paperAccountSync.lastLoadedUid = profile.uid;
       loadBitcoinPaperAccountState();
@@ -528,25 +523,11 @@
     renderServerPaperBotStatus();
   }
 
-  function attachSimWalletToActivePaper() {
-    if (!state.simWallet.signedIn || !Number.isFinite(Number(state.simWallet.balance))) {
-      return;
-    }
-    state.simWallet.paperAccountId = state.activePaperAccountId;
-    state.paper.currency = "SIM";
-    state.paper.startingBankroll = Math.max(1, Number(state.simWallet.startingBalance || 1000));
-    state.paper.cash = Math.max(0, Number(state.simWallet.balance || 0));
-    syncActivePaperAccount();
-    syncPaperInputsFromActive();
-    savePaperLedger();
-  }
-
   function simWalletConnected() {
     return Boolean(
       state.simWallet.signedIn
       && state.simWallet.ready
       && !state.simWallet.error
-      && state.simWallet.paperAccountId === state.activePaperAccountId
       && Number.isFinite(Number(state.simWallet.balance))
     );
   }
@@ -564,14 +545,15 @@
     state.simWallet.balance = Number(wallet.balance);
     state.simWallet.startingBalance = Number(wallet.startingBalance) || state.simWallet.startingBalance;
     state.simWallet.error = "";
-    attachSimWalletToActivePaper();
+    syncPaperInputsFromActive();
+    renderPaperBankroll();
     if (window.NovaAuth && typeof window.NovaAuth.refreshWallet === "function") {
       window.NovaAuth.refreshWallet().catch(function () {});
     }
   }
 
   function secureSimManualOrder(order) {
-    return Boolean(simWalletConnected() && order && (!order.automation || order.secureSim === true || order.secureSimAutomation === true));
+    return Boolean(simWalletConnected() && order && (order.secureSim === true || order.secureSimAutomation === true));
   }
 
   function secureSimBitcoinRequest(action, payload) {
@@ -798,12 +780,8 @@
       : accounts[0].id;
     state.paperBookUpdatedAt = remoteState.updatedAt || remoteState.savedAt || new Date().toISOString();
     bindActivePaperAccount();
-    if (state.simWallet.signedIn && Number.isFinite(Number(state.simWallet.balance))) {
-      state.paper.currency = "SIM";
-      state.paper.startingBankroll = Math.max(1, Number(state.simWallet.startingBalance || 1000));
-      state.paper.cash = Math.max(0, Number(state.simWallet.balance || 0));
-      syncActivePaperAccount();
-    }
+    state.paper.currency = "SIM";
+    syncActivePaperAccount();
     syncPaperInputsFromActive();
     renderPaperAccounts();
     renderPaperBankroll();
@@ -1916,10 +1894,8 @@
     paperCurrencyInput.value = "SIM";
     paperCurrencyInput.readOnly = true;
     paperCurrencyInput.title = "SIM is the site-wide paper currency.";
-    paperStartingBankrollInput.readOnly = Boolean(state.simWallet.signedIn && state.simWallet.ready);
-    paperStartingBankrollInput.title = paperStartingBankrollInput.readOnly
-      ? "Signed-in SIM wallets start at 1,000 SIM and keep their balance on your account."
-      : "Unsigned local paper mode can still change the starting roll.";
+    paperStartingBankrollInput.readOnly = false;
+    paperStartingBankrollInput.title = "This is this desk's sandbox bankroll. It is separate from your SIM wallet and the backend bot bankroll.";
     paperStartingBankrollInput.value = String(state.paper.startingBankroll);
     if (state.serverBot.bot) {
       state.paperAuto.simAccount = state.serverBot.bot.enabled === true;
@@ -1967,9 +1943,6 @@
     syncActivePaperAccount();
     state.activePaperAccountId = account.id;
     bindActivePaperAccount();
-    if (state.simWallet.signedIn && state.simWallet.ready) {
-      attachSimWalletToActivePaper();
-    }
     syncPaperInputsFromActive();
     applyPaperLayout();
     savePaperLedger();
@@ -1988,8 +1961,8 @@
       name: "Desk " + nextNumber,
       paper: {
         currency: "SIM",
-        startingBankroll: state.simWallet.signedIn ? state.simWallet.startingBalance : (activePaper.startingBankroll || 1000),
-        cash: state.simWallet.signedIn && Number.isFinite(Number(state.simWallet.balance)) ? state.simWallet.balance : (activePaper.startingBankroll || 1000),
+        startingBankroll: activePaper.startingBankroll || 1000,
+        cash: activePaper.startingBankroll || 1000,
         layout: activePaper.layout,
       },
       auto: {},
@@ -1997,9 +1970,6 @@
     state.paperAccounts.push(account);
     state.activePaperAccountId = account.id;
     bindActivePaperAccount();
-    if (state.simWallet.signedIn && state.simWallet.ready) {
-      attachSimWalletToActivePaper();
-    }
     syncPaperInputsFromActive();
     savePaperLedger();
     renderPaperAccounts();
@@ -2017,8 +1987,8 @@
       name: active.name + " copy",
       paper: {
         currency: "SIM",
-        startingBankroll: state.simWallet.signedIn ? state.simWallet.startingBalance : active.paper.startingBankroll,
-        cash: state.simWallet.signedIn && Number.isFinite(Number(state.simWallet.balance)) ? state.simWallet.balance : active.paper.startingBankroll,
+        startingBankroll: active.paper.startingBankroll,
+        cash: active.paper.startingBankroll,
         layout: active.paper.layout,
       },
       auto: {
@@ -2032,9 +2002,6 @@
     state.paperAccounts.push(account);
     state.activePaperAccountId = account.id;
     bindActivePaperAccount();
-    if (state.simWallet.signedIn && state.simWallet.ready) {
-      attachSimWalletToActivePaper();
-    }
     syncPaperInputsFromActive();
     savePaperLedger();
     renderPaperAccounts();
@@ -2146,17 +2113,6 @@
 
   function updatePaperSettings() {
     const previousStarting = Number(state.paper.startingBankroll || 1000);
-    if (state.simWallet.signedIn && state.simWallet.ready) {
-      state.paper.currency = "SIM";
-      state.paper.startingBankroll = Math.max(1, Number(state.simWallet.startingBalance || 1000));
-      if (Number.isFinite(Number(state.simWallet.balance))) {
-        state.paper.cash = Math.max(0, Number(state.simWallet.balance || 0));
-      }
-      syncPaperInputsFromActive();
-      savePaperLedger();
-      renderPaperBankroll();
-      return;
-    }
     const nextStarting = Math.max(1, Number(paperStartingBankrollInput.value || previousStarting));
     const untouched = !state.paper.positions.length
       && !state.paper.orders.length
@@ -2424,20 +2380,8 @@
     const price = entryCents / 100;
     const entryFee = kalshiFeeDollars(contracts, price);
     const entryCost = contracts * price + entryFee;
-    if (!options.skipCashCheck && state.simWallet.signedIn && !simWalletConnected()) {
-      setPaperStatus("No paper buy: signed-in SIM wallet is still syncing.", true);
-      savePaperLedger();
-      renderPaperBankroll();
-      return null;
-    }
-    if (!options.skipCashCheck && simWalletConnected() && !options.secureSim && !order.secureSim && !order.automation) {
-      setPaperStatus("No account SIM buy: signed-in Bitcoin paper trades must use the secure server endpoint.", true);
-      savePaperLedger();
-      renderPaperBankroll();
-      return null;
-    }
-    if (!options.skipCashCheck && simWalletConnected() && Number(state.simWallet.balance || 0) + 0.0001 < entryCost) {
-      setPaperStatus("No paper buy: account SIM wallet has only " + paperMoney(state.simWallet.balance) + ".", true);
+    if (!options.skipCashCheck && order.secureSim && !simWalletConnected()) {
+      setPaperStatus("No secure SIM buy: account wallet is not ready.", true);
       savePaperLedger();
       renderPaperBankroll();
       return null;
@@ -2785,12 +2729,12 @@
       return;
     }
     const startingBankroll = state.simWallet.signedIn
-      ? Math.max(1, Number(state.simWallet.startingBalance || 1000))
+      ? Math.max(1, Number(paperStartingBankrollInput.value || state.paper.startingBankroll || 1000))
       : Math.max(1, Number(paperStartingBankrollInput.value || 1000));
     state.paper = normalizePaperLedger({
       currency: "SIM",
       startingBankroll,
-      cash: state.simWallet.signedIn && Number.isFinite(Number(state.simWallet.balance)) ? Number(state.simWallet.balance) : startingBankroll,
+      cash: startingBankroll,
       orders: [],
       positions: [],
       history: [],
@@ -3724,9 +3668,6 @@
       changed = true;
       if (order.status === "syncing") return;
       if (order.action === "buy" && Number(order.lastAskCents) <= Number(order.limitCents)) {
-        if (simWalletConnected() && !order.automation) {
-          order.secureSim = true;
-        }
         if (order.secureSim) {
           fillPaperBuySecure(order, Number(order.lastAskCents), "Resting secure SIM limit buy filled");
         } else {
