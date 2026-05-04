@@ -1373,23 +1373,6 @@
     }
 
     const count = viewerHandCount(player);
-    const selected = selectedBetHandIndex(player);
-    const bets = viewerNextBets(player);
-    const handButtons = Array.from({ length: count }, (_, index) => {
-      const classes = ['hand-picker'];
-      if (index === selected) {
-        classes.push('selected');
-      }
-      if (bets[index] > 0) {
-        classes.push('has-bet');
-      }
-      return `
-        <button class="${classes.join(' ')}" type="button" data-bet-hand="${index}" data-drag-id="bet-hand:${index}">
-          <span>Hand ${index + 1}</span>
-          <strong>${formatChips(bets[index])}</strong>
-        </button>
-      `;
-    }).join('');
     const removeButton = count > 1
       ? `<button class="hand-count-btn" type="button" data-hand-count="${count - 1}">- Hand</button>`
       : '';
@@ -1397,7 +1380,6 @@
       ? `<button class="hand-count-btn add" type="button" data-hand-count="${count + 1}">+ Hand</button>`
       : '';
     ui.handBuilder.innerHTML = `
-      <div class="hand-picker-row">${handButtons}</div>
       <div class="hand-count-row">${removeButton}${addButton}</div>
     `;
   }

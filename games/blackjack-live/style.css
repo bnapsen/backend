@@ -1673,7 +1673,6 @@ h2 {
   display: none;
 }
 
-.hand-picker-row,
 .hand-count-row {
   display: flex;
   justify-content: center;
@@ -1682,7 +1681,6 @@ h2 {
   flex-wrap: wrap;
 }
 
-.hand-picker,
 .hand-count-btn {
   min-height: 40px;
   padding: 9px 12px;
@@ -1699,30 +1697,6 @@ h2 {
   box-shadow:
     inset 0 -3px 0 rgba(0, 0, 0, 0.24),
     0 9px 18px rgba(0, 0, 0, 0.22);
-}
-
-.hand-picker {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.hand-picker strong {
-  color: var(--gold);
-}
-
-.hand-picker.selected {
-  color: var(--text);
-  border-color: rgba(131, 235, 212, 0.68);
-  box-shadow:
-    inset 0 -3px 0 rgba(0, 0, 0, 0.2),
-    0 0 0 4px rgba(131, 235, 212, 0.08),
-    0 12px 22px rgba(0, 0, 0, 0.24);
-}
-
-.hand-picker.has-bet {
-  border-color: rgba(239, 197, 109, 0.34);
 }
 
 .hand-count-btn.add {
