@@ -188,10 +188,14 @@
         <div class="paper-bot-card paper-sim-bot-card">
           <label class="paper-bot-toggle">
             <input id="paper-auto-sim-account" type="checkbox">
-            <strong>Account SIM bot</strong>
+            <strong>Server paper bot</strong>
           </label>
-          <span>Uses your signed-in SIM wallet through the secure server endpoints. Tune the filters below before arming it.</span>
+          <span>Runs on the backend with its own separate paper bankroll, so it can keep working even when this browser is closed.</span>
           <div class="paper-bot-controls">
+            <label>
+              Bot bankroll
+              <input id="paper-sim-bot-bankroll" type="number" min="1" max="1000000" step="10" value="1000">
+            </label>
             <label>
               Contracts
               <input id="paper-sim-bot-contracts" type="number" min="1" max="100" step="1" value="10">
@@ -231,7 +235,9 @@
               Target c
               <input id="paper-sim-bot-target-cents" type="number" min="1" max="50" step="1" value="10">
             </label>
+            <button id="paper-sim-bot-reset" class="danger-button" type="button">Reset Bot</button>
           </div>
+          <div id="paper-server-bot-status" class="paper-server-bot-status">Sign in to load the backend bot.</div>
         </div>
         <div id="paper-auto-status" class="paper-auto-status">Paper bots are off.</div>
       </div>

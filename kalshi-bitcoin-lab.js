@@ -28,6 +28,7 @@
   const PAPER_RESEARCH_DEFENSIVE_EDGE = 0.015;
   const PAPER_RESEARCH_MAX_FILLS_PER_TICKER = 2;
   const PAPER_SIM_BOT_DEFAULTS = {
+    bankroll: 1000,
     contracts: 10,
     minEdgePct: 8,
     maxAskCents: 40,
@@ -103,6 +104,15 @@
       lastAttemptAt: {},
     },
     paperSimBotPending: {},
+    serverBot: {
+      loading: false,
+      saving: false,
+      saveTimer: null,
+      error: "",
+      warning: "",
+      bot: null,
+      lastLoadedAt: 0,
+    },
     simWallet: {
       ready: false,
       signedIn: false,
@@ -210,6 +220,7 @@
   const paperAutoScalpInput = document.querySelector("#paper-auto-scalp");
   const paperAutoResearchInput = document.querySelector("#paper-auto-research");
   const paperAutoSimAccountInput = document.querySelector("#paper-auto-sim-account");
+  const paperSimBotBankrollInput = document.querySelector("#paper-sim-bot-bankroll");
   const paperSimBotContractsInput = document.querySelector("#paper-sim-bot-contracts");
   const paperSimBotMinEdgeInput = document.querySelector("#paper-sim-bot-min-edge");
   const paperSimBotMaxAskInput = document.querySelector("#paper-sim-bot-max-ask");
@@ -219,7 +230,10 @@
   const paperSimBotMaxExposureInput = document.querySelector("#paper-sim-bot-max-exposure");
   const paperSimBotExitModeInput = document.querySelector("#paper-sim-bot-exit-mode");
   const paperSimBotTargetCentsInput = document.querySelector("#paper-sim-bot-target-cents");
+  const paperSimBotResetButton = document.querySelector("#paper-sim-bot-reset");
+  const paperServerBotStatusEl = document.querySelector("#paper-server-bot-status");
   const paperSimBotInputs = [
+    paperSimBotBankrollInput,
     paperSimBotContractsInput,
     paperSimBotMinEdgeInput,
     paperSimBotMaxAskInput,
@@ -245,7 +259,7 @@
     { key: "desks", label: "Desk Controls", detail: "switch, clone, and delete paper desks", element: paperDesksEl, defaultCollapsed: true },
     { key: "comparison", label: "Desk Comparison", detail: "compare every paper desk", element: paperAccountComparisonEl, defaultCollapsed: true },
     { key: "headline", label: "Wallet Snapshot", detail: "cash, equity, contracts, and average paid", element: paperHeadlineEl, defaultCollapsed: false },
-    { key: "bots", label: "Bot Controls", detail: "completion, scalp, research, and account SIM bot", element: paperBotsEl, defaultCollapsed: false },
+    { key: "bots", label: "Bot Controls", detail: "completion, scalp, research, and server paper bot", element: paperBotsEl, defaultCollapsed: false },
     { key: "settings", label: "Paper Settings", detail: "starting grant, reset, and Kelly sync", element: paperSettingsRowEl, defaultCollapsed: true },
     { key: "ticket", label: "Limit Ticket", detail: "manual buy and sell order ticket", element: paperTicketEl, defaultCollapsed: false },
     { key: "summary", label: "Paper Metrics", detail: "cash, reserved, open mark, and risk", element: paperSummaryEl, defaultCollapsed: true },
@@ -298,6 +312,9 @@
   paperDockButton.addEventListener("click", dockPaperPanel);
   paperSyncBankrollButton.addEventListener("click", syncPaperBankrollToKelly);
   paperResetButton.addEventListener("click", resetPaperLedger);
+  if (paperSimBotResetButton) {
+    paperSimBotResetButton.addEventListener("click", resetServerPaperBot);
+  }
   paperAccountTabsEl.addEventListener("click", function (event) {
     const button = event.target.closest("[data-paper-account-id]");
     if (!button) return;
@@ -352,6 +369,7 @@
   installPaperCollapsibles();
   restorePaperLedger();
   restorePaperAutoSettings();
+  renderServerPaperBotStatus();
   if (window.NovaAuth) {
     window.NovaAuth.init({
       apiBaseUrl: defaultApiBase(),
@@ -500,8 +518,14 @@
     if (signedIn && profile && profile.uid && state.paperAccountSync.lastLoadedUid !== profile.uid) {
       state.paperAccountSync.lastLoadedUid = profile.uid;
       loadBitcoinPaperAccountState();
+      loadServerPaperBotStatus();
+    } else if (!signedIn) {
+      state.serverBot.bot = null;
+      state.serverBot.error = "";
+      state.serverBot.warning = "";
     }
     renderPaperBankroll();
+    renderServerPaperBotStatus();
   }
 
   function attachSimWalletToActivePaper() {
@@ -577,6 +601,135 @@
       state.simWallet.error = "";
       renderPaperBankroll();
       throw error;
+    });
+  }
+
+  function serverPaperBotRequest(method, payload) {
+    if (!window.NovaAuth || typeof window.NovaAuth.appendAuthHeaders !== "function") {
+      return Promise.reject(new Error("Sign in before using the backend paper bot."));
+    }
+    return window.NovaAuth.appendAuthHeaders(method === "POST" ? { "Content-Type": "application/json" } : {})
+      .then(function (headers) {
+        return fetch(defaultApiBase() + "/api/sim/bitcoin-15m/bot", {
+          method,
+          headers,
+          body: method === "POST" ? JSON.stringify(payload || {}) : undefined,
+          cache: "no-store",
+        });
+      })
+      .then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (body) {
+          if (!response.ok || !body.ok) {
+            throw new Error(body.error || "Backend paper bot sync failed.");
+          }
+          return body;
+        });
+      });
+  }
+
+  function loadServerPaperBotStatus(options) {
+    if (!state.simWallet.signedIn) {
+      state.serverBot.bot = null;
+      state.serverBot.error = "";
+      renderServerPaperBotStatus();
+      return Promise.resolve(null);
+    }
+    if (state.serverBot.loading && !(options && options.force)) return Promise.resolve(state.serverBot.bot);
+    state.serverBot.loading = true;
+    renderServerPaperBotStatus();
+    return serverPaperBotRequest("GET")
+      .then(function (body) {
+        state.serverBot.bot = body.bot || null;
+        state.serverBot.error = "";
+        state.serverBot.warning = body.warning || "";
+        state.serverBot.lastLoadedAt = Date.now();
+        if (state.serverBot.bot) {
+          state.paperAuto.simAccount = state.serverBot.bot.enabled === true;
+          state.paperAuto.simBot = normalizePaperSimBotParams({
+            ...(state.paperAuto.simBot || {}),
+            ...(state.serverBot.bot.settings || {}),
+            bankroll: state.serverBot.bot.startingBankroll,
+          });
+        }
+        syncPaperInputsFromActive();
+        renderPaperAccounts();
+        renderPaperBankroll();
+        renderServerPaperBotStatus();
+        return state.serverBot.bot;
+      })
+      .catch(function (error) {
+        state.serverBot.error = error && error.message ? error.message : "Backend paper bot sync failed.";
+        renderServerPaperBotStatus();
+        return null;
+      })
+      .finally(function () {
+        state.serverBot.loading = false;
+        renderServerPaperBotStatus();
+      });
+  }
+
+  function scheduleServerPaperBotSave(options) {
+    if (state.serverBot.saveTimer) clearTimeout(state.serverBot.saveTimer);
+    state.serverBot.saveTimer = setTimeout(function () {
+      state.serverBot.saveTimer = null;
+      saveServerPaperBotSettings(options).catch(function () {});
+    }, options && options.immediate ? 0 : 450);
+  }
+
+  function saveServerPaperBotSettings(options) {
+    if (!state.simWallet.signedIn) {
+      renderServerPaperBotStatus();
+      return Promise.resolve(null);
+    }
+    const settings = normalizePaperSimBotParams(state.paperAuto.simBot || readPaperSimBotInputs());
+    state.serverBot.saving = true;
+    state.serverBot.warning = "";
+    renderServerPaperBotStatus();
+    return serverPaperBotRequest("POST", {
+      enabled: state.paperAuto.simAccount === true,
+      name: "Bitcoin 15m Server Bot",
+      startingBankroll: settings.bankroll,
+      settings,
+      reset: Boolean(options && options.reset),
+      runNow: Boolean(options && options.runNow),
+    }).then(function (body) {
+      state.serverBot.bot = body.bot || null;
+      state.serverBot.error = "";
+      state.serverBot.warning = body.warning || "";
+      state.serverBot.lastLoadedAt = Date.now();
+      if (state.serverBot.bot) {
+        state.paperAuto.simAccount = state.serverBot.bot.enabled === true;
+        state.paperAuto.simBot = normalizePaperSimBotParams({
+          ...settings,
+          ...(state.serverBot.bot.settings || {}),
+          bankroll: state.serverBot.bot.startingBankroll,
+        });
+      }
+      persistPaperAutoSettings();
+      syncPaperInputsFromActive();
+      renderPaperAccounts();
+      renderPaperBankroll();
+      renderServerPaperBotStatus();
+      return state.serverBot.bot;
+    }).catch(function (error) {
+      state.serverBot.error = error && error.message ? error.message : "Backend paper bot sync failed.";
+      renderServerPaperBotStatus();
+      return null;
+    }).finally(function () {
+      state.serverBot.saving = false;
+      renderServerPaperBotStatus();
+    });
+  }
+
+  function resetServerPaperBot() {
+    if (!state.simWallet.signedIn) {
+      state.serverBot.error = "Sign in before resetting the backend paper bot.";
+      renderServerPaperBotStatus();
+      return;
+    }
+    state.paperAuto.simBot = readPaperSimBotInputs();
+    saveServerPaperBotSettings({ reset: true, runNow: false }).then(function () {
+      updatePaperAutoStatus("Server bot bankroll reset. The bot bankroll is separate from your player SIM wallet.", "pos");
     });
   }
 
@@ -802,6 +955,7 @@
       state.paint.lastPaperEvalAt = now;
       state.paint.lastPaperTicker = scan && scan.ticker || "";
     }
+    maybeRefreshServerPaperBotStatus();
     renderPaperBankroll();
     if (shouldRenderChart(scan, now)) {
       renderChart(scan);
@@ -816,6 +970,12 @@
     }
     evaluateAutoPilot(scan);
     handleSoundEffects(scan);
+  }
+
+  function maybeRefreshServerPaperBotStatus() {
+    if (!state.simWallet.signedIn || state.serverBot.loading || state.serverBot.saving) return;
+    if (Date.now() - Number(state.serverBot.lastLoadedAt || 0) < 5000) return;
+    loadServerPaperBotStatus();
   }
 
   function nowForPaint() {
@@ -1630,7 +1790,7 @@
     if (controls) controls.hidden = collapsed;
     if (button) {
       button.setAttribute("aria-expanded", collapsed ? "false" : "true");
-      button.textContent = collapsed ? "Show Account SIM parameters" : "Hide Account SIM parameters";
+      button.textContent = collapsed ? "Show server bot parameters" : "Hide server bot parameters";
     }
   }
 
@@ -1714,6 +1874,7 @@
       return Number.isFinite(number) ? number : fallback;
     };
     return {
+      bankroll: clampNumber(numberOrDefault(source.bankroll, defaults.bankroll), 1, 1000000),
       contracts: clampNumber(Math.floor(numberOrDefault(source.contracts, defaults.contracts)), 1, 100),
       minEdgePct: clampNumber(numberOrDefault(source.minEdgePct, defaults.minEdgePct), 0, 50),
       maxAskCents: clampNumber(numberOrDefault(source.maxAskCents, defaults.maxAskCents), 1, 99),
@@ -1760,11 +1921,21 @@
       ? "Signed-in SIM wallets start at 1,000 SIM and keep their balance on your account."
       : "Unsigned local paper mode can still change the starting roll.";
     paperStartingBankrollInput.value = String(state.paper.startingBankroll);
+    if (state.serverBot.bot) {
+      state.paperAuto.simAccount = state.serverBot.bot.enabled === true;
+      state.paperAuto.simBot = normalizePaperSimBotParams({
+        ...(state.paperAuto.simBot || {}),
+        ...(state.serverBot.bot.settings || {}),
+        bankroll: state.serverBot.bot.startingBankroll,
+      });
+      syncActivePaperAccount();
+    }
     paperAutoCompletionInput.checked = state.paperAuto.completion;
     paperAutoScalpInput.checked = state.paperAuto.scalp;
     paperAutoResearchInput.checked = state.paperAuto.research;
     paperAutoSimAccountInput.checked = state.paperAuto.simAccount;
     state.paperAuto.simBot = normalizePaperSimBotParams(state.paperAuto.simBot || {});
+    if (paperSimBotBankrollInput) paperSimBotBankrollInput.value = String(state.paperAuto.simBot.bankroll);
     paperSimBotContractsInput.value = String(state.paperAuto.simBot.contracts);
     paperSimBotMinEdgeInput.value = String(state.paperAuto.simBot.minEdgePct);
     paperSimBotMaxAskInput.value = String(state.paperAuto.simBot.maxAskCents);
@@ -1775,6 +1946,7 @@
     paperSimBotExitModeInput.value = state.paperAuto.simBot.exitMode;
     paperSimBotTargetCentsInput.value = String(state.paperAuto.simBot.targetCents);
     updatePaperAutoStatus(account.lastAutomationMessage || "", account.lastAutomationTone || "");
+    renderServerPaperBotStatus();
   }
 
   function newPaperAccountId() {
@@ -2645,13 +2817,20 @@
     state.paperAuto.research = paperAutoResearchInput.checked;
     state.paperAuto.simAccount = paperAutoSimAccountInput.checked;
     state.paperAuto.simBot = readPaperSimBotInputs();
+    if (state.serverBot.bot) {
+      state.serverBot.bot.enabled = state.paperAuto.simAccount === true;
+      state.serverBot.bot.settings = { ...state.paperAuto.simBot };
+      state.serverBot.bot.startingBankroll = state.paperAuto.simBot.bankroll;
+    }
     persistPaperAutoSettings();
     renderPaperAccounts();
     updatePaperAutoStatus();
+    scheduleServerPaperBotSave({ immediate: false });
   }
 
   function readPaperSimBotInputs() {
     return normalizePaperSimBotParams({
+      bankroll: paperSimBotBankrollInput ? paperSimBotBankrollInput.value : state.paperAuto.simBot && state.paperAuto.simBot.bankroll,
       contracts: paperSimBotContractsInput.value,
       minEdgePct: paperSimBotMinEdgeInput.value,
       maxAskCents: paperSimBotMaxAskInput.value,
@@ -2726,8 +2905,13 @@
     const results = [];
     let researchExitFilled = false;
     if (state.paperAuto.simAccount) {
-      const simExitResult = managePaperSimAccountBotExits(scan);
-      if (simExitResult && simExitResult.message) results.push(simExitResult);
+      const bot = state.serverBot.bot;
+      results.push({
+        filled: false,
+        message: bot
+          ? "Server paper bot: " + (bot.lastMessage || (bot.enabled ? "armed on backend with separate bankroll." : "off."))
+          : "Server paper bot: waiting for backend status.",
+      });
     }
     if (state.paperAuto.research) {
       const exitResult = managePaperResearchExits(scan);
@@ -2741,9 +2925,6 @@
     }
     if (state.paperAuto.research && !researchExitFilled) {
       results.push(runPaperResearchStrategy(scan));
-    }
-    if (state.paperAuto.simAccount) {
-      results.push(runPaperSimAccountBot(scan));
     }
     const visible = results.filter(function (item) { return item && item.message; });
     const filled = visible.some(function (item) { return item.filled; });
@@ -3384,6 +3565,40 @@
     return removed;
   }
 
+  function renderServerPaperBotStatus() {
+    if (!paperServerBotStatusEl) return;
+    const bot = state.serverBot.bot;
+    let className = "paper-server-bot-status";
+    let text = "Sign in to load the backend bot.";
+    if (state.serverBot.loading) {
+      text = "Loading backend bot...";
+    } else if (state.serverBot.saving) {
+      text = "Saving backend bot settings...";
+    } else if (!state.simWallet.signedIn) {
+      text = "Sign in to configure a server bot with its own paper bankroll.";
+    } else if (state.serverBot.error) {
+      text = state.serverBot.error;
+      className += " neg";
+    } else if (bot) {
+      const equity = Number.isFinite(Number(bot.equity)) ? Number(bot.equity) : Number(bot.cash || 0);
+      const bankroll = Number.isFinite(Number(bot.startingBankroll)) ? Number(bot.startingBankroll) : state.paperAuto.simBot.bankroll;
+      const cash = Number.isFinite(Number(bot.cash)) ? Number(bot.cash) : 0;
+      const contracts = Number.isFinite(Number(bot.openContracts)) ? Number(bot.openContracts) : 0;
+      const status = bot.enabled ? "ARMED" : "OFF";
+      const pnl = Number(equity) - Number(bankroll);
+      className += bot.enabled ? " pos" : "";
+      text = status + " - bot bankroll " + paperMoney(bankroll) + ", equity " + paperMoney(equity) + ", cash " + paperMoney(cash) + ", open contracts " + formatWholeNumber(contracts) + ".";
+      if (Number.isFinite(pnl)) {
+        text += " Bot P/L " + signedPaperMoney(pnl) + ".";
+      }
+      if (bot.lastRunAt) text += " Last backend run " + formatTime(bot.lastRunAt) + ".";
+      if (state.serverBot.warning) text += " " + state.serverBot.warning;
+      if (bot.lastMessage) text += " " + bot.lastMessage;
+    }
+    paperServerBotStatusEl.className = className;
+    paperServerBotStatusEl.textContent = text;
+  }
+
   function updatePaperAutoStatus(message, tone) {
     if (!paperAutoStatusEl) return;
     if (state.paperUiMuted) return;
@@ -3391,8 +3606,8 @@
     if (state.paperAuto.completion) active.push("completion");
     if (state.paperAuto.scalp) active.push("scalp");
     if (state.paperAuto.research) active.push("research fade");
-    if (state.paperAuto.simAccount) active.push("account SIM");
-    paperAutoStatusEl.textContent = message || (active.length ? "Paper bots armed: " + active.join(" + ") + ". Local bots use sandbox paper; account SIM uses the secure signed-in wallet and adjustable filters." : "Paper bots are off.");
+    if (state.paperAuto.simAccount) active.push("server paper");
+    paperAutoStatusEl.textContent = message || (active.length ? "Paper bots armed: " + active.join(" + ") + ". Local bots run while this page is open; the server paper bot uses its own backend bankroll." : "Paper bots are off.");
     paperAutoStatusEl.className = "paper-auto-status " + (tone || "");
   }
 
@@ -3548,8 +3763,14 @@
     const walletDetail = state.simWallet.signedIn
       ? (state.simWallet.error ? state.simWallet.error : "Account wallet shared across SIM games")
       : "Local browser wallet until you sign in";
+    const bot = state.serverBot.bot;
+    const botEquity = bot && Number.isFinite(Number(bot.equity)) ? Number(bot.equity) : null;
+    const botDetail = bot
+      ? ((bot.enabled ? "Backend running" : "Backend off") + " / cash " + paperMoney(bot.cash || 0))
+      : (state.simWallet.signedIn ? "Backend bot not loaded yet" : "Sign in to use backend bot");
     paperHeadlineEl.innerHTML = [
       paperHeadlineCard(state.simWallet.signedIn ? "SIM wallet" : "Local SIM wallet", walletValue, walletDetail, state.simWallet.error ? "neg" : "primary"),
+      paperHeadlineCard("Server bot roll", botEquity == null ? "n/a" : paperMoney(botEquity), botDetail, bot && bot.enabled ? "pos" : ""),
       paperHeadlineCard("Paper equity", paperMoney(equity), "SIM cash plus current open bid mark"),
       paperHeadlineCard("Cash available", paperMoney(paperAvailableCash()), "Cash " + paperMoney(state.paper.cash) + " / reserved " + paperMoney(reserved)),
       paperHeadlineCard("Contracts held", formatWholeNumber(openContracts), state.paper.positions.length + " open position" + (state.paper.positions.length === 1 ? "" : "s")),
@@ -3648,7 +3869,7 @@
   function paperAutomationEntryLabel(position) {
     if (position.automation === "scalp") return "scalp avg group";
     if (position.automation === "research") return "research fade avg";
-    if (position.automation === "sim-account") return "account SIM bot";
+    if (position.automation === "sim-account") return "server bot";
     return "limit";
   }
 
@@ -3656,7 +3877,7 @@
     if (strategy === "research") return "Research fade";
     if (strategy === "scalp") return "Scalp";
     if (strategy === "completion") return "Completion";
-    if (strategy === "sim-account") return "Account SIM";
+    if (strategy === "sim-account") return "Server paper";
     return "Paper";
   }
 

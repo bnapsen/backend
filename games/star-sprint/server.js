@@ -19,7 +19,7 @@ const CarSoccer = require('./car-soccer-core.js');
 const ZombieSiege = require('./zombie-siege-core.js');
 const { createArcadeChatStore } = require('./arcade-chat-store.js');
 const { createSimWalletStore } = require('./sim-wallet-store.js');
-const { createSimBitcoinPaperStore } = require('./sim-bitcoin-paper-store.js');
+const { createSimBitcoinPaperStore, kalshiFeeCents } = require('./sim-bitcoin-paper-store.js');
 const { createReviewsStore } = require('./reviews-store.js');
 const { createSongsStore } = require('./songs-store.js');
 const {
@@ -186,6 +186,34 @@ const BITCOIN_SCAN_CACHE_MS = 550;
 const BITCOIN_STREAM_REFRESH_MS = 650;
 const BITCOIN_STREAM_FULL_EVERY_MS = 5_000;
 const BITCOIN_STREAM_PATCH_POINTS = 18;
+const BITCOIN_PAPER_BOT_ID = 'server-bot-main';
+const BITCOIN_PAPER_BOT_INTERVAL_MS = Math.max(2_500, Math.min(
+  60_000,
+  Math.round(Number(process.env.SIM_BITCOIN_PAPER_BOT_INTERVAL_MS || 15_000)),
+));
+const BITCOIN_PAPER_BOT_MAX_PER_TICK = Math.max(1, Math.min(
+  50,
+  Math.round(Number(process.env.SIM_BITCOIN_PAPER_BOT_MAX_PER_TICK || 12)),
+));
+const BITCOIN_PAPER_BOT_DEFAULTS = Object.freeze({
+  contracts: 10,
+  minEdgePct: 8,
+  maxAskCents: 40,
+  maxSpreadPct: 8,
+  maxFillsPerTicker: 2,
+  cooldownSeconds: 30,
+  maxExposure: 50,
+  exitMode: 'settle',
+  targetCents: 10,
+  minSecondsSinceOpen: 45,
+  maxSecondsSinceOpen: 660,
+  minSecondsToAverage: 45,
+});
+const bitcoinPaperBotRuntime = {
+  running: false,
+  lastRunAt: '',
+  lastError: '',
+};
 const bitcoinScanSharedCache = {
   key: '',
   payload: null,
@@ -1290,6 +1318,421 @@ function centsFromBody(value, fallback = 0) {
   return Number.isFinite(number) ? Math.round(number) : fallback;
 }
 
+function boundedNumber(value, fallback, min, max) {
+  const number = Number(value);
+  const safe = Number.isFinite(number) ? number : fallback;
+  return Math.min(max, Math.max(min, safe));
+}
+
+function normalizeBitcoinPaperBotSettings(raw = {}) {
+  const source = raw || {};
+  const defaults = BITCOIN_PAPER_BOT_DEFAULTS;
+  return {
+    contracts: Math.max(1, Math.min(100, Math.floor(boundedNumber(source.contracts, defaults.contracts, 1, 100)))),
+    minEdgePct: boundedNumber(source.minEdgePct, defaults.minEdgePct, 0, 50),
+    maxAskCents: Math.max(1, Math.min(99, Math.round(boundedNumber(source.maxAskCents, defaults.maxAskCents, 1, 99)))),
+    maxSpreadPct: boundedNumber(source.maxSpreadPct, defaults.maxSpreadPct, 0.5, 50),
+    maxFillsPerTicker: Math.max(1, Math.min(20, Math.floor(boundedNumber(source.maxFillsPerTicker, defaults.maxFillsPerTicker, 1, 20)))),
+    cooldownSeconds: Math.max(5, Math.min(600, Math.floor(boundedNumber(source.cooldownSeconds, defaults.cooldownSeconds, 5, 600)))),
+    maxExposure: boundedNumber(source.maxExposure, defaults.maxExposure, 1, 1000000),
+    exitMode: String(source.exitMode || defaults.exitMode).toLowerCase() === 'scalp' ? 'scalp' : 'settle',
+    targetCents: Math.max(1, Math.min(50, Math.round(boundedNumber(source.targetCents, defaults.targetCents, 1, 50)))),
+    minSecondsSinceOpen: Math.max(0, Math.min(840, Math.floor(boundedNumber(source.minSecondsSinceOpen, defaults.minSecondsSinceOpen, 0, 840)))),
+    maxSecondsSinceOpen: Math.max(1, Math.min(900, Math.floor(boundedNumber(source.maxSecondsSinceOpen, defaults.maxSecondsSinceOpen, 1, 900)))),
+    minSecondsToAverage: Math.max(0, Math.min(840, Math.floor(boundedNumber(source.minSecondsToAverage, defaults.minSecondsToAverage, 0, 840)))),
+  };
+}
+
+function dollarsToCents(value, fallbackCents = 100000) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallbackCents;
+  return Math.max(100, Math.min(100000000, Math.round(number * 100)));
+}
+
+function bitcoinPaperBotTickerFillKey(ticker) {
+  return String(ticker || 'KXBTC15M');
+}
+
+function bitcoinPaperBotOpenPositions(bot) {
+  return (Array.isArray(bot && bot.positions) ? bot.positions : []).filter((position) => position && position.status === 'open' && Number(position.contracts || 0) > 0);
+}
+
+function bitcoinPaperBotOpenRiskCents(bot) {
+  return bitcoinPaperBotOpenPositions(bot).reduce((sum, position) => sum + Math.max(0, Math.round(Number(position.entryCostCents || 0))), 0);
+}
+
+function bitcoinPaperBotFillCount(bot, ticker) {
+  const fills = bot && bot.fills && typeof bot.fills === 'object' ? bot.fills : {};
+  return Math.max(0, Math.floor(Number(fills[bitcoinPaperBotTickerFillKey(ticker)] || 0)));
+}
+
+function bitcoinPaperBotCandidateForSide(scan, side) {
+  const wanted = String(side || '').toLowerCase() === 'no' ? 'no' : 'yes';
+  return (Array.isArray(scan && scan.candidates) ? scan.candidates : [])
+    .find((candidate) => candidate && candidate.side === wanted) || null;
+}
+
+function bitcoinPaperBotPriceCents(value, fallback = 0, mode = 'round') {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  const rounded = mode === 'floor' ? Math.floor(number) : mode === 'ceil' ? Math.ceil(number) : Math.round(number);
+  return Math.max(0, Math.min(99, rounded));
+}
+
+function bitcoinPaperBotMarkValueCents(contracts, bidCents) {
+  const count = Math.max(0, Math.floor(Number(contracts || 0)));
+  const price = bitcoinPaperBotPriceCents(bidCents, 0, 'floor');
+  if (count <= 0 || price <= 0) return 0;
+  return Math.max(0, count * price - kalshiFeeCents(count, price));
+}
+
+function bitcoinPaperBotHistoryEntry(entry) {
+  return {
+    time: new Date().toISOString(),
+    type: String(entry.type || 'note').slice(0, 40),
+    ticker: String(entry.ticker || '').slice(0, 120),
+    side: String(entry.side || '').slice(0, 10),
+    contracts: Math.max(0, Math.floor(Number(entry.contracts || 0))),
+    priceCents: bitcoinPaperBotPriceCents(entry.priceCents, 0),
+    feeCents: Math.max(0, Math.round(Number(entry.feeCents || 0))),
+    cashCents: Math.max(0, Math.round(Number(entry.cashCents || 0))),
+    pnlCents: Math.round(Number(entry.pnlCents || 0)),
+    detail: String(entry.detail || '').replace(/\s+/g, ' ').trim().slice(0, 240),
+  };
+}
+
+function bitcoinPaperBotPushHistory(bot, entry) {
+  bot.history = [bitcoinPaperBotHistoryEntry(entry), ...(Array.isArray(bot.history) ? bot.history : [])].slice(0, 240);
+}
+
+function bitcoinPaperBotMaxEntryLimitCents(probability, minEdge) {
+  return Math.max(1, Math.min(99, Math.floor((Number(probability || 0) - Number(minEdge || 0)) * 100)));
+}
+
+function bitcoinPaperBotSecondsSinceOpen(market) {
+  const openMs = new Date(market && market.openTime || 0).getTime();
+  if (!Number.isFinite(openMs) || openMs <= 0) return NaN;
+  return Math.max(0, (Date.now() - openMs) / 1000);
+}
+
+function bitcoinPaperBotSecondsToAverageStart(market, model) {
+  const direct = Number(model && model.secondsToAverageStart);
+  if (Number.isFinite(direct)) return direct;
+  const startMs = new Date(market && market.settlementAveragingStart || 0).getTime();
+  if (!Number.isFinite(startMs) || startMs <= 0) return NaN;
+  return Math.max(0, (startMs - Date.now()) / 1000);
+}
+
+function bitcoinPaperBotApplyMarks(bot, scan) {
+  let changed = false;
+  const ticker = scan && scan.ticker || '';
+  const spot = Number(scan && scan.market && scan.market.currentPrice);
+  (Array.isArray(bot.positions) ? bot.positions : []).forEach((position) => {
+    if (!position || position.status !== 'open' || position.ticker !== ticker) return;
+    const candidate = bitcoinPaperBotCandidateForSide(scan, position.side);
+    const bidCents = bitcoinPaperBotPriceCents(candidate && candidate.bidCents, 0, 'floor');
+    const askCents = bitcoinPaperBotPriceCents(candidate && candidate.askCents, 0, 'ceil');
+    const markValueCents = bitcoinPaperBotMarkValueCents(position.contracts, bidCents);
+    position.lastBidCents = bidCents;
+    position.lastAskCents = askCents;
+    if (Number.isFinite(spot)) position.lastSpot = spot;
+    position.markValueCents = markValueCents;
+    position.pnlCents = markValueCents - Math.max(0, Math.round(Number(position.entryCostCents || 0)));
+    position.updatedAt = new Date().toISOString();
+    changed = true;
+  });
+  return changed;
+}
+
+async function bitcoinPaperBotSettleExpired(bot) {
+  const now = Date.now();
+  const nextPositions = [];
+  const messages = [];
+  const snapshotCache = new Map();
+  let changed = false;
+
+  for (const position of bitcoinPaperBotOpenPositions(bot)) {
+    const closeMs = new Date(position.closeTime || 0).getTime();
+    if (!Number.isFinite(closeMs) || closeMs <= 0 || now < closeMs) {
+      nextPositions.push(position);
+      continue;
+    }
+
+    try {
+      if (!snapshotCache.has(position.ticker)) {
+        snapshotCache.set(position.ticker, await getBitcoin15mMarketSnapshot(position.ticker));
+      }
+      const snapshot = snapshotCache.get(position.ticker);
+      const finalSpot = Number(snapshot && snapshot.settlement && snapshot.settlement.currentPrice);
+      const targetPrice = Number.isFinite(Number(position.targetPrice))
+        ? Number(position.targetPrice)
+        : Number(snapshot && snapshot.settlement && snapshot.settlement.targetPrice);
+      if (!Number.isFinite(finalSpot) || !Number.isFinite(targetPrice)) {
+        throw new Error('Settlement price unavailable.');
+      }
+      const contracts = Math.max(0, Math.floor(Number(position.contracts || 0)));
+      const entryCostCents = Math.max(0, Math.round(Number(position.entryCostCents || 0)));
+      const won = position.side === 'no' ? finalSpot < targetPrice : finalSpot >= targetPrice;
+      const payoutCents = won ? contracts * 100 : 0;
+      bot.cashCents = Math.max(0, Math.round(Number(bot.cashCents || 0)) + payoutCents);
+      bitcoinPaperBotPushHistory(bot, {
+        type: won ? 'settled won' : 'settled lost',
+        ticker: position.ticker,
+        side: position.side,
+        contracts,
+        priceCents: won ? 100 : 0,
+        feeCents: 0,
+        cashCents: bot.cashCents,
+        pnlCents: payoutCents - entryCostCents,
+        detail: `Final spot ${finalSpot.toFixed(2)} vs target ${targetPrice.toFixed(2)}.`,
+      });
+      messages.push(`${position.ticker} ${String(position.side).toUpperCase()} settled ${won ? 'win' : 'loss'}.`);
+      changed = true;
+    } catch (error) {
+      nextPositions.push(position);
+      messages.push(`Could not settle ${position.ticker}: ${error.message}`);
+    }
+  }
+
+  bot.positions = nextPositions;
+  return { changed, messages };
+}
+
+function bitcoinPaperBotScalpGroups(bot, scan, settings) {
+  if (settings.exitMode !== 'scalp') return { changed: false, messages: [] };
+  const ticker = scan && scan.ticker || '';
+  const groups = new Map();
+  bitcoinPaperBotOpenPositions(bot).forEach((position) => {
+    if (position.ticker !== ticker) return;
+    const key = `${position.ticker}|${position.side}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(position);
+  });
+
+  const soldIds = new Set();
+  const messages = [];
+  groups.forEach((positions) => {
+    const side = positions[0] && positions[0].side || 'yes';
+    const candidate = bitcoinPaperBotCandidateForSide(scan, side);
+    const bidCents = bitcoinPaperBotPriceCents(candidate && candidate.bidCents, 0, 'floor');
+    if (bidCents <= 0) return;
+    const contracts = positions.reduce((sum, position) => sum + Math.max(0, Math.floor(Number(position.contracts || 0))), 0);
+    const costCents = positions.reduce((sum, position) => sum + Math.max(0, Math.round(Number(position.entryCostCents || 0))), 0);
+    const averageCents = contracts > 0 ? costCents / contracts : 0;
+    const targetCents = Math.min(99, Math.ceil(averageCents + settings.targetCents));
+    if (contracts <= 0 || bidCents < targetCents) return;
+    const feeCents = kalshiFeeCents(contracts, bidCents);
+    const proceedsCents = Math.max(0, contracts * bidCents - feeCents);
+    bot.cashCents = Math.max(0, Math.round(Number(bot.cashCents || 0)) + proceedsCents);
+    positions.forEach((position) => soldIds.add(position.id));
+    bitcoinPaperBotPushHistory(bot, {
+      type: 'sold scalp',
+      ticker: positions[0].ticker,
+      side,
+      contracts,
+      priceCents: bidCents,
+      feeCents,
+      cashCents: bot.cashCents,
+      pnlCents: proceedsCents - costCents,
+      detail: `Grouped scalp at avg ${averageCents.toFixed(2)}c + ${settings.targetCents}c target.`,
+    });
+    messages.push(`sold ${contracts} ${side.toUpperCase()} @ ${bidCents}c.`);
+  });
+
+  if (soldIds.size) {
+    bot.positions = bitcoinPaperBotOpenPositions(bot).filter((position) => !soldIds.has(position.id));
+  }
+  return { changed: soldIds.size > 0, messages };
+}
+
+function bitcoinPaperBotBuildSignal(scan, settings, bot) {
+  const rows = Array.isArray(scan && scan.candidates) ? scan.candidates : [];
+  const market = scan && scan.market || {};
+  const model = scan && scan.model || {};
+  const ticker = scan && scan.ticker || '';
+  if (!ticker || !rows.length) return { ok: false, reason: 'waiting for a live 15-minute market and quotes.' };
+
+  const secondsSinceOpen = bitcoinPaperBotSecondsSinceOpen(market);
+  const secondsToAverageStart = bitcoinPaperBotSecondsToAverageStart(market, model);
+  if (Number.isFinite(secondsSinceOpen) && secondsSinceOpen < settings.minSecondsSinceOpen) {
+    return { ok: false, reason: `waiting until ${settings.minSecondsSinceOpen}s after open.` };
+  }
+  if (Number.isFinite(secondsSinceOpen) && secondsSinceOpen > settings.maxSecondsSinceOpen) {
+    return { ok: false, reason: 'past the entry window for this ticker.' };
+  }
+  if (Number.isFinite(secondsToAverageStart) && secondsToAverageStart < settings.minSecondsToAverage) {
+    return { ok: false, reason: 'too close to final averaging for a new entry.' };
+  }
+
+  const minEdge = settings.minEdgePct / 100;
+  const maxSpread = settings.maxSpreadPct / 100;
+  const candidates = rows.map((row) => {
+    const side = row && row.side === 'no' ? 'no' : 'yes';
+    const askCents = Number(row && row.askCents);
+    const bidCents = Number(row && row.bidCents);
+    const probability = Number(row && row.probability);
+    const fallbackEdge = Number.isFinite(probability) && Number.isFinite(askCents) ? probability - askCents / 100 : NaN;
+    const edge = Number.isFinite(Number(row && row.edge)) ? Number(row.edge) : fallbackEdge;
+    const spread = Number.isFinite(Number(row && row.spread)) ? Number(row.spread) : (askCents - bidCents) / 100;
+    return { row, side, askCents, bidCents, probability, edge, spread };
+  }).filter((candidate) => (
+    Number.isFinite(candidate.askCents)
+    && candidate.askCents > 0
+    && Number.isFinite(candidate.bidCents)
+    && candidate.bidCents > 0
+    && Number.isFinite(candidate.probability)
+    && Number.isFinite(candidate.edge)
+  )).sort((left, right) => right.edge - left.edge);
+
+  const candidate = candidates[0];
+  if (!candidate) return { ok: false, reason: 'waiting for usable model odds, bid, and ask.' };
+  const maxEdgeEntryCents = bitcoinPaperBotMaxEntryLimitCents(candidate.probability, minEdge);
+  const blockers = [];
+  if (candidate.edge < minEdge) blockers.push(`edge ${(candidate.edge * 100).toFixed(1)}% below ${(minEdge * 100).toFixed(1)}%`);
+  if (candidate.askCents > settings.maxAskCents) blockers.push(`ask ${candidate.askCents.toFixed(1)}c above max ${settings.maxAskCents}c`);
+  if (candidate.askCents > maxEdgeEntryCents) blockers.push(`ask ${candidate.askCents.toFixed(1)}c above edge-safe ${maxEdgeEntryCents}c`);
+  if (candidate.spread > maxSpread) blockers.push(`spread ${(candidate.spread * 100).toFixed(1)}% above ${(maxSpread * 100).toFixed(1)}%`);
+  const entryCents = Math.min(bitcoinPaperBotPriceCents(candidate.askCents, 99, 'ceil'), settings.maxAskCents, maxEdgeEntryCents);
+  const entryFeeCents = kalshiFeeCents(settings.contracts, entryCents);
+  const entryCostCents = settings.contracts * entryCents + entryFeeCents;
+  if (Math.round(Number(bot.cashCents || 0)) < entryCostCents) blockers.push('bot bankroll cash is too low');
+  if (bitcoinPaperBotOpenRiskCents(bot) + entryCostCents > Math.round(settings.maxExposure * 100)) blockers.push('bot exposure cap reached');
+  if (bitcoinPaperBotFillCount(bot, ticker) >= settings.maxFillsPerTicker) blockers.push('max fills reached for this ticker');
+  const lastAttempt = Number(bot.lastAttemptAt && bot.lastAttemptAt[bitcoinPaperBotTickerFillKey(ticker)] || 0);
+  if (lastAttempt > 0 && Date.now() - lastAttempt < settings.cooldownSeconds * 1000) blockers.push('cooldown still active');
+  if (blockers.length) return { ok: false, reason: blockers.join('; ') + '.' };
+
+  return {
+    ok: true,
+    ticker,
+    side: candidate.side,
+    probability: candidate.probability,
+    edge: candidate.edge,
+    askCents: candidate.askCents,
+    bidCents: candidate.bidCents,
+    spread: candidate.spread,
+    limitCents: Math.max(1, Math.min(99, entryCents)),
+    entryFeeCents,
+    entryCostCents,
+    summary: `model ${(candidate.probability * 100).toFixed(1)}% vs ask ${candidate.askCents.toFixed(1)}c; edge ${(candidate.edge * 100).toFixed(1)}%.`,
+  };
+}
+
+function bitcoinPaperBotBuy(bot, signal, scan, settings) {
+  const contracts = settings.contracts;
+  const entryCents = signal.limitCents;
+  const entryFeeCents = kalshiFeeCents(contracts, entryCents);
+  const entryCostCents = contracts * entryCents + entryFeeCents;
+  if (Math.round(Number(bot.cashCents || 0)) < entryCostCents) {
+    return { filled: false, message: 'bot bankroll cash is too low for the entry.' };
+  }
+  const openedAt = new Date().toISOString();
+  bot.cashCents = Math.max(0, Math.round(Number(bot.cashCents || 0)) - entryCostCents);
+  bot.positions = [{
+    id: crypto.randomUUID(),
+    status: 'open',
+    ticker: signal.ticker,
+    side: signal.side,
+    contracts,
+    originalContracts: contracts,
+    entryCents,
+    entryFeeCents,
+    entryCostCents,
+    openedAt,
+    updatedAt: openedAt,
+    closeTime: scan && scan.market && scan.market.closeTime || '',
+    targetPrice: Number(scan && scan.market && scan.market.targetPrice),
+    entrySpot: Number(scan && scan.market && scan.market.currentPrice),
+    lastSpot: Number(scan && scan.market && scan.market.currentPrice),
+    lastBidCents: bitcoinPaperBotPriceCents(signal.bidCents, 0, 'floor'),
+    lastAskCents: bitcoinPaperBotPriceCents(signal.askCents, 0, 'ceil'),
+    markValueCents: bitcoinPaperBotMarkValueCents(contracts, signal.bidCents),
+  }, ...bitcoinPaperBotOpenPositions(bot)];
+  const key = bitcoinPaperBotTickerFillKey(signal.ticker);
+  bot.fills = bot.fills && typeof bot.fills === 'object' ? bot.fills : {};
+  bot.lastAttemptAt = bot.lastAttemptAt && typeof bot.lastAttemptAt === 'object' ? bot.lastAttemptAt : {};
+  bot.fills[key] = bitcoinPaperBotFillCount(bot, signal.ticker) + 1;
+  bot.lastAttemptAt[key] = Date.now();
+  bot.lastAttemptAtMs = Date.now();
+  bitcoinPaperBotPushHistory(bot, {
+    type: 'bought',
+    ticker: signal.ticker,
+    side: signal.side,
+    contracts,
+    priceCents: entryCents,
+    feeCents: entryFeeCents,
+    cashCents: bot.cashCents,
+    pnlCents: 0,
+    detail: signal.summary,
+  });
+  return { filled: true, message: `bought ${contracts} ${String(signal.side).toUpperCase()} @ ${entryCents}c (${signal.summary})` };
+}
+
+async function runBitcoinPaperBotOnce(bot, scan) {
+  const nextBot = {
+    ...(bot || {}),
+    settings: normalizeBitcoinPaperBotSettings(bot && bot.settings || {}),
+    positions: bitcoinPaperBotOpenPositions(bot),
+    history: Array.isArray(bot && bot.history) ? bot.history : [],
+    fills: bot && bot.fills && typeof bot.fills === 'object' ? bot.fills : {},
+    lastAttemptAt: bot && bot.lastAttemptAt && typeof bot.lastAttemptAt === 'object' ? bot.lastAttemptAt : {},
+  };
+  const settings = nextBot.settings;
+  const messages = [];
+  let changed = bitcoinPaperBotApplyMarks(nextBot, scan);
+  const settled = await bitcoinPaperBotSettleExpired(nextBot);
+  changed = changed || settled.changed;
+  messages.push(...settled.messages);
+  const scalped = bitcoinPaperBotScalpGroups(nextBot, scan, settings);
+  changed = changed || scalped.changed;
+  messages.push(...scalped.messages);
+
+  if (nextBot.enabled === true) {
+    const signal = bitcoinPaperBotBuildSignal(scan, settings, nextBot);
+    if (signal.ok) {
+      const fill = bitcoinPaperBotBuy(nextBot, signal, scan, settings);
+      changed = changed || fill.filled;
+      messages.push(fill.message);
+    } else {
+      messages.push(signal.reason);
+    }
+  }
+
+  nextBot.lastRunAt = new Date().toISOString();
+  nextBot.lastScanTicker = scan && scan.ticker || '';
+  nextBot.lastMessage = messages.filter(Boolean).slice(0, 4).join(' ');
+  nextBot.lastTone = messages.some((message) => /^bought|^sold|settled win/i.test(message)) ? 'pos' : '';
+  await simBitcoinPaperStore.saveBotDocument(nextBot);
+  return { bot: nextBot, changed, message: nextBot.lastMessage };
+}
+
+async function runBitcoinPaperBotTick() {
+  if (bitcoinPaperBotRuntime.running) return;
+  bitcoinPaperBotRuntime.running = true;
+  bitcoinPaperBotRuntime.lastRunAt = new Date().toISOString();
+  try {
+    const bots = typeof simBitcoinPaperStore.listRunnableBots === 'function'
+      ? await simBitcoinPaperStore.listRunnableBots(BITCOIN_PAPER_BOT_MAX_PER_TICK)
+      : await simBitcoinPaperStore.listEnabledBots(BITCOIN_PAPER_BOT_MAX_PER_TICK);
+    if (!bots.length) return;
+    const scan = await getSharedBitcoinScan({
+      maxCost: 100,
+      maxContracts: 25,
+      minEdge: -0.5,
+      minutes: 60,
+    }, { maxAgeMs: BITCOIN_SCAN_CACHE_MS });
+    for (const bot of bots) {
+      await runBitcoinPaperBotOnce(bot, scan);
+    }
+    bitcoinPaperBotRuntime.lastError = '';
+  } catch (error) {
+    bitcoinPaperBotRuntime.lastError = error && error.message ? error.message : 'Bitcoin paper bot tick failed.';
+    console.error('Bitcoin paper bot tick failed:', bitcoinPaperBotRuntime.lastError);
+  } finally {
+    bitcoinPaperBotRuntime.running = false;
+  }
+}
+
 async function readSignedSimBitcoinBody(req, res) {
   if (!isAllowedHttpOrigin(req)) {
     sendJsonResponse(req, res, 403, {
@@ -1527,6 +1970,117 @@ async function handleSimBitcoinPaperStateRequest(req, res) {
     sendJsonResponse(req, res, simBitcoinErrorStatus(error), {
       ok: false,
       error: error && error.message ? error.message : 'Unable to sync Bitcoin paper account state.',
+    });
+  }
+}
+
+async function handleSimBitcoinPaperBotRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) return;
+
+  try {
+    if (req.method === 'GET') {
+      sendJsonResponse(req, res, 200, {
+        ok: true,
+        bot: await simBitcoinPaperStore.readBot(auth.user, BITCOIN_PAPER_BOT_ID),
+        storage: {
+          enabled: simBitcoinPaperStore.enabled,
+        },
+        server: {
+          running: true,
+          intervalMs: BITCOIN_PAPER_BOT_INTERVAL_MS,
+          lastRunAt: bitcoinPaperBotRuntime.lastRunAt,
+          lastError: bitcoinPaperBotRuntime.lastError,
+        },
+      });
+      return;
+    }
+
+    const body = await readJsonBody(req);
+    const current = await simBitcoinPaperStore.readBot(auth.user, BITCOIN_PAPER_BOT_ID);
+    const requestedStartingCents = Number.isFinite(Number(body && body.startingBankrollCents))
+      ? Math.max(100, Math.min(100000000, Math.round(Number(body.startingBankrollCents))))
+      : dollarsToCents(body && body.startingBankroll, current && current.startingBankrollCents || 100000);
+    const settings = normalizeBitcoinPaperBotSettings(body && body.settings || {});
+    const reset = body && body.reset === true;
+    const patch = {
+      id: BITCOIN_PAPER_BOT_ID,
+      name: String(body && body.name || 'Bitcoin 15m Server Bot').trim().slice(0, 80) || 'Bitcoin 15m Server Bot',
+      enabled: body && body.enabled === true,
+      settings,
+      user: auth.user,
+    };
+    const openCount = Array.isArray(current && current.positions)
+      ? current.positions.filter((position) => position && position.status === 'open').length
+      : 0;
+    const hasHistory = Array.isArray(current && current.history) && current.history.length > 0;
+    let bankrollWarning = '';
+    if (reset) {
+      patch.startingBankrollCents = requestedStartingCents;
+      patch.cashCents = requestedStartingCents;
+      patch.positions = [];
+      patch.history = [];
+      patch.fills = {};
+      patch.lastAttemptAt = {};
+      patch.lastAttemptAtMs = 0;
+      patch.lastMessage = 'Bot bankroll reset. Server bot is ready.';
+      patch.lastTone = 'pos';
+    } else if (
+      requestedStartingCents !== Number(current && current.startingBankrollCents || 100000)
+      && openCount === 0
+      && !hasHistory
+    ) {
+      patch.startingBankrollCents = requestedStartingCents;
+      patch.cashCents = requestedStartingCents;
+    } else if (requestedStartingCents !== Number(current && current.startingBankrollCents || 100000)) {
+      bankrollWarning = 'Bankroll changes require Reset Bot once this bot has trades or open positions.';
+    }
+
+    let bot = await simBitcoinPaperStore.saveBot(auth.user, patch, BITCOIN_PAPER_BOT_ID);
+    if (body && body.runNow === true && bot.enabled) {
+      const scan = await getSharedBitcoinScan({
+        maxCost: 100,
+        maxContracts: 25,
+        minEdge: -0.5,
+        minutes: 60,
+      }, { maxAgeMs: BITCOIN_SCAN_CACHE_MS });
+      const run = await runBitcoinPaperBotOnce(bot, scan);
+      bot = await simBitcoinPaperStore.readBot(auth.user, BITCOIN_PAPER_BOT_ID);
+      if (!bankrollWarning) bankrollWarning = run.message || '';
+    }
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      bot,
+      warning: bankrollWarning,
+      storage: {
+        enabled: simBitcoinPaperStore.enabled,
+      },
+      server: {
+        running: true,
+        intervalMs: BITCOIN_PAPER_BOT_INTERVAL_MS,
+        lastRunAt: bitcoinPaperBotRuntime.lastRunAt,
+        lastError: bitcoinPaperBotRuntime.lastError,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, simBitcoinErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to sync Bitcoin server bot.',
     });
   }
 }
@@ -6705,6 +7259,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/sim/bitcoin-15m/bot') {
+    await handleSimBitcoinPaperBotRequest(req, res);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/sim/bitcoin-15m/state') {
     await handleSimBitcoinPaperStateRequest(req, res);
     return;
@@ -7047,6 +7606,12 @@ wss.on('close', () => {
 });
 
 setInterval(tickRealtimeRooms, TICK_MS);
+setInterval(() => {
+  runBitcoinPaperBotTick().catch((error) => {
+    bitcoinPaperBotRuntime.lastError = error && error.message ? error.message : 'Bitcoin paper bot scheduler failed.';
+    console.error('Bitcoin paper bot scheduler failed:', bitcoinPaperBotRuntime.lastError);
+  });
+}, BITCOIN_PAPER_BOT_INTERVAL_MS);
 bootstrapPersistentDataDir();
 logStorageConfiguration();
 songMediaManager.ensureSongDirs();

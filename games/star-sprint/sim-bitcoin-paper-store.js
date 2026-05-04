@@ -5,10 +5,15 @@ const { Firestore } = require('@google-cloud/firestore');
 
 const DEFAULT_COLLECTION = 'simBitcoinPaperPositions';
 const DEFAULT_STATE_COLLECTION = 'simBitcoinPaperState';
+const DEFAULT_BOT_COLLECTION = 'simBitcoinPaperBots';
+const DEFAULT_BOT_ID = 'server-bot-main';
 const MAX_CONTRACTS = 1000;
 const MIN_PRICE_CENTS = 1;
 const MAX_PRICE_CENTS = 99;
 const MAX_STATE_BYTES = 240_000;
+const MAX_BOT_BYTES = 360_000;
+const MAX_BOT_POSITIONS = 400;
+const MAX_BOT_HISTORY = 240;
 
 function nowIso() {
   return new Date().toISOString();
@@ -49,6 +54,46 @@ function cloneValue(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function safeDocId(value) {
+  return cleanText(value, '', 180).replace(/[\/.#\[\]]/g, '_');
+}
+
+function normalizeBotId(value) {
+  return cleanText(value, DEFAULT_BOT_ID, 80).replace(/[^a-z0-9_-]/gi, '-').slice(0, 80) || DEFAULT_BOT_ID;
+}
+
+function publicBotPosition(position) {
+  const source = position || {};
+  const contracts = Math.max(0, Math.floor(Number(source.contracts || 0)));
+  const entryCostCents = normalizeCents(source.entryCostCents);
+  const markValueCents = normalizeCents(source.markValueCents);
+  return {
+    id: cleanText(source.id, '', 100),
+    status: cleanText(source.status, 'open', 40),
+    ticker: cleanText(source.ticker, '', 120),
+    side: cleanText(source.side, 'yes', 10),
+    contracts,
+    originalContracts: Math.max(contracts, Math.floor(Number(source.originalContracts || contracts))),
+    entryCents: normalizePriceCents(source.entryCents || 1),
+    entryFeeCents: normalizeCents(source.entryFeeCents),
+    entryCost: entryCostCents / 100,
+    entryCostCents,
+    openedAt: cleanText(source.openedAt, '', 40),
+    updatedAt: cleanText(source.updatedAt, '', 40),
+    closedAt: cleanText(source.closedAt, '', 40),
+    closeTime: cleanText(source.closeTime, '', 40),
+    targetPrice: Number(source.targetPrice),
+    entrySpot: Number(source.entrySpot),
+    lastSpot: Number(source.lastSpot),
+    lastBidCents: normalizeCents(source.lastBidCents),
+    lastAskCents: normalizeCents(source.lastAskCents),
+    markValue: markValueCents / 100,
+    markValueCents,
+    pnlCents: normalizeCents(source.pnlCents, markValueCents - entryCostCents),
+    settlementMethod: cleanText(source.settlementMethod, '', 120),
+  };
+}
+
 function publicPosition(position) {
   const source = position || {};
   const contracts = Math.max(0, Math.floor(Number(source.contracts || 0)));
@@ -81,7 +126,16 @@ function positionRef(firestore, collectionName, id) {
 }
 
 function stateRef(firestore, collectionName, user) {
-  return firestore.collection(collectionName).doc(cleanText(user && user.uid, '', 160).replace(/[\/.#\[\]]/g, '_'));
+  return firestore.collection(collectionName).doc(safeDocId(user && user.uid));
+}
+
+function botDocId(userOrUid, id) {
+  const uid = typeof userOrUid === 'string' ? userOrUid : userOrUid && userOrUid.uid;
+  return `${safeDocId(uid)}__${normalizeBotId(id)}`;
+}
+
+function botRef(firestore, collectionName, userOrUid, id) {
+  return firestore.collection(collectionName).doc(botDocId(userOrUid, id));
 }
 
 function normalizeAccountState(raw) {
@@ -95,10 +149,114 @@ function normalizeAccountState(raw) {
   return cloned;
 }
 
+function normalizeBotHistory(history) {
+  return (Array.isArray(history) ? history : []).slice(0, MAX_BOT_HISTORY).map((entry) => ({
+    time: cleanText(entry && entry.time, nowIso(), 40),
+    type: cleanText(entry && entry.type, 'note', 40),
+    ticker: cleanText(entry && entry.ticker, '', 120),
+    side: cleanText(entry && entry.side, '', 10),
+    contracts: Math.max(0, Math.floor(Number(entry && entry.contracts || 0))),
+    priceCents: normalizeCents(entry && entry.priceCents),
+    feeCents: normalizeCents(entry && entry.feeCents),
+    cashCents: normalizeCents(entry && entry.cashCents),
+    pnlCents: normalizeCents(entry && entry.pnlCents),
+    detail: cleanText(entry && entry.detail, '', 240),
+  }));
+}
+
+function normalizeBotPositions(positions) {
+  return (Array.isArray(positions) ? positions : []).slice(0, MAX_BOT_POSITIONS).map((position) => ({
+    ...publicBotPosition(position),
+    id: cleanText(position && position.id, crypto.randomUUID(), 100),
+    status: cleanText(position && position.status, 'open', 40),
+    entryCostCents: normalizeCents(position && position.entryCostCents),
+    markValueCents: normalizeCents(position && position.markValueCents),
+    pnlCents: normalizeCents(position && position.pnlCents),
+  }));
+}
+
+function normalizeBotObjectMap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return cloneValue(value);
+}
+
+function normalizeBotState(raw, user, id = DEFAULT_BOT_ID) {
+  const source = raw || {};
+  const uid = cleanText((user && user.uid) || source.uid, '', 160);
+  if (!uid) {
+    const error = new Error('Authentication token did not include a user id.');
+    error.code = 'sim-bitcoin/missing-uid';
+    throw error;
+  }
+  const botId = normalizeBotId(id || source.id);
+  const now = nowIso();
+  const startingBankrollCents = clamp(normalizeCents(source.startingBankrollCents, 100000), 100, 100000000);
+  const bot = {
+    id: botId,
+    uid,
+    user: {
+      uid,
+      email: cleanText((user && user.email) || source.user && source.user.email, '', 160),
+      displayName: cleanText((user && user.displayName) || source.user && source.user.displayName, 'AP member', 80),
+      picture: cleanText((user && user.picture) || source.user && source.user.picture, '', 400),
+      provider: cleanText((user && user.provider) || source.user && source.user.provider, '', 80),
+    },
+    name: cleanText(source.name, 'Bitcoin 15m Server Bot', 80),
+    enabled: source.enabled === true,
+    startingBankrollCents,
+    cashCents: clamp(normalizeCents(source.cashCents, startingBankrollCents), 0, 100000000),
+    settings: normalizeBotObjectMap(source.settings),
+    positions: normalizeBotPositions(source.positions),
+    history: normalizeBotHistory(source.history),
+    fills: normalizeBotObjectMap(source.fills),
+    lastAttemptAt: normalizeBotObjectMap(source.lastAttemptAt),
+    lastAttemptAtMs: normalizeCents(source.lastAttemptAtMs),
+    lastRunAt: cleanText(source.lastRunAt, '', 40),
+    lastMessage: cleanText(source.lastMessage, '', 280),
+    lastTone: cleanText(source.lastTone, '', 40),
+    lastScanTicker: cleanText(source.lastScanTicker, '', 120),
+    createdAt: cleanText(source.createdAt, now, 40),
+    updatedAt: cleanText(source.updatedAt, now, 40),
+  };
+  const json = JSON.stringify(bot);
+  if (json.length > MAX_BOT_BYTES) {
+    const error = new Error('Bitcoin server bot state is too large to save.');
+    error.code = 'sim-bitcoin/bot-too-large';
+    throw error;
+  }
+  return bot;
+}
+
+function publicBot(bot) {
+  const state = normalizeBotState(bot, { uid: bot && bot.uid }, bot && bot.id);
+  const openPositions = state.positions.filter((position) => position.status === 'open');
+  const openRiskCents = openPositions.reduce((sum, position) => sum + normalizeCents(position.entryCostCents), 0);
+  const openValueCents = openPositions.reduce((sum, position) => sum + normalizeCents(position.markValueCents), 0);
+  const openContracts = openPositions.reduce((sum, position) => sum + Math.max(0, Math.floor(Number(position.contracts || 0))), 0);
+  const equityCents = normalizeCents(state.cashCents) + openValueCents;
+  return {
+    ...state,
+    startingBankroll: state.startingBankrollCents / 100,
+    cash: state.cashCents / 100,
+    openRisk: openRiskCents / 100,
+    openRiskCents,
+    openValue: openValueCents / 100,
+    openValueCents,
+    openContracts,
+    equity: equityCents / 100,
+    equityCents,
+    pnl: (equityCents - state.startingBankrollCents) / 100,
+    pnlCents: equityCents - state.startingBankrollCents,
+    positions: state.positions.map(publicBotPosition),
+    history: state.history.slice(0, MAX_BOT_HISTORY),
+  };
+}
+
 function createSimBitcoinPaperStore({
   projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '',
   collectionName = process.env.SIM_BITCOIN_PAPER_COLLECTION || DEFAULT_COLLECTION,
   stateCollectionName = process.env.SIM_BITCOIN_PAPER_STATE_COLLECTION || DEFAULT_STATE_COLLECTION,
+  botCollectionName = process.env.SIM_BITCOIN_PAPER_BOT_COLLECTION || DEFAULT_BOT_COLLECTION,
   simWalletStore,
 } = {}) {
   if (!simWalletStore || typeof simWalletStore.transactWallet !== 'function') {
@@ -114,6 +272,7 @@ function createSimBitcoinPaperStore({
     : null;
   const memoryPositions = new Map();
   const memoryStates = new Map();
+  const memoryBots = new Map();
 
   async function readAccountState(user) {
     const uid = cleanText(user && user.uid, '', 160);
@@ -150,6 +309,97 @@ function createSimBitcoinPaperStore({
       updatedAt: savedAt,
     }, { merge: false });
     return cloneValue(cleanState);
+  }
+
+  async function readBot(user, id = DEFAULT_BOT_ID) {
+    const uid = cleanText(user && user.uid, '', 160);
+    if (!uid) return null;
+    const cleanId = normalizeBotId(id);
+    if (!enabled) {
+      const bot = memoryBots.get(botDocId(uid, cleanId));
+      return bot ? publicBot(bot) : publicBot(normalizeBotState({ id: cleanId }, user, cleanId));
+    }
+    const snapshot = await botRef(firestore, botCollectionName, user, cleanId).get();
+    if (!snapshot.exists) {
+      return publicBot(normalizeBotState({ id: cleanId }, user, cleanId));
+    }
+    const data = snapshot.data() || {};
+    return data && data.uid === uid ? publicBot(data) : null;
+  }
+
+  async function saveBot(user, patch = {}, id = DEFAULT_BOT_ID) {
+    const cleanId = normalizeBotId(id || patch.id);
+    let previous = null;
+    if (!enabled) {
+      previous = memoryBots.get(botDocId(user && user.uid, cleanId));
+    } else {
+      const snapshot = await botRef(firestore, botCollectionName, user, cleanId).get();
+      previous = snapshot.exists ? snapshot.data() : null;
+    }
+    const now = nowIso();
+    const next = normalizeBotState({
+      ...(previous || {}),
+      ...(patch || {}),
+      id: cleanId,
+      updatedAt: now,
+      createdAt: previous && previous.createdAt || patch.createdAt || now,
+    }, user, cleanId);
+    if (!enabled) {
+      memoryBots.set(botDocId(user && user.uid, cleanId), cloneValue(next));
+      return publicBot(next);
+    }
+    await botRef(firestore, botCollectionName, user, cleanId).set(next, { merge: false });
+    return publicBot(next);
+  }
+
+  async function saveBotDocument(bot) {
+    const next = normalizeBotState({
+      ...(bot || {}),
+      updatedAt: nowIso(),
+    }, { uid: bot && bot.uid }, bot && bot.id);
+    if (!enabled) {
+      memoryBots.set(botDocId(next.uid, next.id), cloneValue(next));
+      return publicBot(next);
+    }
+    await botRef(firestore, botCollectionName, next.uid, next.id).set(next, { merge: false });
+    return publicBot(next);
+  }
+
+  async function listEnabledBots(limit = 60) {
+    const count = clamp(Math.floor(Number(limit || 60)), 1, 250);
+    if (!enabled) {
+      return Array.from(memoryBots.values())
+        .filter((bot) => bot && bot.enabled === true)
+        .slice(0, count)
+        .map((bot) => normalizeBotState(bot, { uid: bot.uid }, bot.id));
+    }
+    const snapshot = await firestore.collection(botCollectionName)
+      .where('enabled', '==', true)
+      .limit(count)
+      .get();
+    return snapshot.docs.map((doc) => normalizeBotState(doc.data() || {}, { uid: doc.data() && doc.data().uid }, doc.data() && doc.data().id));
+  }
+
+  async function listRunnableBots(limit = 60) {
+    const count = clamp(Math.floor(Number(limit || 60)), 1, 250);
+    const isRunnable = (bot) => bot && (
+      bot.enabled === true
+      || (Array.isArray(bot.positions) && bot.positions.some((position) => position && position.status === 'open' && Number(position.contracts || 0) > 0))
+    );
+    if (!enabled) {
+      return Array.from(memoryBots.values())
+        .filter(isRunnable)
+        .slice(0, count)
+        .map((bot) => normalizeBotState(bot, { uid: bot.uid }, bot.id));
+    }
+    const snapshot = await firestore.collection(botCollectionName)
+      .limit(Math.min(500, count * 5))
+      .get();
+    return snapshot.docs
+      .map((doc) => doc.data() || {})
+      .filter(isRunnable)
+      .slice(0, count)
+      .map((bot) => normalizeBotState(bot, { uid: bot.uid }, bot.id));
   }
 
   async function readPosition(user, id) {
@@ -430,6 +680,11 @@ function createSimBitcoinPaperStore({
     enabled,
     readAccountState,
     saveAccountState,
+    readBot,
+    saveBot,
+    saveBotDocument,
+    listEnabledBots,
+    listRunnableBots,
     readPosition,
     openPosition,
     sellPosition,
