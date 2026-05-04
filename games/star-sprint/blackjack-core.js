@@ -524,7 +524,7 @@ function advanceTurn(state, seat) {
   state.actionSeat = nextSeat;
   const nextPlayer = playerAtSeat(state, nextSeat);
   if (nextPlayer) {
-    const handIndex = nextPlayableHandIndex(nextPlayer, -1);
+    const handIndex = firstPlayableHandIndex(nextPlayer);
     nextPlayer.activeHandIndex = Math.max(0, handIndex);
     syncPlayerFromHands(nextPlayer);
   }
@@ -745,7 +745,7 @@ function startRound(state, playerId) {
       hand.done = summary.blackjack;
       hand.status = summary.blackjack ? 'Blackjack.' : `Live on ${summary.total}.`;
     }
-    const firstLive = nextPlayableHandIndex(player, -1);
+    const firstLive = firstPlayableHandIndex(player);
     player.activeHandIndex = firstLive === -1 ? 0 : firstLive;
     syncPlayerFromHands(player);
   }
@@ -902,7 +902,8 @@ function applyAction(state, playerId, action) {
       splitAces,
       status: 'Split hand.',
     });
-    player.hands.splice(player.activeHandIndex + 1, 0, newHand);
+    player.hands.splice(player.activeHandIndex, 0, newHand);
+    player.activeHandIndex += 1;
     drawCard(state, hand.cards);
     drawCard(state, newHand.cards);
 
@@ -1092,9 +1093,19 @@ function syncPlayerFromHands(player) {
   return player;
 }
 
-function nextPlayableHandIndex(player, startIndex = -1) {
+function firstPlayableHandIndex(player) {
   const hands = playerHands(player);
-  for (let index = startIndex + 1; index < hands.length; index += 1) {
+  for (let index = hands.length - 1; index >= 0; index -= 1) {
+    if (!hands[index].done) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function nextPlayableHandIndex(player, startIndex = playerHands(player).length) {
+  const hands = playerHands(player);
+  for (let index = Math.min(hands.length - 1, startIndex - 1); index >= 0; index -= 1) {
     if (!hands[index].done) {
       return index;
     }

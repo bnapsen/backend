@@ -1307,8 +1307,13 @@ h2 {
 }
 
 .split-hand.active {
+  z-index: 7;
   filter: drop-shadow(0 0 18px rgba(131, 235, 212, 0.26));
-  transform: translateY(-6px);
+  transform: translateY(-18px) scale(1.055);
+}
+
+.split-hand.active .hole-card {
+  filter: drop-shadow(0 22px 24px rgba(0, 0, 0, 0.34));
 }
 
 .split-hand.done {
