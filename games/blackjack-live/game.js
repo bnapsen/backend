@@ -1074,7 +1074,6 @@
     );
     const pendingCount = viewerHandCount(player);
     const pendingBets = viewerNextBets(player);
-    const pendingTotal = pendingBets.slice(0, pendingCount).reduce((sum, bet) => sum + bet, 0);
     const selectedIndex = player.id === state.playerId ? selectedBetHandIndex(player) : 0;
     const hands = Array.isArray(player.hands) && player.hands.length
       ? player.hands
@@ -1088,6 +1087,12 @@
         }];
     const activeHandIndex = Number.isInteger(player.activeHandIndex) ? player.activeHandIndex : 0;
     const splitMode = !planning && hands.length > 1;
+    if (planning) {
+      classes.push('planning');
+    }
+    if (splitMode) {
+      classes.push('multi-hand');
+    }
     const activeHand = hands[Math.max(0, Math.min(hands.length - 1, activeHandIndex))] || hands[0];
     const playerCards = Array.isArray(activeHand?.cards) ? activeHand.cards : [];
     const handRows = planning
@@ -1127,42 +1132,21 @@
                   <div class="hole-row split-hole-row">
                     ${renderHandCardRow(hand.cards, animate, 110 + index * 90, `player:${seat}:hand:${index}`)}
                   </div>
-                  <div class="split-hand-meta">
-                    <span>H${index + 1} ${hand.scoreLabel || '-'}</span>
-                    <strong>${formatChips(hand.bet || 0)}</strong>
-                  </div>
                 </div>
               `;
             }).join('')}
           </div>`
         : `<div class="hole-row">${renderHandCardRow(playerCards, animate, 120, `player:${seat}:hand:${activeHandIndex}`)}</div>`;
 
-    const betLine = planning
-      ? `Next total ${formatChips(pendingTotal)}`
-      : player.activeBet > 0
-        ? `${splitMode ? 'Total' : 'Live'} ${formatChips(player.activeBet)}`
-        : `Next ${formatChips(player.bet)}`;
-    const scoreLine = planning
-      ? `${pendingCount} hand${pendingCount === 1 ? '' : 's'} ready`
-      : playerCards.length
-        ? splitMode
-          ? `Hand ${activeHandIndex + 1} ${activeHand?.scoreLabel || '-'}`
-          : `Hand ${player.scoreLabel}`
-        : 'Waiting';
-
     return `
       <div class="${classes.join(' ')}">
         <div class="seat-play-area">
-          <div class="seat-bet-circle${!planning && state.snapshot?.actionSeat === seat && state.snapshot?.phase === 'player-turns' && !splitMode ? ' active-ring' : ''}">
-            <span></span>
-          </div>
+          ${!planning && !splitMode
+            ? `<div class="seat-bet-circle${state.snapshot?.actionSeat === seat && state.snapshot?.phase === 'player-turns' ? ' active-ring' : ''}">
+                <span></span>
+              </div>`
+            : ''}
           ${handRows}
-        </div>
-        <div class="seat-footer">
-          <div class="seat-totals">
-            <div class="seat-score">${scoreLine}</div>
-            <div class="seat-stack">${betLine}</div>
-          </div>
         </div>
       </div>
     `;
@@ -1991,7 +1975,9 @@
     if (!trigger || trigger.classList.contains('minus')) {
       return;
     }
-    const target = document.querySelector('.seat-bet-circle:not(.empty-circle)') ||
+    const selectedHand = document.querySelector(`.betting-hand[data-bet-hand="${selectedBetHandIndex()}"]`);
+    const target = selectedHand ||
+      document.querySelector('.seat-bet-circle:not(.empty-circle)') ||
       document.querySelector('.seat-bet-circle') ||
       ui.chipRow;
     if (!target) {

@@ -1307,7 +1307,19 @@ h2 {
   min-height: clamp(146px, 15vw, 192px);
 }
 
-.seat-bet-circle {
+.seat-card.multi-hand,
+.seat-card.planning {
+  width: min(100%, 760px);
+}
+
+.seat-card.multi-hand .seat-play-area,
+.seat-card.planning .seat-play-area {
+  width: 100%;
+  min-height: clamp(160px, 16vw, 210px);
+}
+
+.seat-bet-circle,
+.hand-bet-ring {
   position: absolute;
   left: 50%;
   bottom: 0;
@@ -1342,7 +1354,8 @@ h2 {
   border-style: dashed;
 }
 
-.seat-bet-circle.chip-catch {
+.seat-bet-circle.chip-catch,
+.betting-hand.chip-catch {
   animation: chipCatch 360ms cubic-bezier(0.22, 0.8, 0.24, 1);
   border-color: rgba(255, 220, 138, 0.72);
   box-shadow:
@@ -1385,18 +1398,18 @@ h2 {
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  gap: clamp(8px, 2vw, 20px);
-  width: min(100%, 680px);
-  transform: translateY(-6px);
+  gap: clamp(4px, 0.8vw, 10px);
+  width: min(100%, 760px);
+  transform: translateY(0);
 }
 
 .split-hand {
   position: relative;
   display: grid;
-  justify-items: center;
-  gap: 2px;
-  min-width: clamp(112px, 19vw, 220px);
-  padding: 3px 4px 0;
+  place-items: center;
+  min-width: clamp(128px, 13vw, 164px);
+  min-height: clamp(146px, 15vw, 192px);
+  padding: 0;
   border-radius: 14px;
   transition:
     filter 180ms ease,
@@ -1404,15 +1417,6 @@ h2 {
 }
 
 .hand-bet-ring {
-  position: absolute;
-  left: 50%;
-  bottom: 20px;
-  width: clamp(94px, 9vw, 132px);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  border: 2px solid rgba(239, 197, 109, 0.22);
-  background: radial-gradient(circle, rgba(239, 197, 109, 0.1), transparent 62%);
-  transform: translateX(-50%);
   pointer-events: none;
 }
 
@@ -1435,8 +1439,8 @@ h2 {
 }
 
 .split-hole-row {
-  min-height: calc(var(--seat-card-height) + 8px);
-  transform: none;
+  min-height: calc(var(--seat-card-height) + 18px);
+  transform: translateY(-4px);
 }
 
 .split-hand-meta {
@@ -1474,7 +1478,7 @@ h2 {
   display: grid;
   place-items: center;
   gap: 4px;
-  width: clamp(112px, 13vw, 154px);
+  width: clamp(128px, 13vw, 164px);
   aspect-ratio: 1;
   border-radius: 50%;
   color: rgba(255, 244, 218, 0.82);
@@ -2483,7 +2487,7 @@ h2 {
   }
 
   .seat-layer {
-    width: 86%;
+    width: 92%;
     bottom: 47%;
   }
 
@@ -2513,18 +2517,18 @@ h2 {
   }
 
   .split-hands {
-    gap: 5px;
+    gap: 4px;
     width: 100%;
   }
 
   .split-hand {
-    min-width: 86px;
+    min-width: 92px;
+    min-height: 124px;
   }
 
-  .split-hand-meta {
-    gap: 4px;
-    padding: 3px 6px;
-    font-size: 0.58rem;
+  .seat-card.multi-hand .hand-bet-ring,
+  .seat-card.planning .betting-hand {
+    width: 92px;
   }
 
   .table-buttons button,
