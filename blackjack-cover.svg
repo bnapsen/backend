@@ -1,29 +1,72 @@
-<svg width="640" height="360" viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Royal SuperSplash Blackjack cover art">
+<svg width="640" height="360" viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Advantage Player Blackjack cover art">
   <defs>
-    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
-      <stop offset="0%" stop-color="#0f6b42"/>
-      <stop offset="100%" stop-color="#08311f"/>
+    <radialGradient id="feltGlow" cx="50%" cy="45%" r="72%">
+      <stop offset="0%" stop-color="#146b49"/>
+      <stop offset="58%" stop-color="#0a3f2d"/>
+      <stop offset="100%" stop-color="#081620"/>
     </radialGradient>
-    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#f1f1f1"/>
+    <linearGradient id="goldRail" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffe8a8"/>
+      <stop offset="45%" stop-color="#d7a941"/>
+      <stop offset="100%" stop-color="#7e5216"/>
     </linearGradient>
+    <linearGradient id="cardFace" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e9edf2"/>
+    </linearGradient>
+    <linearGradient id="chipRed" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff5b6d"/>
+      <stop offset="100%" stop-color="#8d1129"/>
+    </linearGradient>
+    <linearGradient id="chipBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#66d4ff"/>
+      <stop offset="100%" stop-color="#155d95"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
   </defs>
-  <rect width="640" height="360" fill="#0a1220"/>
-  <rect x="18" y="18" width="604" height="324" rx="28" fill="url(#bg)" stroke="#f7c95c" stroke-width="6"/>
-  <text x="320" y="78" text-anchor="middle" fill="#ffe9a8" font-family="Inter, Arial" font-size="34" font-weight="700">ROYAL NEON BLACKJACK</text>
 
-  <g transform="translate(210 120) rotate(-12)">
-    <rect width="120" height="170" rx="12" fill="url(#card)"/>
-    <text x="12" y="32" fill="#ba0f2e" font-family="Inter" font-size="30" font-weight="700">A♥</text>
-    <text x="60" y="102" text-anchor="middle" fill="#ba0f2e" font-size="56">♥</text>
+  <rect width="640" height="360" fill="#050913"/>
+  <rect x="20" y="18" width="600" height="324" rx="24" fill="url(#feltGlow)" stroke="url(#goldRail)" stroke-width="6"/>
+  <path d="M54 253 C150 300 490 300 586 253" fill="none" stroke="#ffd878" stroke-width="3" opacity="0.72"/>
+  <path d="M78 246 C168 278 472 278 562 246" fill="none" stroke="#38f4bd" stroke-width="2" opacity="0.34"/>
+
+  <text x="320" y="68" text-anchor="middle" fill="#f8d36b" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="800" letter-spacing="4">ADVANTAGE PLAYER</text>
+  <text x="320" y="108" text-anchor="middle" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="40" font-weight="900">BLACKJACK</text>
+  <text x="320" y="134" text-anchor="middle" fill="#94f7dc" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="700">SIM BANKROLL TABLE</text>
+
+  <g filter="url(#shadow)">
+    <g transform="translate(196 138) rotate(-11)">
+      <rect width="118" height="164" rx="13" fill="url(#cardFace)"/>
+      <rect x="8" y="8" width="102" height="148" rx="10" fill="none" stroke="#d4dae2" stroke-width="2"/>
+      <text x="18" y="42" fill="#c11935" font-family="Inter, Arial, sans-serif" font-size="33" font-weight="900">A</text>
+      <circle cx="59" cy="91" r="26" fill="#c11935"/>
+      <text x="59" y="103" text-anchor="middle" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="900">A</text>
+    </g>
+
+    <g transform="translate(325 142) rotate(10)">
+      <rect width="118" height="164" rx="13" fill="url(#cardFace)"/>
+      <rect x="8" y="8" width="102" height="148" rx="10" fill="none" stroke="#d4dae2" stroke-width="2"/>
+      <text x="17" y="42" fill="#151a24" font-family="Inter, Arial, sans-serif" font-size="33" font-weight="900">K</text>
+      <circle cx="59" cy="91" r="26" fill="#151a24"/>
+      <text x="59" y="103" text-anchor="middle" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="900">10</text>
+    </g>
   </g>
 
-  <g transform="translate(320 128) rotate(10)">
-    <rect width="120" height="170" rx="12" fill="url(#card)"/>
-    <text x="12" y="32" fill="#131313" font-family="Inter" font-size="30" font-weight="700">K♠</text>
-    <text x="60" y="102" text-anchor="middle" fill="#131313" font-size="56">♠</text>
+  <g transform="translate(95 216)" filter="url(#shadow)">
+    <ellipse cx="34" cy="62" rx="34" ry="12" fill="#000000" opacity="0.26"/>
+    <circle cx="34" cy="34" r="31" fill="url(#chipRed)" stroke="#ffffff" stroke-width="5"/>
+    <circle cx="34" cy="34" r="14" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.85"/>
+    <text x="34" y="40" text-anchor="middle" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="900">SIM</text>
   </g>
 
-  <text x="320" y="320" text-anchor="middle" fill="#8af6d8" font-family="Inter" font-size="18">Deal • Hit • Stand • Double Down</text>
+  <g transform="translate(500 220)" filter="url(#shadow)">
+    <ellipse cx="34" cy="58" rx="34" ry="12" fill="#000000" opacity="0.26"/>
+    <circle cx="34" cy="30" r="31" fill="url(#chipBlue)" stroke="#ffffff" stroke-width="5"/>
+    <circle cx="34" cy="30" r="14" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.85"/>
+    <text x="34" y="36" text-anchor="middle" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="900">21</text>
+  </g>
+
+  <text x="320" y="321" text-anchor="middle" fill="#ffe8a8" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="800">Count. Bet. Split. Double.</text>
 </svg>
