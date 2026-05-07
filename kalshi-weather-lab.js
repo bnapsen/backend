@@ -27,6 +27,7 @@
   const statusEl = document.querySelector("#status");
   const summaryEl = document.querySelector("#summary");
   const countEl = document.querySelector("#count");
+  const candidateTitleEl = document.querySelector("#candidate-title");
   const candidatesEl = document.querySelector("#candidates");
   const contextsEl = document.querySelector("#contexts");
   const auditSummaryEl = document.querySelector("#audit-summary");
@@ -182,7 +183,7 @@
         if (added) autoMessage += " Added " + added + ".";
         if (resolution && resolution.resolvedCount) autoMessage += " Resolved " + resolution.resolvedCount + ".";
       }
-      setStatus("Updated " + formatTime(scan.asOf) + ". " + state.candidates.length + " markets shown for " + formatDateWithRelative(scan.date) + "." + autoMessage);
+      setStatus("Updated " + formatTime(scan.asOf) + ". " + state.candidates.length + " " + (isAllScoredMode() ? "markets" : "picks") + " shown for " + formatDateWithRelative(scan.date) + "." + autoMessage);
     } catch (error) {
       setStatus(error.message, true);
     } finally {
@@ -426,9 +427,11 @@
   }
 
   function renderCandidates() {
-    countEl.textContent = state.candidates.length + " candidates";
+    const allScored = isAllScoredMode();
+    candidateTitleEl.textContent = allScored ? "All Scored Markets" : "Positive-EV Picks";
+    countEl.textContent = state.candidates.length + " " + (allScored ? "scored" : "picks");
     if (!state.candidates.length) {
-      candidatesEl.innerHTML = '<tr><td colspan="13" class="subtext">No markets cleared the current filters.</td></tr>';
+      candidatesEl.innerHTML = '<tr><td colspan="13" class="subtext">' + (allScored ? "No scored markets loaded." : "No actionable positive-EV picks cleared the current filters.") + "</td></tr>";
       return;
     }
 
@@ -1558,7 +1561,14 @@
     });
   }
 
+  function isAllScoredMode() {
+    return Boolean(state.scan && state.scan.filters && (state.scan.filters.mode === "all-scored-markets" || state.scan.filters.includeNegative));
+  }
+
   function modelEvDollars(item) {
+    if (item.expectedValue && item.expectedValue.total != null) {
+      return Number(item.expectedValue.total);
+    }
     return Number(item.suggested && item.suggested.modelEv != null ? item.suggested.modelEv : Number(item.suggested.contracts || 0) * Number(item.adjustedEdge || 0));
   }
 

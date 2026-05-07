@@ -21,6 +21,7 @@ const WEATHER_MODEL_SIGMAS = Object.freeze({
   tight: 2,
   wide: 4,
 });
+const ACTIONABLE_RECOMMENDATIONS = new Set(['research-buy', 'small-buy', 'tiny-only']);
 
 function parseNumber(value, defaultValue = 0) {
   const number = Number(value);
@@ -56,7 +57,7 @@ function dateTickerPart(dateText) {
 
   const year = String(date.getUTCFullYear()).slice(-2);
   const month = date.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }).toUpperCase();
-  const day = String(date.getUTCDate());
+  const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}${month}${day}`;
 }
 
@@ -402,11 +403,13 @@ function marketPrice(market, dollarField, centsField) {
 }
 
 function marketSize(market, side) {
-  const key = side === 'yes' ? 'yes_ask_size_fp' : 'no_ask_size_fp';
-  const fallback = side === 'yes' ? 'yes_ask_size' : 'no_ask_size';
-  const value = market[key] !== undefined ? market[key] : market[fallback];
+  const keys = side === 'yes'
+    ? ['yes_ask_size_fp', 'yes_ask_size']
+    : ['no_ask_size_fp', 'no_ask_size', 'yes_bid_size_fp', 'yes_bid_size'];
+  const key = keys.find((candidate) => market[candidate] !== undefined);
+  const value = key ? market[key] : 0;
   const size = parseNumber(value, 0);
-  return size > 0 ? size : 25;
+  return size > 0 ? size : 0;
 }
 
 function marketPriorProbability(market, side, ask, bid) {
@@ -1040,6 +1043,12 @@ function scoreWeatherCandidate(market, location, context, range, side, maxCost) 
     adjustedEdge: round(edge),
     rawEdge: round(rawProbability - breakEven),
     weatherEdge: round(weatherOnlyProbability - breakEven),
+    isPositiveEv: edge > 0,
+    expectedValue: {
+      perContract: round(edge, 2),
+      perContractCents: round(edge * 100, 1),
+      total: round(contracts * edge, 2),
+    },
     calibration: {
       marketWeight: round(calibration.marketWeight),
       distanceCap: calibration.distanceCap === null ? null : round(calibration.distanceCap),
@@ -1089,6 +1098,7 @@ async function scanWeatherMarkets(options = {}) {
   const minEdge = clamp(parseNumber(options.minEdge, 0.03), -0.5, 0.5);
   const maxCost = clamp(parseNumber(options.maxCost, 3), 0.1, 100);
   const includeNegative = Boolean(options.includeNegative);
+  const effectiveMinEdge = includeNegative ? minEdge : Math.max(0, minEdge);
   const datePart = dateTickerPart(date);
   const candidates = [];
   const contexts = [];
@@ -1111,7 +1121,7 @@ async function scanWeatherMarkets(options = {}) {
 
         for (const side of ['yes', 'no']) {
           const candidate = scoreWeatherCandidate(market, location, context, range, side, maxCost);
-          if (candidate && (includeNegative || candidate.adjustedEdge >= minEdge)) {
+          if (candidate && (includeNegative || isActionablePick(candidate, effectiveMinEdge))) {
             candidates.push(candidate);
           }
         }
@@ -1146,13 +1156,21 @@ async function scanWeatherMarkets(options = {}) {
     },
     filters: {
       minEdge,
+      effectiveMinEdge,
       maxCost,
       includeNegative,
+      mode: includeNegative ? 'all-scored-markets' : 'actionable-positive-ev-picks',
     },
     contexts,
     candidates,
     errors,
   };
+}
+
+function isActionablePick(candidate, minEdge) {
+  return Boolean(candidate.isPositiveEv)
+    && Number(candidate.adjustedEdge) >= minEdge
+    && ACTIONABLE_RECOMMENDATIONS.has(candidate.recommendation);
 }
 
 module.exports = {
