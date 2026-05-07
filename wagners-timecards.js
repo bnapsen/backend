@@ -1,0 +1,670 @@
+'use strict';
+
+(function () {
+  const PROD_API_BASE = 'https://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app';
+  const DRAFT_KEY = 'wagners-timecards:draft:v1';
+  const LAST_WORKER_KEY = 'wagners-timecards:last-worker:v1';
+  const els = {};
+  const state = {
+    entries: [],
+    myTimecards: [],
+    bossTimecards: [],
+    profile: null,
+    isAdmin: false,
+    lastSubmitted: null,
+  };
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function apiBase() {
+    return String(window.WAGNERS_TIME_API_BASE || PROD_API_BASE).replace(/\/+$/, '');
+  }
+
+  function todayIso() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function startOfWeekIso(date = new Date()) {
+    const copy = new Date(date);
+    const day = copy.getDay();
+    const diff = copy.getDate() - day + (day === 0 ? -6 : 1);
+    copy.setDate(diff);
+    return copy.toISOString().slice(0, 10);
+  }
+
+  function addDaysIso(isoDate, days) {
+    const date = new Date(`${isoDate}T12:00:00`);
+    date.setDate(date.getDate() + days);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function cleanText(value, max = 120) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+  }
+
+  function timeToMinutes(value) {
+    const match = /^(\d{2}):(\d{2})$/.exec(String(value || ''));
+    if (!match) return NaN;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return NaN;
+    return hours * 60 + minutes;
+  }
+
+  function entryMinutes(entry) {
+    const start = timeToMinutes(entry.start);
+    const end = timeToMinutes(entry.end);
+    const breakMinutes = Math.max(0, Math.min(240, Math.round(Number(entry.breakMinutes || 0))));
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+    return Math.max(0, end - start - breakMinutes);
+  }
+
+  function formatHours(minutes) {
+    return (Math.round((Number(minutes || 0) / 60) * 100) / 100).toFixed(2);
+  }
+
+  function formatDate(value) {
+    if (!value) return 'No date';
+    const [year, month, day] = value.split('-').map(Number);
+    if (!year || !month || !day) return value;
+    return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function setStatus(message, tone = '') {
+    els.statusMessage.textContent = message || '';
+    els.statusMessage.className = `status-message ${tone}`.trim();
+  }
+
+  function draftPayload() {
+    return {
+      workerName: cleanText(els.workerName.value, 100),
+      crewRole: cleanText(els.crewRole.value, 60),
+      weekStart: els.weekStart.value,
+      weekEnd: els.weekEnd.value,
+      signatureName: cleanText(els.signatureName.value, 100),
+      entries: state.entries.map((entry) => ({ ...entry })),
+    };
+  }
+
+  function saveLastWorker() {
+    const payload = {
+      workerName: cleanText(els.workerName.value, 100),
+      crewRole: cleanText(els.crewRole.value, 60),
+    };
+    try {
+      localStorage.setItem(LAST_WORKER_KEY, JSON.stringify(payload));
+    } catch {
+      // Local drafts are a convenience only.
+    }
+  }
+
+  function saveDraft(showMessage = false) {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draftPayload()));
+      saveLastWorker();
+      if (showMessage) setStatus('Draft saved on this device.', 'ok');
+    } catch {
+      if (showMessage) setStatus('This browser could not save the draft locally.', 'error');
+    }
+  }
+
+  function loadDraft() {
+    const weekStart = startOfWeekIso();
+    els.weekStart.value = weekStart;
+    els.weekEnd.value = addDaysIso(weekStart, 6);
+    els.entryDate.value = todayIso();
+
+    try {
+      const worker = JSON.parse(localStorage.getItem(LAST_WORKER_KEY) || '{}');
+      els.workerName.value = cleanText(worker.workerName, 100);
+      els.crewRole.value = cleanText(worker.crewRole, 60);
+    } catch {
+      // Ignore malformed saved worker data.
+    }
+
+    try {
+      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}');
+      if (!draft || typeof draft !== 'object') return;
+      els.workerName.value = cleanText(draft.workerName || els.workerName.value, 100);
+      els.crewRole.value = cleanText(draft.crewRole || els.crewRole.value, 60);
+      els.weekStart.value = draft.weekStart || els.weekStart.value;
+      els.weekEnd.value = draft.weekEnd || els.weekEnd.value;
+      els.signatureName.value = cleanText(draft.signatureName, 100);
+      state.entries = Array.isArray(draft.entries)
+        ? draft.entries.map(normalizeEntry).filter((entry) => entry.minutes > 0)
+        : [];
+    } catch {
+      state.entries = [];
+    }
+  }
+
+  function normalizeEntry(entry) {
+    const next = {
+      id: cleanText(entry.id, 80) || `entry-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      date: cleanText(entry.date, 20),
+      customer: cleanText(entry.customer, 120),
+      jobName: cleanText(entry.jobName, 120),
+      service: cleanText(entry.service, 80) || 'Painting',
+      payType: cleanText(entry.payType, 40) || 'Regular',
+      start: cleanText(entry.start, 10),
+      end: cleanText(entry.end, 10),
+      breakMinutes: Math.max(0, Math.min(240, Math.round(Number(entry.breakMinutes || 0)))),
+      billable: entry.billable !== false,
+      notes: cleanText(entry.notes, 400),
+    };
+    next.minutes = entryMinutes(next);
+    next.hours = Number(formatHours(next.minutes));
+    return next;
+  }
+
+  function totals(entries = state.entries) {
+    const minutes = entries.reduce((sum, entry) => sum + Number(entry.minutes || 0), 0);
+    const jobs = entries.length;
+    return { minutes, hours: Number(formatHours(minutes)), jobs };
+  }
+
+  function renderSummary() {
+    const summary = totals();
+    els.summaryHours.textContent = formatHours(summary.minutes);
+    els.summaryJobs.textContent = String(summary.jobs);
+    els.summaryStatus.textContent = state.lastSubmitted ? 'Submitted' : 'Draft';
+    els.summarySync.textContent = state.lastSubmitted
+      ? `Sent ${new Date(state.lastSubmitted).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      : 'Not submitted';
+  }
+
+  function renderEntries() {
+    if (!state.entries.length) {
+      els.entriesList.innerHTML = '<p class="empty-state">Add each job or stop as its own entry. Multiple jobs in one day are expected.</p>';
+      renderSummary();
+      return;
+    }
+
+    els.entriesList.innerHTML = state.entries.map((entry) => `
+      <article class="entry-card" data-entry-id="${escapeHtml(entry.id)}">
+        <div class="entry-top">
+          <div>
+            <h3 class="entry-title">${escapeHtml(entry.customer || entry.jobName || 'Job')}</h3>
+            <div class="entry-meta">
+              <span>${escapeHtml(formatDate(entry.date))}</span>
+              <span>${escapeHtml(entry.start)}-${escapeHtml(entry.end)}</span>
+              <span>${formatHours(entry.minutes)} hr</span>
+              <span>${escapeHtml(entry.service)}</span>
+            </div>
+          </div>
+          <button class="remove-entry" type="button" data-remove-entry="${escapeHtml(entry.id)}" aria-label="Remove entry">x</button>
+        </div>
+        <div class="entry-meta">
+          <span class="pill">${escapeHtml(entry.payType)}</span>
+          <span class="pill ${entry.billable ? '' : 'warn'}">${entry.billable ? 'Billable' : 'Nonbillable'}</span>
+          ${entry.breakMinutes ? `<span>${entry.breakMinutes} min break</span>` : ''}
+        </div>
+        ${entry.jobName ? `<p class="entry-title">${escapeHtml(entry.jobName)}</p>` : ''}
+        ${entry.notes ? `<p>${escapeHtml(entry.notes)}</p>` : ''}
+      </article>
+    `).join('');
+
+    renderSummary();
+  }
+
+  function addEntryFromForm(event) {
+    event.preventDefault();
+    const entry = normalizeEntry({
+      date: els.entryDate.value,
+      customer: els.entryCustomer.value,
+      jobName: els.entryJob.value,
+      service: els.entryService.value,
+      payType: els.entryPayType.value,
+      start: els.entryStart.value,
+      end: els.entryEnd.value,
+      breakMinutes: els.entryBreak.value,
+      billable: els.entryBillable.checked,
+      notes: els.entryNotes.value,
+    });
+
+    if (!entry.date || (!entry.customer && !entry.jobName)) {
+      setStatus('Add a date and a customer or job name.', 'error');
+      return;
+    }
+    if (entry.minutes <= 0) {
+      setStatus('Check the start and end time for that entry.', 'error');
+      return;
+    }
+
+    state.entries.push(entry);
+    els.entryCustomer.value = '';
+    els.entryJob.value = '';
+    els.entryNotes.value = '';
+    els.entryStart.value = '';
+    els.entryEnd.value = '';
+    els.entryBreak.value = '0';
+    renderEntries();
+    saveDraft();
+    setStatus('Job added to the draft.', 'ok');
+  }
+
+  function removeEntry(id) {
+    state.entries = state.entries.filter((entry) => entry.id !== id);
+    renderEntries();
+    saveDraft();
+  }
+
+  function currentPayload() {
+    return {
+      ...draftPayload(),
+      signedAt: new Date().toISOString(),
+      deviceNote: navigator.userAgent.slice(0, 140),
+    };
+  }
+
+  function validateForSubmit() {
+    if (!state.profile || !state.profile.signedIn) {
+      return 'Sign in with Google before submitting.';
+    }
+    if (!state.entries.length) {
+      return 'Add at least one job entry.';
+    }
+    if (!cleanText(els.workerName.value, 100)) {
+      return 'Add your name.';
+    }
+    if (!cleanText(els.signatureName.value, 100)) {
+      return 'Type your signature name.';
+    }
+    if (!els.certify.checked) {
+      return 'Check the certification box.';
+    }
+    return '';
+  }
+
+  async function authHeaders(extra = {}) {
+    if (!window.NovaAuth || typeof window.NovaAuth.appendAuthHeaders !== 'function') {
+      return extra;
+    }
+    return window.NovaAuth.appendAuthHeaders(extra);
+  }
+
+  async function submitTimecard() {
+    const validation = validateForSubmit();
+    if (validation) {
+      setStatus(validation, 'error');
+      return;
+    }
+
+    setStatus('Submitting timecard...');
+    saveDraft();
+
+    try {
+      const response = await fetch(`${apiBase()}/api/wagners/timecards`, {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(currentPayload()),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || 'Timecard could not be submitted.');
+      }
+      state.lastSubmitted = body.timecard.submittedAt || new Date().toISOString();
+      setStatus('Timecard submitted for payroll.', 'ok');
+      clearDraft(false);
+      await loadMyTimecards();
+      if (body.isAdmin) await loadBossTimecards({ quiet: true });
+    } catch (error) {
+      setStatus(error.message || 'Timecard could not be submitted.', 'error');
+    }
+    renderSummary();
+  }
+
+  function clearDraft(showMessage = true) {
+    state.entries = [];
+    els.certify.checked = false;
+    els.signatureName.value = cleanText(els.workerName.value, 100);
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      // Ignore storage failures.
+    }
+    renderEntries();
+    if (showMessage) setStatus('Started a new timecard.', 'ok');
+  }
+
+  async function loadMyTimecards() {
+    if (!state.profile || !state.profile.signedIn) {
+      els.myTimecards.innerHTML = '<p class="empty-state">Sign in to see submitted cards.</p>';
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBase()}/api/wagners/timecards/me`, {
+        headers: await authHeaders(),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || 'Unable to load submitted cards.');
+      }
+      state.myTimecards = Array.isArray(body.timecards) ? body.timecards : [];
+      state.isAdmin = Boolean(body.isAdmin);
+      renderTimecardList(els.myTimecards, state.myTimecards, { ownerView: true });
+      if (state.isAdmin) {
+        els.bossPanel.hidden = false;
+        await loadBossTimecards({ quiet: true });
+      }
+    } catch (error) {
+      els.myTimecards.innerHTML = `<p class="empty-state">${escapeHtml(error.message || 'Unable to load submitted cards.')}</p>`;
+    }
+  }
+
+  async function loadBossTimecards({ quiet = false } = {}) {
+    if (!state.profile || !state.profile.signedIn) return;
+    try {
+      const response = await fetch(`${apiBase()}/api/wagners/timecards`, {
+        headers: await authHeaders(),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (response.status === 403) {
+        els.bossPanel.hidden = true;
+        return;
+      }
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || 'Unable to load boss review.');
+      }
+      state.bossTimecards = Array.isArray(body.timecards) ? body.timecards : [];
+      state.isAdmin = true;
+      els.bossPanel.hidden = false;
+      renderTimecardList(els.bossTimecards, state.bossTimecards, { bossView: true });
+      if (!quiet) setStatus('Boss review refreshed.', 'ok');
+    } catch (error) {
+      if (!quiet) setStatus(error.message || 'Unable to load boss review.', 'error');
+    }
+  }
+
+  function renderTimecardList(root, timecards, options = {}) {
+    if (!timecards.length) {
+      root.innerHTML = '<p class="empty-state">No submitted cards yet.</p>';
+      return;
+    }
+
+    root.innerHTML = timecards.map((card) => {
+      const total = card.totals || totals(card.entries || []);
+      const entryCount = Number(total.entryCount || (card.entries || []).length || 0);
+      const actions = options.bossView
+        ? `<div class="button-row">
+            <button class="ghost-button" type="button" data-status-id="${escapeHtml(card.id)}" data-status-value="approved">Approve</button>
+            <button class="ghost-button" type="button" data-status-id="${escapeHtml(card.id)}" data-status-value="needs-review">Needs Review</button>
+            <button class="ghost-button" type="button" data-status-id="${escapeHtml(card.id)}" data-status-value="exported">Mark Exported</button>
+          </div>`
+        : '';
+      return `
+        <article class="timecard-card">
+          <div class="timecard-top">
+            <div>
+              <h3 class="timecard-title">${escapeHtml(card.workerName || card.ownerName || 'Crew member')}</h3>
+              <div class="timecard-meta">
+                <span>${escapeHtml(card.weekStart || '')}${card.weekEnd ? ` to ${escapeHtml(card.weekEnd)}` : ''}</span>
+                <span>${formatHours(total.minutes || 0)} hr</span>
+                <span>${entryCount} entries</span>
+                <span class="pill">${escapeHtml(card.status || 'submitted')}</span>
+              </div>
+            </div>
+            <button class="ghost-button" type="button" data-export-card="${escapeHtml(card.id)}">CSV</button>
+          </div>
+          <div class="timecard-meta">
+            <span>${escapeHtml(card.workerEmail || '')}</span>
+            <span>Submitted ${escapeHtml(card.submittedAt ? new Date(card.submittedAt).toLocaleString() : '')}</span>
+          </div>
+          ${actions}
+        </article>
+      `;
+    }).join('');
+  }
+
+  async function updateTimecardStatus(id, status) {
+    setStatus('Updating timecard...');
+    try {
+      const response = await fetch(`${apiBase()}/api/wagners/timecards/status`, {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ id, status }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || 'Unable to update timecard.');
+      }
+      setStatus('Timecard updated.', 'ok');
+      await loadBossTimecards({ quiet: true });
+    } catch (error) {
+      setStatus(error.message || 'Unable to update timecard.', 'error');
+    }
+  }
+
+  function csvEscape(value) {
+    const text = String(value ?? '');
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+
+  function timecardsToRows(timecards) {
+    return timecards.flatMap((card) => {
+      const entries = Array.isArray(card.entries) ? card.entries : [];
+      return entries.map((entry) => ({
+        employee: card.workerName || card.ownerName || '',
+        email: card.workerEmail || card.ownerEmail || '',
+        date: entry.date || '',
+        customer: entry.customer || '',
+        job: entry.jobName || '',
+        service: entry.service || '',
+        payType: entry.payType || '',
+        start: entry.start || '',
+        end: entry.end || '',
+        breakMinutes: entry.breakMinutes || 0,
+        hours: formatHours(entry.minutes || 0),
+        billable: entry.billable === false ? 'No' : 'Yes',
+        notes: entry.notes || '',
+        timecardId: card.id || '',
+        status: card.status || 'draft',
+        submittedAt: card.submittedAt || '',
+      }));
+    });
+  }
+
+  function makeCsv(timecards) {
+    const headers = [
+      'Employee',
+      'Employee Email',
+      'Date',
+      'Customer or Project',
+      'Job Name',
+      'Service',
+      'Pay Type',
+      'Start Time',
+      'End Time',
+      'Break Minutes',
+      'Hours',
+      'Billable',
+      'Notes',
+      'Source Timecard ID',
+      'Status',
+      'Submitted At',
+    ];
+    const rows = timecardsToRows(timecards).map((row) => [
+      row.employee,
+      row.email,
+      row.date,
+      row.customer,
+      row.job,
+      row.service,
+      row.payType,
+      row.start,
+      row.end,
+      row.breakMinutes,
+      row.hours,
+      row.billable,
+      row.notes,
+      row.timecardId,
+      row.status,
+      row.submittedAt,
+    ]);
+    return [headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n');
+  }
+
+  async function downloadCsv(timecards, name) {
+    if (!timecards.length || !timecardsToRows(timecards).length) {
+      setStatus('There are no timecard rows to export.', 'error');
+      return;
+    }
+    const blob = new Blob([makeCsv(timecards)], { type: 'text/csv;charset=utf-8' });
+    const fileName = `${name}-${todayIso()}.csv`;
+    if (navigator.canShare && window.File) {
+      const file = new File([blob], fileName, { type: 'text/csv' });
+      if (navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: fileName });
+          return;
+        } catch {
+          // Fall back to a download link when sharing is cancelled or unsupported.
+        }
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function currentDraftAsTimecard() {
+    const payload = currentPayload();
+    return {
+      ...payload,
+      id: 'draft',
+      status: 'draft',
+      submittedAt: '',
+      totals: totals(payload.entries),
+    };
+  }
+
+  function findCard(id) {
+    return [...state.myTimecards, ...state.bossTimecards].find((card) => String(card.id) === String(id));
+  }
+
+  function syncProfile(profile) {
+    state.profile = profile || null;
+    if (profile && profile.displayName && !els.workerName.value) {
+      els.workerName.value = profile.displayName;
+    }
+    if (profile && profile.displayName && !els.signatureName.value) {
+      els.signatureName.value = profile.displayName;
+    }
+    loadMyTimecards();
+  }
+
+  function bindEvents() {
+    els.entryForm.addEventListener('submit', addEntryFromForm);
+    els.entriesList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-remove-entry]');
+      if (button) removeEntry(button.getAttribute('data-remove-entry'));
+    });
+    document.addEventListener('click', (event) => {
+      const exportButton = event.target.closest('[data-export-card]');
+      if (exportButton) {
+        const card = findCard(exportButton.getAttribute('data-export-card'));
+        if (card) downloadCsv([card], `wagners-timecard-${card.workerName || 'employee'}`);
+      }
+      const statusButton = event.target.closest('[data-status-id]');
+      if (statusButton) {
+        updateTimecardStatus(statusButton.getAttribute('data-status-id'), statusButton.getAttribute('data-status-value'));
+      }
+    });
+    els.useTodayButton.addEventListener('click', () => {
+      els.entryDate.value = todayIso();
+    });
+    els.saveDraftButton.addEventListener('click', () => saveDraft(true));
+    els.submitCardButton.addEventListener('click', submitTimecard);
+    els.newCardButton.addEventListener('click', () => clearDraft(true));
+    els.exportDraftButton.addEventListener('click', () => downloadCsv([currentDraftAsTimecard()], 'wagners-timecard-draft'));
+    els.refreshMineButton.addEventListener('click', loadMyTimecards);
+    els.refreshBossButton.addEventListener('click', () => loadBossTimecards());
+    els.exportBossButton.addEventListener('click', () => downloadCsv(state.bossTimecards, 'wagners-payroll-export'));
+    ['workerName', 'crewRole', 'weekStart', 'weekEnd', 'signatureName'].forEach((key) => {
+      els[key].addEventListener('change', () => saveDraft());
+      els[key].addEventListener('input', () => saveDraft());
+    });
+  }
+
+  function cacheEls() {
+    Object.assign(els, {
+      summaryHours: $('summary-hours'),
+      summaryJobs: $('summary-jobs'),
+      summaryStatus: $('summary-status'),
+      summarySync: $('summary-sync'),
+      workerName: $('worker-name'),
+      crewRole: $('crew-role'),
+      weekStart: $('week-start'),
+      weekEnd: $('week-end'),
+      entryForm: $('entry-form'),
+      entryDate: $('entry-date'),
+      entryCustomer: $('entry-customer'),
+      entryJob: $('entry-job'),
+      entryService: $('entry-service'),
+      entryPayType: $('entry-pay-type'),
+      entryStart: $('entry-start'),
+      entryEnd: $('entry-end'),
+      entryBreak: $('entry-break'),
+      entryBillable: $('entry-billable'),
+      entryNotes: $('entry-notes'),
+      entriesList: $('entries-list'),
+      signatureName: $('signature-name'),
+      certify: $('certify'),
+      statusMessage: $('status-message'),
+      myTimecards: $('my-timecards'),
+      bossPanel: $('boss-panel'),
+      bossTimecards: $('boss-timecards'),
+      useTodayButton: $('use-today-button'),
+      saveDraftButton: $('save-draft-button'),
+      submitCardButton: $('submit-card-button'),
+      newCardButton: $('new-card-button'),
+      exportDraftButton: $('export-draft-button'),
+      refreshMineButton: $('refresh-mine-button'),
+      refreshBossButton: $('refresh-boss-button'),
+      exportBossButton: $('export-boss-button'),
+    });
+  }
+
+  function initAuth() {
+    if (!window.NovaAuth || typeof window.NovaAuth.init !== 'function') {
+      setStatus('Account sign-in is not available yet.', 'error');
+      els.myTimecards.innerHTML = '<p class="empty-state">Sign in will appear when the account system loads.</p>';
+      return;
+    }
+    window.NovaAuth.init({
+      apiBaseUrl: apiBase(),
+      onChange: syncProfile,
+    }).then(syncProfile).catch((error) => {
+      setStatus(error.message || 'Account sign-in could not start.', 'error');
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    cacheEls();
+    loadDraft();
+    renderEntries();
+    bindEvents();
+    initAuth();
+  });
+})();

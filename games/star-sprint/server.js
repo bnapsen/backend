@@ -21,6 +21,7 @@ const { createArcadeChatStore } = require('./arcade-chat-store.js');
 const { createSimWalletStore } = require('./sim-wallet-store.js');
 const { createSimBitcoinPaperStore, kalshiFeeCents } = require('./sim-bitcoin-paper-store.js');
 const { createReviewsStore } = require('./reviews-store.js');
+const { createWagnersTimecardsStore } = require('./wagners-timecards-store.js');
 const { createSongsStore } = require('./songs-store.js');
 const {
   createSongMediaManager,
@@ -92,7 +93,7 @@ const CITY_RAID_DOWNLOAD_DIR = path.resolve(__dirname, '..', '..', 'assets', 'do
 const CITY_RAID_ZIP_NAME = 'City-Raid-Win64.zip';
 const MAX_REVIEWS = 100;
 const MAX_VISIBLE_REVIEWS = 30;
-const MAX_REQUEST_BODY_BYTES = 16 * 1024;
+const MAX_REQUEST_BODY_BYTES = 96 * 1024;
 const MAX_SONGS = 80;
 const MAX_VISIBLE_SONGS = 40;
 const MAX_SONG_UPLOAD_BYTES = 24 * 1024 * 1024;
@@ -106,6 +107,12 @@ const GOOGLE_CLOUD_STORAGE_FREE_TIER_BYTES = 5 * 1024 * 1024 * 1024;
 const CLIP_ADMIN_TOKEN = String(process.env.CLIP_ADMIN_TOKEN || '').trim();
 const KALSHI_LAB_TOKEN = String(process.env.KALSHI_LAB_TOKEN || '').trim();
 const KALSHI_TRADE_TOKEN = String(process.env.KALSHI_TRADE_TOKEN || process.env.KALSHI_LAB_TOKEN || '').trim();
+const WAGNERS_TIMECARD_ADMIN_EMAILS = new Set(
+  String(process.env.WAGNERS_TIMECARD_ADMIN_EMAILS || '')
+    .split(/[,\s]+/)
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
+);
 const NOVA_AUTH_REQUIRED = String(process.env.NOVA_AUTH_REQUIRED || 'true').trim().toLowerCase() !== 'false';
 const FIREBASE_PROJECT_ID = String(
   process.env.FIREBASE_PROJECT_ID
@@ -224,6 +231,9 @@ const reviewsStore = createReviewsStore({
   dataDir: DATA_DIR,
   maxReviews: MAX_REVIEWS,
   maxVisibleReviews: MAX_VISIBLE_REVIEWS,
+});
+const wagnersTimecardsStore = createWagnersTimecardsStore({
+  projectId: FIREBASE_PROJECT_ID,
 });
 const songMediaManager = createSongMediaManager({
   dataDir: DATA_DIR,
@@ -942,6 +952,145 @@ function authOwnsClip(user, clip) {
     && clip.ownerUserId
     && String(clip.ownerUserId) === String(user.uid || ''),
   );
+}
+
+function isWagnersTimecardAdmin(user) {
+  const email = String(user && user.email || '').trim().toLowerCase();
+  return Boolean(email && WAGNERS_TIMECARD_ADMIN_EMAILS.has(email));
+}
+
+function timecardsErrorStatus(error) {
+  const code = String(error && error.code || '');
+  if (code === 'timecards/not-found') return 404;
+  if (code === 'timecards/storage-disabled') return 503;
+  if (code.startsWith('timecards/')) return 400;
+  return 500;
+}
+
+function sanitizeTimecardText(raw, maxLength = 120) {
+  return String(raw || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function normalizeTimecardDate(raw) {
+  const value = sanitizeTimecardText(raw, 20);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+}
+
+function normalizeTimecardTime(raw) {
+  const value = sanitizeTimecardText(raw, 10);
+  return /^\d{2}:\d{2}$/.test(value) ? value : '';
+}
+
+function timecardTimeToMinutes(value) {
+  const time = normalizeTimecardTime(value);
+  if (!time) {
+    return NaN;
+  }
+  const [hours, minutes] = time.split(':').map(Number);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return NaN;
+  }
+  return hours * 60 + minutes;
+}
+
+function normalizeTimecardEntry(entry, index) {
+  const date = normalizeTimecardDate(entry && entry.date);
+  const start = normalizeTimecardTime(entry && entry.start);
+  const end = normalizeTimecardTime(entry && entry.end);
+  const breakMinutes = Math.max(0, Math.min(240, Math.round(Number(entry && entry.breakMinutes || 0))));
+  let minutes = Math.round(Number(entry && entry.minutes || 0));
+  const startMinutes = timecardTimeToMinutes(start);
+  const endMinutes = timecardTimeToMinutes(end);
+
+  if (Number.isFinite(startMinutes) && Number.isFinite(endMinutes) && endMinutes > startMinutes) {
+    minutes = Math.max(0, endMinutes - startMinutes - breakMinutes);
+  }
+
+  minutes = Math.max(0, Math.min(16 * 60, minutes));
+
+  return {
+    id: sanitizeTimecardText(entry && entry.id, 64) || `entry-${index + 1}`,
+    date,
+    jobName: sanitizeTimecardText(entry && entry.jobName, 120),
+    customer: sanitizeTimecardText(entry && entry.customer, 120),
+    service: sanitizeTimecardText(entry && entry.service, 80) || 'Painting',
+    payType: sanitizeTimecardText(entry && entry.payType, 40) || 'Regular',
+    start,
+    end,
+    breakMinutes,
+    minutes,
+    hours: Number((minutes / 60).toFixed(2)),
+    billable: entry && entry.billable === false ? false : true,
+    notes: sanitizeTimecardText(entry && entry.notes, 400),
+  };
+}
+
+function summarizeTimecard(entries) {
+  const totals = {
+    minutes: 0,
+    hours: 0,
+    entryCount: entries.length,
+    byDate: {},
+    byJob: {},
+  };
+
+  for (const entry of entries) {
+    totals.minutes += entry.minutes;
+    if (entry.date) {
+      totals.byDate[entry.date] = (totals.byDate[entry.date] || 0) + entry.minutes;
+    }
+    const jobKey = entry.customer || entry.jobName || 'Unassigned';
+    totals.byJob[jobKey] = (totals.byJob[jobKey] || 0) + entry.minutes;
+  }
+
+  totals.hours = Number((totals.minutes / 60).toFixed(2));
+  return totals;
+}
+
+function normalizeWagnersTimecardPayload(body, user) {
+  const entries = Array.isArray(body && body.entries)
+    ? body.entries.slice(0, 40).map(normalizeTimecardEntry).filter((entry) => (
+      entry.date
+      && entry.minutes > 0
+      && (entry.jobName || entry.customer)
+    ))
+    : [];
+
+  if (!entries.length) {
+    const error = new Error('Add at least one job entry with a date, job, and hours.');
+    error.code = 'timecards/no-entries';
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  const workerName = sanitizeTimecardText(
+    body && body.workerName,
+    100,
+  ) || authDisplayName(user, 'Wagner crew member', 100);
+  const workerEmail = sanitizeTimecardText(user && user.email, 160);
+
+  return {
+    id: sanitizeTimecardText(body && body.id, 80),
+    company: 'Wagners Painting',
+    source: 'wagners-timecards',
+    ownerUserId: String(user && user.uid || ''),
+    ownerEmail: workerEmail,
+    ownerName: workerName,
+    workerName,
+    workerEmail,
+    crewRole: sanitizeTimecardText(body && body.crewRole, 60),
+    weekStart: normalizeTimecardDate(body && body.weekStart),
+    weekEnd: normalizeTimecardDate(body && body.weekEnd),
+    signatureName: sanitizeTimecardText(body && body.signatureName, 100) || workerName,
+    signedAt: sanitizeTimecardText(body && body.signedAt, 40) || now,
+    submittedAt: now,
+    entries,
+    totals: summarizeTimecard(entries),
+    deviceNote: sanitizeTimecardText(body && body.deviceNote, 160),
+  };
 }
 
 function hasKalshiWeatherLabAccess(req, requestUrl) {
@@ -2730,6 +2879,203 @@ function publicClipEntry(clip) {
     appealMessage: String(clip.appealMessage || ''),
     source: 'community',
   };
+}
+
+async function handleWagnersTimecardsRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return;
+  }
+
+  if (req.method === 'GET') {
+    if (!isWagnersTimecardAdmin(auth.user)) {
+      sendJsonResponse(req, res, 403, {
+        ok: false,
+        error: 'Boss access is not enabled for this account.',
+      });
+      return;
+    }
+
+    try {
+      const timecards = await wagnersTimecardsStore.listAll({ limit: 300 });
+      sendJsonResponse(req, res, 200, {
+        ok: true,
+        storageEnabled: wagnersTimecardsStore.enabled,
+        isAdmin: true,
+        timecards,
+      });
+    } catch (error) {
+      sendJsonResponse(req, res, timecardsErrorStatus(error), {
+        ok: false,
+        error: error && error.message ? error.message : 'Unable to load timecards.',
+      });
+    }
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  let payload;
+  try {
+    payload = normalizeWagnersTimecardPayload(body, auth.user);
+  } catch (error) {
+    sendJsonResponse(req, res, timecardsErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to prepare timecard.',
+    });
+    return;
+  }
+
+  try {
+    const timecard = await wagnersTimecardsStore.submitTimecard(payload);
+    sendJsonResponse(req, res, 201, {
+      ok: true,
+      storageEnabled: wagnersTimecardsStore.enabled,
+      isAdmin: isWagnersTimecardAdmin(auth.user),
+      timecard,
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, timecardsErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to submit timecard.',
+    });
+  }
+}
+
+async function handleWagnersMyTimecardsRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return;
+  }
+
+  try {
+    const timecards = await wagnersTimecardsStore.listForUser(auth.user.uid, { limit: 40 });
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      storageEnabled: wagnersTimecardsStore.enabled,
+      isAdmin: isWagnersTimecardAdmin(auth.user),
+      timecards,
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, timecardsErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to load your timecards.',
+    });
+  }
+}
+
+async function handleWagnersTimecardStatusRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return;
+  }
+
+  if (!isWagnersTimecardAdmin(auth.user)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Boss access is not enabled for this account.',
+    });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  const status = sanitizeTimecardText(body.status, 32);
+  if (!['submitted', 'approved', 'needs-review', 'exported'].includes(status)) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Choose a valid timecard status.',
+    });
+    return;
+  }
+
+  try {
+    const timecard = await wagnersTimecardsStore.updateStatus(body.id, {
+      status,
+      reviewedAt: new Date().toISOString(),
+      reviewedByUserId: auth.user.uid,
+      reviewedByEmail: auth.user.email,
+      reviewedByName: authDisplayName(auth.user, 'Boss', 100),
+      bossNotes: sanitizeTimecardText(body.bossNotes, 400),
+    });
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      timecard,
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, timecardsErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to update timecard.',
+    });
+  }
 }
 
 function readJsonBody(req) {
@@ -7229,6 +7575,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/wagners/timecards') {
+    await handleWagnersTimecardsRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/wagners/timecards/me') {
+    await handleWagnersMyTimecardsRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/wagners/timecards/status') {
+    await handleWagnersTimecardStatusRequest(req, res);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/sim/wallet') {
     await handleSimWalletRequest(req, res);
     return;
@@ -7445,6 +7806,7 @@ const server = http.createServer(async (req, res) => {
     reviewsApi: '/api/reviews',
     songsApi: '/api/songs',
     clipsApi: '/api/clips',
+    wagnersTimecardsApi: '/api/wagners/timecards',
     liveRoomsApi: '/api/live/rooms',
     kalshiWeatherApi: '/api/kalshi/weather/scan',
     kalshiBitcoinApi: '/api/kalshi/bitcoin/scan',
