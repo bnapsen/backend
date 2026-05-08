@@ -47,6 +47,29 @@ Submitted cards are prepared for email delivery to:
 WAGNERS_TIMECARD_EMAIL_TO=wagnerspainting@comcast.net
 ```
 
+The email is formatted as a QuickBooks export package:
+
+- Short payroll summary in the message body
+- Attached CSV named `quickbooks-timecard-employee-week-id.csv`
+- Inline CSV backup in the message body
+
+The attached QuickBooks CSV has one row per job/time activity:
+
+- Employee
+- Employee Email
+- Employee ID
+- Customer/Project
+- Service Item
+- Payroll Item
+- Date
+- Hours
+- Billable
+- Class
+- Description
+- Source Timecard ID
+- Source Entry ID
+- Submitted At
+
 The backend supports either Mailgun or Resend for outbound email:
 
 ```text

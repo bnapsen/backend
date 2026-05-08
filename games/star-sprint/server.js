@@ -1199,13 +1199,97 @@ function wagnersTimecardCsv(timecard) {
   return [headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n');
 }
 
+function quickBooksDescriptionForTimecardEntry(entry) {
+  const parts = [];
+  if (entry && entry.jobName && entry.jobName !== entry.customer) {
+    parts.push(`Job: ${entry.jobName}`);
+  }
+  if (entry && entry.start && entry.end) {
+    parts.push(`Time: ${entry.start}-${entry.end}`);
+  }
+  if (entry && Number(entry.breakMinutes || 0) > 0) {
+    parts.push(`Break: ${entry.breakMinutes} min`);
+  }
+  if (entry && entry.notes) {
+    parts.push(entry.notes);
+  }
+  return sanitizeTimecardText(parts.join(' | '), 400);
+}
+
+function wagnersQuickBooksTimecardCsv(timecard) {
+  const headers = [
+    'Employee',
+    'Employee Email',
+    'Employee ID',
+    'Customer/Project',
+    'Service Item',
+    'Payroll Item',
+    'Date',
+    'Hours',
+    'Billable',
+    'Class',
+    'Description',
+    'Source Timecard ID',
+    'Source Entry ID',
+    'Submitted At',
+  ];
+  const entries = Array.isArray(timecard && timecard.entries) ? timecard.entries : [];
+  const rows = entries.map((entry) => [
+    timecard.employeeName || timecard.workerName || '',
+    timecard.employeeEmail || timecard.workerEmail || '',
+    timecard.employeeCode || '',
+    entry.customer || entry.jobName || '',
+    entry.service || '',
+    entry.payType || '',
+    entry.date || '',
+    formatTimecardHours(entry.minutes || 0),
+    entry.billable === false ? 'No' : 'Yes',
+    '',
+    quickBooksDescriptionForTimecardEntry(entry),
+    timecard.id || '',
+    entry.id || '',
+    timecard.submittedAt || '',
+  ]);
+  return [headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n');
+}
+
+function quickBooksCsvFileName(timecard) {
+  const employee = sanitizeTimecardText(timecard && (timecard.employeeName || timecard.workerName), 80)
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase() || 'employee';
+  const date = normalizeTimecardDate(timecard && timecard.weekStart)
+    || normalizeTimecardDate(timecard && timecard.submittedAt && String(timecard.submittedAt).slice(0, 10))
+    || new Date().toISOString().slice(0, 10);
+  const id = sanitizeTimecardText(timecard && timecard.id, 80).slice(0, 8) || 'timecard';
+  return `quickbooks-timecard-${employee}-${date}-${id}.csv`;
+}
+
 function buildWagnersTimecardEmail(timecard) {
   const totals = timecard && timecard.totals || summarizeTimecard(Array.isArray(timecard && timecard.entries) ? timecard.entries : []);
   const employee = timecard.employeeName || timecard.workerName || 'Wagner employee';
   const week = [timecard.weekStart, timecard.weekEnd].filter(Boolean).join(' to ') || 'No week selected';
-  const subject = `Wagner timecard: ${employee} - ${formatTimecardHours(totals.minutes)} hours`;
+  const quickBooksCsv = wagnersQuickBooksTimecardCsv(timecard);
+  const attachment = {
+    filename: quickBooksCsvFileName(timecard),
+    content: `${quickBooksCsv}\r\n`,
+    contentType: 'text/csv',
+  };
+  const subject = `QuickBooks timecard export: ${employee} - ${formatTimecardHours(totals.minutes)} hours`;
   const lines = [
-    'A Wagner timecard was submitted.',
+    'A Wagner timecard is ready for QuickBooks.',
+    '',
+    `Attached CSV: ${attachment.filename}`,
+    '',
+    'Suggested QuickBooks import mapping:',
+    'Employee -> Employee',
+    'Customer/Project -> Customer or Project',
+    'Service Item -> Product/Service',
+    'Payroll Item -> Payroll Item or Pay Type',
+    'Date -> Date',
+    'Hours -> Hours',
+    'Billable -> Billable',
+    'Description -> Description or Notes',
     '',
     `Employee: ${employee}`,
     `Employee email: ${timecard.employeeEmail || timecard.workerEmail || ''}`,
@@ -1218,28 +1302,40 @@ function buildWagnersTimecardEmail(timecard) {
     `Submitted: ${timecard.submittedAt || ''}`,
     `Timecard ID: ${timecard.id || ''}`,
     '',
-    'CSV:',
-    wagnersTimecardCsv(timecard),
+    'Inline QuickBooks CSV backup:',
+    quickBooksCsv,
   ];
   return {
     subject,
     text: lines.join('\n'),
+    attachments: [attachment],
   };
 }
 
-async function sendMailgunWagnersEmail({ to, subject, text }) {
+async function sendMailgunWagnersEmail({
+  to,
+  subject,
+  text,
+  attachments = [],
+}) {
   const domain = MAILGUN_DOMAIN.replace(/[^a-z0-9.-]/gi, '');
-  const form = new URLSearchParams();
-  form.set('from', WAGNERS_TIMECARD_EMAIL_FROM);
-  form.set('to', to.join(','));
-  form.set('subject', subject);
-  form.set('text', text);
+  const form = new FormData();
+  form.append('from', WAGNERS_TIMECARD_EMAIL_FROM);
+  form.append('to', to.join(','));
+  form.append('subject', subject);
+  form.append('text', text);
+  for (const attachment of attachments) {
+    form.append(
+      'attachment',
+      new Blob([attachment.content || ''], { type: attachment.contentType || 'text/csv' }),
+      attachment.filename || 'quickbooks-timecard.csv',
+    );
+  }
 
   const response = await fetch(`https://api.mailgun.net/v3/${domain}/messages`, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${Buffer.from(`api:${MAILGUN_API_KEY}`).toString('base64')}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: form,
   });
@@ -1251,10 +1347,16 @@ async function sendMailgunWagnersEmail({ to, subject, text }) {
   return {
     provider: 'mailgun',
     providerId: sanitizeTimecardText(payload && payload.id, 120),
+    attachmentNames: attachments.map((attachment) => attachment.filename).filter(Boolean),
   };
 }
 
-async function sendResendWagnersEmail({ to, subject, text }) {
+async function sendResendWagnersEmail({
+  to,
+  subject,
+  text,
+  attachments = [],
+}) {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -1266,6 +1368,10 @@ async function sendResendWagnersEmail({ to, subject, text }) {
       to,
       subject,
       text,
+      attachments: attachments.map((attachment) => ({
+        filename: attachment.filename || 'quickbooks-timecard.csv',
+        content: Buffer.from(attachment.content || '', 'utf8').toString('base64'),
+      })),
     }),
   });
   if (!response.ok) {
@@ -1276,6 +1382,7 @@ async function sendResendWagnersEmail({ to, subject, text }) {
   return {
     provider: 'resend',
     providerId: sanitizeTimecardText(payload && payload.id, 120),
+    attachmentNames: attachments.map((attachment) => attachment.filename).filter(Boolean),
   };
 }
 
