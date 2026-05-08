@@ -114,9 +114,9 @@ function createWagnersTimecardsStore({
     return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   }
 
-  async function listAll({ limit = 200 } = {}) {
+  async function listAll({ limit = 1000 } = {}) {
     assertEnabled();
-    const safeLimit = Math.max(1, Math.min(500, Number(limit) || 200));
+    const safeLimit = Math.max(1, Math.min(2000, Number(limit) || 1000));
     const snapshot = await collection()
       .orderBy('submittedAt', 'desc')
       .limit(safeLimit)

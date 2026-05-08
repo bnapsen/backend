@@ -276,6 +276,10 @@ button:disabled {
   margin: 0 0 14px;
 }
 
+.boss-filter-grid {
+  margin-bottom: 12px;
+}
+
 .entries-list,
 .timecard-list {
   display: grid;

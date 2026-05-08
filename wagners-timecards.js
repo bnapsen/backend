@@ -9,6 +9,7 @@
     entries: [],
     myTimecards: [],
     bossTimecards: [],
+    filteredBossTimecards: [],
     profile: null,
     employeeProfile: null,
     quickBooks: null,
@@ -500,7 +501,7 @@
       state.bossTimecards = Array.isArray(body.timecards) ? body.timecards : [];
       state.isAdmin = true;
       els.bossPanel.hidden = false;
-      renderTimecardList(els.bossTimecards, state.bossTimecards, { bossView: true });
+      renderBossTimecards();
       await loadQuickBooksStatus({ quiet: true });
       if (!quiet) setStatus('Boss review refreshed.', 'ok');
     } catch (error) {
@@ -508,9 +509,59 @@
     }
   }
 
+  function bossSearchText(card) {
+    const entries = Array.isArray(card.entries) ? card.entries : [];
+    return [
+      card.id,
+      card.status,
+      card.employeeName,
+      card.workerName,
+      card.ownerName,
+      card.employeeEmail,
+      card.workerEmail,
+      card.employeeCode,
+      card.employeePhone,
+      card.crewRole,
+      card.weekStart,
+      card.weekEnd,
+      card.submittedAt,
+      ...entries.flatMap((entry) => [
+        entry.date,
+        entry.customer,
+        entry.jobName,
+        entry.service,
+        entry.payType,
+        entry.notes,
+      ]),
+    ].map((value) => String(value || '').toLowerCase()).join(' ');
+  }
+
+  function bossFilteredTimecards() {
+    const query = cleanText(els.bossSearch && els.bossSearch.value, 140).toLowerCase();
+    const status = cleanText(els.bossStatusFilter && els.bossStatusFilter.value, 40).toLowerCase();
+    return state.bossTimecards.filter((card) => {
+      const statusMatches = !status || String(card.status || 'submitted').toLowerCase() === status;
+      const queryMatches = !query || bossSearchText(card).includes(query);
+      return statusMatches && queryMatches;
+    });
+  }
+
+  function renderBossTimecards() {
+    state.filteredBossTimecards = bossFilteredTimecards();
+    renderTimecardList(els.bossTimecards, state.filteredBossTimecards, {
+      bossView: true,
+      emptyMessage: state.bossTimecards.length
+        ? 'No payroll records match that search.'
+        : 'No submitted cards yet.',
+    });
+    if (els.bossFilterStatus) {
+      els.bossFilterStatus.textContent = `Showing ${state.filteredBossTimecards.length} of ${state.bossTimecards.length} loaded payroll records.`;
+    }
+  }
+
   function renderTimecardList(root, timecards, options = {}) {
     if (!timecards.length) {
-      root.innerHTML = '<p class="empty-state">No submitted cards yet.</p>';
+      root.innerHTML = `<p class="empty-state">${escapeHtml(options.emptyMessage || 'No submitted cards yet.')}</p>`;
       return;
     }
 
@@ -803,6 +854,8 @@
     els.refreshMineButton.addEventListener('click', loadMyTimecards);
     els.refreshBossButton.addEventListener('click', () => loadBossTimecards());
     els.exportBossButton.addEventListener('click', () => downloadCsv(state.bossTimecards, 'wagners-payroll-export'));
+    els.bossSearch.addEventListener('input', renderBossTimecards);
+    els.bossStatusFilter.addEventListener('change', renderBossTimecards);
     els.connectQuickBooksButton.addEventListener('click', connectQuickBooks);
     els.refreshQuickBooksButton.addEventListener('click', () => loadQuickBooksStatus());
     ['workerName', 'employeePhone', 'employeeCode', 'crewRole', 'weekStart', 'weekEnd', 'signatureName'].forEach((key) => {
@@ -851,6 +904,9 @@
       refreshMineButton: $('refresh-mine-button'),
       refreshBossButton: $('refresh-boss-button'),
       exportBossButton: $('export-boss-button'),
+      bossSearch: $('boss-search'),
+      bossStatusFilter: $('boss-status-filter'),
+      bossFilterStatus: $('boss-filter-status'),
       connectQuickBooksButton: $('connect-quickbooks-button'),
       refreshQuickBooksButton: $('refresh-quickbooks-button'),
       quickBooksStatus: $('quickbooks-status'),

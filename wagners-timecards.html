@@ -6,9 +6,9 @@
   <title>Wagner's Painting Timecards</title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="stylesheet" href="nova-auth.css?v=20260503d">
-  <link rel="stylesheet" href="wagners-timecards.css?v=20260508b">
+  <link rel="stylesheet" href="wagners-timecards.css?v=20260508c">
   <script src="nova-auth.js?v=20260503d" defer></script>
-  <script src="wagners-timecards.js?v=20260508b" defer></script>
+  <script src="wagners-timecards.js?v=20260508c" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -219,6 +219,23 @@
         <button class="ghost-button" type="button" id="refresh-quickbooks-button">QuickBooks Status</button>
       </div>
       <p id="quickbooks-status" class="account-status">QuickBooks status has not loaded yet.</p>
+      <div class="worker-grid boss-filter-grid">
+        <label>
+          <span>Search records</span>
+          <input id="boss-search" type="search" autocomplete="off" placeholder="Employee, customer, job, date, notes">
+        </label>
+        <label>
+          <span>Status</span>
+          <select id="boss-status-filter">
+            <option value="">Any status</option>
+            <option value="submitted">Submitted</option>
+            <option value="approved">Approved</option>
+            <option value="needs-review">Needs Review</option>
+            <option value="exported">Exported</option>
+          </select>
+        </label>
+      </div>
+      <p id="boss-filter-status" class="account-status">Showing loaded payroll records.</p>
       <div id="boss-timecards" class="timecard-list"></div>
     </section>
   </main>

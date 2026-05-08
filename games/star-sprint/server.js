@@ -3649,7 +3649,7 @@ async function handleWagnersTimecardsRequest(req, res) {
     }
 
     try {
-      const timecards = await wagnersTimecardsStore.listAll({ limit: 300 });
+      const timecards = await wagnersTimecardsStore.listAll({ limit: 1000 });
       sendJsonResponse(req, res, 200, {
         ok: true,
         storageEnabled: wagnersTimecardsStore.enabled,
