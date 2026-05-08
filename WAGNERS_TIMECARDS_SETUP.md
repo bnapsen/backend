@@ -117,45 +117,10 @@ WAGNERS_TIMECARD_ADMIN_EMAILS=owner@example.com,bookkeeper@example.com
 Only those signed-in email addresses can load all submitted timecards or update
 their payroll status.
 
-## Direct QuickBooks sync
-
-The backend includes a dormant QuickBooks Online sync path. It stays disabled
-until an Intuit app is configured.
-
-Required Cloud Run environment variables:
-
-```text
-QUICKBOOKS_CLIENT_ID=...
-QUICKBOOKS_CLIENT_SECRET=...
-QUICKBOOKS_REDIRECT_URI=https://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app/api/wagners/quickbooks/callback
-QUICKBOOKS_ENVIRONMENT=production
-```
-
-Optional:
-
-```text
-QUICKBOOKS_OAUTH_STATE_SECRET=...
-QUICKBOOKS_MINOR_VERSION=75
-WAGNERS_QUICKBOOKS_COLLECTION=wagnersQuickBooks
-```
-
-After those are set, a boss account can open the payroll export panel, click
-`Connect QuickBooks`, and have an authorized QuickBooks user approve the Intuit
-OAuth connection. The boss can then sync individual timecards into QuickBooks
-Online as TimeActivity entries.
-
-The direct sync resolves QuickBooks objects by name before creating entries:
-
-- employee name -> QuickBooks Employee
-- customer/project -> QuickBooks Customer/Project
-- work type -> QuickBooks Product/Service item
-
-If a name does not match QuickBooks, sync stops and reports the missing mapping
-instead of creating incomplete payroll data.
-
 ## Export
 
-The app exports CSV columns meant to be easy to reshape for payroll:
+The app exports CSV columns meant to be easy to paste into a payroll workflow or
+download as a file:
 
 - Employee
 - Employee Email
@@ -174,8 +139,3 @@ The app exports CSV columns meant to be easy to reshape for payroll:
 - Source Timecard ID
 - Status
 - Submitted At
-
-The first QuickBooks automation step should map the app fields to the company's
-QuickBooks employee and customer/project names. A direct QuickBooks integration
-later should use QuickBooks OAuth and time activity APIs instead of storing any
-QuickBooks password in this app.

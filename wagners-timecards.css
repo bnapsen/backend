@@ -233,11 +233,6 @@ textarea:focus {
   background: var(--accent-dark);
 }
 
-button:disabled {
-  cursor: default;
-  opacity: 0.62;
-}
-
 .ghost-button {
   border: 1px solid var(--line);
   background: #fff;
@@ -263,6 +258,15 @@ button:disabled {
 
 .button-row button {
   flex: 1 1 180px;
+}
+
+.compact-row {
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
+.compact-row button {
+  flex: 0 1 auto;
 }
 
 .account-row {
@@ -424,5 +428,14 @@ button:disabled {
   .entry-top,
   .timecard-top {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compact-row {
+    justify-content: flex-start;
+  }
+
+  .compact-row button {
+    flex: 1 1 140px;
   }
 }

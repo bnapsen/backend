@@ -10,7 +10,6 @@ function createWagnersTimecardsStore({
   projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '',
   collectionName = process.env.WAGNERS_TIMECARD_COLLECTION || 'wagnersTimecards',
   employeeCollectionName = process.env.WAGNERS_EMPLOYEE_COLLECTION || 'wagnersEmployees',
-  quickBooksCollectionName = process.env.WAGNERS_QUICKBOOKS_COLLECTION || 'wagnersQuickBooks',
 } = {}) {
   const enabled = Boolean(String(projectId || '').trim());
   const firestore = enabled
@@ -36,11 +35,6 @@ function createWagnersTimecardsStore({
   function employeeCollection() {
     assertEnabled();
     return firestore.collection(employeeCollectionName);
-  }
-
-  function quickBooksCollection() {
-    assertEnabled();
-    return firestore.collection(quickBooksCollectionName);
   }
 
   async function getEmployeeProfile(userId) {
@@ -94,15 +88,6 @@ function createWagnersTimecardsStore({
     return payload;
   }
 
-  async function getTimecard(id) {
-    assertEnabled();
-    const docId = String(id || '').trim();
-    if (!docId) return null;
-    const snapshot = await collection().doc(docId).get();
-    if (!snapshot.exists) return null;
-    return { id: snapshot.id, ...snapshot.data() };
-  }
-
   async function listForUser(userId, { limit = 30 } = {}) {
     assertEnabled();
     const safeLimit = Math.max(1, Math.min(100, Number(limit) || 30));
@@ -148,45 +133,16 @@ function createWagnersTimecardsStore({
     return { id: updated.id, ...updated.data() };
   }
 
-  async function getQuickBooksConnection(id = 'wagners') {
-    assertEnabled();
-    const docId = String(id || 'wagners').trim() || 'wagners';
-    const snapshot = await quickBooksCollection().doc(docId).get();
-    if (!snapshot.exists) return null;
-    return { id: snapshot.id, ...snapshot.data() };
-  }
-
-  async function saveQuickBooksConnection(connection, id = 'wagners') {
-    assertEnabled();
-    const docId = String(id || 'wagners').trim() || 'wagners';
-    const docRef = quickBooksCollection().doc(docId);
-    const existing = await docRef.get();
-    const now = new Date().toISOString();
-    const payload = {
-      ...cloneValue(connection || {}),
-      id: docId,
-      createdAt: existing.exists ? String(existing.data().createdAt || now) : now,
-      updatedAt: now,
-    };
-    await docRef.set(payload, { merge: true });
-    const updated = await docRef.get();
-    return { id: updated.id, ...updated.data() };
-  }
-
   return {
     enabled,
     collectionName,
     employeeCollectionName,
-    quickBooksCollectionName,
     getEmployeeProfile,
     saveEmployeeProfile,
     submitTimecard,
-    getTimecard,
     listForUser,
     listAll,
     updateStatus,
-    getQuickBooksConnection,
-    saveQuickBooksConnection,
   };
 }
 
