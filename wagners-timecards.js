@@ -11,6 +11,7 @@
     bossTimecards: [],
     profile: null,
     employeeProfile: null,
+    quickBooks: null,
     isAdmin: false,
     lastSubmitted: null,
   };
@@ -95,6 +96,12 @@
     if (!els.employeeAccountStatus) return;
     els.employeeAccountStatus.textContent = message || '';
     els.employeeAccountStatus.className = `account-status ${tone}`.trim();
+  }
+
+  function setQuickBooksStatus(message, tone = '') {
+    if (!els.quickBooksStatus) return;
+    els.quickBooksStatus.textContent = message || '';
+    els.quickBooksStatus.className = `account-status ${tone}`.trim();
   }
 
   function employeeProfilePayload() {
@@ -494,6 +501,7 @@
       state.isAdmin = true;
       els.bossPanel.hidden = false;
       renderTimecardList(els.bossTimecards, state.bossTimecards, { bossView: true });
+      await loadQuickBooksStatus({ quiet: true });
       if (!quiet) setStatus('Boss review refreshed.', 'ok');
     } catch (error) {
       if (!quiet) setStatus(error.message || 'Unable to load boss review.', 'error');
@@ -509,11 +517,14 @@
     root.innerHTML = timecards.map((card) => {
       const total = card.totals || totals(card.entries || []);
       const entryCount = Number(total.entryCount || (card.entries || []).length || 0);
+      const quickBooksExport = card.quickBooksExport || {};
+      const quickBooksSynced = quickBooksExport.status === 'synced';
       const actions = options.bossView
         ? `<div class="button-row">
             <button class="ghost-button" type="button" data-status-id="${escapeHtml(card.id)}" data-status-value="approved">Approve</button>
             <button class="ghost-button" type="button" data-status-id="${escapeHtml(card.id)}" data-status-value="needs-review">Needs Review</button>
             <button class="ghost-button" type="button" data-status-id="${escapeHtml(card.id)}" data-status-value="exported">Mark Exported</button>
+            <button class="primary-button" type="button" data-qb-sync-id="${escapeHtml(card.id)}" ${quickBooksSynced ? 'disabled' : ''}>${quickBooksSynced ? 'Synced to QB' : 'Sync QuickBooks'}</button>
           </div>`
         : '';
       return `
@@ -534,6 +545,7 @@
             <span>${escapeHtml(card.employeeEmail || card.workerEmail || '')}</span>
             ${card.employeeCode ? `<span>Employee ID ${escapeHtml(card.employeeCode)}</span>` : ''}
             ${card.emailDelivery && card.emailDelivery.status ? `<span>Email ${escapeHtml(card.emailDelivery.status)}</span>` : ''}
+            ${quickBooksExport.status ? `<span>QuickBooks ${escapeHtml(quickBooksExport.status)}</span>` : ''}
             <span>Submitted ${escapeHtml(card.submittedAt ? new Date(card.submittedAt).toLocaleString() : '')}</span>
           </div>
           ${actions}
@@ -558,6 +570,68 @@
       await loadBossTimecards({ quiet: true });
     } catch (error) {
       setStatus(error.message || 'Unable to update timecard.', 'error');
+    }
+  }
+
+  async function loadQuickBooksStatus({ quiet = false } = {}) {
+    if (!state.profile || !state.profile.signedIn || !state.isAdmin) return;
+    try {
+      const response = await fetch(`${apiBase()}/api/wagners/quickbooks/status`, {
+        headers: await authHeaders(),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || 'Unable to load QuickBooks status.');
+      }
+      state.quickBooks = body;
+      if (!body.configured) {
+        setQuickBooksStatus('QuickBooks sync needs Intuit app credentials before it can connect.', 'error');
+      } else if (body.connection && body.connection.connected) {
+        setQuickBooksStatus(`QuickBooks connected${body.connection.connectedByEmail ? ` by ${body.connection.connectedByEmail}` : ''}.`, 'ok');
+      } else {
+        setQuickBooksStatus('QuickBooks is ready to connect. An authorized QuickBooks user must approve it.', '');
+      }
+      if (!quiet) setStatus('QuickBooks status refreshed.', 'ok');
+    } catch (error) {
+      setQuickBooksStatus(error.message || 'Unable to load QuickBooks status.', 'error');
+    }
+  }
+
+  async function connectQuickBooks() {
+    setQuickBooksStatus('Preparing QuickBooks connection...');
+    try {
+      const response = await fetch(`${apiBase()}/api/wagners/quickbooks/connect-url`, {
+        headers: await authHeaders(),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || 'Unable to start QuickBooks connection.');
+      }
+      window.location.href = body.url;
+    } catch (error) {
+      setQuickBooksStatus(error.message || 'Unable to start QuickBooks connection.', 'error');
+    }
+  }
+
+  async function syncTimecardToQuickBooks(id) {
+    setStatus('Syncing timecard to QuickBooks...');
+    try {
+      const response = await fetch(`${apiBase()}/api/wagners/quickbooks/export-timecard`, {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ id }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.ok) {
+        const details = Array.isArray(body.details) && body.details.length
+          ? ` ${body.details.join(' ')}`
+          : '';
+        throw new Error(`${body.error || 'Unable to sync with QuickBooks.'}${details}`);
+      }
+      setStatus('Timecard synced to QuickBooks.', 'ok');
+      await loadBossTimecards({ quiet: true });
+    } catch (error) {
+      setStatus(error.message || 'Unable to sync with QuickBooks.', 'error');
     }
   }
 
@@ -709,6 +783,10 @@
       if (statusButton) {
         updateTimecardStatus(statusButton.getAttribute('data-status-id'), statusButton.getAttribute('data-status-value'));
       }
+      const quickBooksButton = event.target.closest('[data-qb-sync-id]');
+      if (quickBooksButton && !quickBooksButton.disabled) {
+        syncTimecardToQuickBooks(quickBooksButton.getAttribute('data-qb-sync-id'));
+      }
     });
     els.useTodayButton.addEventListener('click', () => {
       els.entryDate.value = todayIso();
@@ -725,6 +803,8 @@
     els.refreshMineButton.addEventListener('click', loadMyTimecards);
     els.refreshBossButton.addEventListener('click', () => loadBossTimecards());
     els.exportBossButton.addEventListener('click', () => downloadCsv(state.bossTimecards, 'wagners-payroll-export'));
+    els.connectQuickBooksButton.addEventListener('click', connectQuickBooks);
+    els.refreshQuickBooksButton.addEventListener('click', () => loadQuickBooksStatus());
     ['workerName', 'employeePhone', 'employeeCode', 'crewRole', 'weekStart', 'weekEnd', 'signatureName'].forEach((key) => {
       els[key].addEventListener('change', () => saveDraft());
       els[key].addEventListener('input', () => saveDraft());
@@ -771,6 +851,9 @@
       refreshMineButton: $('refresh-mine-button'),
       refreshBossButton: $('refresh-boss-button'),
       exportBossButton: $('export-boss-button'),
+      connectQuickBooksButton: $('connect-quickbooks-button'),
+      refreshQuickBooksButton: $('refresh-quickbooks-button'),
+      quickBooksStatus: $('quickbooks-status'),
     });
   }
 

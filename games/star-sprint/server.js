@@ -122,6 +122,13 @@ const WAGNERS_TIMECARD_EMAIL_FROM = String(
 const MAILGUN_API_KEY = String(process.env.MAILGUN_API_KEY || '').trim();
 const MAILGUN_DOMAIN = String(process.env.MAILGUN_DOMAIN || '').trim();
 const RESEND_API_KEY = String(process.env.RESEND_API_KEY || '').trim();
+const QUICKBOOKS_CLIENT_ID = String(process.env.QUICKBOOKS_CLIENT_ID || '').trim();
+const QUICKBOOKS_CLIENT_SECRET = String(process.env.QUICKBOOKS_CLIENT_SECRET || '').trim();
+const QUICKBOOKS_REDIRECT_URI = String(process.env.QUICKBOOKS_REDIRECT_URI || '').trim();
+const QUICKBOOKS_ENVIRONMENT = String(process.env.QUICKBOOKS_ENVIRONMENT || 'production').trim().toLowerCase() === 'sandbox'
+  ? 'sandbox'
+  : 'production';
+const QUICKBOOKS_MINOR_VERSION = Math.max(1, Math.min(99, Math.round(Number(process.env.QUICKBOOKS_MINOR_VERSION || 75))));
 const NOVA_AUTH_REQUIRED = String(process.env.NOVA_AUTH_REQUIRED || 'true').trim().toLowerCase() !== 'false';
 const FIREBASE_PROJECT_ID = String(
   process.env.FIREBASE_PROJECT_ID
@@ -151,6 +158,11 @@ const CLIP_UPLOAD_SIGNING_SECRET = String(
   || process.env.S3_SECRET_ACCESS_KEY
   || process.env.CLIP_ADMIN_TOKEN
   || 'nova-clips-upload-secret',
+).trim();
+const QUICKBOOKS_OAUTH_STATE_SECRET = String(
+  process.env.QUICKBOOKS_OAUTH_STATE_SECRET
+  || QUICKBOOKS_CLIENT_SECRET
+  || CLIP_UPLOAD_SIGNING_SECRET,
 ).trim();
 const MAX_MODERATION_QUEUE_ITEMS = 60;
 const CLIP_MODERATION_PROCESSING_STALE_MS = Math.max(
@@ -432,6 +444,23 @@ function sendJsonResponse(req, res, statusCode, payload) {
     'Cache-Control': 'no-store',
   });
   res.end(JSON.stringify(payload));
+}
+
+function sendHtmlResponse(res, statusCode, html) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(html);
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function requestHeader(req, name) {
@@ -1432,6 +1461,380 @@ async function sendWagnersTimecardEmail(timecard) {
       error: sanitizeTimecardText(error && error.message || 'Email failed.', 240),
     };
   }
+}
+
+function quickBooksConfigured() {
+  return Boolean(QUICKBOOKS_CLIENT_ID && QUICKBOOKS_CLIENT_SECRET);
+}
+
+function quickBooksErrorStatus(error) {
+  const code = String(error && error.code || '');
+  if (code === 'quickbooks/not-configured') return 503;
+  if (code === 'quickbooks/not-connected') return 409;
+  if (code === 'quickbooks/mapping-required') return 409;
+  if (code === 'quickbooks/already-synced') return 409;
+  if (code === 'quickbooks/not-found') return 404;
+  if (code.startsWith('quickbooks/')) return 400;
+  return timecardsErrorStatus(error);
+}
+
+function quickBooksPublicConnection(connection) {
+  return {
+    connected: Boolean(connection && connection.realmId && connection.refreshToken),
+    realmId: connection && connection.realmId ? String(connection.realmId) : '',
+    environment: connection && connection.environment ? String(connection.environment) : QUICKBOOKS_ENVIRONMENT,
+    connectedAt: connection && connection.connectedAt ? String(connection.connectedAt) : '',
+    connectedByEmail: connection && connection.connectedByEmail ? String(connection.connectedByEmail) : '',
+    tokenExpiresAt: connection && connection.tokenExpiresAt ? String(connection.tokenExpiresAt) : '',
+    updatedAt: connection && connection.updatedAt ? String(connection.updatedAt) : '',
+  };
+}
+
+function quickBooksBackendBaseUrl(req) {
+  const host = String(req && req.headers && req.headers.host || '').trim();
+  const proto = String(requestHeader(req, 'x-forwarded-proto') || 'https').split(',')[0].trim() || 'https';
+  return `${proto}://${host}`;
+}
+
+function quickBooksRedirectUri(req) {
+  return QUICKBOOKS_REDIRECT_URI || `${quickBooksBackendBaseUrl(req)}/api/wagners/quickbooks/callback`;
+}
+
+function quickBooksReturnUrl(req) {
+  const origin = String(req && req.headers && req.headers.origin || '').trim();
+  if (origin && isAllowedHttpOrigin(req)) {
+    return `${origin.replace(/\/+$/, '')}/wagners-timecards.html`;
+  }
+  return 'https://bnapsen.com/wagners-timecards.html';
+}
+
+function signQuickBooksState(payload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', QUICKBOOKS_OAUTH_STATE_SECRET)
+    .update(body)
+    .digest('base64url');
+  return `${body}.${signature}`;
+}
+
+function verifyQuickBooksState(state) {
+  const [body, signature] = String(state || '').split('.');
+  if (!body || !signature) {
+    const error = new Error('QuickBooks connection state is missing.');
+    error.code = 'quickbooks/invalid-state';
+    throw error;
+  }
+  const expected = crypto
+    .createHmac('sha256', QUICKBOOKS_OAUTH_STATE_SECRET)
+    .update(body)
+    .digest('base64url');
+  const providedBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
+    const error = new Error('QuickBooks connection state is invalid.');
+    error.code = 'quickbooks/invalid-state';
+    throw error;
+  }
+  const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+  if (!payload || Number(payload.expiresAt || 0) < Date.now()) {
+    const error = new Error('QuickBooks connection state expired. Start the connection again.');
+    error.code = 'quickbooks/invalid-state';
+    throw error;
+  }
+  return payload;
+}
+
+function quickBooksConnectUrl(req, user) {
+  if (!quickBooksConfigured()) {
+    const error = new Error('QuickBooks app credentials are not configured yet.');
+    error.code = 'quickbooks/not-configured';
+    throw error;
+  }
+  const redirectUri = quickBooksRedirectUri(req);
+  const state = signQuickBooksState({
+    userId: String(user && user.uid || ''),
+    email: String(user && user.email || ''),
+    returnUrl: quickBooksReturnUrl(req),
+    expiresAt: Date.now() + 10 * 60 * 1000,
+    nonce: crypto.randomBytes(16).toString('hex'),
+  });
+  const params = new URLSearchParams({
+    client_id: QUICKBOOKS_CLIENT_ID,
+    response_type: 'code',
+    scope: 'com.intuit.quickbooks.accounting',
+    redirect_uri: redirectUri,
+    state,
+  });
+  return `https://appcenter.intuit.com/connect/oauth2?${params.toString()}`;
+}
+
+async function requestQuickBooksToken(params) {
+  if (!quickBooksConfigured()) {
+    const error = new Error('QuickBooks app credentials are not configured yet.');
+    error.code = 'quickbooks/not-configured';
+    throw error;
+  }
+  const response = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Basic ${Buffer.from(`${QUICKBOOKS_CLIENT_ID}:${QUICKBOOKS_CLIENT_SECRET}`).toString('base64')}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams(params),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = sanitizeTimecardText(body.error_description || body.error || 'QuickBooks authorization failed.', 240);
+    const error = new Error(detail);
+    error.code = 'quickbooks/token-error';
+    throw error;
+  }
+  return body;
+}
+
+function quickBooksTokenPatch(tokenPayload, fallback = {}) {
+  const now = Date.now();
+  return {
+    accessToken: String(tokenPayload.access_token || fallback.accessToken || ''),
+    refreshToken: String(tokenPayload.refresh_token || fallback.refreshToken || ''),
+    tokenType: String(tokenPayload.token_type || fallback.tokenType || 'bearer'),
+    tokenExpiresAt: new Date(now + Math.max(30, Number(tokenPayload.expires_in || 3600) - 60) * 1000).toISOString(),
+    refreshTokenExpiresAt: tokenPayload.x_refresh_token_expires_in
+      ? new Date(now + Number(tokenPayload.x_refresh_token_expires_in) * 1000).toISOString()
+      : String(fallback.refreshTokenExpiresAt || ''),
+  };
+}
+
+async function getQuickBooksConnectionOrThrow() {
+  const connection = await wagnersTimecardsStore.getQuickBooksConnection();
+  if (!connection || !connection.realmId || !connection.refreshToken) {
+    const error = new Error('QuickBooks is not connected yet.');
+    error.code = 'quickbooks/not-connected';
+    throw error;
+  }
+  return connection;
+}
+
+async function getQuickBooksApiConnection() {
+  const connection = await getQuickBooksConnectionOrThrow();
+  if (connection.accessToken && Date.parse(connection.tokenExpiresAt || '') > Date.now() + 2 * 60 * 1000) {
+    return connection;
+  }
+  const tokenPayload = await requestQuickBooksToken({
+    grant_type: 'refresh_token',
+    refresh_token: connection.refreshToken,
+  });
+  return wagnersTimecardsStore.saveQuickBooksConnection({
+    ...connection,
+    ...quickBooksTokenPatch(tokenPayload, connection),
+    environment: QUICKBOOKS_ENVIRONMENT,
+    lastTokenRefreshAt: new Date().toISOString(),
+  });
+}
+
+function quickBooksApiUrl(connection, pathName) {
+  const realmId = encodeURIComponent(String(connection && connection.realmId || ''));
+  const separator = String(pathName || '').includes('?') ? '&' : '?';
+  return `https://quickbooks.api.intuit.com/v3/company/${realmId}${pathName}${separator}minorversion=${QUICKBOOKS_MINOR_VERSION}`;
+}
+
+async function quickBooksApiRequest(connection, method, pathName, body = null) {
+  const response = await fetch(quickBooksApiUrl(connection, pathName), {
+    method,
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${connection.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const fault = payload && payload.Fault && Array.isArray(payload.Fault.Error) ? payload.Fault.Error[0] : null;
+    const message = fault && (fault.Detail || fault.Message)
+      ? `${fault.Message || 'QuickBooks error'}: ${fault.Detail || ''}`
+      : 'QuickBooks API request failed.';
+    const error = new Error(sanitizeTimecardText(message, 300));
+    error.code = 'quickbooks/api-error';
+    error.detail = payload;
+    throw error;
+  }
+  return payload;
+}
+
+function quickBooksQueryEscape(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+async function quickBooksQuery(connection, query) {
+  const payload = await quickBooksApiRequest(
+    connection,
+    'GET',
+    `/query?query=${encodeURIComponent(query)}`,
+  );
+  return payload && payload.QueryResponse ? payload.QueryResponse : {};
+}
+
+async function findQuickBooksEntity(connection, entityName, fields, name) {
+  const cleanName = sanitizeTimecardText(name, 120);
+  if (!cleanName) return null;
+  for (const field of fields) {
+    const query = `select * from ${entityName} where ${field} = '${quickBooksQueryEscape(cleanName)}'`;
+    const response = await quickBooksQuery(connection, query);
+    const values = Array.isArray(response[entityName]) ? response[entityName] : [];
+    if (values.length) return values[0];
+  }
+  return null;
+}
+
+function quickBooksReference(entity) {
+  return {
+    value: String(entity && entity.Id || ''),
+    name: String(entity && (entity.DisplayName || entity.FullyQualifiedName || entity.Name) || ''),
+  };
+}
+
+function quickBooksActivityPayload(timecard, entry, refs) {
+  const minutes = Math.max(0, Math.round(Number(entry && entry.minutes || 0)));
+  const payload = {
+    TxnDate: normalizeTimecardDate(entry && entry.date),
+    NameOf: 'Employee',
+    EmployeeRef: quickBooksReference(refs.employee),
+    Hours: Math.floor(minutes / 60),
+    Minutes: minutes % 60,
+    BillableStatus: entry && entry.billable === false ? 'NotBillable' : 'Billable',
+    Description: sanitizeTimecardText([
+      quickBooksDescriptionForTimecardEntry(entry),
+      `Wagner timecard ${timecard.id || ''}`,
+    ].filter(Boolean).join(' | '), 400),
+  };
+  if (refs.customer) {
+    payload.CustomerRef = quickBooksReference(refs.customer);
+  }
+  if (refs.item) {
+    payload.ItemRef = quickBooksReference(refs.item);
+  }
+  return payload;
+}
+
+async function resolveQuickBooksRefs(connection, timecard) {
+  const errors = [];
+  const entries = Array.isArray(timecard && timecard.entries) ? timecard.entries : [];
+  const employeeName = sanitizeTimecardText(timecard && (timecard.employeeName || timecard.workerName), 100);
+  const employee = await findQuickBooksEntity(connection, 'Employee', ['DisplayName', 'GivenName'], employeeName);
+  if (!employee) {
+    errors.push(`Employee not found in QuickBooks: ${employeeName || 'blank'}`);
+  }
+
+  const customers = new Map();
+  const items = new Map();
+  const uniqueCustomers = [...new Set(entries.map((entry) => sanitizeTimecardText(entry.customer || entry.jobName, 120)).filter(Boolean))];
+  const uniqueItems = [...new Set(entries.map((entry) => sanitizeTimecardText(entry.service, 80)).filter(Boolean))];
+
+  for (const customerName of uniqueCustomers) {
+    const customer = await findQuickBooksEntity(connection, 'Customer', ['FullyQualifiedName', 'DisplayName'], customerName);
+    if (!customer) {
+      errors.push(`Customer/project not found in QuickBooks: ${customerName}`);
+    } else {
+      customers.set(customerName, customer);
+    }
+  }
+
+  for (const itemName of uniqueItems) {
+    if (itemName.toLowerCase() === 'other') continue;
+    const item = await findQuickBooksEntity(connection, 'Item', ['FullyQualifiedName', 'Name'], itemName);
+    if (!item) {
+      errors.push(`Service item not found in QuickBooks: ${itemName}`);
+    } else {
+      items.set(itemName, item);
+    }
+  }
+
+  return {
+    employee,
+    customers,
+    items,
+    errors,
+  };
+}
+
+async function exportWagnersTimecardToQuickBooks(timecard, { force = false } = {}) {
+  if (!timecard) {
+    const error = new Error('Timecard not found.');
+    error.code = 'quickbooks/not-found';
+    throw error;
+  }
+  if (
+    timecard.quickBooksExport
+    && ['synced', 'partial-failed'].includes(String(timecard.quickBooksExport.status || ''))
+    && !force
+  ) {
+    const error = new Error(timecard.quickBooksExport.status === 'partial-failed'
+      ? 'This timecard partially synced to QuickBooks and needs manual review before retrying.'
+      : 'This timecard has already been synced to QuickBooks.');
+    error.code = 'quickbooks/already-synced';
+    throw error;
+  }
+
+  const connection = await getQuickBooksApiConnection();
+  const entries = Array.isArray(timecard.entries) ? timecard.entries : [];
+  const refs = await resolveQuickBooksRefs(connection, timecard);
+  if (refs.errors.length) {
+    const error = new Error('QuickBooks needs matching employee, customer/project, and service names before syncing.');
+    error.code = 'quickbooks/mapping-required';
+    error.details = refs.errors;
+    throw error;
+  }
+
+  const created = [];
+  try {
+    for (const entry of entries) {
+      const customerName = sanitizeTimecardText(entry.customer || entry.jobName, 120);
+      const itemName = sanitizeTimecardText(entry.service, 80);
+      const payload = quickBooksActivityPayload(timecard, entry, {
+        employee: refs.employee,
+        customer: refs.customers.get(customerName),
+        item: refs.items.get(itemName),
+      });
+      const response = await quickBooksApiRequest(connection, 'POST', '/timeactivity', payload);
+      const activity = response && response.TimeActivity ? response.TimeActivity : {};
+      created.push({
+        entryId: entry.id,
+        quickBooksTimeActivityId: String(activity.Id || ''),
+        quickBooksSyncToken: String(activity.SyncToken || ''),
+      });
+    }
+  } catch (error) {
+    const failedRecord = {
+      status: created.length ? 'partial-failed' : 'failed',
+      failedAt: new Date().toISOString(),
+      environment: connection.environment || QUICKBOOKS_ENVIRONMENT,
+      realmId: String(connection.realmId || ''),
+      entries: created,
+      error: sanitizeTimecardText(error && error.message || 'QuickBooks sync failed.', 240),
+    };
+    await wagnersTimecardsStore.updateStatus(timecard.id, {
+      quickBooksExport: failedRecord,
+    });
+    error.details = created.length
+      ? ['Some entries reached QuickBooks before the failure. Review QuickBooks before retrying.']
+      : [];
+    throw error;
+  }
+
+  const exportRecord = {
+    status: 'synced',
+    syncedAt: new Date().toISOString(),
+    environment: connection.environment || QUICKBOOKS_ENVIRONMENT,
+    realmId: String(connection.realmId || ''),
+    entries: created,
+  };
+  await wagnersTimecardsStore.updateStatus(timecard.id, {
+    quickBooksExport: exportRecord,
+    status: 'exported',
+  });
+  return exportRecord;
 }
 
 function hasKalshiWeatherLabAccess(req, requestUrl) {
@@ -3521,6 +3924,182 @@ async function handleWagnersTimecardStatusRequest(req, res) {
     sendJsonResponse(req, res, timecardsErrorStatus(error), {
       ok: false,
       error: error && error.message ? error.message : 'Unable to update timecard.',
+    });
+  }
+}
+
+async function requireWagnersAdminRequest(req, res, methods) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return null;
+  }
+
+  if (methods && !methods.includes(req.method)) {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return null;
+  }
+
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return null;
+  }
+
+  if (!isWagnersTimecardAdmin(auth.user)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Boss access is not enabled for this account.',
+    });
+    return null;
+  }
+
+  return auth;
+}
+
+async function handleWagnersQuickBooksStatusRequest(req, res) {
+  const auth = await requireWagnersAdminRequest(req, res, ['GET']);
+  if (!auth) return;
+
+  try {
+    const connection = await wagnersTimecardsStore.getQuickBooksConnection();
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      configured: quickBooksConfigured(),
+      environment: QUICKBOOKS_ENVIRONMENT,
+      redirectUri: quickBooksRedirectUri(req),
+      connection: quickBooksPublicConnection(connection),
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, quickBooksErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to load QuickBooks status.',
+    });
+  }
+}
+
+async function handleWagnersQuickBooksConnectUrlRequest(req, res) {
+  const auth = await requireWagnersAdminRequest(req, res, ['GET']);
+  if (!auth) return;
+
+  try {
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      configured: quickBooksConfigured(),
+      environment: QUICKBOOKS_ENVIRONMENT,
+      redirectUri: quickBooksRedirectUri(req),
+      url: quickBooksConnectUrl(req, auth.user),
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, quickBooksErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to start QuickBooks connection.',
+    });
+  }
+}
+
+async function handleWagnersQuickBooksCallbackRequest(req, res, requestUrl) {
+  if (req.method !== 'GET') {
+    sendHtmlResponse(res, 405, '<h1>Method not allowed</h1>');
+    return;
+  }
+
+  const errorMessage = sanitizeTimecardText(requestUrl.searchParams.get('error_description') || requestUrl.searchParams.get('error'), 240);
+  if (errorMessage) {
+    sendHtmlResponse(res, 400, `<h1>QuickBooks was not connected</h1><p>${escapeHtml(errorMessage)}</p>`);
+    return;
+  }
+
+  let state;
+  try {
+    state = verifyQuickBooksState(requestUrl.searchParams.get('state'));
+  } catch (error) {
+    sendHtmlResponse(res, 400, `<h1>QuickBooks connection expired</h1><p>${escapeHtml(error.message)}</p>`);
+    return;
+  }
+
+  try {
+    const code = sanitizeTimecardText(requestUrl.searchParams.get('code'), 1600);
+    const realmId = sanitizeTimecardText(requestUrl.searchParams.get('realmId'), 80);
+    if (!code || !realmId) {
+      const missing = new Error('QuickBooks did not return a company authorization code.');
+      missing.code = 'quickbooks/callback-missing-code';
+      throw missing;
+    }
+    const tokenPayload = await requestQuickBooksToken({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: quickBooksRedirectUri(req),
+    });
+    await wagnersTimecardsStore.saveQuickBooksConnection({
+      ...quickBooksTokenPatch(tokenPayload),
+      realmId,
+      environment: QUICKBOOKS_ENVIRONMENT,
+      connectedAt: new Date().toISOString(),
+      connectedByUserId: sanitizeTimecardText(state.userId, 120),
+      connectedByEmail: sanitizeTimecardText(state.email, 160),
+    });
+    const returnUrl = sanitizeTimecardText(state.returnUrl, 300) || 'https://bnapsen.com/wagners-timecards.html';
+    sendHtmlResponse(res, 200, `
+      <!doctype html>
+      <html lang="en">
+      <head><meta charset="utf-8"><title>QuickBooks connected</title></head>
+      <body style="font-family: system-ui, sans-serif; padding: 32px;">
+        <h1>QuickBooks is connected</h1>
+        <p>Wagner timecards can now be synced by a boss account from the payroll export panel.</p>
+        <p><a href="${escapeHtml(returnUrl)}">Return to Wagner timecards</a></p>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    sendHtmlResponse(res, quickBooksErrorStatus(error), `
+      <!doctype html>
+      <html lang="en">
+      <head><meta charset="utf-8"><title>QuickBooks connection failed</title></head>
+      <body style="font-family: system-ui, sans-serif; padding: 32px;">
+        <h1>QuickBooks connection failed</h1>
+        <p>${escapeHtml(error && error.message ? error.message : 'Unable to connect QuickBooks.')}</p>
+      </body>
+      </html>
+    `);
+  }
+}
+
+async function handleWagnersQuickBooksExportTimecardRequest(req, res) {
+  const auth = await requireWagnersAdminRequest(req, res, ['POST']);
+  if (!auth) return;
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  try {
+    const timecard = await wagnersTimecardsStore.getTimecard(body.id);
+    const quickBooksExport = await exportWagnersTimecardToQuickBooks(timecard, {
+      force: body.force === true,
+    });
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      quickBooksExport,
+      syncedByEmail: auth.user.email,
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, quickBooksErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to sync with QuickBooks.',
+      details: Array.isArray(error && error.details) ? error.details : [],
     });
   }
 }
@@ -8042,6 +8621,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/wagners/quickbooks/status') {
+    await handleWagnersQuickBooksStatusRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/wagners/quickbooks/connect-url') {
+    await handleWagnersQuickBooksConnectUrlRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/wagners/quickbooks/callback') {
+    await handleWagnersQuickBooksCallbackRequest(req, res, requestUrl);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/wagners/quickbooks/export-timecard') {
+    await handleWagnersQuickBooksExportTimecardRequest(req, res);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/sim/wallet') {
     await handleSimWalletRequest(req, res);
     return;
@@ -8260,6 +8859,7 @@ const server = http.createServer(async (req, res) => {
     clipsApi: '/api/clips',
     wagnersTimecardsApi: '/api/wagners/timecards',
     wagnersEmployeeProfileApi: '/api/wagners/employee-profile',
+    wagnersQuickBooksStatusApi: '/api/wagners/quickbooks/status',
     liveRoomsApi: '/api/live/rooms',
     kalshiWeatherApi: '/api/kalshi/weather/scan',
     kalshiBitcoinApi: '/api/kalshi/bitcoin/scan',

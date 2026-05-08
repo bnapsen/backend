@@ -6,9 +6,9 @@
   <title>Wagner's Painting Timecards</title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="stylesheet" href="nova-auth.css?v=20260503d">
-  <link rel="stylesheet" href="wagners-timecards.css?v=20260508a">
+  <link rel="stylesheet" href="wagners-timecards.css?v=20260508b">
   <script src="nova-auth.js?v=20260503d" defer></script>
-  <script src="wagners-timecards.js?v=20260508a" defer></script>
+  <script src="wagners-timecards.js?v=20260508b" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -215,7 +215,10 @@
       </div>
       <div class="button-row">
         <button class="primary-button" type="button" id="export-boss-button">Export All CSV</button>
+        <button class="ghost-button" type="button" id="connect-quickbooks-button">Connect QuickBooks</button>
+        <button class="ghost-button" type="button" id="refresh-quickbooks-button">QuickBooks Status</button>
       </div>
+      <p id="quickbooks-status" class="account-status">QuickBooks status has not loaded yet.</p>
       <div id="boss-timecards" class="timecard-list"></div>
     </section>
   </main>
