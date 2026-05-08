@@ -5,6 +5,7 @@
   const DRAFT_KEY = 'wagners-timecards:draft:v1';
   const LAST_WORKER_KEY = 'wagners-timecards:last-worker:v1';
   const els = {};
+  let deferredInstallPrompt = null;
   const state = {
     entries: [],
     myTimecards: [],
@@ -103,6 +104,50 @@
     if (!els.quickBooksStatus) return;
     els.quickBooksStatus.textContent = message || '';
     els.quickBooksStatus.className = `account-status ${tone}`.trim();
+  }
+
+  function isInstalledApp() {
+    return window.matchMedia('(display-mode: standalone)').matches
+      || window.matchMedia('(display-mode: window-controls-overlay)').matches
+      || window.navigator.standalone === true;
+  }
+
+  function renderInstallButton() {
+    if (!els.installAppButton) return;
+    els.installAppButton.hidden = isInstalledApp();
+  }
+
+  async function installApp() {
+    if (isInstalledApp()) {
+      setStatus('App is already installed.', 'ok');
+      renderInstallButton();
+      return;
+    }
+
+    if (!deferredInstallPrompt) {
+      setStatus('Use your browser menu to install this app on your phone or Windows.', 'ok');
+      return;
+    }
+
+    const promptEvent = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    promptEvent.prompt();
+    const choice = await promptEvent.userChoice.catch(() => ({}));
+    renderInstallButton();
+    if (choice && choice.outcome === 'accepted') {
+      setStatus('App install started.', 'ok');
+    } else {
+      setStatus('App install was not completed.', '');
+    }
+  }
+
+  async function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      await navigator.serviceWorker.register('/wagners-timecards-sw.js', { scope: '/' });
+    } catch {
+      // The timecard app still works normally when install support is unavailable.
+    }
   }
 
   function employeeProfilePayload() {
@@ -843,6 +888,7 @@
       els.entryDate.value = todayIso();
     });
     els.saveDraftButton.addEventListener('click', () => saveDraft(true));
+    els.installAppButton.addEventListener('click', installApp);
     els.saveEmployeeButton.addEventListener('click', () => {
       saveEmployeeProfile().catch((error) => {
         setEmployeeAccountStatus(error.message || 'Unable to save employee account.', 'error');
@@ -870,6 +916,7 @@
       summaryJobs: $('summary-jobs'),
       summaryStatus: $('summary-status'),
       summarySync: $('summary-sync'),
+      installAppButton: $('install-app-button'),
       workerName: $('worker-name'),
       employeePhone: $('employee-phone'),
       employeeCode: $('employee-code'),
@@ -932,6 +979,20 @@
     loadDraft();
     renderEntries();
     bindEvents();
+    renderInstallButton();
+    registerServiceWorker();
     initAuth();
+  });
+
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    renderInstallButton();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    setStatus('App installed.', 'ok');
+    renderInstallButton();
   });
 })();

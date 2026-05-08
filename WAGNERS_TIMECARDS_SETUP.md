@@ -8,6 +8,20 @@ It uses the existing AP Advantage Player Firebase account system through
 `nova-auth.js`. Painters sign in with Google or email/password, draft entries on
 their phone, and submit signed timecards to the Cloud Run backend.
 
+## Installable app
+
+The timecard page is an installable Progressive Web App.
+
+- Manifest: `/wagners-timecards.webmanifest`
+- Service worker: `/wagners-timecards-sw.js`
+- App icons: `/assets/wagners-timecards-icon-192.png`,
+  `/assets/wagners-timecards-icon-512.png`, and
+  `/assets/wagners-timecards-apple-touch-icon.png`
+
+Android, Chrome, and Microsoft Edge can install it as an app. iPhone and iPad
+can add it to the Home Screen. The service worker caches the app shell only;
+submitting timecards and loading payroll records still uses the backend.
+
 ## Employee accounts
 
 Each painter creates a Wagner employee account after signing in. The profile is

@@ -5,10 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Wagner's Painting Timecards</title>
   <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#1b6a5c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Wagner Timecards">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="wagners-timecards.webmanifest">
+  <link rel="icon" href="assets/wagners-timecards-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/wagners-timecards-apple-touch-icon.png">
   <link rel="stylesheet" href="nova-auth.css?v=20260503d">
-  <link rel="stylesheet" href="wagners-timecards.css?v=20260508c">
+  <link rel="stylesheet" href="wagners-timecards.css?v=20260508d">
   <script src="nova-auth.js?v=20260503d" defer></script>
-  <script src="wagners-timecards.js?v=20260508c" defer></script>
+  <script src="wagners-timecards.js?v=20260508d" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -19,8 +26,11 @@
         <h1>Timecards</h1>
       </div>
     </div>
-    <div class="auth-slot">
-      <div class="nova-auth-widget" data-auth-widget data-auth-mode="compact" data-auth-label="Google account"></div>
+    <div class="header-actions">
+      <button class="ghost-button install-button" type="button" id="install-app-button" hidden>Install App</button>
+      <div class="auth-slot">
+        <div class="nova-auth-widget" data-auth-widget data-auth-mode="compact" data-auth-label="Google account"></div>
+      </div>
     </div>
   </header>
 

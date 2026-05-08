@@ -84,8 +84,21 @@ textarea {
   text-transform: uppercase;
 }
 
-.auth-slot {
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
   max-width: min(420px, 50vw);
+}
+
+.auth-slot {
+  min-width: 0;
+}
+
+.install-button {
+  flex: 0 0 auto;
+  min-height: 40px;
 }
 
 .app-shell {
@@ -384,6 +397,15 @@ button:disabled {
   .auth-slot {
     width: 100%;
     max-width: none;
+  }
+
+  .header-actions {
+    width: 100%;
+    max-width: none;
+  }
+
+  .install-button {
+    flex: 1 1 150px;
   }
 
   .summary-strip {
