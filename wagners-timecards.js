@@ -10,6 +10,7 @@
     myTimecards: [],
     bossTimecards: [],
     profile: null,
+    employeeProfile: null,
     isAdmin: false,
     lastSubmitted: null,
   };
@@ -90,10 +91,27 @@
     els.statusMessage.className = `status-message ${tone}`.trim();
   }
 
+  function setEmployeeAccountStatus(message, tone = '') {
+    if (!els.employeeAccountStatus) return;
+    els.employeeAccountStatus.textContent = message || '';
+    els.employeeAccountStatus.className = `account-status ${tone}`.trim();
+  }
+
+  function employeeProfilePayload() {
+    return {
+      fullName: cleanText(els.workerName.value, 100),
+      phone: cleanText(els.employeePhone.value, 40),
+      employeeCode: cleanText(els.employeeCode.value, 40),
+      role: cleanText(els.crewRole.value, 60),
+    };
+  }
+
   function draftPayload() {
     return {
       workerName: cleanText(els.workerName.value, 100),
       crewRole: cleanText(els.crewRole.value, 60),
+      employeePhone: cleanText(els.employeePhone.value, 40),
+      employeeCode: cleanText(els.employeeCode.value, 40),
       weekStart: els.weekStart.value,
       weekEnd: els.weekEnd.value,
       signatureName: cleanText(els.signatureName.value, 100),
@@ -105,6 +123,8 @@
     const payload = {
       workerName: cleanText(els.workerName.value, 100),
       crewRole: cleanText(els.crewRole.value, 60),
+      employeePhone: cleanText(els.employeePhone.value, 40),
+      employeeCode: cleanText(els.employeeCode.value, 40),
     };
     try {
       localStorage.setItem(LAST_WORKER_KEY, JSON.stringify(payload));
@@ -133,6 +153,8 @@
       const worker = JSON.parse(localStorage.getItem(LAST_WORKER_KEY) || '{}');
       els.workerName.value = cleanText(worker.workerName, 100);
       els.crewRole.value = cleanText(worker.crewRole, 60);
+      els.employeePhone.value = cleanText(worker.employeePhone, 40);
+      els.employeeCode.value = cleanText(worker.employeeCode, 40);
     } catch {
       // Ignore malformed saved worker data.
     }
@@ -142,6 +164,8 @@
       if (!draft || typeof draft !== 'object') return;
       els.workerName.value = cleanText(draft.workerName || els.workerName.value, 100);
       els.crewRole.value = cleanText(draft.crewRole || els.crewRole.value, 60);
+      els.employeePhone.value = cleanText(draft.employeePhone || els.employeePhone.value, 40);
+      els.employeeCode.value = cleanText(draft.employeeCode || els.employeeCode.value, 40);
       els.weekStart.value = draft.weekStart || els.weekStart.value;
       els.weekEnd.value = draft.weekEnd || els.weekEnd.value;
       els.signatureName.value = cleanText(draft.signatureName, 100);
@@ -267,6 +291,7 @@
   function currentPayload() {
     return {
       ...draftPayload(),
+      employeeProfile: employeeProfilePayload(),
       signedAt: new Date().toISOString(),
       deviceNote: navigator.userAgent.slice(0, 140),
     };
@@ -298,6 +323,85 @@
     return window.NovaAuth.appendAuthHeaders(extra);
   }
 
+  function applyEmployeeProfile(profile) {
+    state.employeeProfile = profile || null;
+    if (!profile) {
+      setEmployeeAccountStatus(state.profile && state.profile.signedIn
+        ? 'Save your employee account before submitting.'
+        : 'Sign in to create an employee account.');
+      return;
+    }
+    els.workerName.value = cleanText(profile.fullName || els.workerName.value, 100);
+    els.employeePhone.value = cleanText(profile.phone || els.employeePhone.value, 40);
+    els.employeeCode.value = cleanText(profile.employeeCode || els.employeeCode.value, 40);
+    els.crewRole.value = cleanText(profile.role || els.crewRole.value, 60);
+    if (!els.signatureName.value) {
+      els.signatureName.value = cleanText(profile.fullName, 100);
+    }
+    saveLastWorker();
+    setEmployeeAccountStatus('Employee account saved to this sign-in.', 'ok');
+  }
+
+  async function loadEmployeeProfile() {
+    if (!state.profile || !state.profile.signedIn) {
+      state.employeeProfile = null;
+      setEmployeeAccountStatus('Sign in to create an employee account.');
+      return null;
+    }
+
+    try {
+      const response = await fetch(`${apiBase()}/api/wagners/employee-profile`, {
+        headers: await authHeaders(),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || 'Unable to load employee account.');
+      }
+      applyEmployeeProfile(body.profile || null);
+      return body.profile || null;
+    } catch (error) {
+      state.employeeProfile = null;
+      setEmployeeAccountStatus(error.message || 'Unable to load employee account.', 'error');
+      return null;
+    }
+  }
+
+  async function saveEmployeeProfile({ quiet = false } = {}) {
+    if (!state.profile || !state.profile.signedIn) {
+      throw new Error('Sign in before saving an employee account.');
+    }
+    const payload = employeeProfilePayload();
+    if (!payload.fullName) {
+      throw new Error('Add your name before saving the employee account.');
+    }
+    if (!quiet) setEmployeeAccountStatus('Saving employee account...');
+
+    const response = await fetch(`${apiBase()}/api/wagners/employee-profile`, {
+      method: 'POST',
+      headers: await authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.ok) {
+      throw new Error(body.error || 'Unable to save employee account.');
+    }
+    applyEmployeeProfile(body.profile);
+    return body.profile;
+  }
+
+  async function ensureEmployeeProfile() {
+    const current = employeeProfilePayload();
+    const saved = state.employeeProfile || {};
+    const changed = current.fullName !== cleanText(saved.fullName, 100)
+      || current.phone !== cleanText(saved.phone, 40)
+      || current.employeeCode !== cleanText(saved.employeeCode, 40)
+      || current.role !== cleanText(saved.role, 60);
+    if (!state.employeeProfile || changed) {
+      return saveEmployeeProfile({ quiet: true });
+    }
+    return state.employeeProfile;
+  }
+
   async function submitTimecard() {
     const validation = validateForSubmit();
     if (validation) {
@@ -309,6 +413,7 @@
     saveDraft();
 
     try {
+      await ensureEmployeeProfile();
       const response = await fetch(`${apiBase()}/api/wagners/timecards`, {
         method: 'POST',
         headers: await authHeaders({ 'Content-Type': 'application/json' }),
@@ -319,7 +424,10 @@
         throw new Error(body.error || 'Timecard could not be submitted.');
       }
       state.lastSubmitted = body.timecard.submittedAt || new Date().toISOString();
-      setStatus('Timecard submitted for payroll.', 'ok');
+      const emailStatus = body.emailDelivery && body.emailDelivery.status;
+      setStatus(emailStatus === 'sent'
+        ? 'Timecard submitted and emailed to payroll.'
+        : 'Timecard submitted for payroll.', 'ok');
       clearDraft(false);
       await loadMyTimecards();
       if (body.isAdmin) await loadBossTimecards({ quiet: true });
@@ -423,7 +531,9 @@
             <button class="ghost-button" type="button" data-export-card="${escapeHtml(card.id)}">CSV</button>
           </div>
           <div class="timecard-meta">
-            <span>${escapeHtml(card.workerEmail || '')}</span>
+            <span>${escapeHtml(card.employeeEmail || card.workerEmail || '')}</span>
+            ${card.employeeCode ? `<span>Employee ID ${escapeHtml(card.employeeCode)}</span>` : ''}
+            ${card.emailDelivery && card.emailDelivery.status ? `<span>Email ${escapeHtml(card.emailDelivery.status)}</span>` : ''}
             <span>Submitted ${escapeHtml(card.submittedAt ? new Date(card.submittedAt).toLocaleString() : '')}</span>
           </div>
           ${actions}
@@ -460,8 +570,9 @@
     return timecards.flatMap((card) => {
       const entries = Array.isArray(card.entries) ? card.entries : [];
       return entries.map((entry) => ({
-        employee: card.workerName || card.ownerName || '',
-        email: card.workerEmail || card.ownerEmail || '',
+        employee: card.employeeName || card.workerName || card.ownerName || '',
+        email: card.employeeEmail || card.workerEmail || card.ownerEmail || '',
+        employeeCode: card.employeeCode || '',
         date: entry.date || '',
         customer: entry.customer || '',
         job: entry.jobName || '',
@@ -484,6 +595,7 @@
     const headers = [
       'Employee',
       'Employee Email',
+      'Employee ID',
       'Date',
       'Customer or Project',
       'Job Name',
@@ -502,6 +614,7 @@
     const rows = timecardsToRows(timecards).map((row) => [
       row.employee,
       row.email,
+      row.employeeCode,
       row.date,
       row.customer,
       row.job,
@@ -571,6 +684,12 @@
     if (profile && profile.displayName && !els.signatureName.value) {
       els.signatureName.value = profile.displayName;
     }
+    if (!profile || !profile.signedIn) {
+      state.employeeProfile = null;
+      setEmployeeAccountStatus('Sign in to create an employee account.');
+    } else {
+      loadEmployeeProfile();
+    }
     loadMyTimecards();
   }
 
@@ -595,13 +714,18 @@
       els.entryDate.value = todayIso();
     });
     els.saveDraftButton.addEventListener('click', () => saveDraft(true));
+    els.saveEmployeeButton.addEventListener('click', () => {
+      saveEmployeeProfile().catch((error) => {
+        setEmployeeAccountStatus(error.message || 'Unable to save employee account.', 'error');
+      });
+    });
     els.submitCardButton.addEventListener('click', submitTimecard);
     els.newCardButton.addEventListener('click', () => clearDraft(true));
     els.exportDraftButton.addEventListener('click', () => downloadCsv([currentDraftAsTimecard()], 'wagners-timecard-draft'));
     els.refreshMineButton.addEventListener('click', loadMyTimecards);
     els.refreshBossButton.addEventListener('click', () => loadBossTimecards());
     els.exportBossButton.addEventListener('click', () => downloadCsv(state.bossTimecards, 'wagners-payroll-export'));
-    ['workerName', 'crewRole', 'weekStart', 'weekEnd', 'signatureName'].forEach((key) => {
+    ['workerName', 'employeePhone', 'employeeCode', 'crewRole', 'weekStart', 'weekEnd', 'signatureName'].forEach((key) => {
       els[key].addEventListener('change', () => saveDraft());
       els[key].addEventListener('input', () => saveDraft());
     });
@@ -614,6 +738,9 @@
       summaryStatus: $('summary-status'),
       summarySync: $('summary-sync'),
       workerName: $('worker-name'),
+      employeePhone: $('employee-phone'),
+      employeeCode: $('employee-code'),
+      employeeAccountStatus: $('employee-account-status'),
       crewRole: $('crew-role'),
       weekStart: $('week-start'),
       weekEnd: $('week-end'),
@@ -637,6 +764,7 @@
       bossTimecards: $('boss-timecards'),
       useTodayButton: $('use-today-button'),
       saveDraftButton: $('save-draft-button'),
+      saveEmployeeButton: $('save-employee-button'),
       submitCardButton: $('submit-card-button'),
       newCardButton: $('new-card-button'),
       exportDraftButton: $('export-draft-button'),

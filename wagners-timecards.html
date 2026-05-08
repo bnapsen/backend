@@ -6,9 +6,9 @@
   <title>Wagner's Painting Timecards</title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="stylesheet" href="nova-auth.css?v=20260503d">
-  <link rel="stylesheet" href="wagners-timecards.css?v=20260507a">
+  <link rel="stylesheet" href="wagners-timecards.css?v=20260508a">
   <script src="nova-auth.js?v=20260503d" defer></script>
-  <script src="wagners-timecards.js?v=20260507a" defer></script>
+  <script src="wagners-timecards.js?v=20260508a" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -47,7 +47,7 @@
       <div class="panel-head">
         <div>
           <p class="eyebrow">Crew member</p>
-          <h2>Your card</h2>
+          <h2>Employee account</h2>
         </div>
         <button class="icon-button" type="button" id="new-card-button" title="Start a new card" aria-label="Start a new card">
           <span aria-hidden="true">+</span>
@@ -57,6 +57,14 @@
         <label>
           <span>Name</span>
           <input id="worker-name" type="text" autocomplete="name" placeholder="Your name">
+        </label>
+        <label>
+          <span>Employee ID</span>
+          <input id="employee-code" type="text" autocomplete="off" placeholder="Optional">
+        </label>
+        <label>
+          <span>Phone</span>
+          <input id="employee-phone" type="tel" autocomplete="tel" placeholder="Optional">
         </label>
         <label>
           <span>Role</span>
@@ -77,6 +85,10 @@
           <span>Week end</span>
           <input id="week-end" type="date">
         </label>
+      </div>
+      <div class="button-row account-row">
+        <button class="ghost-button" type="button" id="save-employee-button">Save Employee Account</button>
+        <p id="employee-account-status" class="account-status" role="status">Sign in to create an employee account.</p>
       </div>
     </section>
 

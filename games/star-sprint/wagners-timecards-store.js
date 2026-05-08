@@ -9,6 +9,7 @@ function cloneValue(value) {
 function createWagnersTimecardsStore({
   projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '',
   collectionName = process.env.WAGNERS_TIMECARD_COLLECTION || 'wagnersTimecards',
+  employeeCollectionName = process.env.WAGNERS_EMPLOYEE_COLLECTION || 'wagnersEmployees',
 } = {}) {
   const enabled = Boolean(String(projectId || '').trim());
   const firestore = enabled
@@ -29,6 +30,46 @@ function createWagnersTimecardsStore({
   function collection() {
     assertEnabled();
     return firestore.collection(collectionName);
+  }
+
+  function employeeCollection() {
+    assertEnabled();
+    return firestore.collection(employeeCollectionName);
+  }
+
+  async function getEmployeeProfile(userId) {
+    assertEnabled();
+    const docId = String(userId || '').trim();
+    if (!docId) return null;
+    const snapshot = await employeeCollection().doc(docId).get();
+    if (!snapshot.exists) return null;
+    return { id: snapshot.id, ...snapshot.data() };
+  }
+
+  async function saveEmployeeProfile(user, profile) {
+    assertEnabled();
+    const userId = String(user && user.uid || '').trim();
+    if (!userId) {
+      const error = new Error('Sign in before creating an employee account.');
+      error.code = 'timecards/auth-required';
+      throw error;
+    }
+
+    const now = new Date().toISOString();
+    const docRef = employeeCollection().doc(userId);
+    const existing = await docRef.get();
+    const payload = {
+      ...cloneValue(profile || {}),
+      id: userId,
+      userId,
+      authEmail: String(user && user.email || ''),
+      status: 'active',
+      createdAt: existing.exists ? String(existing.data().createdAt || now) : now,
+      updatedAt: now,
+    };
+    await docRef.set(payload, { merge: true });
+    const updated = await docRef.get();
+    return { id: updated.id, ...updated.data() };
   }
 
   async function submitTimecard(timecard) {
@@ -95,6 +136,9 @@ function createWagnersTimecardsStore({
   return {
     enabled,
     collectionName,
+    employeeCollectionName,
+    getEmployeeProfile,
+    saveEmployeeProfile,
     submitTimecard,
     listForUser,
     listAll,

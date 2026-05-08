@@ -113,6 +113,15 @@ const WAGNERS_TIMECARD_ADMIN_EMAILS = new Set(
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean),
 );
+const WAGNERS_TIMECARD_EMAIL_TO = String(
+  process.env.WAGNERS_TIMECARD_EMAIL_TO || 'wagnerspainting@comcast.net',
+).trim();
+const WAGNERS_TIMECARD_EMAIL_FROM = String(
+  process.env.WAGNERS_TIMECARD_EMAIL_FROM || 'Wagner Timecards <timecards@bnapsen.com>',
+).trim();
+const MAILGUN_API_KEY = String(process.env.MAILGUN_API_KEY || '').trim();
+const MAILGUN_DOMAIN = String(process.env.MAILGUN_DOMAIN || '').trim();
+const RESEND_API_KEY = String(process.env.RESEND_API_KEY || '').trim();
 const NOVA_AUTH_REQUIRED = String(process.env.NOVA_AUTH_REQUIRED || 'true').trim().toLowerCase() !== 'false';
 const FIREBASE_PROJECT_ID = String(
   process.env.FIREBASE_PROJECT_ID
@@ -1050,7 +1059,29 @@ function summarizeTimecard(entries) {
   return totals;
 }
 
-function normalizeWagnersTimecardPayload(body, user) {
+function normalizeWagnersEmployeeProfilePayload(body, user) {
+  const fullName = sanitizeTimecardText(
+    body && (body.fullName || body.workerName),
+    100,
+  ) || authDisplayName(user, 'Wagner crew member', 100);
+
+  if (!fullName) {
+    const error = new Error('Add your name to create an employee account.');
+    error.code = 'timecards/employee-name-required';
+    throw error;
+  }
+
+  return {
+    fullName,
+    phone: sanitizeTimecardText(body && body.phone, 40),
+    employeeCode: sanitizeTimecardText(body && body.employeeCode, 40),
+    role: sanitizeTimecardText(body && (body.role || body.crewRole), 60),
+    email: sanitizeTimecardText(user && user.email, 160),
+    displayName: authDisplayName(user, fullName, 100),
+  };
+}
+
+function normalizeWagnersTimecardPayload(body, user, employeeProfile) {
   const entries = Array.isArray(body && body.entries)
     ? body.entries.slice(0, 40).map(normalizeTimecardEntry).filter((entry) => (
       entry.date
@@ -1065,12 +1096,22 @@ function normalizeWagnersTimecardPayload(body, user) {
     throw error;
   }
 
+  const employeeName = sanitizeTimecardText(employeeProfile && employeeProfile.fullName, 100);
+  if (!employeeName) {
+    const error = new Error('Create your Wagner employee account before submitting.');
+    error.code = 'timecards/employee-profile-required';
+    throw error;
+  }
+
   const now = new Date().toISOString();
   const workerName = sanitizeTimecardText(
     body && body.workerName,
     100,
-  ) || authDisplayName(user, 'Wagner crew member', 100);
-  const workerEmail = sanitizeTimecardText(user && user.email, 160);
+  ) || employeeName;
+  const workerEmail = sanitizeTimecardText(employeeProfile && employeeProfile.email, 160)
+    || sanitizeTimecardText(user && user.email, 160);
+  const crewRole = sanitizeTimecardText(body && body.crewRole, 60)
+    || sanitizeTimecardText(employeeProfile && employeeProfile.role, 60);
 
   return {
     id: sanitizeTimecardText(body && body.id, 80),
@@ -1081,7 +1122,13 @@ function normalizeWagnersTimecardPayload(body, user) {
     ownerName: workerName,
     workerName,
     workerEmail,
-    crewRole: sanitizeTimecardText(body && body.crewRole, 60),
+    crewRole,
+    employeeProfileId: String(employeeProfile && (employeeProfile.id || employeeProfile.userId) || user && user.uid || ''),
+    employeeName,
+    employeeEmail: workerEmail,
+    employeeCode: sanitizeTimecardText(employeeProfile && employeeProfile.employeeCode, 40),
+    employeePhone: sanitizeTimecardText(employeeProfile && employeeProfile.phone, 40),
+    employeeRole: crewRole,
     weekStart: normalizeTimecardDate(body && body.weekStart),
     weekEnd: normalizeTimecardDate(body && body.weekEnd),
     signatureName: sanitizeTimecardText(body && body.signatureName, 100) || workerName,
@@ -1091,6 +1138,193 @@ function normalizeWagnersTimecardPayload(body, user) {
     totals: summarizeTimecard(entries),
     deviceNote: sanitizeTimecardText(body && body.deviceNote, 160),
   };
+}
+
+function formatTimecardHours(minutes) {
+  return (Math.round((Number(minutes || 0) / 60) * 100) / 100).toFixed(2);
+}
+
+function wagnersTimecardEmailRecipients() {
+  return WAGNERS_TIMECARD_EMAIL_TO
+    .split(/[,\s]+/)
+    .map((email) => email.trim())
+    .filter(Boolean);
+}
+
+function csvEscape(value) {
+  const text = String(value ?? '');
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function wagnersTimecardCsv(timecard) {
+  const headers = [
+    'Employee',
+    'Employee Email',
+    'Employee ID',
+    'Date',
+    'Customer or Project',
+    'Job Name',
+    'Service',
+    'Pay Type',
+    'Start Time',
+    'End Time',
+    'Break Minutes',
+    'Hours',
+    'Billable',
+    'Notes',
+    'Source Timecard ID',
+    'Status',
+    'Submitted At',
+  ];
+  const entries = Array.isArray(timecard && timecard.entries) ? timecard.entries : [];
+  const rows = entries.map((entry) => [
+    timecard.employeeName || timecard.workerName || '',
+    timecard.employeeEmail || timecard.workerEmail || '',
+    timecard.employeeCode || '',
+    entry.date || '',
+    entry.customer || '',
+    entry.jobName || '',
+    entry.service || '',
+    entry.payType || '',
+    entry.start || '',
+    entry.end || '',
+    entry.breakMinutes || 0,
+    formatTimecardHours(entry.minutes || 0),
+    entry.billable === false ? 'No' : 'Yes',
+    entry.notes || '',
+    timecard.id || '',
+    timecard.status || 'submitted',
+    timecard.submittedAt || '',
+  ]);
+  return [headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n');
+}
+
+function buildWagnersTimecardEmail(timecard) {
+  const totals = timecard && timecard.totals || summarizeTimecard(Array.isArray(timecard && timecard.entries) ? timecard.entries : []);
+  const employee = timecard.employeeName || timecard.workerName || 'Wagner employee';
+  const week = [timecard.weekStart, timecard.weekEnd].filter(Boolean).join(' to ') || 'No week selected';
+  const subject = `Wagner timecard: ${employee} - ${formatTimecardHours(totals.minutes)} hours`;
+  const lines = [
+    'A Wagner timecard was submitted.',
+    '',
+    `Employee: ${employee}`,
+    `Employee email: ${timecard.employeeEmail || timecard.workerEmail || ''}`,
+    `Employee ID: ${timecard.employeeCode || ''}`,
+    `Phone: ${timecard.employeePhone || ''}`,
+    `Role: ${timecard.employeeRole || timecard.crewRole || ''}`,
+    `Week: ${week}`,
+    `Total hours: ${formatTimecardHours(totals.minutes)}`,
+    `Entries: ${totals.entryCount || (Array.isArray(timecard.entries) ? timecard.entries.length : 0)}`,
+    `Submitted: ${timecard.submittedAt || ''}`,
+    `Timecard ID: ${timecard.id || ''}`,
+    '',
+    'CSV:',
+    wagnersTimecardCsv(timecard),
+  ];
+  return {
+    subject,
+    text: lines.join('\n'),
+  };
+}
+
+async function sendMailgunWagnersEmail({ to, subject, text }) {
+  const domain = MAILGUN_DOMAIN.replace(/[^a-z0-9.-]/gi, '');
+  const form = new URLSearchParams();
+  form.set('from', WAGNERS_TIMECARD_EMAIL_FROM);
+  form.set('to', to.join(','));
+  form.set('subject', subject);
+  form.set('text', text);
+
+  const response = await fetch(`https://api.mailgun.net/v3/${domain}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${Buffer.from(`api:${MAILGUN_API_KEY}`).toString('base64')}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: form,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`Mailgun rejected the timecard email (${response.status}). ${detail}`.slice(0, 240));
+  }
+  const payload = await response.json().catch(() => ({}));
+  return {
+    provider: 'mailgun',
+    providerId: sanitizeTimecardText(payload && payload.id, 120),
+  };
+}
+
+async function sendResendWagnersEmail({ to, subject, text }) {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: WAGNERS_TIMECARD_EMAIL_FROM,
+      to,
+      subject,
+      text,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`Resend rejected the timecard email (${response.status}). ${detail}`.slice(0, 240));
+  }
+  const payload = await response.json().catch(() => ({}));
+  return {
+    provider: 'resend',
+    providerId: sanitizeTimecardText(payload && payload.id, 120),
+  };
+}
+
+async function sendWagnersTimecardEmail(timecard) {
+  const to = wagnersTimecardEmailRecipients();
+  const attemptedAt = new Date().toISOString();
+  if (!to.length) {
+    return {
+      status: 'disabled',
+      provider: 'none',
+      attemptedAt,
+      error: 'No recipient is configured.',
+    };
+  }
+
+  const canUseMailgun = Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN);
+  const canUseResend = Boolean(RESEND_API_KEY);
+  if (!canUseMailgun && !canUseResend) {
+    console.warn('Wagner timecard email provider is not configured.');
+    return {
+      status: 'not-configured',
+      provider: 'none',
+      to,
+      attemptedAt,
+      error: 'Set MAILGUN_API_KEY and MAILGUN_DOMAIN, or RESEND_API_KEY, to send email.',
+    };
+  }
+
+  const message = buildWagnersTimecardEmail(timecard);
+  try {
+    const providerResult = canUseMailgun
+      ? await sendMailgunWagnersEmail({ ...message, to })
+      : await sendResendWagnersEmail({ ...message, to });
+    return {
+      status: 'sent',
+      to,
+      sentAt: new Date().toISOString(),
+      ...providerResult,
+    };
+  } catch (error) {
+    console.warn('Wagner timecard email failed:', error && error.message ? error.message : error);
+    return {
+      status: 'failed',
+      provider: canUseMailgun ? 'mailgun' : 'resend',
+      to,
+      attemptedAt,
+      error: sanitizeTimecardText(error && error.message || 'Email failed.', 240),
+    };
+  }
 }
 
 function hasKalshiWeatherLabAccess(req, requestUrl) {
@@ -2941,9 +3175,33 @@ async function handleWagnersTimecardsRequest(req, res) {
     return;
   }
 
+  let employeeProfile;
+  try {
+    const existingProfile = await wagnersTimecardsStore.getEmployeeProfile(auth.user.uid);
+    const submittedProfile = body && body.employeeProfile && typeof body.employeeProfile === 'object'
+      ? body.employeeProfile
+      : {};
+    const profileSource = {
+      ...existingProfile,
+      ...submittedProfile,
+      fullName: submittedProfile.fullName || body.workerName || existingProfile && existingProfile.fullName,
+      role: submittedProfile.role || body.crewRole || existingProfile && existingProfile.role,
+    };
+    employeeProfile = await wagnersTimecardsStore.saveEmployeeProfile(
+      auth.user,
+      normalizeWagnersEmployeeProfilePayload(profileSource, auth.user),
+    );
+  } catch (error) {
+    sendJsonResponse(req, res, timecardsErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to save employee account.',
+    });
+    return;
+  }
+
   let payload;
   try {
-    payload = normalizeWagnersTimecardPayload(body, auth.user);
+    payload = normalizeWagnersTimecardPayload(body, auth.user, employeeProfile);
   } catch (error) {
     sendJsonResponse(req, res, timecardsErrorStatus(error), {
       ok: false,
@@ -2954,16 +3212,98 @@ async function handleWagnersTimecardsRequest(req, res) {
 
   try {
     const timecard = await wagnersTimecardsStore.submitTimecard(payload);
+    const emailDelivery = await sendWagnersTimecardEmail(timecard);
+    if (emailDelivery && emailDelivery.status) {
+      Object.assign(timecard, {
+        emailDelivery,
+      });
+      await wagnersTimecardsStore.updateStatus(timecard.id, {
+        emailDelivery,
+      });
+    }
     sendJsonResponse(req, res, 201, {
       ok: true,
       storageEnabled: wagnersTimecardsStore.enabled,
       isAdmin: isWagnersTimecardAdmin(auth.user),
       timecard,
+      emailDelivery,
     });
   } catch (error) {
     sendJsonResponse(req, res, timecardsErrorStatus(error), {
       ok: false,
       error: error && error.message ? error.message : 'Unable to submit timecard.',
+    });
+  }
+}
+
+async function handleWagnersEmployeeProfileRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (!['GET', 'POST'].includes(req.method)) {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  const auth = await authenticateHttpRequest(req, res);
+  if (!auth) {
+    return;
+  }
+
+  if (req.method === 'GET') {
+    try {
+      const profile = await wagnersTimecardsStore.getEmployeeProfile(auth.user.uid);
+      sendJsonResponse(req, res, 200, {
+        ok: true,
+        storageEnabled: wagnersTimecardsStore.enabled,
+        isAdmin: isWagnersTimecardAdmin(auth.user),
+        exists: Boolean(profile),
+        profile,
+      });
+    } catch (error) {
+      sendJsonResponse(req, res, timecardsErrorStatus(error), {
+        ok: false,
+        error: error && error.message ? error.message : 'Unable to load employee account.',
+      });
+    }
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    const statusCode = error.message === 'Request body too large.' ? 413 : 400;
+    sendJsonResponse(req, res, statusCode, {
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  try {
+    const profile = await wagnersTimecardsStore.saveEmployeeProfile(
+      auth.user,
+      normalizeWagnersEmployeeProfilePayload(body, auth.user),
+    );
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      storageEnabled: wagnersTimecardsStore.enabled,
+      isAdmin: isWagnersTimecardAdmin(auth.user),
+      profile,
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, timecardsErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to save employee account.',
     });
   }
 }
@@ -7580,6 +7920,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === '/api/wagners/employee-profile') {
+    await handleWagnersEmployeeProfileRequest(req, res);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/wagners/timecards/me') {
     await handleWagnersMyTimecardsRequest(req, res);
     return;
@@ -7807,6 +8152,7 @@ const server = http.createServer(async (req, res) => {
     songsApi: '/api/songs',
     clipsApi: '/api/clips',
     wagnersTimecardsApi: '/api/wagners/timecards',
+    wagnersEmployeeProfileApi: '/api/wagners/employee-profile',
     liveRoomsApi: '/api/live/rooms',
     kalshiWeatherApi: '/api/kalshi/weather/scan',
     kalshiBitcoinApi: '/api/kalshi/bitcoin/scan',

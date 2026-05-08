@@ -247,6 +247,26 @@ textarea:focus {
   flex: 1 1 180px;
 }
 
+.account-row {
+  align-items: center;
+}
+
+.account-status {
+  flex: 3 1 260px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.account-status.ok {
+  color: var(--accent-dark);
+}
+
+.account-status.error {
+  color: var(--danger);
+}
+
 .entries-list,
 .timecard-list {
   display: grid;
