@@ -513,6 +513,9 @@ function canClientCreditSim(body = {}, amountCents = normalizeSimAdjustmentCents
   if (source === 'space-shooter' && action === 'sim-coin-pickup') {
     return amountCents === 1;
   }
+  if (source === 'galaga' && action === 'sim-coin-pickup') {
+    return amountCents === 100 || amountCents === 1000;
+  }
   return false;
 }
 

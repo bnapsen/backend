@@ -17,8 +17,10 @@ const overlayCopy = document.getElementById("overlay-copy");
 const startButton = document.getElementById("start-button");
 const pauseButton = document.getElementById("pause-button");
 const restartButton = document.getElementById("restart-button");
-const KILLS_PER_SIM_PENNY = 10;
-const SIM_COIN_VALUE_CENTS = 1;
+const KILLS_PER_SIM_DROP = 10;
+const SIM_DOLLAR_VALUE_CENTS = 100;
+const SIM_TEN_DOLLAR_VALUE_CENTS = 1000;
+const SIM_TEN_DOLLAR_DROP_CHANCE = 0.02;
 const SIM_COIN_COLLECT_RADIUS = 42;
 const SIM_COIN_DROP_SPEED = 310;
 const SIM_COIN_LAND_PADDING = 58;
@@ -159,33 +161,49 @@ function playWaveSound() {
   playTone({ frequency: 495, slideTo: 740, type: "triangle", gain: 0.034, duration: 0.14, delay: 0.09 });
 }
 
+function formatSimDropValue(valueCents) {
+  const value = Math.max(0, Math.round(Number(valueCents) || 0)) / 100;
+  return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
+}
+
+function chooseSimDropValueCents() {
+  return Math.random() < SIM_TEN_DOLLAR_DROP_CHANCE
+    ? SIM_TEN_DOLLAR_VALUE_CENTS
+    : SIM_DOLLAR_VALUE_CENTS;
+}
+
 function recordSimCoinPickup(coin, retries = 4) {
-  if (!window.NovaAuth || typeof window.NovaAuth.recordEnemyKillReward !== "function") {
+  if (!window.NovaAuth || typeof window.NovaAuth.adjustSimWallet !== "function") {
     if (retries > 0) {
       window.setTimeout(() => recordSimCoinPickup(coin, retries - 1), 250);
     } else {
-      setStatus("Coin caught locally", "Sign in before collecting to bank SIM on your account.", 2.8);
+      setStatus("Drop caught locally", "Sign in before collecting to bank SIM on your account.", 2.8);
     }
     return;
   }
   if (typeof window.NovaAuth.isSignedIn === "function" && !window.NovaAuth.isSignedIn()) {
-    setStatus("Coin caught locally", "Sign in before collecting to bank SIM on your account.", 2.8);
+    setStatus("Drop caught locally", "Sign in before collecting to bank SIM on your account.", 2.8);
     return;
   }
-  Promise.resolve(window.NovaAuth.recordEnemyKillReward({
-    game: "galaga",
-    killCount: KILLS_PER_SIM_PENNY,
-    score: state.score,
-    runId: state.runId,
+  const amountCents = Math.max(SIM_DOLLAR_VALUE_CENTS, Math.round(Number(coin.valueCents) || SIM_DOLLAR_VALUE_CENTS));
+  Promise.resolve(window.NovaAuth.adjustSimWallet({
+    amountCents,
+    source: "galaga",
+    action: "sim-coin-pickup",
+    note: `Galaga ${formatSimDropValue(amountCents)} SIM drop`,
+    metadata: {
+      coinId: coin.id,
+      drop: coin.isJackpot ? "rare-ten-dollar" : "dollar",
+      game: "galaga",
+      killCount: KILLS_PER_SIM_DROP,
+      killsThisRun: state.killsThisRun,
+      score: state.score,
+      stage: state.stage,
+      runId: state.runId,
+    },
   }))
-    .then(() => {
-      if (typeof window.NovaAuth.flushEnemyKillRewards === "function") {
-        return window.NovaAuth.flushEnemyKillRewards();
-      }
-      return null;
-    })
     .catch(() => {
-      setStatus("Coin pickup queued", "Your SIM wallet will retry the pickup when it syncs.", 2.8);
+      setStatus("Drop pickup queued", "Your SIM wallet will retry the pickup when it syncs.", 2.8);
     });
 }
 
@@ -358,7 +376,7 @@ function createFormation(stage) {
   playWaveSound();
   setStatus(
     `Wave ${state.stage} live`,
-    `Every ${KILLS_PER_SIM_PENNY}th kill drops a SIM coin. Catch it in the lower lane to bank 0.01 SIM.`,
+    `Every ${KILLS_PER_SIM_DROP}th kill drops a $1 SIM coin. Rare drops are worth $10.`,
     3.4,
   );
 }
@@ -377,7 +395,7 @@ function startRun() {
   ensureAudioContext();
   createFormation(state.stage);
   updateHud();
-  setOverlay("Wave 01", "Endless formation", "Every 10th kill drops a SIM coin. Move into it near the bottom to bank 0.01 SIM.", false);
+  setOverlay("Wave 01", "Endless formation", "Every 10th kill drops $1 in SIM. Very rarely, that drop becomes $10.", false);
 }
 
 function restartRun() {
@@ -423,6 +441,8 @@ function spawnEnemyBullet(enemy) {
 function spawnSimCoin(enemy) {
   const targetY = state.height - SIM_COIN_LAND_PADDING;
   const startX = clamp(enemy.x, 32, state.width - 32);
+  const valueCents = chooseSimDropValueCents();
+  const isJackpot = valueCents >= SIM_TEN_DOLLAR_VALUE_CENTS;
   state.simCoins.push({
     id: ++state.coinSerial,
     x: startX,
@@ -430,15 +450,20 @@ function spawnSimCoin(enemy) {
     vx: clamp((state.player.x - enemy.x) * 0.045, -38, 38),
     vy: SIM_COIN_DROP_SPEED + Math.min(state.stage * 16, 190),
     targetY,
-    radius: 13,
-    collectRadius: SIM_COIN_COLLECT_RADIUS,
+    radius: isJackpot ? 16 : 13,
+    collectRadius: SIM_COIN_COLLECT_RADIUS + (isJackpot ? 5 : 0),
     landed: false,
     ttl: SIM_COIN_LANDED_TTL,
     phase: Math.random() * Math.PI * 2,
-    valueCents: SIM_COIN_VALUE_CENTS,
+    valueCents,
+    isJackpot,
   });
   playCoinDropSound();
-  setStatus("SIM coin dropped", "Get under it. It will fall to the lower lane and wait briefly.", 2.6);
+  setStatus(
+    isJackpot ? "Rare $10 SIM drop" : "$1 SIM drop",
+    "Get under it. It will fall to the lower lane and wait briefly.",
+    2.6,
+  );
 }
 
 function spawnBurst(x, y, color, amount = 10) {
@@ -523,7 +548,7 @@ function killEnemy(enemy, bonusDive = false) {
   spawnBurst(enemy.x, enemy.y, colors.fill, 12);
   state.killsThisRun += 1;
   updateHud();
-  if (state.killsThisRun % KILLS_PER_SIM_PENNY === 0) {
+  if (state.killsThisRun % KILLS_PER_SIM_DROP === 0) {
     spawnSimCoin(enemy);
   }
 }
@@ -727,10 +752,15 @@ function coinOverlapsPlayer(coin) {
 function collectSimCoin(coin) {
   coin.collected = true;
   state.score += 25;
-  spawnBurst(coin.x, coin.y, "#ffd166", 14);
+  spawnBurst(coin.x, coin.y, coin.isJackpot ? "#7df9ff" : "#ffd166", coin.isJackpot ? 22 : 14);
   playCoinPickupSound();
   updateHud();
-  setStatus("+0.01 SIM coin caught", `Coin ${coin.id} banked from ${state.killsThisRun} total kills this run.`, 2.8);
+  const valueLabel = formatSimDropValue(coin.valueCents);
+  setStatus(
+    `+${valueLabel} SIM caught`,
+    `Drop ${coin.id} banked from ${state.killsThisRun} total kills this run.`,
+    coin.isJackpot ? 3.6 : 2.8,
+  );
   recordSimCoinPickup(coin);
 }
 
@@ -916,10 +946,14 @@ function drawBullets() {
 function drawSimCoin(coin) {
   const pulse = Math.sin(state.time * 7 + coin.phase);
   const displayY = coin.y + (coin.landed ? pulse * 3 : 0);
+  const glowColor = coin.isJackpot ? "#7df9ff" : "#ffd166";
+  const softGlow = coin.isJackpot ? "rgba(125, 249, 255, 0.24)" : "rgba(255, 209, 102, 0.24)";
+  const trailColor = coin.isJackpot ? "rgba(125, 249, 255, 0.24)" : "rgba(255, 209, 102, 0.22)";
+  const label = formatSimDropValue(coin.valueCents);
 
   ctx.save();
   if (!coin.landed) {
-    ctx.strokeStyle = "rgba(255, 209, 102, 0.22)";
+    ctx.strokeStyle = trailColor;
     ctx.lineWidth = 2;
     ctx.setLineDash([7, 11]);
     ctx.beginPath();
@@ -928,30 +962,38 @@ function drawSimCoin(coin) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.fillStyle = "rgba(255, 209, 102, 0.12)";
+    ctx.fillStyle = coin.isJackpot ? "rgba(125, 249, 255, 0.13)" : "rgba(255, 209, 102, 0.12)";
     ctx.beginPath();
     ctx.ellipse(coin.x, coin.targetY + 14, 34, 8, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
   ctx.translate(coin.x, displayY);
-  ctx.fillStyle = `rgba(255, 209, 102, ${coin.landed ? 0.14 : 0.1})`;
+  ctx.fillStyle = coin.isJackpot
+    ? `rgba(125, 249, 255, ${coin.landed ? 0.16 : 0.11})`
+    : `rgba(255, 209, 102, ${coin.landed ? 0.14 : 0.1})`;
   ctx.beginPath();
   ctx.arc(0, 0, coin.collectRadius + Math.max(0, pulse) * 3, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.shadowBlur = 22;
-  ctx.shadowColor = "#ffd166";
-  ctx.fillStyle = "rgba(255, 209, 102, 0.24)";
+  ctx.shadowColor = glowColor;
+  ctx.fillStyle = softGlow;
   ctx.beginPath();
   ctx.arc(0, 0, coin.radius + 11, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.scale(0.58 + Math.abs(Math.cos(state.time * 5 + coin.phase)) * 0.42, 1);
   const gradient = ctx.createRadialGradient(-4, -5, 3, 0, 0, coin.radius);
-  gradient.addColorStop(0, "#fff3b0");
-  gradient.addColorStop(0.52, "#ffd166");
-  gradient.addColorStop(1, "#b86c16");
+  if (coin.isJackpot) {
+    gradient.addColorStop(0, "#f0fdff");
+    gradient.addColorStop(0.5, "#7df9ff");
+    gradient.addColorStop(1, "#1b7b8f");
+  } else {
+    gradient.addColorStop(0, "#fff3b0");
+    gradient.addColorStop(0.52, "#ffd166");
+    gradient.addColorStop(1, "#b86c16");
+  }
   ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.arc(0, 0, coin.radius, 0, Math.PI * 2);
@@ -963,10 +1005,10 @@ function drawSimCoin(coin) {
   ctx.arc(0, 0, coin.radius - 4, 0, Math.PI * 2);
   ctx.stroke();
   ctx.fillStyle = "#20130a";
-  ctx.font = "800 8px Trebuchet MS, sans-serif";
+  ctx.font = `800 ${coin.isJackpot ? 8 : 9}px Trebuchet MS, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("SIM", 0, 1);
+  ctx.fillText(label, 0, 1);
   ctx.restore();
 }
 
@@ -1169,9 +1211,9 @@ function init() {
   updateHud();
   setStatus(
     "Formation steady",
-    "Every tenth enemy drops a SIM coin. Shoot clean, then move into the lower lane to catch it.",
+    "Every tenth enemy drops $1 in SIM. A very rare drop is worth $10.",
   );
-  setOverlay("Ready", "Endless Galaga", "Every tenth kill drops a SIM coin. Collect it near the bottom to bank 0.01 SIM.", false);
+  setOverlay("Ready", "Endless Galaga", "Every tenth kill drops $1 in SIM. Very rarely, the drop is $10.", false);
   bindKeyboard();
   bindPointerControls();
   bindUi();
