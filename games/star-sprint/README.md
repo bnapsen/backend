@@ -28,6 +28,41 @@ Health check:
 GET /healthz
 ```
 
+## ScrapRunner Online
+
+This backend also serves the realtime rooms and SIM economy APIs for
+`/scraprunner-online.html`.
+
+HTTP API:
+
+- `GET /api/scraprunner/profile` - signed-in profile, wallet, zones, upgrades, missions, achievements
+- `POST /api/scraprunner/upgrade` - spend SIM on a persistent upgrade
+- `POST /api/scraprunner/unlock-zone` - spend SIM to unlock a harder zone
+- `POST /api/scraprunner/daily` - claim the daily SIM reward and streak
+- `POST /api/scraprunner/mission-claim` - claim a completed daily mission
+- `GET /api/scraprunner/leaderboard` - top extracted runs
+
+WebSocket game type:
+
+- `join_room` with `{ "game": "scraprunner", "authToken": "...", "zoneId": "rust-yard" }`
+- `input` with movement, aiming, firing, and boost state
+- `extract` when the player reaches the extraction ring
+
+The client never submits SIM rewards. The server owns the room simulation,
+calculates rewards from authoritative scrap/kills/time values, clamps payout,
+and writes the SIM wallet transaction after a valid extraction.
+
+Environment starter:
+
+```bash
+cp .env.example .env
+```
+
+Set `NOVA_AUTH_REQUIRED=false` in `.env` for memory-backed local testing without
+Firebase. Keep the production default `NOVA_AUTH_REQUIRED=true` and set the
+Firebase/Google Cloud values so AP account sign-in, Firestore profiles, and SIM
+wallet credits persist across deploys.
+
 ## Deploy notes
 
 - Public page path: `/games/star-sprint/`

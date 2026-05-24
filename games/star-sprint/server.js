@@ -17,8 +17,10 @@ const MiniPool = require('./mini-pool-core.js');
 const ArcadeChat = require('./arcade-chat-core.js');
 const CarSoccer = require('./car-soccer-core.js');
 const ZombieSiege = require('./zombie-siege-core.js');
+const ScrapRunner = require('./scraprunner-core.js');
 const { createArcadeChatStore } = require('./arcade-chat-store.js');
 const { createSimWalletStore } = require('./sim-wallet-store.js');
+const { createScrapRunnerStore } = require('./scraprunner-store.js');
 const { createSimBitcoinPaperStore, kalshiFeeCents } = require('./sim-bitcoin-paper-store.js');
 const { createReviewsStore } = require('./reviews-store.js');
 const { createWagnersTimecardsStore } = require('./wagners-timecards-store.js');
@@ -266,6 +268,9 @@ const clipsStore = createClipsStore({
   maxClips: MAX_CLIPS,
   maxVisibleClips: MAX_VISIBLE_CLIPS,
 });
+const scrapRunnerStore = createScrapRunnerStore({
+  projectId: FIREBASE_PROJECT_ID,
+});
 const CHESS_TIME_CONTROLS = Object.freeze({
   untimed: {
     id: 'untimed',
@@ -342,6 +347,13 @@ const GAME_DEFS = {
     maxPlayers: ZombieSiege.MAX_PLAYERS,
     createGameState: () => ZombieSiege.createGameState(),
     cloneState: (game) => ZombieSiege.cloneState(game),
+  },
+  scraprunner: {
+    id: 'scraprunner',
+    title: 'ScrapRunner Online',
+    maxPlayers: ScrapRunner.MAX_PLAYERS,
+    createGameState: (options = {}) => ScrapRunner.createGameState(options),
+    cloneState: (game) => ScrapRunner.cloneState(game),
   },
   blackjack: {
     id: 'blackjack',
@@ -420,7 +432,7 @@ function corsHeaders(req) {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Admin-Token, X-Kalshi-Lab-Token, X-Kalshi-Trade-Token',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Admin-Token, X-Kalshi-Lab-Token, X-Kalshi-Trade-Token, X-ScrapRunner-Dev-User, X-ScrapRunner-Dev-Name',
     Vary: 'Origin',
   };
 }
@@ -831,6 +843,261 @@ async function handleSimEnemyKillRewardRequest(req, res) {
   }
 }
 
+function scrapRunnerErrorStatus(error) {
+  const code = String(error && error.code || '');
+  if (code === 'scraprunner/mission-not-found') return 404;
+  if (code === 'scraprunner/upgrade-maxed' || code === 'scraprunner/zone-unlocked') return 409;
+  if (code.startsWith('scraprunner/')) return 400;
+  return simWalletErrorStatus(error);
+}
+
+async function readSignedScrapRunnerRequest(req, res, { methods = ['GET'] } = {}) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return null;
+  }
+  if (!methods.includes(req.method)) {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return null;
+  }
+  const auth = await authenticateHttpRequest(req, res, { required: NOVA_AUTH_REQUIRED });
+  if (!auth) {
+    return null;
+  }
+  const user = auth.user || scrapRunnerDevUser({
+    devUser: requestHeader(req, 'x-scraprunner-dev-user'),
+    devName: requestHeader(req, 'x-scraprunner-dev-name'),
+  });
+  if (!user) {
+    sendJsonResponse(req, res, 401, {
+      ok: false,
+      error: 'Sign in is required.',
+    });
+    return null;
+  }
+  auth.user = user;
+  if (req.method === 'GET') {
+    return { auth, body: {} };
+  }
+  try {
+    return {
+      auth,
+      body: await readJsonBody(req),
+    };
+  } catch (error) {
+    sendJsonResponse(req, res, error.message === 'Request body too large.' ? 413 : 400, {
+      ok: false,
+      error: error.message || 'Invalid JSON body.',
+    });
+    return null;
+  }
+}
+
+async function handleScrapRunnerProfileRequest(req, res) {
+  const signed = await readSignedScrapRunnerRequest(req, res, { methods: ['GET'] });
+  if (!signed) return;
+  try {
+    const profile = await scrapRunnerStore.getOrCreateProfile(signed.auth.user);
+    const wallet = await simWalletStore.getOrCreateWallet(signed.auth.user);
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      profile,
+      wallet,
+      store: {
+        enabled: scrapRunnerStore.enabled,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, scrapRunnerErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to load ScrapRunner profile.',
+    });
+  }
+}
+
+async function handleScrapRunnerUpgradeRequest(req, res) {
+  const signed = await readSignedScrapRunnerRequest(req, res, { methods: ['POST'] });
+  if (!signed) return;
+  const upgradeId = String(signed.body && signed.body.upgradeId || '').trim();
+  const def = ScrapRunner.UPGRADE_BY_ID[upgradeId];
+  if (!def) {
+    sendJsonResponse(req, res, 400, { ok: false, error: 'Unknown ScrapRunner upgrade.' });
+    return;
+  }
+
+  try {
+    const current = await scrapRunnerStore.getOrCreateProfile(signed.auth.user);
+    const level = Math.max(0, Math.floor(Number(current.upgrades && current.upgrades[upgradeId]) || 0));
+    if (level >= def.maxLevel) {
+      sendJsonResponse(req, res, 409, { ok: false, error: 'That upgrade is already maxed.' });
+      return;
+    }
+    const costCents = ScrapRunner.upgradeCostCents(upgradeId, level);
+    const wallet = await simWalletStore.adjustWallet(signed.auth.user, {
+      amountCents: -costCents,
+      source: 'scraprunner-online',
+      action: 'upgrade-purchase',
+      note: `ScrapRunner ${def.name} upgrade`,
+      metadata: {
+        game: 'scraprunner',
+        upgradeId,
+        nextLevel: level + 1,
+      },
+    });
+    const purchase = await scrapRunnerStore.purchaseUpgrade(signed.auth.user, upgradeId);
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      profile: purchase.profile,
+      wallet,
+      purchase: {
+        upgradeId,
+        costCents,
+        level: level + 1,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, scrapRunnerErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to buy that upgrade.',
+    });
+  }
+}
+
+async function handleScrapRunnerZoneUnlockRequest(req, res) {
+  const signed = await readSignedScrapRunnerRequest(req, res, { methods: ['POST'] });
+  if (!signed) return;
+  const zoneId = ScrapRunner.normalizeZoneId(signed.body && signed.body.zoneId);
+  const zone = ScrapRunner.ZONE_BY_ID[zoneId];
+  try {
+    const current = await scrapRunnerStore.getOrCreateProfile(signed.auth.user);
+    if (current.unlockedZones.includes(zoneId)) {
+      sendJsonResponse(req, res, 409, { ok: false, error: 'That zone is already unlocked.' });
+      return;
+    }
+    const costCents = Math.max(0, Math.round(Number(zone.unlockCostCents) || 0));
+    const wallet = await simWalletStore.adjustWallet(signed.auth.user, {
+      amountCents: -costCents,
+      source: 'scraprunner-online',
+      action: 'zone-unlock',
+      note: `ScrapRunner ${zone.name} unlock`,
+      metadata: {
+        game: 'scraprunner',
+        zoneId,
+      },
+    });
+    const unlock = await scrapRunnerStore.unlockZone(signed.auth.user, zoneId);
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      profile: unlock.profile,
+      wallet,
+      unlock: {
+        zoneId,
+        costCents,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, scrapRunnerErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to unlock that zone.',
+    });
+  }
+}
+
+async function handleScrapRunnerDailyRequest(req, res) {
+  const signed = await readSignedScrapRunnerRequest(req, res, { methods: ['POST'] });
+  if (!signed) return;
+  try {
+    const claim = await scrapRunnerStore.claimDaily(signed.auth.user);
+    const wallet = await simWalletStore.adjustWallet(signed.auth.user, {
+      amountCents: claim.rewardCents,
+      source: 'scraprunner-online',
+      action: 'daily-reward',
+      note: 'ScrapRunner daily reward',
+      metadata: {
+        game: 'scraprunner',
+        dayKey: claim.dayKey,
+      },
+    });
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      profile: claim.profile,
+      wallet,
+      rewardCents: claim.rewardCents,
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, scrapRunnerErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to claim daily reward.',
+    });
+  }
+}
+
+async function handleScrapRunnerMissionClaimRequest(req, res) {
+  const signed = await readSignedScrapRunnerRequest(req, res, { methods: ['POST'] });
+  if (!signed) return;
+  try {
+    const claim = await scrapRunnerStore.claimMission(signed.auth.user, signed.body && signed.body.missionId);
+    const wallet = await simWalletStore.adjustWallet(signed.auth.user, {
+      amountCents: claim.rewardCents,
+      source: 'scraprunner-online',
+      action: 'mission-reward',
+      note: 'ScrapRunner mission reward',
+      metadata: {
+        game: 'scraprunner',
+        missionId: claim.missionId,
+      },
+    });
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      profile: claim.profile,
+      wallet,
+      rewardCents: claim.rewardCents,
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, scrapRunnerErrorStatus(error), {
+      ok: false,
+      error: error && error.message ? error.message : 'Unable to claim mission reward.',
+    });
+  }
+}
+
+async function handleScrapRunnerLeaderboardRequest(req, res, requestUrl) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+  if (req.method !== 'GET') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+  try {
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      runs: await scrapRunnerStore.leaderboard(requestUrl.searchParams.get('limit') || 20),
+      store: {
+        enabled: scrapRunnerStore.enabled,
+      },
+    });
+  } catch (error) {
+    sendJsonResponse(req, res, 500, {
+      ok: false,
+      error: 'Unable to load ScrapRunner leaderboard.',
+    });
+  }
+}
+
 function firebaseAuthVerifier() {
   if (!FIREBASE_ADMIN_AUTH_ENABLED) {
     return null;
@@ -879,6 +1146,38 @@ function normalizeAuthUser(decodedToken) {
     displayName: name || (email ? email.split('@')[0] : 'AP member'),
     picture: String(decodedToken && decodedToken.picture || '').trim(),
     provider: String(decodedToken && decodedToken.firebase && decodedToken.firebase.sign_in_provider || '').trim(),
+  };
+}
+
+function scrapRunnerDevUser(source = {}) {
+  if (NOVA_AUTH_REQUIRED) {
+    return null;
+  }
+  const rawUid = String(
+    source.devUser
+    || source.devUserId
+    || source.uid
+    || 'local-dev',
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.:-]/g, '-')
+    .slice(0, 80) || 'local-dev';
+  const rawName = String(
+    source.devName
+    || source.displayName
+    || source.name
+    || 'Local Runner',
+  )
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 80) || 'Local Runner';
+  return {
+    uid: `scraprunner-dev:${rawUid}`,
+    email: '',
+    displayName: rawName,
+    picture: '',
+    provider: 'scraprunner-local-dev',
   };
 }
 
@@ -5606,6 +5905,9 @@ function normalizeGameType(raw) {
   if (raw === 'zombie-siege' || raw === 'zombie' || raw === 'zombies') {
     return 'zombie-siege';
   }
+  if (raw === 'scraprunner' || raw === 'scraprunner-online' || raw === 'scrap-runner') {
+    return 'scraprunner';
+  }
   if (raw === 'mini-pool' || raw === 'pool') {
     return 'mini-pool';
   }
@@ -6307,6 +6609,12 @@ function snapshot(room, viewerId) {
       roster: listPlayers(room),
     };
   }
+  if (room.gameType === 'scraprunner') {
+    return {
+      ...base,
+      roster: listPlayers(room),
+    };
+  }
   if (room.gameType === 'car-soccer') {
     return {
       ...base,
@@ -6380,6 +6688,20 @@ function addPlayerToGame(room, player) {
     return result;
   }
 
+  if (room.gameType === 'scraprunner') {
+    const result = ScrapRunner.addPlayer(room.game, {
+      id: player.id,
+      name: player.name,
+      color: player.color,
+      profile: player.scrapRunnerProfile || {},
+    });
+    if (result) {
+      player.color = result.color;
+      player.seat = result.seat;
+    }
+    return result;
+  }
+
   if (room.gameType === 'poker') {
     const result = Poker.addPlayer(room.game, {
       id: player.id,
@@ -6429,6 +6751,35 @@ async function handleJoin(socket, payload) {
   const source = payload && typeof payload === 'object' ? payload : {};
   const mode = source.mode === 'join' ? 'join' : 'host';
   const gameType = normalizeGameType(source.game);
+  let scrapRunnerProfile = null;
+  let scrapRunnerZoneId = 'rust-yard';
+  if (gameType === 'scraprunner') {
+    const authUser = await authenticateSocketPayload(socket, source, {
+      required: NOVA_AUTH_REQUIRED,
+    });
+    const scrapRunnerUser = authUser || scrapRunnerDevUser({
+      devUser: source.devUser || source.devUserId,
+      devName: source.devName || source.name,
+    });
+    if (scrapRunnerUser) {
+      socket.authUser = scrapRunnerUser;
+    }
+    if (!scrapRunnerUser) {
+      sendError(socket, 'Sign in is required.');
+      return;
+    }
+    try {
+      scrapRunnerProfile = await scrapRunnerStore.getOrCreateProfile(scrapRunnerUser);
+    } catch (error) {
+      sendError(socket, error && error.message ? error.message : 'Unable to load your ScrapRunner profile.');
+      return;
+    }
+    scrapRunnerZoneId = ScrapRunner.normalizeZoneId(source.zoneId || source.zone);
+    if (mode === 'host' && !scrapRunnerProfile.unlockedZones.includes(scrapRunnerZoneId)) {
+      sendError(socket, 'Unlock that ScrapRunner zone from the shop before hosting it.');
+      return;
+    }
+  }
   const requestedBackgammonStakeCents = gameType === 'backgammon'
     ? backgammonStakeCentsFromPayload(source)
     : 0;
@@ -6436,12 +6787,21 @@ async function handleJoin(socket, payload) {
     timeControlPreset: normalizeChessTimeControlPreset(source.timeControlPreset),
     variantId: MiniPool.normalizeVariantId(source.variantId),
     backgammonStakeCents: requestedBackgammonStakeCents,
+    zoneId: scrapRunnerZoneId,
   });
   if (lookup.error) {
     sendError(socket, lookup.error);
     return;
   }
   const room = lookup.room;
+  if (
+    room.gameType === 'scraprunner'
+    && scrapRunnerProfile
+    && !scrapRunnerProfile.unlockedZones.includes(room.game.zone.id)
+  ) {
+    sendError(socket, 'Unlock this ScrapRunner zone before joining that room.');
+    return;
+  }
   const roomWagerStakeCents = room.gameType === 'backgammon' && room.backgammonWager
     ? normalizeBackgammonStakeCents(room.backgammonWager.stakeCents)
     : 0;
@@ -6487,6 +6847,7 @@ async function handleJoin(socket, payload) {
     socket,
     authUser: socket.authUser || null,
     walletCents: blackjackWallet ? Math.max(0, Math.round(Number(blackjackWallet.balanceCents) || 0)) : null,
+    scrapRunnerProfile,
     voiceJoined: false,
     voiceMuted: false,
     voicePreset: 'Clean Comms',
@@ -6495,7 +6856,7 @@ async function handleJoin(socket, payload) {
   if (!addPlayerToGame(room, player)) {
     sendError(socket, room.gameType === 'poker' || room.gameType === 'blackjack'
       ? 'That table is full.'
-      : room.gameType === 'space-shooter' || room.gameType === 'zombie-siege'
+      : room.gameType === 'space-shooter' || room.gameType === 'zombie-siege' || room.gameType === 'scraprunner'
         ? 'That squad room is full.'
         : 'No seat is available in that room.');
     return;
@@ -6549,6 +6910,10 @@ async function handleJoin(socket, payload) {
       ? room.players.size === 1
         ? `${player.name} is in the yard. Share the room and brace for wave one.`
         : `${player.name} joined the zombie siege room.`
+    : room.gameType === 'scraprunner'
+      ? room.players.size === 1
+        ? `${player.name} opened ${room.game.zone.name}. Share the room and start hauling scrap.`
+        : `${player.name} joined the salvage crew.`
     : room.players.size === 1
       ? `${player.name} is ready. Share the invite to start playing.`
       : `${player.name} joined. Match ready.`;
@@ -6589,6 +6954,10 @@ async function handleMove(socket, payload) {
   }
   if (room.gameType === 'zombie-siege') {
     sendError(socket, 'Zombie Siege uses realtime input, not turn-based moves.');
+    return;
+  }
+  if (room.gameType === 'scraprunner') {
+    sendError(socket, 'ScrapRunner uses realtime input, not turn-based moves.');
     return;
   }
   if (room.gameType === 'car-soccer') {
@@ -7660,11 +8029,68 @@ function handleInput(socket, payload) {
     ZombieSiege.setPlayerInput(room.game, player.id, payload && payload.input);
     return;
   }
+  if (room.gameType === 'scraprunner') {
+    ScrapRunner.setPlayerInput(room.game, player.id, payload && payload.input);
+    return;
+  }
   if (room.gameType === 'car-soccer') {
     CarSoccer.setPlayerInput(room.game, player.id, payload && payload.input);
     return;
   }
   sendError(socket, 'Realtime input is only used in live action rooms.');
+}
+
+async function handleExtract(socket) {
+  const context = requirePlayer(socket);
+  if (!context) {
+    return;
+  }
+
+  const { room, player } = context;
+  if (room.gameType !== 'scraprunner') {
+    sendError(socket, 'Extraction is only used in ScrapRunner rooms.');
+    return;
+  }
+  if (!player.authUser || !player.authUser.uid) {
+    sendError(socket, 'Sign in to your AP account before banking ScrapRunner SIM.');
+    return;
+  }
+
+  const result = ScrapRunner.tryExtract(room.game, player.id);
+  if (!result.ok) {
+    sendError(socket, result.error || 'Unable to extract right now.');
+    return;
+  }
+
+  try {
+    const wallet = await simWalletStore.adjustWallet(player.authUser, {
+      amountCents: result.run.rewardCents,
+      source: 'scraprunner-online',
+      action: 'run-extract',
+      note: `${result.run.zoneName} ScrapRunner extraction`,
+      metadata: {
+        game: 'scraprunner',
+        runId: result.run.runId,
+        zoneId: result.run.zoneId,
+        scrap: result.run.scrap,
+        kills: result.run.kills,
+        score: result.run.score,
+        timeLeftSeconds: result.run.timeLeftSeconds,
+      },
+    });
+    const record = await scrapRunnerStore.recordRun(player.authUser, result.run);
+    send(socket, {
+      type: 'scraprunner-reward',
+      run: record.run,
+      profile: record.profile,
+      wallet,
+    });
+    broadcastState(room, `${player.name} extracted and banked ${(result.run.rewardCents / 100).toFixed(2)} SIM.`);
+  } catch (error) {
+    console.error('ScrapRunner extraction reward failed:', error && error.message ? error.message : error);
+    sendError(socket, error && error.message ? error.message : 'Unable to bank that ScrapRunner run.');
+    broadcastState(room, `${player.name} extracted, but the SIM wallet could not be updated.`);
+  }
 }
 
 function handleShot(socket, payload) {
@@ -7792,6 +8218,9 @@ async function handleRestart(socket) {
   } else if (room.gameType === 'zombie-siege') {
     ZombieSiege.resetMatch(room.game);
     room.lastTickAt = Date.now();
+  } else if (room.gameType === 'scraprunner') {
+    ScrapRunner.resetMatch(room.game);
+    room.lastTickAt = Date.now();
   } else if (room.gameType === 'car-soccer') {
     CarSoccer.resetMatch(room.game);
     room.lastTickAt = Date.now();
@@ -7826,6 +8255,8 @@ async function handleRestart(socket) {
       ? `${player.name} launched a fresh squad run.`
       : room.gameType === 'zombie-siege'
         ? `${player.name} restarted the zombie siege run.`
+      : room.gameType === 'scraprunner'
+        ? `${player.name} restarted the salvage run.`
       : room.gameType === 'car-soccer'
         ? `${player.name} reset the arena kickoff.`
       : room.gameType === 'poker'
@@ -7870,6 +8301,9 @@ async function handleDisconnect(socket) {
   } else if (room.gameType === 'zombie-siege') {
     ZombieSiege.removePlayer(room.game, playerId);
     room.lastTickAt = Date.now();
+  } else if (room.gameType === 'scraprunner') {
+    ScrapRunner.removePlayer(room.game, playerId);
+    room.lastTickAt = Date.now();
   } else if (room.gameType === 'car-soccer') {
     CarSoccer.removePlayer(room.game, playerId);
     room.lastTickAt = Date.now();
@@ -7896,6 +8330,8 @@ async function handleDisconnect(socket) {
       ? `${player.name} disconnected. The room stays open for a new wingmate.`
       : room.gameType === 'zombie-siege'
         ? `${player.name} disconnected. The yard stays open for another survivor.`
+      : room.gameType === 'scraprunner'
+        ? `${player.name} disconnected. The salvage room stays open for another runner.`
       : room.gameType === 'car-soccer'
         ? `${player.name} disconnected. The Turbo Arena room stays open for a new driver.`
       : room.gameType === 'poker'
@@ -7942,6 +8378,13 @@ function tickRealtimeRooms() {
       const elapsed = Math.max(16, Math.min(120, now - room.lastTickAt));
       room.lastTickAt = now;
       ZombieSiege.step(room.game, elapsed / 1000);
+      broadcastState(room);
+      continue;
+    }
+    if (room.gameType === 'scraprunner' && room.players.size > 0) {
+      const elapsed = Math.max(16, Math.min(120, now - room.lastTickAt));
+      room.lastTickAt = now;
+      ScrapRunner.step(room.game, elapsed / 1000);
       broadcastState(room);
       continue;
     }
@@ -8082,6 +8525,36 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/sim/bitcoin-15m/state') {
     await handleSimBitcoinPaperStateRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/scraprunner/profile') {
+    await handleScrapRunnerProfileRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/scraprunner/upgrade') {
+    await handleScrapRunnerUpgradeRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/scraprunner/unlock-zone') {
+    await handleScrapRunnerZoneUnlockRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/scraprunner/daily') {
+    await handleScrapRunnerDailyRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/scraprunner/mission-claim') {
+    await handleScrapRunnerMissionClaimRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/scraprunner/leaderboard') {
+    await handleScrapRunnerLeaderboardRequest(req, res, requestUrl);
     return;
   }
 
@@ -8264,6 +8737,7 @@ const server = http.createServer(async (req, res) => {
     wagnersTimecardsApi: '/api/wagners/timecards',
     wagnersEmployeeProfileApi: '/api/wagners/employee-profile',
     liveRoomsApi: '/api/live/rooms',
+    scrapRunnerApi: '/api/scraprunner/profile',
     kalshiWeatherApi: '/api/kalshi/weather/scan',
     kalshiBitcoinApi: '/api/kalshi/bitcoin/scan',
   });
@@ -8380,6 +8854,12 @@ wss.on('connection', (socket) => {
         break;
       case 'input':
         handleInput(socket, payload);
+        break;
+      case 'extract':
+        handleExtract(socket).catch((error) => {
+          console.error('Extract failed:', error.message);
+          sendError(socket, 'Unable to extract right now.');
+        });
         break;
       case 'restart':
         handleRestart(socket).catch((error) => {

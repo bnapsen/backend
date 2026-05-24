@@ -5,7 +5,8 @@
   "description": "WebSocket backend for Neon Crown Chess multiplayer",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test:scraprunner": "node scraprunner-core.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1041.0",

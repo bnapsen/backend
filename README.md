@@ -1,3 +1,60 @@
+# AP Advantage Player Website
+
+This repository powers the static BNAPSN/AP Advantage Player website plus the
+shared Node/WebSocket backend used by live games and SIM wallet features.
+
+## ScrapRunner Online
+
+ScrapRunner Online is a top-down multiplayer salvage runner at
+`/scraprunner-online.html`. Players sign in with the existing AP account widget,
+host or join room-code runs, collect scrap, fight drones, extract before the
+timer ends, and bank earned SIM into the same website wallet used elsewhere on
+the site.
+
+Key files:
+
+- `scraprunner-online.html` - public game page
+- `scraprunner-cover.svg` - homepage thumbnail
+- `games/scraprunner-online/game.js` - canvas client, controls, UI, WebSocket
+- `games/scraprunner-online/style.css` - arcade interface styling
+- `games/star-sprint/scraprunner-core.js` - shared authoritative game/economy logic
+- `games/star-sprint/scraprunner-store.js` - profile, missions, achievements, leaderboard persistence
+- `games/star-sprint/scraprunner-core.test.js` - reward/extraction sanity tests
+- `games/star-sprint/scraprunner-schema.md` - Firestore shape and SQL upgrade path
+
+Run locally:
+
+```bash
+cd games/star-sprint
+npm install
+copy .env.example .env
+npm start
+```
+
+In another terminal from the repo root:
+
+```bash
+python -m http.server 8000
+```
+
+Open `http://localhost:8000/scraprunner-online.html`. For local play without
+Firebase, set `NOVA_AUTH_REQUIRED=false` in `games/star-sprint/.env`; the page
+uses a guarded local-dev SIM account backed by memory stores. Production SIM
+earning keeps the default `NOVA_AUTH_REQUIRED=true` and requires Firebase/AP
+account environment variables on the backend.
+
+ScrapRunner tests:
+
+```bash
+cd games/star-sprint
+npm run test:scraprunner
+```
+
+Server-side economy note: the browser sends input and extraction requests, not
+coin amounts. The backend advances the multiplayer run state, validates that the
+player reached the extraction zone, calculates a bounded reward from server
+state, and then credits the AP account's SIM wallet.
+
 # Multiplayer Town Builder (MVP)
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/bnapsen/backend)
