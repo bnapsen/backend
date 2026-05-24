@@ -475,10 +475,12 @@ function createScrapRunnerStore({
     const snapshot = await firestore
       .collection(runCollectionName)
       .orderBy('rewardCents', 'desc')
-      .orderBy('score', 'desc')
-      .limit(count)
+      .limit(Math.min(MAX_LEADERBOARD, Math.max(count, 20)))
       .get();
-    return snapshot.docs.map((doc) => publicRun(doc.data()));
+    return snapshot.docs
+      .map((doc) => publicRun(doc.data()))
+      .sort((a, b) => b.rewardCents - a.rewardCents || b.score - a.score)
+      .slice(0, count);
   }
 
   return {
