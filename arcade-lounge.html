@@ -24,7 +24,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="games/arcade-lounge/style.css?v=20260328j" />
+  <link rel="stylesheet" href="games/arcade-lounge/style.css?v=20260526a" />
 </head>
 <body>
   <div class="page-shell">
@@ -220,6 +220,81 @@
             <button id="resetVoiceBtn" class="secondary" type="button">Reset clean</button>
           </div>
           <p class="mini-status voice-preview-status" id="voicePreviewStatus">Sample your processed mic locally before you join voice.</p>
+
+          <div class="music-deck" aria-labelledby="musicDeckTitle">
+            <div class="music-deck-head">
+              <div>
+                <p class="label">Music Deck</p>
+                <h2 id="musicDeckTitle">Mix music into game chat</h2>
+              </div>
+              <p class="mini-status" id="musicDeckStatus">Load a music file, then start game output.</p>
+            </div>
+
+            <label class="music-file-field">
+              <span>Music file</span>
+              <input id="musicFileInput" type="file" accept="audio/*" />
+            </label>
+            <audio id="musicPlayer" preload="metadata"></audio>
+
+            <div class="music-track-row">
+              <strong id="musicTrackName">No track loaded</strong>
+              <span id="musicTimeText">0:00 / 0:00</span>
+            </div>
+
+            <div class="voice-meter-block music-meter-block">
+              <div class="voice-meter-head">
+                <span>Music output</span>
+                <strong id="musicMeterText">Idle</strong>
+              </div>
+              <div class="voice-meter music-meter">
+                <span id="musicMeterFill"></span>
+              </div>
+            </div>
+
+            <div class="music-transport">
+              <button id="musicPlayBtn" class="secondary" type="button">Play music</button>
+              <button id="gameOutputBtn" class="primary" type="button">Start game output</button>
+            </div>
+
+            <div class="music-slider-grid">
+              <label class="voice-slider">
+                <div class="voice-slider-head">
+                  <span>Music to game</span>
+                  <strong id="musicGameValue">42%</strong>
+                </div>
+                <input id="musicGameRange" type="range" min="0" max="100" step="1" value="42" />
+              </label>
+              <label class="voice-slider">
+                <div class="voice-slider-head">
+                  <span>Music in headphones</span>
+                  <strong id="musicMonitorValue">36%</strong>
+                </div>
+                <input id="musicMonitorRange" type="range" min="0" max="100" step="1" value="36" />
+              </label>
+            </div>
+
+            <div class="music-toggle-grid">
+              <label class="music-toggle">
+                <input id="musicToGameToggle" type="checkbox" checked />
+                <span>Send music to game output</span>
+              </label>
+              <label class="music-toggle">
+                <input id="musicLoopToggle" type="checkbox" />
+                <span>Loop track</span>
+              </label>
+            </div>
+
+            <div class="music-output-row">
+              <label>
+                <span>Game output device</span>
+                <select id="gameOutputSelect">
+                  <option value="">Default speakers or headphones</option>
+                </select>
+              </label>
+              <button id="refreshOutputDevicesBtn" class="secondary" type="button">Refresh devices</button>
+            </div>
+            <p class="music-routing-note">For Marvel Rivals, choose CABLE Input or Voicemeeter Input here, then choose the paired output as the game microphone.</p>
+          </div>
         </section>
       </aside>
 
@@ -346,7 +421,7 @@
 
   <div id="voiceAudioHost" class="voice-audio-host" aria-hidden="true"></div>
 
-  <script src="games/arcade-lounge/game.js?v=20260503a"></script>
+  <script src="games/arcade-lounge/game.js?v=20260526a"></script>
   <script src="nova-auth.js?v=20260503d" defer></script>
 </body>
 </html>

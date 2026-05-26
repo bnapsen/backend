@@ -763,6 +763,144 @@ button:disabled {
   color: #ff9b9b;
 }
 
+.mini-status[data-tone="ready"] {
+  color: var(--good);
+}
+
+.mini-status[data-tone="live"] {
+  color: var(--accent);
+}
+
+.mini-status[data-tone="error"] {
+  color: #ff9b9b;
+}
+
+.music-deck {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.music-deck-head,
+.music-track-row,
+.music-transport,
+.music-output-row {
+  display: flex;
+  gap: 10px;
+}
+
+.music-deck-head,
+.music-track-row {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.music-file-field input[type="file"] {
+  padding: 0.8rem;
+}
+
+.music-file-field input[type="file"]::file-selector-button {
+  margin-right: 10px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0.62rem 0.8rem;
+  color: #06130e;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  font-weight: 800;
+}
+
+.music-track-row {
+  min-height: 32px;
+  padding: 0 2px;
+}
+
+.music-track-row strong,
+.music-track-row span {
+  min-width: 0;
+}
+
+.music-track-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.music-track-row span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.music-meter span {
+  background: linear-gradient(90deg, rgba(255, 191, 114, 0.94), rgba(126, 243, 220, 0.92));
+}
+
+.music-transport {
+  flex-wrap: wrap;
+}
+
+.music-transport button {
+  flex: 1 1 170px;
+}
+
+#gameOutputBtn[data-state="live"] {
+  color: #04140f;
+  background: linear-gradient(135deg, var(--accent), #dffcf3);
+  box-shadow: 0 16px 34px rgba(126, 243, 220, 0.18);
+}
+
+.music-slider-grid,
+.music-toggle-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.music-slider-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.music-toggle-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.music-toggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.music-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.music-output-row {
+  align-items: end;
+}
+
+.music-output-row label {
+  flex: 1 1 220px;
+}
+
+.music-output-row button {
+  flex: 0 0 auto;
+}
+
+.music-routing-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .voice-btn[data-state="live"] {
   color: #04140f;
   background: linear-gradient(135deg, var(--accent), #dffcf3);
@@ -953,7 +1091,13 @@ button:disabled {
   }
 
   .voice-preset-grid,
-  .voice-meter-stack {
+  .voice-meter-stack,
+  .music-slider-grid,
+  .music-toggle-grid {
     grid-template-columns: 1fr;
+  }
+
+  .music-output-row {
+    display: grid;
   }
 }

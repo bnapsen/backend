@@ -6,6 +6,11 @@
     serverUrl: 'novaArcadeLounge.serverUrl',
     roomCode: 'novaArcadeLounge.roomCode',
     voiceProfile: 'novaArcadeLounge.voiceProfile',
+    musicGameVolume: 'novaArcadeLounge.musicGameVolume',
+    musicMonitorVolume: 'novaArcadeLounge.musicMonitorVolume',
+    musicToGame: 'novaArcadeLounge.musicToGame',
+    musicLoop: 'novaArcadeLounge.musicLoop',
+    gameOutputDevice: 'novaArcadeLounge.gameOutputDevice',
   };
   const PROD_SERVER_URL = 'wss://nova-arcade-backend-1000121513328.us-central1.run.app';
   const PUBLIC_ROOM_CODE = 'ARCADECHAT';
@@ -123,6 +128,23 @@
       sampleTimeout: 0,
       sampleToken: 0,
     },
+    musicDeck: {
+      objectUrl: '',
+      audioCtx: null,
+      source: null,
+      gameGain: null,
+      monitorGain: null,
+      analyser: null,
+      destination: null,
+      progressTimer: 0,
+      outputAudio: null,
+      outputDeviceId: '',
+      outputActive: false,
+      gameVolume: 42,
+      monitorVolume: 36,
+      toGame: true,
+      loop: false,
+    },
   };
 
   const ui = {
@@ -172,6 +194,23 @@
     sampleVoiceBtn: document.getElementById('sampleVoiceBtn'),
     randomVoiceBtn: document.getElementById('randomVoiceBtn'),
     resetVoiceBtn: document.getElementById('resetVoiceBtn'),
+    musicDeckStatus: document.getElementById('musicDeckStatus'),
+    musicFileInput: document.getElementById('musicFileInput'),
+    musicPlayer: document.getElementById('musicPlayer'),
+    musicTrackName: document.getElementById('musicTrackName'),
+    musicTimeText: document.getElementById('musicTimeText'),
+    musicMeterFill: document.getElementById('musicMeterFill'),
+    musicMeterText: document.getElementById('musicMeterText'),
+    musicPlayBtn: document.getElementById('musicPlayBtn'),
+    gameOutputBtn: document.getElementById('gameOutputBtn'),
+    musicGameRange: document.getElementById('musicGameRange'),
+    musicMonitorRange: document.getElementById('musicMonitorRange'),
+    musicGameValue: document.getElementById('musicGameValue'),
+    musicMonitorValue: document.getElementById('musicMonitorValue'),
+    musicToGameToggle: document.getElementById('musicToGameToggle'),
+    musicLoopToggle: document.getElementById('musicLoopToggle'),
+    gameOutputSelect: document.getElementById('gameOutputSelect'),
+    refreshOutputDevicesBtn: document.getElementById('refreshOutputDevicesBtn'),
     sendBtn: document.getElementById('sendBtn'),
     composerHint: document.getElementById('composerHint'),
     gameSelect: document.getElementById('gameSelect'),
@@ -235,6 +274,33 @@
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
+  }
+
+  function clampPercent(value, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) ? clamp(Math.round(number), 0, 100) : fallback;
+  }
+
+  function readStoredPercent(key, fallback) {
+    return clampPercent(localStorage.getItem(key), fallback);
+  }
+
+  function readStoredBoolean(key, fallback) {
+    const value = localStorage.getItem(key);
+    if (value === null) {
+      return fallback;
+    }
+    return value === '1' || value === 'true';
+  }
+
+  function formatMediaTime(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      return '0:00';
+    }
+    const total = Math.floor(seconds);
+    const minutes = Math.floor(total / 60);
+    const remaining = String(total % 60).padStart(2, '0');
+    return `${minutes}:${remaining}`;
   }
 
   function voicePresetMeta(presetId) {
@@ -334,6 +400,14 @@
     }
     ui.voicePreviewStatus.textContent = message;
     ui.voicePreviewStatus.dataset.tone = tone || 'idle';
+  }
+
+  function setMusicStatus(message, tone) {
+    if (!ui.musicDeckStatus) {
+      return;
+    }
+    ui.musicDeckStatus.textContent = message;
+    ui.musicDeckStatus.dataset.tone = tone || 'idle';
   }
 
   function clearVoiceSampleTimeout() {
@@ -504,6 +578,9 @@
     inputAnalyser.fftSize = 256;
     const monitorGain = ctx.createGain();
     const destination = ctx.createMediaStreamDestination();
+    const gameVoiceGain = ctx.createGain();
+    const gameMixGain = ctx.createGain();
+    const gameOutputDestination = ctx.createMediaStreamDestination();
 
     source.connect(inputAnalyser);
     source.connect(inputHighpass);
@@ -522,6 +599,9 @@
     outputAnalyser.connect(destination);
     outputAnalyser.connect(monitorGain);
     monitorGain.connect(ctx.destination);
+    outputAnalyser.connect(gameVoiceGain);
+    gameVoiceGain.connect(gameMixGain);
+    gameMixGain.connect(gameOutputDestination);
 
     return {
       ctx,
@@ -545,6 +625,10 @@
       outputAnalyser,
       monitorGain,
       destination,
+      gameVoiceGain,
+      gameMixGain,
+      gameOutputDestination,
+      musicSource: null,
     };
   }
 
@@ -576,6 +660,343 @@
     engine.monitorGain.gain.setTargetAtTime(monitorAmount * 0.42, time, 0.04);
   }
 
+  function persistMusicDeckPrefs() {
+    localStorage.setItem(STORAGE_KEYS.musicGameVolume, String(state.musicDeck.gameVolume));
+    localStorage.setItem(STORAGE_KEYS.musicMonitorVolume, String(state.musicDeck.monitorVolume));
+    localStorage.setItem(STORAGE_KEYS.musicToGame, state.musicDeck.toGame ? '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.musicLoop, state.musicDeck.loop ? '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.gameOutputDevice, state.musicDeck.outputDeviceId || '');
+  }
+
+  function revokeMusicObjectUrl() {
+    if (!state.musicDeck.objectUrl) {
+      return;
+    }
+    URL.revokeObjectURL(state.musicDeck.objectUrl);
+    state.musicDeck.objectUrl = '';
+  }
+
+  function musicOutputDeviceSupported() {
+    return Boolean(ui.musicPlayer && typeof ui.musicPlayer.setSinkId === 'function');
+  }
+
+  function applyMusicDeckSettings() {
+    if (ui.musicGameRange) {
+      ui.musicGameRange.value = String(state.musicDeck.gameVolume);
+    }
+    if (ui.musicMonitorRange) {
+      ui.musicMonitorRange.value = String(state.musicDeck.monitorVolume);
+    }
+    if (ui.musicGameValue) {
+      ui.musicGameValue.textContent = `${state.musicDeck.gameVolume}%`;
+    }
+    if (ui.musicMonitorValue) {
+      ui.musicMonitorValue.textContent = `${state.musicDeck.monitorVolume}%`;
+    }
+    if (ui.musicToGameToggle) {
+      ui.musicToGameToggle.checked = state.musicDeck.toGame;
+    }
+    if (ui.musicLoopToggle) {
+      ui.musicLoopToggle.checked = state.musicDeck.loop;
+    }
+    if (ui.musicPlayer) {
+      ui.musicPlayer.loop = state.musicDeck.loop;
+    }
+
+    const deck = state.musicDeck;
+    if (deck.audioCtx) {
+      const time = deck.audioCtx.currentTime;
+      const gameVolume = deck.toGame ? deck.gameVolume / 100 : 0;
+      deck.gameGain.gain.setTargetAtTime(gameVolume, time, 0.035);
+      deck.monitorGain.gain.setTargetAtTime(deck.monitorVolume / 100, time, 0.035);
+    }
+  }
+
+  async function ensureMusicAudioEngine() {
+    if (!ui.musicPlayer) {
+      throw new Error('Music Deck controls are missing from the page.');
+    }
+    if (state.musicDeck.audioCtx) {
+      if (state.musicDeck.audioCtx.state === 'suspended') {
+        await state.musicDeck.audioCtx.resume();
+      }
+      applyMusicDeckSettings();
+      return state.musicDeck;
+    }
+
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) {
+      throw new Error('Music Deck needs Web Audio support.');
+    }
+
+    const ctx = new AudioCtor();
+    const source = ctx.createMediaElementSource(ui.musicPlayer);
+    const gameGain = ctx.createGain();
+    const monitorGain = ctx.createGain();
+    const analyser = ctx.createAnalyser();
+    const destination = ctx.createMediaStreamDestination();
+    analyser.fftSize = 256;
+
+    source.connect(gameGain);
+    gameGain.connect(analyser);
+    analyser.connect(destination);
+    source.connect(monitorGain);
+    monitorGain.connect(ctx.destination);
+
+    state.musicDeck.audioCtx = ctx;
+    state.musicDeck.source = source;
+    state.musicDeck.gameGain = gameGain;
+    state.musicDeck.monitorGain = monitorGain;
+    state.musicDeck.analyser = analyser;
+    state.musicDeck.destination = destination;
+
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    applyMusicDeckSettings();
+    return state.musicDeck;
+  }
+
+  function connectMusicToVoiceEngine() {
+    const engine = state.voiceLab.engine;
+    const music = state.musicDeck;
+    if (!engine || !music.destination || engine.musicSource) {
+      return;
+    }
+    engine.musicSource = engine.ctx.createMediaStreamSource(music.destination.stream);
+    engine.musicSource.connect(engine.gameMixGain);
+  }
+
+  function ensureGameOutputAudio() {
+    if (state.musicDeck.outputAudio) {
+      return state.musicDeck.outputAudio;
+    }
+    const audio = document.createElement('audio');
+    audio.autoplay = true;
+    audio.playsInline = true;
+    audio.dataset.role = 'game-output';
+    audio.setAttribute('aria-label', 'Mixed AP Lounge game output');
+    ui.voiceAudioHost.appendChild(audio);
+    state.musicDeck.outputAudio = audio;
+    return audio;
+  }
+
+  async function applyGameOutputDevice() {
+    const audio = ensureGameOutputAudio();
+    const deviceId = state.musicDeck.outputDeviceId || '';
+    if (!musicOutputDeviceSupported()) {
+      if (deviceId) {
+        setMusicStatus('This browser can play the mix, but cannot choose a specific output device.', 'error');
+      }
+      return;
+    }
+    try {
+      await audio.setSinkId(deviceId);
+      persistMusicDeckPrefs();
+    } catch (error) {
+      setMusicStatus('The browser could not switch to that output device.', 'error');
+    }
+  }
+
+  function updateGameOutputStream() {
+    const engine = state.voiceLab.engine;
+    const audio = ensureGameOutputAudio();
+    if (!engine) {
+      audio.srcObject = null;
+      return;
+    }
+    if (audio.srcObject !== engine.gameOutputDestination.stream) {
+      audio.srcObject = engine.gameOutputDestination.stream;
+    }
+  }
+
+  async function startGameOutput() {
+    if (!voiceEffectsSupported()) {
+      setMusicStatus('Game output needs microphone access and Web Audio support.', 'error');
+      setStatus('Game output needs microphone access and Web Audio support.');
+      return;
+    }
+
+    try {
+      await ensureMusicAudioEngine();
+      await ensureVoicePreviewEngine();
+      connectMusicToVoiceEngine();
+      updateGameOutputStream();
+      await applyGameOutputDevice();
+      const audio = ensureGameOutputAudio();
+      const playResult = audio.play();
+      if (playResult && typeof playResult.then === 'function') {
+        await playResult;
+      }
+      state.musicDeck.outputActive = true;
+      setMusicStatus('Game output is live with your processed mic and music mix.', 'live');
+      setStatus('AP Lounge game output is live. Select the matching virtual cable output as your game mic.');
+      renderMusicDeck();
+      updateControlState();
+    } catch (error) {
+      state.musicDeck.outputActive = false;
+      const message = error && error.name === 'NotAllowedError'
+        ? 'Microphone access was blocked.'
+        : error && error.message
+          ? error.message
+          : 'Could not start game output.';
+      setMusicStatus(message, 'error');
+      setStatus(message);
+      renderMusicDeck();
+      updateControlState();
+    }
+  }
+
+  function stopGameOutput(options = {}) {
+    const wasActive = state.musicDeck.outputActive;
+    state.musicDeck.outputActive = false;
+    const audio = state.musicDeck.outputAudio;
+    if (audio) {
+      audio.pause();
+      audio.srcObject = null;
+    }
+    if (wasActive) {
+      setMusicStatus('Game output stopped.', 'idle');
+      setStatus('AP Lounge game output stopped.');
+    }
+    if (options.releaseVoice !== false && !state.voiceJoined && !state.voiceJoining && state.voiceLab.sampleState === 'idle') {
+      stopLocalVoiceStream();
+    }
+    renderMusicDeck();
+    updateControlState();
+  }
+
+  function toggleGameOutput() {
+    if (state.musicDeck.outputActive) {
+      stopGameOutput();
+      return;
+    }
+    startGameOutput();
+  }
+
+  function updateMusicProgress() {
+    if (!ui.musicPlayer) {
+      return;
+    }
+    const current = formatMediaTime(ui.musicPlayer.currentTime);
+    const duration = formatMediaTime(ui.musicPlayer.duration);
+    if (ui.musicTimeText) {
+      ui.musicTimeText.textContent = `${current} / ${duration}`;
+    }
+    if (ui.musicPlayBtn) {
+      ui.musicPlayBtn.textContent = ui.musicPlayer.paused ? 'Play music' : 'Pause music';
+    }
+    if (ui.gameOutputBtn) {
+      ui.gameOutputBtn.textContent = state.musicDeck.outputActive ? 'Stop game output' : 'Start game output';
+      ui.gameOutputBtn.dataset.state = state.musicDeck.outputActive ? 'live' : 'idle';
+    }
+    const level = readAnalyserLevel(state.musicDeck.analyser);
+    setMeterLevel(ui.musicMeterFill, level);
+    if (ui.musicMeterText) {
+      ui.musicMeterText.textContent = level > 0.02 ? `${Math.round(level * 100)}%` : 'Idle';
+    }
+  }
+
+  function startMusicProgressTimer() {
+    if (state.musicDeck.progressTimer) {
+      return;
+    }
+    state.musicDeck.progressTimer = window.setInterval(updateMusicProgress, 180);
+  }
+
+  function stopMusicProgressTimer() {
+    if (!state.musicDeck.progressTimer) {
+      return;
+    }
+    window.clearInterval(state.musicDeck.progressTimer);
+    state.musicDeck.progressTimer = 0;
+    updateMusicProgress();
+  }
+
+  async function toggleMusicPlayback() {
+    if (!ui.musicPlayer || !ui.musicPlayer.src) {
+      setMusicStatus('Load a music file first.', 'error');
+      return;
+    }
+    try {
+      await ensureMusicAudioEngine();
+      connectMusicToVoiceEngine();
+      if (ui.musicPlayer.paused) {
+        await ui.musicPlayer.play();
+        startMusicProgressTimer();
+        setMusicStatus(state.musicDeck.outputActive ? 'Music is feeding the game output.' : 'Music is playing in your headphones mix.', 'live');
+      } else {
+        ui.musicPlayer.pause();
+        setMusicStatus('Music paused.', 'idle');
+      }
+      renderMusicDeck();
+    } catch (error) {
+      const message = error && error.message ? error.message : 'Could not play that music file.';
+      setMusicStatus(message, 'error');
+    }
+  }
+
+  function handleMusicFileChange() {
+    const file = ui.musicFileInput && ui.musicFileInput.files && ui.musicFileInput.files[0];
+    if (!file || !ui.musicPlayer) {
+      return;
+    }
+    revokeMusicObjectUrl();
+    state.musicDeck.objectUrl = URL.createObjectURL(file);
+    ui.musicPlayer.src = state.musicDeck.objectUrl;
+    ui.musicPlayer.loop = state.musicDeck.loop;
+    if (ui.musicTrackName) {
+      ui.musicTrackName.textContent = file.name;
+    }
+    setMusicStatus('Music loaded. Press play when you are ready.', 'ready');
+    updateMusicProgress();
+    renderMusicDeck();
+  }
+
+  async function refreshAudioOutputDevices() {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') {
+      setMusicStatus('This browser cannot list output devices.', 'error');
+      return;
+    }
+
+    try {
+      if (voiceEffectsSupported() && (!state.voiceLab.engine || !state.voiceLab.rawStream)) {
+        await ensureVoicePreviewEngine();
+      }
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const outputs = devices.filter((device) => device.kind === 'audiooutput');
+      const selected = state.musicDeck.outputDeviceId || '';
+      ui.gameOutputSelect.innerHTML = '<option value="">Default speakers or headphones</option>';
+      outputs.forEach((device, index) => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.textContent = device.label || `Audio output ${index + 1}`;
+        ui.gameOutputSelect.appendChild(option);
+      });
+      ui.gameOutputSelect.value = outputs.some((device) => device.deviceId === selected) ? selected : '';
+      state.musicDeck.outputDeviceId = ui.gameOutputSelect.value;
+      persistMusicDeckPrefs();
+      setMusicStatus(outputs.length ? 'Output devices refreshed.' : 'No extra output devices were found.', outputs.length ? 'ready' : 'idle');
+    } catch (error) {
+      const message = error && error.name === 'NotAllowedError'
+        ? 'Allow microphone access once so device names can appear.'
+        : 'Could not refresh output devices.';
+      setMusicStatus(message, 'error');
+    }
+  }
+
+  function renderMusicDeck() {
+    applyMusicDeckSettings();
+    updateMusicProgress();
+    if (ui.gameOutputSelect) {
+      ui.gameOutputSelect.disabled = !musicOutputDeviceSupported();
+      ui.gameOutputSelect.value = state.musicDeck.outputDeviceId || '';
+    }
+    if (ui.refreshOutputDevicesBtn) {
+      ui.refreshOutputDevicesBtn.disabled = !navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function';
+    }
+  }
+
   async function ensureVoicePreviewEngine() {
     if (!voiceEffectsSupported()) {
       throw new Error('Voice effects need microphone access and Web Audio support.');
@@ -588,6 +1009,10 @@
       applyVoiceProfileToEngine();
       if (state.voiceLab.engine) {
         state.voiceStream = state.voiceLab.engine.destination.stream;
+        connectMusicToVoiceEngine();
+        if (state.musicDeck.outputActive) {
+          updateGameOutputStream();
+        }
       } else if (state.voiceLab.rawStream) {
         state.voiceStream = state.voiceLab.rawStream;
       }
@@ -604,6 +1029,10 @@
     state.voiceLab.engine = engine;
     state.voiceStream = engine ? engine.destination.stream : rawStream;
     applyVoiceProfileToEngine();
+    connectMusicToVoiceEngine();
+    if (state.musicDeck.outputActive) {
+      updateGameOutputStream();
+    }
     startVoiceMeterLoop();
     return state.voiceStream;
   }
@@ -622,6 +1051,9 @@
 
   function releaseVoicePreviewIfIdle() {
     if (state.voiceJoined || state.voiceJoining) {
+      return;
+    }
+    if (state.musicDeck.outputActive) {
       return;
     }
     if (state.voiceLab.sampleState !== 'idle') {
@@ -1040,6 +1472,7 @@
     stopVoiceMeterLoop();
     stopVoiceSampleRecording({ keepState: true });
     stopVoiceSamplePlayback({ keepState: true });
+    stopGameOutput({ releaseVoice: false });
     state.voiceLab.sampleState = 'idle';
     state.voiceLab.sampleToken += 1;
     if (state.voiceLab.styleSyncTimer) {
@@ -1773,6 +2206,22 @@
     if (ui.sampleVoiceBtn) {
       ui.sampleVoiceBtn.disabled = !voicePreviewAvailable || state.voiceJoining || state.voiceLab.sampleState === 'preparing';
     }
+    if (ui.musicPlayBtn) {
+      ui.musicPlayBtn.disabled = !ui.musicPlayer || !ui.musicPlayer.src;
+    }
+    if (ui.gameOutputBtn) {
+      ui.gameOutputBtn.disabled = !voiceEffectsAvailable || state.voiceJoining;
+    }
+    [
+      ui.musicGameRange,
+      ui.musicMonitorRange,
+      ui.musicToGameToggle,
+      ui.musicLoopToggle,
+    ].forEach((control) => {
+      if (control) {
+        control.disabled = !ui.musicPlayer;
+      }
+    });
     ui.gameSelect.disabled = !connected;
     ui.gameRoomInput.disabled = !connected;
     ui.inviteNoteInput.disabled = !connected;
@@ -1807,6 +2256,7 @@
       setVoiceStatus(`Join live voice chat for this lounge. ${voicePresenceSentence()}`, 'idle');
     }
     updateVoiceUi();
+    renderMusicDeck();
     updateInvitePreview();
   }
 
@@ -1816,6 +2266,7 @@
     renderPlayers();
     renderInvites();
     renderVoiceLab();
+    renderMusicDeck();
     updateLoungeInviteUi();
     updateControlState();
   }
@@ -1985,6 +2436,11 @@
     if (!state.voiceLab.profile) {
       state.voiceLab.profile = createVoiceProfile(DEFAULT_VOICE_PRESET);
     }
+    state.musicDeck.gameVolume = readStoredPercent(STORAGE_KEYS.musicGameVolume, state.musicDeck.gameVolume);
+    state.musicDeck.monitorVolume = readStoredPercent(STORAGE_KEYS.musicMonitorVolume, state.musicDeck.monitorVolume);
+    state.musicDeck.toGame = readStoredBoolean(STORAGE_KEYS.musicToGame, state.musicDeck.toGame);
+    state.musicDeck.loop = readStoredBoolean(STORAGE_KEYS.musicLoop, state.musicDeck.loop);
+    state.musicDeck.outputDeviceId = localStorage.getItem(STORAGE_KEYS.gameOutputDevice) || '';
     const queryRoom = sanitizeRoomCode(query.get('room'));
     const storedRoom = sanitizeRoomCode(localStorage.getItem(STORAGE_KEYS.roomCode));
     ui.roomInput.value = queryRoom && !isPublicRoom(queryRoom)
@@ -2077,6 +2533,67 @@
     setVoicePreset(DEFAULT_VOICE_PRESET);
     setStatus('Voice Lab reset to Clean Comms.');
   });
+  if (ui.musicFileInput) {
+    ui.musicFileInput.addEventListener('change', handleMusicFileChange);
+  }
+  if (ui.musicPlayBtn) {
+    ui.musicPlayBtn.addEventListener('click', toggleMusicPlayback);
+  }
+  if (ui.gameOutputBtn) {
+    ui.gameOutputBtn.addEventListener('click', toggleGameOutput);
+  }
+  if (ui.musicGameRange) {
+    ui.musicGameRange.addEventListener('input', () => {
+      state.musicDeck.gameVolume = clampPercent(ui.musicGameRange.value, state.musicDeck.gameVolume);
+      applyMusicDeckSettings();
+      persistMusicDeckPrefs();
+      updateMusicProgress();
+    });
+  }
+  if (ui.musicMonitorRange) {
+    ui.musicMonitorRange.addEventListener('input', () => {
+      state.musicDeck.monitorVolume = clampPercent(ui.musicMonitorRange.value, state.musicDeck.monitorVolume);
+      applyMusicDeckSettings();
+      persistMusicDeckPrefs();
+      updateMusicProgress();
+    });
+  }
+  if (ui.musicToGameToggle) {
+    ui.musicToGameToggle.addEventListener('change', () => {
+      state.musicDeck.toGame = ui.musicToGameToggle.checked;
+      applyMusicDeckSettings();
+      persistMusicDeckPrefs();
+      setMusicStatus(state.musicDeck.toGame ? 'Music will feed the game output.' : 'Music is muted from the game output.', 'ready');
+    });
+  }
+  if (ui.musicLoopToggle) {
+    ui.musicLoopToggle.addEventListener('change', () => {
+      state.musicDeck.loop = ui.musicLoopToggle.checked;
+      applyMusicDeckSettings();
+      persistMusicDeckPrefs();
+    });
+  }
+  if (ui.gameOutputSelect) {
+    ui.gameOutputSelect.addEventListener('change', async () => {
+      state.musicDeck.outputDeviceId = ui.gameOutputSelect.value;
+      persistMusicDeckPrefs();
+      await applyGameOutputDevice();
+      setMusicStatus('Game output device updated.', 'ready');
+    });
+  }
+  if (ui.refreshOutputDevicesBtn) {
+    ui.refreshOutputDevicesBtn.addEventListener('click', refreshAudioOutputDevices);
+  }
+  if (ui.musicPlayer) {
+    ui.musicPlayer.addEventListener('loadedmetadata', updateMusicProgress);
+    ui.musicPlayer.addEventListener('timeupdate', updateMusicProgress);
+    ui.musicPlayer.addEventListener('play', startMusicProgressTimer);
+    ui.musicPlayer.addEventListener('pause', stopMusicProgressTimer);
+    ui.musicPlayer.addEventListener('ended', () => {
+      stopMusicProgressTimer();
+      setMusicStatus('Music ended.', 'idle');
+    });
+  }
   ui.composerForm.addEventListener('submit', handleMessageSubmit);
   ui.messageInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -2102,6 +2619,7 @@
     updateLoungeInviteUi();
   });
   ui.nameInput.addEventListener('change', savePrefs);
+  window.addEventListener('beforeunload', revokeMusicObjectUrl);
 
   hydrateFromStorage();
   updateInvitePreview();
