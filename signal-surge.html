@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signal Surge | Arcade Survival Game | AP Advantage Player</title>
+  <meta name="description" content="Play Signal Surge on AP Advantage Player: collect clean signals, dodge red locks, build streaks, and spend pulses in a fast browser arcade survival run." />
+  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+  <link rel="canonical" href="https://bnapsen.com/signal-surge.html" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Signal Surge | Arcade Survival Game | AP Advantage Player" />
+  <meta property="og:description" content="Collect clean signals, dodge red locks, and spend pulses in a fast browser arcade survival run." />
+  <meta property="og:url" content="https://bnapsen.com/signal-surge.html" />
+  <meta property="og:image" content="https://bnapsen.com/signal-surge-cover.svg" />
+  <meta property="og:locale" content="en_US" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Signal Surge | Arcade Survival Game | AP Advantage Player" />
+  <meta name="twitter:description" content="Play a fast browser arcade survival run on AP Advantage Player." />
+  <meta name="twitter:image" content="https://bnapsen.com/signal-surge-cover.svg" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Signal Surge | Arcade Survival Game | AP Advantage Player","description":"Play Signal Surge on AP Advantage Player: collect clean signals, dodge red locks, build streaks, and spend pulses in a fast browser arcade survival run.","url":"https://bnapsen.com/signal-surge.html","inLanguage":"en-US","isPartOf":{"@type":"WebSite","name":"AP Advantage Player","url":"https://bnapsen.com/"}}</script>
+  <link rel="stylesheet" href="signal-surge.css?v=20260530a">
+</head>
+<body>
+  <main class="surge-shell">
+    <div class="utility-bar">
+      <a class="back-link" href="index.html">All games</a>
+      <span class="utility-pill">Arcade survival prototype</span>
+    </div>
+
+    <section class="play-layout" aria-label="Signal Surge game">
+      <div class="cabinet">
+        <div class="hud">
+          <div>
+            <span>Score</span>
+            <strong id="score-display">000000</strong>
+          </div>
+          <div>
+            <span>Best</span>
+            <strong id="best-display">000000</strong>
+          </div>
+          <div>
+            <span>Level</span>
+            <strong id="level-display">01</strong>
+          </div>
+          <div>
+            <span>Lives</span>
+            <strong id="lives-display">3</strong>
+          </div>
+          <div>
+            <span>Pulse</span>
+            <strong id="pulse-display">2</strong>
+          </div>
+        </div>
+
+        <div class="screen">
+          <canvas id="game-canvas" width="960" height="540" aria-label="Signal Surge playfield"></canvas>
+          <div class="screen-overlay" id="screen-overlay">
+            <p id="overlay-kicker">Ready</p>
+            <h1 id="overlay-title">Signal Surge</h1>
+            <p id="overlay-copy">Collect clean signals, dodge red locks, and spend pulses before the grid closes in.</p>
+            <div class="overlay-actions">
+              <button class="primary-action" id="start-button" type="button">Start Run</button>
+              <button class="secondary-action" id="restart-button" type="button">Restart</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="command-row">
+          <button id="pause-button" type="button">Pause</button>
+          <button id="pulse-button" type="button">Pulse</button>
+          <button id="mute-button" type="button" aria-pressed="false">Sound On</button>
+        </div>
+
+        <div class="touch-pad" aria-label="Touch controls">
+          <button data-control="up" type="button" aria-label="Move up" title="Move up">▲</button>
+          <div>
+            <button data-control="left" type="button" aria-label="Move left" title="Move left">◀</button>
+            <button data-control="down" type="button" aria-label="Move down" title="Move down">▼</button>
+            <button data-control="right" type="button" aria-label="Move right" title="Move right">▶</button>
+          </div>
+        </div>
+      </div>
+
+      <aside class="run-panel">
+        <section>
+          <span class="panel-label">Run State</span>
+          <h2 id="status-title">Grid standing by</h2>
+          <p id="status-copy">Signal lanes are open. Start the run when ready.</p>
+        </section>
+
+        <section>
+          <span class="panel-label">Scoring</span>
+          <div class="score-list">
+            <div><span>Signal</span><strong>100</strong></div>
+            <div><span>Streak</span><strong>+25</strong></div>
+            <div><span>Battery</span><strong>Pulse</strong></div>
+            <div><span>Lock clear</span><strong>150</strong></div>
+          </div>
+        </section>
+
+        <section>
+          <span class="panel-label">Controls</span>
+          <div class="control-map">
+            <div><span>Move</span><strong>WASD / Arrows</strong></div>
+            <div><span>Pulse</span><strong>Space</strong></div>
+            <div><span>Pause</span><strong>P</strong></div>
+            <div><span>Touch</span><strong>Drag or buttons</strong></div>
+          </div>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script src="signal-surge.js?v=20260530a" type="module"></script>
+</body>
+</html>
