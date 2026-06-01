@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "Dockerfile"
+      - "games/star-sprint/**"
+      - ".github/workflows/deploy-google-backend.yml"
   workflow_dispatch:
 
 permissions:
@@ -62,8 +66,8 @@ jobs:
             --region "${GCP_REGION}" \
             --image "${IMAGE}" \
             --service-account "${CLOUD_RUN_RUNTIME_SA}" \
-            --memory "2Gi" \
-            --cpu "2" \
+            --memory "1Gi" \
+            --cpu "1" \
             --timeout "1800s" \
             --allow-unauthenticated \
             --quiet

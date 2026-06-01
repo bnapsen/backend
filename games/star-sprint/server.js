@@ -88,8 +88,7 @@ const DEFAULT_DATA_DIR = path.join(__dirname, 'data');
 const DATA_DIR = path.resolve(process.env.DATA_DIR || DEFAULT_DATA_DIR);
 const SONGS_FILE = path.join(DATA_DIR, 'songs.json');
 const SONG_UPLOAD_DIR = path.join(DATA_DIR, 'songs');
-const CITY_RAID_DOWNLOAD_DIR = path.resolve(__dirname, '..', '..', 'assets', 'downloads', 'city-raid');
-const CITY_RAID_ZIP_NAME = 'City-Raid-Win64.zip';
+const SPIDER_SIMULATOR_DOWNLOAD_URL = 'https://storage.googleapis.com/bnapsen-downloads-1000121513328/games/spider-simulator/Spider-Simulator-Win64-v2.zip';
 const MAX_REVIEWS = 100;
 const MAX_VISIBLE_REVIEWS = 30;
 const MAX_REQUEST_BODY_BYTES = 96 * 1024;
@@ -4699,56 +4698,7 @@ function handleSongMediaRequest(req, res, requestUrl) {
     });
 }
 
-async function getCityRaidZipPartStats() {
-  const partNames = (await fs.promises.readdir(CITY_RAID_DOWNLOAD_DIR))
-    .filter((fileName) => fileName.startsWith(`${CITY_RAID_ZIP_NAME}.part`))
-    .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
-
-  if (!partNames.length) {
-    throw new Error('Missing City Raid package parts.');
-  }
-
-  return Promise.all(partNames.map(async (partName) => {
-    const filePath = path.join(CITY_RAID_DOWNLOAD_DIR, partName);
-    const stats = await fs.promises.stat(filePath);
-    if (!stats.isFile()) {
-      throw new Error(`Missing City Raid package part: ${partName}`);
-    }
-    return {
-      filePath,
-      size: stats.size,
-    };
-  }));
-}
-
-function streamCityRaidZipParts(res, partStats) {
-  let index = 0;
-
-  const pipeNext = () => {
-    if (index >= partStats.length) {
-      res.end();
-      return;
-    }
-
-    const current = partStats[index];
-    const stream = fs.createReadStream(current.filePath);
-
-    stream.on('error', (error) => {
-      res.destroy(error);
-    });
-
-    stream.on('end', () => {
-      index += 1;
-      pipeNext();
-    });
-
-    stream.pipe(res, { end: false });
-  };
-
-  pipeNext();
-}
-
-async function handleCityRaidZipDownload(req, res) {
+function handleCityRaidZipDownload(req, res) {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     sendJsonResponse(req, res, 405, {
       ok: false,
@@ -4757,31 +4707,12 @@ async function handleCityRaidZipDownload(req, res) {
     return;
   }
 
-  try {
-    const partStats = await getCityRaidZipPartStats();
-    const totalSize = partStats.reduce((sum, part) => sum + part.size, 0);
-    res.writeHead(200, {
-      ...corsHeaders(req),
-      'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="${CITY_RAID_ZIP_NAME}"`,
-      'Content-Length': totalSize,
-      'Cache-Control': 'public, max-age=300',
-      'Accept-Ranges': 'none',
-    });
-
-    if (req.method === 'HEAD') {
-      res.end();
-      return;
-    }
-
-    streamCityRaidZipParts(res, partStats);
-  } catch (error) {
-    console.error('Failed to serve City Raid zip:', error);
-    sendJsonResponse(req, res, 500, {
-      ok: false,
-      error: 'The City Raid zip is not available right now.',
-    });
-  }
+  res.writeHead(302, {
+    ...corsHeaders(req),
+    Location: SPIDER_SIMULATOR_DOWNLOAD_URL,
+    'Cache-Control': 'public, max-age=3600',
+  });
+  res.end();
 }
 
 function sanitizeName(raw) {

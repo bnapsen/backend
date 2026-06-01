@@ -10,9 +10,6 @@ RUN npm ci --omit=dev
 
 COPY games/star-sprint ./
 
-WORKDIR /app
-COPY assets/downloads ./assets/downloads
-
 WORKDIR /app/games/star-sprint
 
 CMD ["node", "server.js"]

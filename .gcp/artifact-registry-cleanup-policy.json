@@ -1,0 +1,19 @@
+[
+  {
+    "name": "delete-old-backend-images",
+    "action": { "type": "Delete" },
+    "condition": {
+      "tagState": "any",
+      "packageNamePrefixes": ["nova-arcade-backend"],
+      "olderThan": "7d"
+    }
+  },
+  {
+    "name": "keep-recent-backend-images",
+    "action": { "type": "Keep" },
+    "mostRecentVersions": {
+      "packageNamePrefixes": ["nova-arcade-backend"],
+      "keepCount": 10
+    }
+  }
+]
