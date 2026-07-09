@@ -7,14 +7,10 @@ for (const card of gameCards) {
   }
 
   const href = primaryLink.getAttribute("href");
-  const title = card.querySelector("h3")?.textContent?.trim() || "game";
   if (!href) {
     continue;
   }
 
-  card.tabIndex = 0;
-  card.setAttribute("role", "link");
-  card.setAttribute("aria-label", `Open ${title}`);
   card.style.setProperty("--glow-x", "50%");
   card.style.setProperty("--glow-y", "50%");
 
@@ -45,12 +41,5 @@ for (const card of gameCards) {
       return;
     }
     goToGame();
-  });
-
-  card.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      goToGame();
-    }
   });
 }

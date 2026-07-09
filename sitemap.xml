@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://bnapsen.com/</loc>
-    <lastmod>2026-04-14</lastmod>
+    <lastmod>2026-07-09</lastmod>
   </url>
   <url>
     <loc>https://bnapsen.com/arcade-lounge.html</loc>
@@ -34,7 +34,7 @@
   </url>
   <url>
     <loc>https://bnapsen.com/games-guide.html</loc>
-    <lastmod>2026-04-14</lastmod>
+    <lastmod>2026-07-09</lastmod>
   </url>
   <url>
     <loc>https://bnapsen.com/nova-clips.html</loc>
@@ -79,6 +79,10 @@
   <url>
     <loc>https://bnapsen.com/games/star-sprint/</loc>
     <lastmod>2026-04-14</lastmod>
+  </url>
+  <url>
+    <loc>https://bnapsen.com/games/breakthrough/</loc>
+    <lastmod>2026-07-09</lastmod>
   </url>
   <url>
     <loc>https://bnapsen.com/games/car-soccer-mini/</loc>

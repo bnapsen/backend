@@ -72,6 +72,22 @@ const SIM_KILL_REWARD_GAMES = Object.freeze({
   galaga: { label: 'Galaga' },
   'space-shooter': { label: 'Space Shooter' },
 });
+const BREAKTHROUGH_STANDARD_REWARD_CENTS = 100;
+const BREAKTHROUGH_FIFTH_REWARD_CENTS = 500;
+const BREAKTHROUGH_MAX_BREACH = 10_000;
+const BREAKTHROUGH_MAX_RECORDED_RUNS = 48;
+const BREAKTHROUGH_MAX_RECORDED_CLAIMS = 160;
+const BREAKTHROUGH_MIN_CLAIM_INTERVAL_MS = Math.max(5_000, Math.min(
+  120_000,
+  Math.round(Number(process.env.BREAKTHROUGH_MIN_CLAIM_INTERVAL_MS) || 12_000),
+));
+const BREAKTHROUGH_DAILY_REWARD_CAP_CENTS = Math.max(500, Math.min(
+  50_000,
+  Math.round(Number(process.env.BREAKTHROUGH_DAILY_REWARD_CAP_CENTS) || 10_000),
+));
+const SIM_REWARD_CLAIMS_FIRESTORE_COLLECTION = String(
+  process.env.SIM_REWARD_CLAIMS_FIRESTORE_COLLECTION || 'simRewardClaims',
+).trim() || 'simRewardClaims';
 const ALLOWED_HTTP_ORIGIN_HOSTS = new Set([
   'bnapsen.com',
   'www.bnapsen.com',
@@ -467,6 +483,8 @@ function handleAuthConfigRequest(req, res) {
 function simWalletErrorStatus(error) {
   const code = String(error && error.code || '');
   if (code === 'sim/insufficient-funds') return 409;
+  if (code === 'sim/reward-rate-limited' || code === 'sim/reward-daily-cap') return 429;
+  if (code === 'sim/reward-sequence') return 409;
   if (code.startsWith('sim/')) return 400;
   return 500;
 }
@@ -550,6 +568,98 @@ function normalizeKillRewardCount(rawCount) {
     return 1;
   }
   return Math.min(SIM_KILL_REWARD_MAX_KILLS_PER_REQUEST, count);
+}
+
+function normalizeBreakthroughRunId(rawRunId) {
+  const runId = String(rawRunId || '').trim();
+  return /^[A-Za-z0-9_-]{16,80}$/.test(runId) ? runId : '';
+}
+
+function normalizeBreakthroughBreach(rawBreach) {
+  const breach = Number(rawBreach);
+  if (!Number.isInteger(breach) || breach < 1 || breach > BREAKTHROUGH_MAX_BREACH) {
+    return 0;
+  }
+  return breach;
+}
+
+function breakthroughRewardCentsForBreach(breach) {
+  return breach % 5 === 0
+    ? BREAKTHROUGH_FIFTH_REWARD_CENTS
+    : BREAKTHROUGH_STANDARD_REWARD_CENTS;
+}
+
+function breakthroughClaimId(userId, runId, breach) {
+  return crypto
+    .createHash('sha256')
+    .update(`${String(userId || '')}\n${runId}\n${breach}`)
+    .digest('hex')
+    .slice(0, 40);
+}
+
+function normalizeBreakthroughRewardState(source, dayKey = simRewardDayKey()) {
+  const current = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+  const storedDayKey = String(current.dayKey || '').slice(0, 30);
+  const runs = Array.isArray(current.runs)
+    ? current.runs.slice(0, BREAKTHROUGH_MAX_RECORDED_RUNS).map((entry) => ({
+      runId: normalizeBreakthroughRunId(entry && entry.runId),
+      startedAt: String(entry && entry.startedAt || '').slice(0, 40),
+      lastAwardAt: String(entry && entry.lastAwardAt || '').slice(0, 40),
+      lastBreach: Math.max(0, Math.min(
+        BREAKTHROUGH_MAX_BREACH,
+        Math.floor(Number(entry && entry.lastBreach) || 0),
+      )),
+      rewardCents: Math.max(0, Math.round(Number(entry && entry.rewardCents) || 0)),
+    })).filter((entry) => entry.runId)
+    : [];
+  const recentClaimIds = Array.isArray(current.recentClaimIds)
+    ? current.recentClaimIds
+      .slice(0, BREAKTHROUGH_MAX_RECORDED_CLAIMS)
+      .map((entry) => String(entry || '').trim().slice(0, 64))
+      .filter(Boolean)
+    : [];
+  return {
+    dayKey,
+    dailyRewardCents: storedDayKey === dayKey
+      ? Math.max(0, Math.round(Number(current.dailyRewardCents) || 0))
+      : 0,
+    totalRewardCents: Math.max(0, Math.round(Number(current.totalRewardCents) || 0)),
+    lastAwardAt: String(current.lastAwardAt || '').slice(0, 40),
+    runs,
+    recentClaimIds,
+  };
+}
+
+function breakthroughRewardResult({
+  runId,
+  breach,
+  awardCents,
+  duplicate,
+  state,
+  awardedAt = '',
+}) {
+  const scheduledRewardCents = breakthroughRewardCentsForBreach(breach);
+  const lastAwardMs = Date.parse(state.lastAwardAt);
+  return {
+    game: 'breakthrough',
+    runId,
+    breach,
+    duplicate: duplicate === true,
+    award: awardCents / 100,
+    awardCents,
+    scheduledReward: scheduledRewardCents / 100,
+    scheduledRewardCents,
+    tier: breach % 5 === 0 ? 'fifth-breach' : 'breach',
+    awardedAt,
+    dayKey: state.dayKey,
+    dailyReward: state.dailyRewardCents / 100,
+    dailyRewardCents: state.dailyRewardCents,
+    dailyCap: BREAKTHROUGH_DAILY_REWARD_CAP_CENTS / 100,
+    dailyCapCents: BREAKTHROUGH_DAILY_REWARD_CAP_CENTS,
+    nextClaimAt: Number.isFinite(lastAwardMs)
+      ? new Date(lastAwardMs + BREAKTHROUGH_MIN_CLAIM_INTERVAL_MS).toISOString()
+      : '',
+  };
 }
 
 async function handleSimWalletRequest(req, res) {
@@ -808,6 +918,223 @@ async function handleSimEnemyKillRewardRequest(req, res) {
       ok: false,
       error: error && error.message ? error.message : 'Unable to award SIM.',
     });
+  }
+}
+
+async function handleSimBreakthroughBreachRequest(req, res) {
+  if (!isAllowedHttpOrigin(req)) {
+    sendJsonResponse(req, res, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    sendJsonResponse(req, res, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+    return;
+  }
+
+  const auth = await authenticateHttpRequest(req, res, { required: true });
+  if (!auth || !auth.user) {
+    return;
+  }
+
+  let body = {};
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      error: 'Invalid JSON body.',
+    });
+    return;
+  }
+
+  const runId = normalizeBreakthroughRunId(body.runId);
+  if (!runId) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      code: 'sim/reward-invalid-run',
+      error: 'A valid BREAK//THROUGH run id is required.',
+    });
+    return;
+  }
+
+  const breach = normalizeBreakthroughBreach(body.breach);
+  if (!breach) {
+    sendJsonResponse(req, res, 400, {
+      ok: false,
+      code: 'sim/reward-invalid-breach',
+      error: 'The breach number must be a positive sequential integer.',
+    });
+    return;
+  }
+
+  const dayKey = simRewardDayKey();
+  const claimId = breakthroughClaimId(auth.user.uid, runId, breach);
+  const requestedScore = Math.max(0, Math.min(
+    2_000_000_000,
+    Math.round(Number(body.score) || 0),
+  ));
+
+  try {
+    const tx = await simWalletStore.transactWallet(auth.user, async (wallet, context) => {
+      const nowMs = Date.now();
+      const awardedAt = new Date(nowMs).toISOString();
+      const rewardState = normalizeBreakthroughRewardState(wallet.breakthroughRewards, dayKey);
+      const existingRun = rewardState.runs.find((entry) => entry.runId === runId) || null;
+      let durableClaimRef = null;
+      let durableClaim = null;
+      if (context.enabled && context.firestore && context.transaction) {
+        durableClaimRef = context.firestore
+          .collection(SIM_REWARD_CLAIMS_FIRESTORE_COLLECTION)
+          .doc(claimId);
+        const durableClaimSnapshot = await context.transaction.get(durableClaimRef);
+        durableClaim = durableClaimSnapshot.exists ? durableClaimSnapshot.data() : null;
+      }
+      const duplicate = Boolean(durableClaim)
+        || rewardState.recentClaimIds.includes(claimId)
+        || Boolean(existingRun && breach <= existingRun.lastBreach);
+
+      if (duplicate) {
+        return {
+          walletData: {
+            ...wallet,
+            breakthroughRewards: rewardState,
+          },
+          result: breakthroughRewardResult({
+            runId,
+            breach,
+            awardCents: 0,
+            duplicate: true,
+            state: rewardState,
+            awardedAt: String(
+              durableClaim && durableClaim.awardedAt
+              || existingRun && existingRun.lastAwardAt
+              || '',
+            ).slice(0, 40),
+          }),
+        };
+      }
+
+      const expectedBreach = existingRun ? existingRun.lastBreach + 1 : 1;
+      if (breach !== expectedBreach) {
+        const error = new Error(`Claim breach ${expectedBreach} next for this run.`);
+        error.code = 'sim/reward-sequence';
+        error.expectedBreach = expectedBreach;
+        throw error;
+      }
+
+      const lastAwardMs = Date.parse(rewardState.lastAwardAt);
+      const elapsedMs = Number.isFinite(lastAwardMs) ? nowMs - lastAwardMs : Infinity;
+      if (elapsedMs < BREAKTHROUGH_MIN_CLAIM_INTERVAL_MS) {
+        const error = new Error('That breach was cleared too quickly to verify. Try the same claim again shortly.');
+        error.code = 'sim/reward-rate-limited';
+        error.retryAfterMs = BREAKTHROUGH_MIN_CLAIM_INTERVAL_MS - Math.max(0, elapsedMs);
+        throw error;
+      }
+
+      const awardCents = breakthroughRewardCentsForBreach(breach);
+      if (rewardState.dailyRewardCents + awardCents > BREAKTHROUGH_DAILY_REWARD_CAP_CENTS) {
+        const error = new Error('The daily BREAK//THROUGH SIM reward limit has been reached.');
+        error.code = 'sim/reward-daily-cap';
+        error.dailyCapCents = BREAKTHROUGH_DAILY_REWARD_CAP_CENTS;
+        error.dailyRewardCents = rewardState.dailyRewardCents;
+        throw error;
+      }
+
+      const nextRun = {
+        runId,
+        startedAt: existingRun && existingRun.startedAt || awardedAt,
+        lastAwardAt: awardedAt,
+        lastBreach: breach,
+        rewardCents: Math.max(0, Math.round(Number(existingRun && existingRun.rewardCents) || 0)) + awardCents,
+      };
+      const nextRewardState = {
+        ...rewardState,
+        dailyRewardCents: rewardState.dailyRewardCents + awardCents,
+        totalRewardCents: rewardState.totalRewardCents + awardCents,
+        lastAwardAt: awardedAt,
+        runs: [nextRun]
+          .concat(rewardState.runs.filter((entry) => entry.runId !== runId))
+          .slice(0, BREAKTHROUGH_MAX_RECORDED_RUNS),
+        recentClaimIds: [claimId]
+          .concat(rewardState.recentClaimIds.filter((entry) => entry !== claimId))
+          .slice(0, BREAKTHROUGH_MAX_RECORDED_CLAIMS),
+      };
+      const nextWallet = context.applyAdjustment(wallet, {
+        amountCents: awardCents,
+        source: 'breakthrough',
+        action: 'breach-clear',
+        note: breach % 5 === 0
+          ? `BREAK//THROUGH breach ${breach} milestone reward`
+          : `BREAK//THROUGH breach ${breach} reward`,
+        metadata: {
+          game: 'breakthrough',
+          runId,
+          breach,
+          score: requestedScore,
+          tier: breach % 5 === 0 ? 'fifth-breach' : 'breach',
+          claimId,
+          dayKey,
+        },
+      });
+      nextWallet.breakthroughRewards = nextRewardState;
+      if (durableClaimRef) {
+        context.transaction.set(durableClaimRef, {
+          id: claimId,
+          uid: auth.user.uid,
+          game: 'breakthrough',
+          runId,
+          breach,
+          awardCents,
+          awardedAt,
+          dayKey,
+        }, { merge: false });
+      }
+
+      return {
+        walletData: nextWallet,
+        result: breakthroughRewardResult({
+          runId,
+          breach,
+          awardCents,
+          duplicate: false,
+          state: nextRewardState,
+          awardedAt,
+        }),
+      };
+    });
+
+    sendJsonResponse(req, res, 200, {
+      ok: true,
+      wallet: tx.wallet,
+      reward: tx.result,
+      store: {
+        enabled: simWalletStore.enabled,
+      },
+    });
+  } catch (error) {
+    const payload = {
+      ok: false,
+      code: String(error && error.code || 'sim/reward-failed'),
+      error: error && error.message ? error.message : 'Unable to award BREAK//THROUGH SIM.',
+    };
+    if (Number.isFinite(Number(error && error.retryAfterMs))) {
+      payload.retryAfterMs = Math.max(0, Math.ceil(Number(error.retryAfterMs)));
+    }
+    if (Number.isFinite(Number(error && error.expectedBreach))) {
+      payload.expectedBreach = Math.max(1, Math.floor(Number(error.expectedBreach)));
+    }
+    if (Number.isFinite(Number(error && error.dailyCapCents))) {
+      payload.dailyCapCents = Math.max(0, Math.round(Number(error.dailyCapCents)));
+      payload.dailyRewardCents = Math.max(0, Math.round(Number(error.dailyRewardCents) || 0));
+    }
+    sendJsonResponse(req, res, simWalletErrorStatus(error), payload);
   }
 }
 
@@ -7175,6 +7502,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === '/api/sim/enemy-kill') {
     await handleSimEnemyKillRewardRequest(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/sim/breakthrough/breach') {
+    await handleSimBreakthroughBreachRequest(req, res);
     return;
   }
 
