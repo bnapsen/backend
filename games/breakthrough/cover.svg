@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">BREAK//THROUGH neon arcade game cover</title>
+  <desc id="desc">A glowing pulse smashes through a wall of cyan, purple, pink, and gold firewall blocks above a futuristic paddle.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071d2b"/>
+      <stop offset=".48" stop-color="#0a0922"/>
+      <stop offset="1" stop-color="#180725"/>
+    </linearGradient>
+    <radialGradient id="halo">
+      <stop offset="0" stop-color="#bfffff" stop-opacity=".9"/>
+      <stop offset=".22" stop-color="#46f1ff" stop-opacity=".42"/>
+      <stop offset=".62" stop-color="#7654ff" stop-opacity=".15"/>
+      <stop offset="1" stop-color="#07101b" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="titleFill" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".38" stop-color="#98fff0"/>
+      <stop offset=".65" stop-color="#67eaff"/>
+      <stop offset="1" stop-color="#ff8fcf"/>
+    </linearGradient>
+    <linearGradient id="paddle" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#33c6ff"/>
+      <stop offset=".48" stop-color="#f7ffff"/>
+      <stop offset="1" stop-color="#ff55b7"/>
+    </linearGradient>
+    <linearGradient id="cyanBrick" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#bffeff"/>
+      <stop offset=".25" stop-color="#4be8ff"/>
+      <stop offset="1" stop-color="#08759e"/>
+    </linearGradient>
+    <linearGradient id="violetBrick" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#dfcaff"/>
+      <stop offset=".3" stop-color="#9568ff"/>
+      <stop offset="1" stop-color="#40258c"/>
+    </linearGradient>
+    <linearGradient id="pinkBrick" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#ffd2ef"/>
+      <stop offset=".28" stop-color="#ff59bd"/>
+      <stop offset="1" stop-color="#95135b"/>
+    </linearGradient>
+    <linearGradient id="goldBrick" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#fff5b7"/>
+      <stop offset=".3" stop-color="#ffd454"/>
+      <stop offset="1" stop-color="#b76213"/>
+    </linearGradient>
+    <pattern id="grid" width="58" height="58" patternUnits="userSpaceOnUse">
+      <path d="M58 0H0V58" fill="none" stroke="#72eaff" stroke-opacity=".08" stroke-width="2"/>
+    </pattern>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="12" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-30%" y="-50%" width="160%" height="220%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000" flood-opacity=".7"/>
+    </filter>
+    <clipPath id="frameClip"><rect x="30" y="30" width="1140" height="840" rx="40"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#frameClip)">
+    <rect width="1200" height="900" fill="url(#bg)"/>
+    <rect width="1200" height="900" fill="url(#grid)"/>
+    <ellipse cx="610" cy="430" rx="600" ry="520" fill="url(#halo)" opacity=".58"/>
+    <path d="M80 800 450 240M1120 800 770 235" stroke="#4ef0ff" stroke-opacity=".1" stroke-width="3"/>
+    <path d="M-60 740h1320M-30 680h1260M0 620h1200" stroke="#b98cff" stroke-opacity=".09" stroke-width="2"/>
+
+    <g opacity=".22" filter="url(#glow)">
+      <path d="M603 535 398 196" stroke="#42f2ff" stroke-width="46" stroke-linecap="round"/>
+      <path d="M603 535 492 315" stroke="#ff55bc" stroke-width="24" stroke-linecap="round"/>
+    </g>
+
+    <g filter="url(#shadow)">
+      <g transform="translate(95 220) skewX(-3)">
+        <g fill="url(#cyanBrick)" stroke="#d9ffff" stroke-opacity=".55" stroke-width="2">
+          <rect width="166" height="74" rx="11"/><rect x="178" width="166" height="74" rx="11"/>
+          <rect x="356" width="166" height="74" rx="11"/><rect x="534" width="166" height="74" rx="11"/>
+          <rect x="712" width="166" height="74" rx="11"/><rect x="890" width="166" height="74" rx="11"/>
+        </g>
+        <g transform="translate(0 89)" fill="url(#violetBrick)" stroke="#e6dbff" stroke-opacity=".5" stroke-width="2">
+          <rect width="166" height="74" rx="11"/><rect x="178" width="166" height="74" rx="11"/>
+          <rect x="356" width="166" height="74" rx="11"/>
+          <rect x="712" width="166" height="74" rx="11"/><rect x="890" width="166" height="74" rx="11"/>
+        </g>
+        <g transform="translate(0 178)" fill="url(#pinkBrick)" stroke="#ffe1f3" stroke-opacity=".52" stroke-width="2">
+          <rect width="166" height="74" rx="11"/><rect x="178" width="166" height="74" rx="11"/>
+          <rect x="712" width="166" height="74" rx="11"/><rect x="890" width="166" height="74" rx="11"/>
+        </g>
+        <g transform="translate(0 267)" fill="url(#goldBrick)" stroke="#fff5c8" stroke-opacity=".55" stroke-width="2">
+          <rect width="166" height="74" rx="11"/><rect x="178" width="166" height="74" rx="11"/>
+          <rect x="356" width="166" height="74" rx="11"/><rect x="534" width="166" height="74" rx="11"/>
+          <rect x="712" width="166" height="74" rx="11"/><rect x="890" width="166" height="74" rx="11"/>
+        </g>
+      </g>
+    </g>
+
+    <g transform="translate(602 430)" filter="url(#softGlow)">
+      <path d="m-55-68-64-60 34 83-70-10 73 41-55 37 71-11-26 76 65-64 12 78 21-77 55 55-23-72 75 18-61-47 78-23-87-3 43-67-75 51-4-90-26 82-52-64 23 84z" fill="#f8ffff" opacity=".94"/>
+      <circle r="61" fill="#fff"/>
+      <circle r="47" fill="#63f7ff"/>
+      <circle cx="-14" cy="-15" r="19" fill="#fff"/>
+    </g>
+
+    <g transform="translate(220 705)" filter="url(#glow)">
+      <path d="M0 30 72 0h612l72 30-72 30H72z" fill="url(#paddle)"/>
+      <path d="M84 13h588l30 17-30 17H84L53 30z" fill="#06162b" fill-opacity=".68" stroke="#e4ffff" stroke-opacity=".72" stroke-width="3"/>
+      <path d="M325 17h108v26H325z" fill="#d9ff67" opacity=".88"/>
+    </g>
+
+    <g transform="translate(59 58)">
+      <rect width="360" height="54" rx="27" fill="#061329" fill-opacity=".78" stroke="#62f4ff" stroke-opacity=".45"/>
+      <circle cx="31" cy="27" r="8" fill="#d9ff67" filter="url(#softGlow)"/>
+      <text x="54" y="34" fill="#b6c9df" font-family="Space Grotesk, sans-serif" font-size="20" font-weight="700" letter-spacing="4">AP // SIM ARCADE</text>
+    </g>
+
+    <g transform="translate(600 126)" text-anchor="middle">
+      <text fill="url(#titleFill)" font-family="Oxanium, sans-serif" font-size="94" font-weight="800" letter-spacing="-4" filter="url(#softGlow)">BREAK//THROUGH</text>
+      <text y="53" fill="#d9ff67" font-family="Oxanium, sans-serif" font-size="23" font-weight="800" letter-spacing="9">CRACK THE GRID · BANK THE SIM</text>
+    </g>
+
+    <g transform="translate(885 766)">
+      <circle cx="58" cy="0" r="58" fill="url(#goldBrick)" stroke="#fff5bd" stroke-width="5" filter="url(#softGlow)"/>
+      <circle cx="58" cy="0" r="43" fill="none" stroke="#7d410d" stroke-width="4" opacity=".7"/>
+      <text x="58" y="9" text-anchor="middle" fill="#2b1500" font-family="Oxanium, sans-serif" font-size="23" font-weight="800">SIM</text>
+      <text x="130" y="-6" fill="#ffd967" font-family="Oxanium, sans-serif" font-size="21" font-weight="800" letter-spacing="2">EARN AS</text>
+      <text x="130" y="24" fill="#ffffff" font-family="Oxanium, sans-serif" font-size="29" font-weight="800">YOU PLAY</text>
+    </g>
+  </g>
+  <rect x="30" y="30" width="1140" height="840" rx="40" fill="none" stroke="#93f8ff" stroke-opacity=".55" stroke-width="3"/>
+  <rect x="43" y="43" width="1114" height="814" rx="30" fill="none" stroke="#ffffff" stroke-opacity=".08"/>
+</svg>

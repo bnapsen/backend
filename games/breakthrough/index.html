@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>BREAK//THROUGH | Neon SIM Arcade | AP Advantage Player</title>
+  <meta name="description" content="Smash neon firewalls, build impossible combos, unlock overdrive powerups, and earn SIM in BREAK//THROUGH on AP Advantage Player." />
+  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+  <link rel="canonical" href="https://bnapsen.com/games/breakthrough/" />
+  <link rel="icon" href="cover.svg" type="image/svg+xml" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="BREAK//THROUGH | Neon SIM Arcade" />
+  <meta property="og:description" content="Crack the grid, weaponize the rebound, and bank SIM in a high-impact browser arcade run." />
+  <meta property="og:url" content="https://bnapsen.com/games/breakthrough/" />
+  <meta property="og:image" content="https://bnapsen.com/games/breakthrough/cover.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="900" />
+  <meta property="og:image:alt" content="BREAK//THROUGH neon firewall arcade game cover" />
+  <meta property="og:locale" content="en_US" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="BREAK//THROUGH | Neon SIM Arcade" />
+  <meta name="twitter:description" content="Crack the grid, stack a wild combo, and earn SIM one firewall at a time." />
+  <meta name="twitter:image" content="https://bnapsen.com/games/breakthrough/cover.png" />
+  <meta name="twitter:image:alt" content="BREAK//THROUGH neon firewall arcade game cover" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoGame","name":"BREAK//THROUGH","description":"A neon browser brick-breaker roguelite with escalating firewall breaches, arcade powerups, combo scoring, and AP SIM rewards.","url":"https://bnapsen.com/games/breakthrough/","gamePlatform":"Web browser","applicationCategory":"Game","inLanguage":"en-US","isPartOf":{"@type":"WebSite","name":"AP Advantage Player","url":"https://bnapsen.com/"}}</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css?v=20260709b" />
+</head>
+<body>
+  <main class="game-shell" aria-label="BREAK//THROUGH neon arcade game">
+    <header class="topbar">
+      <a class="back-link" href="../../index.html" aria-label="Back to AP Advantage Player">
+        <span aria-hidden="true">&larr;</span>
+        <span>AP</span>
+      </a>
+
+      <div class="brand-lockup">
+        <span class="brand-kicker">SIM arcade // firewall zero</span>
+        <strong>BREAK<span>//</span>THROUGH</strong>
+      </div>
+
+      <div class="hud-grid" aria-label="Current run">
+        <div class="hud-stat">
+          <span>Breach</span>
+          <strong id="breach-display">01</strong>
+        </div>
+        <div class="hud-stat">
+          <span>Lives</span>
+          <strong id="lives-display">3</strong>
+        </div>
+        <div class="hud-stat hud-stat--wide">
+          <span>Score</span>
+          <strong id="score-display">000000</strong>
+        </div>
+        <div class="hud-stat hud-stat--combo">
+          <span>Combo</span>
+          <strong id="combo-display">x1</strong>
+        </div>
+        <div class="hud-stat hud-stat--best">
+          <span>Best</span>
+          <strong id="best-display">000000</strong>
+        </div>
+        <div class="hud-stat hud-stat--sim">
+          <span>Run SIM</span>
+          <strong id="run-sim-display">0 SIM</strong>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <button class="action-button action-button--primary" id="start-button" type="button">Start</button>
+        <button class="action-button" id="pause-button" type="button">Pause</button>
+        <button class="action-button action-button--icon" id="restart-button" type="button" aria-label="Restart run">↻</button>
+      </div>
+    </header>
+
+    <section class="playfield" aria-label="Firewall breach arena">
+      <p class="sr-only" id="game-instructions">Move the paddle with A and D, the left and right arrow keys, or by dragging. Press Space or the Launch button to launch the pulse. Press P or Pause to suspend the game.</p>
+      <div class="arena-aura" aria-hidden="true"></div>
+      <div class="screen-frame">
+        <canvas id="breakthrough-canvas" width="960" height="640" tabindex="0" aria-label="BREAK//THROUGH game screen" aria-describedby="game-instructions">Your browser does not support the canvas required to play BREAK//THROUGH.</canvas>
+        <div class="screen-glass" aria-hidden="true"></div>
+
+        <div class="mission-chip mission-chip--left" aria-hidden="true">
+          <span>Target</span>
+          <strong>Crack every node</strong>
+        </div>
+        <div class="mission-chip mission-chip--right" aria-hidden="true">
+          <span>Payout</span>
+          <strong>+1 SIM / fifth +5</strong>
+        </div>
+
+        <div class="screen-overlay" id="screen-overlay">
+          <p class="overlay-kicker" id="overlay-kicker">System armed</p>
+          <h1 id="overlay-title">BREAK<span>//</span>THROUGH</h1>
+          <p id="overlay-copy">Smash the firewall. Chain the rebound. Clear breaches to bank SIM.</p>
+          <div class="overlay-controls" aria-hidden="true">
+            <span>Move <b>A D</b> or drag</span>
+            <span>Launch <b>Space</b></span>
+            <span>Pause <b>P</b></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="command-deck">
+      <section class="status-readout" aria-live="polite">
+        <span class="readout-icon" aria-hidden="true"></span>
+        <div>
+          <p>Run signal</p>
+          <h2 id="status-title">Firewall waiting</h2>
+        </div>
+        <p id="status-copy">Launch the pulse and keep the return angle alive.</p>
+      </section>
+
+      <section class="reward-readout" aria-live="polite">
+        <div class="sim-coin" aria-hidden="true">SIM</div>
+        <div>
+          <p id="reward-title">Clear a breach. Earn SIM.</p>
+          <span id="reward-copy">Sign in with your AP account to bank each reward.</span>
+        </div>
+      </section>
+
+      <section class="touch-controls" aria-label="Touch controls">
+        <button data-control="left" type="button" aria-label="Move left">◀</button>
+        <button class="touch-launch" data-control="launch" type="button">Launch</button>
+        <button data-control="right" type="button" aria-label="Move right">▶</button>
+        <button class="touch-secondary" data-control="pause" type="button">Pause</button>
+        <button class="touch-secondary" data-control="restart" type="button">Restart</button>
+      </section>
+    </footer>
+  </main>
+
+  <script src="breakthrough.js?v=20260709b" type="module"></script>
+  <script src="../../nova-auth.js?v=20260503d" defer></script>
+</body>
+</html>

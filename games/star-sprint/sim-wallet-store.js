@@ -7,6 +7,8 @@ const DEFAULT_CURRENCY = 'SIM';
 const DEFAULT_STARTING_BALANCE = 1000;
 const MAX_RECENT_TRANSACTIONS = 80;
 const MAX_ABS_ADJUSTMENT_CENTS = 100000000;
+const MAX_BREAKTHROUGH_RUNS = 48;
+const MAX_BREAKTHROUGH_CLAIMS = 160;
 
 function nowIso() {
   return new Date().toISOString();
@@ -101,6 +103,45 @@ function publicKillRewards(source) {
   };
 }
 
+function storedBreakthroughRewards(source) {
+  const rewards = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+  const runs = Array.isArray(rewards.runs)
+    ? rewards.runs.slice(0, MAX_BREAKTHROUGH_RUNS).map((entry) => ({
+      runId: cleanText(entry && entry.runId, '', 80),
+      startedAt: cleanText(entry && entry.startedAt, '', 40),
+      lastAwardAt: cleanText(entry && entry.lastAwardAt, '', 40),
+      lastBreach: Math.max(0, Math.floor(Number(entry && entry.lastBreach) || 0)),
+      rewardCents: Math.max(0, normalizeCents(entry && entry.rewardCents)),
+    })).filter((entry) => entry.runId)
+    : [];
+  const recentClaimIds = Array.isArray(rewards.recentClaimIds)
+    ? rewards.recentClaimIds
+      .slice(0, MAX_BREAKTHROUGH_CLAIMS)
+      .map((entry) => cleanText(entry, '', 64))
+      .filter(Boolean)
+    : [];
+  return {
+    dayKey: cleanText(rewards.dayKey, '', 30),
+    dailyRewardCents: Math.max(0, normalizeCents(rewards.dailyRewardCents)),
+    totalRewardCents: Math.max(0, normalizeCents(rewards.totalRewardCents)),
+    lastAwardAt: cleanText(rewards.lastAwardAt, '', 40),
+    runs,
+    recentClaimIds,
+  };
+}
+
+function publicBreakthroughRewards(source) {
+  const rewards = storedBreakthroughRewards(source);
+  return {
+    dayKey: rewards.dayKey,
+    dailyReward: rewards.dailyRewardCents / 100,
+    dailyRewardCents: rewards.dailyRewardCents,
+    totalReward: rewards.totalRewardCents / 100,
+    totalRewardCents: rewards.totalRewardCents,
+    lastAwardAt: rewards.lastAwardAt,
+  };
+}
+
 function publicWallet(wallet) {
   const balanceCents = normalizeCents(wallet && wallet.balanceCents);
   const startingBalanceCents = normalizeCents(wallet && wallet.startingBalanceCents);
@@ -115,6 +156,7 @@ function publicWallet(wallet) {
     startingBalance: startingBalanceCents / 100,
     startingBalanceCents,
     killRewards: publicKillRewards(wallet && wallet.killRewards),
+    breakthroughRewards: publicBreakthroughRewards(wallet && wallet.breakthroughRewards),
     createdAt: cleanText(wallet && wallet.createdAt, '', 40),
     updatedAt: cleanText(wallet && wallet.updatedAt, '', 40),
     recentTransactions: transactions,
@@ -133,6 +175,7 @@ function normalizeWalletDocument(data, user, startingBalanceCents) {
     balanceCents: normalizeCents(data && data.balanceCents, startingBalanceCents),
     startingBalanceCents: normalizeCents(data && data.startingBalanceCents, startingBalanceCents),
     killRewards: publicKillRewards(data && data.killRewards),
+    breakthroughRewards: storedBreakthroughRewards(data && data.breakthroughRewards),
     createdAt,
     updatedAt: cleanText(data && data.updatedAt, createdAt, 40),
     recentTransactions: Array.isArray(data && data.recentTransactions)
@@ -153,6 +196,7 @@ function initialWallet(user, startingBalanceCents) {
     balanceCents: startingBalanceCents,
     startingBalanceCents,
     killRewards: publicKillRewards(),
+    breakthroughRewards: storedBreakthroughRewards(),
     createdAt,
     updatedAt: createdAt,
     recentTransactions: [{
