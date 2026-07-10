@@ -4,242 +4,89 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Neon Backgammon Blitz | Online Multiplayer Backgammon | AP Advantage Player</title>
-<!-- SEO START -->
-  <meta name="description" content="Play fast online backgammon with room codes, invite links, and a solo bot in Neon Backgammon Blitz on AP Advantage Player." />
+  <!-- SEO START -->
+  <meta name="description" content="Play fast online backgammon with room codes, high-stakes SIM matches, solid drag controls, and a solo bot in Neon Backgammon Blitz on AP Advantage Player." />
   <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
   <link rel="canonical" href="https://bnapsen.com/backgammon.html" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Neon Backgammon Blitz | Online Multiplayer Backgammon | AP Advantage Player" />
-  <meta property="og:description" content="Play fast online backgammon with room codes, invite links, and a solo bot in Neon Backgammon Blitz on AP Advantage Player." />
+  <meta property="og:description" content="Play fast online backgammon with room codes, high-stakes SIM matches, solid drag controls, and a solo bot." />
   <meta property="og:url" content="https://bnapsen.com/backgammon.html" />
   <meta property="og:image" content="https://bnapsen.com/backgammon-cover.svg" />
   <meta property="og:locale" content="en_US" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Neon Backgammon Blitz | Online Multiplayer Backgammon | AP Advantage Player" />
-  <meta name="twitter:description" content="Play fast online backgammon with room codes, invite links, and a solo bot in Neon Backgammon Blitz on AP Advantage Player." />
+  <meta name="twitter:title" content="Neon Backgammon Blitz | AP Advantage Player" />
+  <meta name="twitter:description" content="Fast, polished online backgammon with high-stakes SIM play and a deep solo bot." />
   <meta name="twitter:image" content="https://bnapsen.com/backgammon-cover.svg" />
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Neon Backgammon Blitz | Online Multiplayer Backgammon | AP Advantage Player","description":"Play fast online backgammon with room codes, invite links, and a solo bot in Neon Backgammon Blitz on AP Advantage Player.","url":"https://bnapsen.com/backgammon.html","inLanguage":"en-US","isPartOf":{"@type":"WebSite","name":"AP Advantage Player","url":"https://bnapsen.com/"}}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Neon Backgammon Blitz | Online Multiplayer Backgammon | AP Advantage Player","description":"Fast online backgammon with room codes, high-stakes SIM matches, solid drag controls, and a solo bot.","url":"https://bnapsen.com/backgammon.html","inLanguage":"en-US","isPartOf":{"@type":"WebSite","name":"AP Advantage Player","url":"https://bnapsen.com/"}}</script>
   <!-- SEO END -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="nova-auth.css?v=20260502e" />
-  <link rel="stylesheet" href="games/backgammon-blitz/style.css?v=20260503a" />
+  <link rel="stylesheet" href="games/backgammon-blitz/style.css?v=20260709a" />
 </head>
 <body>
   <div class="page-shell">
     <header class="topbar">
-      <a class="back-link" href="index.html">Back to AP Advantage Player</a>
-      <div class="topbar-actions">
-        <button id="toggleSetupBtn" class="secondary ui-toggle">Hide setup</button>
-        <button id="toggleSidebarBtn" class="secondary ui-toggle">Hide info</button>
-        <button id="soundToggleBtn" class="secondary ui-toggle" data-state="on">Sound on</button>
-      </div>
-      <div class="topbar-status">
-        <div class="nova-auth-widget backgammon-auth-widget" data-auth-widget aria-live="polite"></div>
+      <a class="brand-lockup" href="index.html" aria-label="Back to AP Advantage Player">
+        <span class="brand-mark" aria-hidden="true">BG</span>
+        <span><small>AP Arcade</small><strong>Neon Backgammon</strong></span>
+      </a>
+
+      <div class="topbar-status" aria-label="Match status">
         <div class="status-pill" id="networkStatus" data-tone="offline">Offline</div>
         <div class="status-pill ghost" id="modePill">No match running</div>
+      </div>
+
+      <div class="topbar-actions">
+        <button id="toggleSetupBtn" class="secondary ui-toggle" type="button">Game setup</button>
+        <button id="toggleSidebarBtn" class="secondary ui-toggle" type="button">Guide</button>
+        <button id="soundToggleBtn" class="secondary ui-toggle" type="button" data-state="on">Sound on</button>
+        <details class="account-menu">
+          <summary>SIM account</summary>
+          <div class="nova-auth-widget backgammon-auth-widget" data-auth-widget aria-live="polite"></div>
+        </details>
       </div>
     </header>
 
     <main class="layout" id="layoutShell">
-      <section class="setup-column" id="setupColumn">
-        <section class="hero panel">
-          <p class="eyebrow">Internet-ready backgammon</p>
-          <h1>Neon Backgammon Blitz</h1>
-          <p class="lede">Race, hit, re-enter, and bear off with quick room hosting, smooth dice animation, and a much deeper solo bot while you wait for another player.</p>
-
-          <div class="step-strip">
-            <div class="step-card" id="stepOne">
-              <span class="step-number">1</span>
-              <div>
-                <strong>Choose a name</strong>
-                <p>Names make remote matches much easier to follow.</p>
-              </div>
-            </div>
-            <div class="step-card" id="stepTwo">
-              <span class="step-number">2</span>
-              <div>
-                <strong>Host or join</strong>
-                <p>Hosting makes a room instantly. Joining works by code or invite link.</p>
-              </div>
-            </div>
-            <div class="step-card" id="stepThree">
-              <span class="step-number">3</span>
-              <div>
-                <strong>Roll and race</strong>
-                <p>Tap a checker, drag it, or let Auto Move finish the clearest legal play.</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="field-grid">
-            <label>
-              <span>Name</span>
-              <input id="nameInput" maxlength="18" placeholder="AP Player" autocomplete="nickname" />
-            </label>
-            <label>
-              <span>Room code</span>
-              <input id="roomInput" maxlength="12" placeholder="Auto-created when hosting" />
-            </label>
-          </div>
-
-          <div class="hero-actions">
-            <button id="soloBtn" class="primary">Play solo now</button>
-            <button id="hostBtn">Host match</button>
-            <button id="joinBtn">Join match</button>
-          </div>
-
-          <div class="wager-panel" id="wagerPanel">
-            <div class="invite-header">
-              <div>
-                <p class="label">SIM wager</p>
-                <p class="invite-help">Optional play-money stake scored like backgammon: single, gammon, and backgammon pay 1, 2, or 3 points.</p>
-              </div>
-              <span class="wager-balance" id="simBalanceText">SIM wallet</span>
-            </div>
-            <label class="advanced-field">
-              <span>Stake per point</span>
-              <input id="wagerInput" type="number" min="0" max="1000" step="0.01" value="0" inputmode="decimal" />
-            </label>
-            <div class="wager-quick-row" aria-label="Quick SIM stake choices">
-              <button class="secondary wager-quick" type="button" data-wager-cents="0">Free</button>
-              <button class="secondary wager-quick" type="button" data-wager-cents="1000">10 SIM</button>
-              <button class="secondary wager-quick" type="button" data-wager-cents="2000">20 SIM</button>
-              <button class="secondary wager-quick" type="button" data-wager-cents="5000">50 SIM</button>
-            </div>
-            <div class="wager-readout">
-              <strong id="wagerStatusText">No stake selected</strong>
-              <span id="wagerDetailText">Free match. Set a per-point stake before starting if you want SIM on the score.</span>
-            </div>
-          </div>
-
-          <div class="invite-panel">
-            <div class="invite-header">
-              <div>
-                <p class="label">Invite link</p>
-                <p class="invite-help">Host first, then copy this link or just send the room code.</p>
-              </div>
-              <button id="copyCodeBtn" class="secondary">Copy room code</button>
-            </div>
-            <div class="invite-row">
-              <input id="inviteInput" readonly value="" />
-              <button id="copyBtn" class="primary">Copy invite</button>
-            </div>
-          </div>
-
-          <div class="invite-panel">
-            <div class="invite-header">
-              <div>
-                <p class="label">AP Lounge</p>
-                <p class="invite-help">Open the shared lounge in a new tab or drop this live room there so someone can join you fast.</p>
-              </div>
-            </div>
-            <div class="invite-row">
-              <button id="openLoungeBtn" class="secondary" type="button">Open Lounge tab</button>
-              <button id="shareLoungeBtn" class="primary" type="button">Share room to Lounge</button>
-            </div>
-          </div>
-
-          <details class="advanced-panel">
-            <summary>Advanced connection settings</summary>
-            <label class="advanced-field">
-              <span>Server WS URL</span>
-              <input id="serverUrlInput" placeholder="wss://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app" />
-            </label>
-          </details>
-
-          <p class="status-text" id="statusText">Host a room to invite a friend, join with a room code, or play a solo warm-up against the smarter bot.</p>
-        </section>
-
-        <section class="panel style-panel">
-          <div class="sidebar-header">
-            <div>
-              <p class="label">Board look</p>
-              <h2>Theme kit</h2>
-            </div>
-          </div>
-          <div class="field-grid style-grid">
-            <label>
-              <span>Board style</span>
-              <select id="boardThemeSelect">
-                <option value="harbor">Harbor Brass</option>
-                <option value="emerald">Emerald Hall</option>
-                <option value="midnight">Midnight Club</option>
-                <option value="ivory">Ivory Rose</option>
-              </select>
-            </label>
-            <label>
-              <span>Checker style</span>
-              <select id="checkerThemeSelect">
-                <option value="glass">Glass Luxe</option>
-                <option value="walnut">Walnut Crown</option>
-                <option value="neon">Neon Slate</option>
-                <option value="marble">Marble Studio</option>
-              </select>
-            </label>
-          </div>
-          <p class="mini-status">Themes are local to your browser, so you can tune the board for your own play comfort.</p>
-        </section>
-
-        <section class="panel sidebar-panel">
-          <div class="sidebar-header">
-            <div>
-              <p class="label">How it works</p>
-              <h2>Fast setup</h2>
-            </div>
-          </div>
-          <div class="guide-list">
-            <div class="guide-item">
-              <strong>Quickest remote start</strong>
-              <p>Press <em>Host match</em>, copy the invite link, and send it to the other player.</p>
-            </div>
-            <div class="guide-item">
-              <strong>Smooth controls</strong>
-              <p>Click a checker, drag it to a glowing landing spot, or press <em>Auto Move</em> for the clearest legal push.</p>
-            </div>
-            <div class="guide-item">
-              <strong>Same live backend</strong>
-              <p>This page uses the same multiplayer WebSocket service as the chess game, so your room flow stays consistent.</p>
-            </div>
-          </div>
-        </section>
-      </section>
-
       <section class="board-column">
         <section class="board-panel panel">
-          <div class="board-header">
-            <div>
-              <p class="label">Room</p>
-              <p class="room-code" id="roomCodeLabel">-</p>
+          <div class="board-hud">
+            <div class="board-header">
+              <div>
+                <p class="label">Room</p>
+                <p class="room-code" id="roomCodeLabel">-</p>
+              </div>
+              <div class="turn-cell">
+                <p class="label">Turn</p>
+                <p class="turn-text" id="turnText">White to roll</p>
+              </div>
+              <div class="phase-cell">
+                <p class="label">Status</p>
+                <p class="turn-text" id="phaseText">Start a match to begin.</p>
+              </div>
             </div>
-            <div>
-              <p class="label">Turn</p>
-              <p class="turn-text" id="turnText">White to roll</p>
-            </div>
-            <div>
-              <p class="label">Status</p>
-              <p class="turn-text" id="phaseText">Start a match to begin.</p>
-            </div>
-          </div>
 
-          <div class="score-row">
-            <div class="hud-row">
-              <p class="label">Dice</p>
-              <p class="turn-text" id="diceLabel">Roll to start</p>
-            </div>
-            <div class="hud-row">
-              <p class="label">White bar</p>
-              <p class="turn-text" id="barWhite">0</p>
-            </div>
-            <div class="hud-row">
-              <p class="label">Black bar</p>
-              <p class="turn-text" id="barBlack">0</p>
-            </div>
-            <div class="hud-row">
-              <p class="label">Race</p>
-              <p class="turn-text" id="raceLabel">White 0 / Black 0</p>
+            <div class="score-row">
+              <div class="hud-row dice-hud">
+                <p class="label">Dice</p>
+                <p class="turn-text" id="diceLabel">Roll to start</p>
+              </div>
+              <div class="hud-row">
+                <p class="label">White bar</p>
+                <p class="turn-text" id="barWhite">0</p>
+              </div>
+              <div class="hud-row">
+                <p class="label">Black bar</p>
+                <p class="turn-text" id="barBlack">0</p>
+              </div>
+              <div class="hud-row race-hud">
+                <p class="label">Pip race</p>
+                <p class="turn-text" id="raceLabel">White 0 / Black 0</p>
+              </div>
             </div>
           </div>
 
@@ -247,40 +94,37 @@
             <div class="board-overlay" aria-hidden="true">
               <div class="roll-track"></div>
               <div class="dice-visuals board-dice" id="diceVisuals">
-                <div class="die-shell die-shell-one" id="dieShell1">
-                  <span class="die" id="die1"></span>
-                </div>
-                <div class="die-shell die-shell-two" id="dieShell2">
-                  <span class="die" id="die2"></span>
-                </div>
+                <div class="die-shell die-shell-one" id="dieShell1"><span class="die" id="die1"></span></div>
+                <div class="die-shell die-shell-two" id="dieShell2"><span class="die" id="die2"></span></div>
               </div>
             </div>
-            <canvas id="board" width="1240" height="760" aria-label="Backgammon board"></canvas>
+            <canvas id="board" width="1240" height="760" aria-label="Interactive backgammon board. Drag a checker to a glowing lane or tap twice to fast-move."></canvas>
+
             <div class="start-overlay" id="startOverlay" aria-live="polite">
               <div class="start-card">
-                <p class="start-kicker">Fastest way in</p>
-                <h2>Pick a SIM stake and play</h2>
-                <p class="start-copy">Start a solo match against Deep Blitz Bot with a quick SIM-per-point wager, or play free while you warm up.</p>
+                <p class="start-kicker">Board open</p>
+                <h2>Pick your stakes</h2>
+                <p class="start-copy">Play Deep Blitz Bot instantly. SIM stakes are per point; gammons and backgammons pay 2x and 3x.</p>
                 <div class="start-wager-grid" aria-label="Quick SIM wager choices">
-                  <button class="start-wager-card" type="button" data-start-wager-cents="1000">
-                    <strong>10 SIM / pt</strong>
-                    <span>Max loss 30 SIM</span>
-                  </button>
-                  <button class="start-wager-card" type="button" data-start-wager-cents="2000">
-                    <strong>20 SIM / pt</strong>
-                    <span>Max loss 60 SIM</span>
-                  </button>
                   <button class="start-wager-card" type="button" data-start-wager-cents="5000">
-                    <strong>50 SIM / pt</strong>
-                    <span>Max loss 150 SIM</span>
+                    <strong>50 SIM</strong><span>150 max loss</span>
+                  </button>
+                  <button class="start-wager-card" type="button" data-start-wager-cents="10000">
+                    <strong>100 SIM</strong><span>300 max loss</span>
+                  </button>
+                  <button class="start-wager-card" type="button" data-start-wager-cents="25000">
+                    <strong>250 SIM</strong><span>750 max loss</span>
+                  </button>
+                  <button class="start-wager-card" type="button" data-start-wager-cents="50000">
+                    <strong>500 SIM</strong><span>1,500 max loss</span>
                   </button>
                 </div>
                 <div class="start-actions">
                   <button id="heroSoloBtn" class="secondary start-primary" type="button" data-start-wager-cents="0">Play free</button>
-                  <button id="heroHostBtn" class="secondary" type="button">Host live match</button>
-                  <button id="heroJoinBtn" type="button">Join with code</button>
+                  <button id="heroHostBtn" class="secondary" type="button">Host live</button>
+                  <button id="heroJoinBtn" type="button">Join room</button>
                 </div>
-                <p class="start-note" id="startHint">Quick stakes start instantly. Hosting creates a room code you can copy and send.</p>
+                <p class="start-note" id="startHint">Choose a stake for instant solo play, or open Game setup for custom stakes up to 5,000 SIM per point.</p>
               </div>
             </div>
           </div>
@@ -296,48 +140,113 @@
                 <p class="turn-text" id="diceStageLabel">Top rail ready</p>
               </div>
             </div>
-            <div class="action-bar">
-              <button id="rollBtn" class="primary">Roll Dice</button>
-              <button id="undoBtn">Undo</button>
-              <button id="autoBtn">Auto Move</button>
-              <button id="restartBtn">New Match</button>
+            <div class="action-bar" aria-label="Game controls">
+              <button id="rollBtn" class="primary" type="button">Roll Dice</button>
+              <button id="undoBtn" type="button">Undo</button>
+              <button id="autoBtn" type="button">Auto Move</button>
+              <button id="restartBtn" type="button">New Match</button>
             </div>
           </div>
+        </section>
+      </section>
+
+      <section class="setup-column" id="setupColumn">
+        <section class="hero panel">
+          <div class="rail-heading">
+            <div>
+              <p class="eyebrow">Match desk</p>
+              <h1>Start a table</h1>
+            </div>
+            <span class="rail-badge">Up to 5K / pt</span>
+          </div>
+          <p class="lede">Play the bot now or make a live room. Dragging is immediate; legal landing lanes glow as you move.</p>
+
+          <div class="progress-sentinels" aria-hidden="true">
+            <div id="stepOne"></div><div id="stepTwo"></div><div id="stepThree"></div>
+          </div>
+
+          <div class="field-grid identity-fields">
+            <label><span>Name</span><input id="nameInput" maxlength="18" placeholder="AP Player" autocomplete="nickname" /></label>
+            <label><span>Room code</span><input id="roomInput" maxlength="12" placeholder="Enter a code to join" autocapitalize="characters" /></label>
+          </div>
+
+          <div class="hero-actions match-actions">
+            <button id="soloBtn" class="primary" type="button">Play solo</button>
+            <button id="hostBtn" type="button">Host match</button>
+            <button id="joinBtn" type="button">Join match</button>
+          </div>
+
+          <div class="wager-panel" id="wagerPanel">
+            <div class="invite-header">
+              <div>
+                <p class="label">SIM wager / point</p>
+                <p class="invite-help">Single, gammon, and backgammon settle at 1x, 2x, or 3x.</p>
+              </div>
+              <span class="wager-balance" id="simBalanceText">SIM wallet</span>
+            </div>
+            <label class="advanced-field wager-input-label">
+              <span>Custom stake</span>
+              <span class="wager-input-shell"><input id="wagerInput" type="number" min="0" max="5000" step="0.01" value="0" inputmode="decimal" /><b>SIM</b></span>
+            </label>
+            <div class="wager-quick-row" aria-label="Quick SIM stake choices">
+              <button class="secondary wager-quick" type="button" data-wager-cents="0">Free</button>
+              <button class="secondary wager-quick" type="button" data-wager-cents="10000">100</button>
+              <button class="secondary wager-quick" type="button" data-wager-cents="25000">250</button>
+              <button class="secondary wager-quick" type="button" data-wager-cents="50000">500</button>
+              <button class="secondary wager-quick" type="button" data-wager-cents="100000">1,000</button>
+            </div>
+            <div class="wager-readout">
+              <strong id="wagerStatusText">No stake selected</strong>
+              <span id="wagerDetailText">Free match. Set a per-point stake before starting if you want SIM on the score.</span>
+            </div>
+          </div>
+
+          <details class="rail-details">
+            <summary>Invite and lounge</summary>
+            <div class="invite-panel compact-invite">
+              <div class="invite-row">
+                <input id="inviteInput" aria-label="Invite link" readonly value="" placeholder="Host to create an invite" />
+                <button id="copyBtn" class="primary" type="button">Copy link</button>
+              </div>
+              <div class="invite-row">
+                <button id="copyCodeBtn" class="secondary" type="button">Copy room code</button>
+                <button id="openLoungeBtn" class="secondary" type="button">Open Lounge</button>
+                <button id="shareLoungeBtn" class="primary" type="button">Share room</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="rail-details">
+            <summary>Board appearance</summary>
+            <div class="field-grid style-grid">
+              <label><span>Board style</span><select id="boardThemeSelect"><option value="harbor">Harbor Brass</option><option value="emerald">Emerald Hall</option><option value="midnight">Midnight Club</option><option value="ivory">Ivory Rose</option></select></label>
+              <label><span>Checker style</span><select id="checkerThemeSelect"><option value="glass">Glass Luxe</option><option value="walnut">Walnut Crown</option><option value="neon">Neon Slate</option><option value="marble">Marble Studio</option></select></label>
+            </div>
+          </details>
+
+          <details class="rail-details advanced-panel">
+            <summary>Connection settings</summary>
+            <label class="advanced-field"><span>Server WS URL</span><input id="serverUrlInput" placeholder="wss://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app" /></label>
+          </details>
+
+          <p class="status-text" id="statusText">Host a room, join with a code, or play a solo match against Deep Blitz Bot.</p>
         </section>
       </section>
 
       <aside class="sidebar" id="infoSidebar">
         <section class="panel sidebar-panel">
           <div class="sidebar-header">
-            <div>
-              <p class="label">Players</p>
-              <h2>Seats</h2>
-            </div>
+            <div><p class="label">At the table</p><h2>Players</h2></div>
             <p class="mini-status" id="presenceText">Waiting for players...</p>
           </div>
           <div class="player-cards" id="playerCards"></div>
         </section>
-
         <section class="panel sidebar-panel">
-          <div class="sidebar-header">
-            <div>
-              <p class="label">Turn help</p>
-              <h2>Hints</h2>
-            </div>
-          </div>
+          <div class="sidebar-header"><div><p class="label">Fast controls</p><h2>Play clean</h2></div></div>
           <div class="facts">
-            <div class="fact">
-              <strong>Roll first</strong>
-              <p>Each turn starts with a roll. Doubles give you four moves.</p>
-            </div>
-            <div class="fact">
-              <strong>Re-enter from the bar</strong>
-              <p>If one of your checkers gets hit, you must bring it back before moving anything else.</p>
-            </div>
-            <div class="fact">
-              <strong>Auto Move is safe</strong>
-              <p>It picks the furthest legal destination from your current roll, which is great on phones.</p>
-            </div>
+            <div class="fact"><strong>Drag with zero chase</strong><p>The checker stays under your pointer and the strongest legal landing lane locks on.</p></div>
+            <div class="fact"><strong>Tap twice to move</strong><p>Tap a checker once to see its options, then tap it again for the furthest legal move.</p></div>
+            <div class="fact"><strong>Spacebar rolls</strong><p>Press Space or throw either die. Auto Move is a safe fallback on small screens.</p></div>
           </div>
         </section>
       </aside>
@@ -349,6 +258,6 @@
   <script src="nova-auth.js?v=20260503d"></script>
   <script src="games/shared/lounge-bridge.js?v=20260326b"></script>
   <script src="games/star-sprint/backgammon-core.js?v=20260503a"></script>
-  <script src="games/backgammon-blitz/game.js?v=20260503c"></script>
+  <script src="games/backgammon-blitz/game.js?v=20260709a"></script>
 </body>
 </html>

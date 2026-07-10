@@ -4,7 +4,7 @@
   const Core = window.NeonBackgammonCore;
   const PROD_SERVER_URL = 'wss://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app';
   const PROD_API_BASE = 'https://nova-arcade-backend-2rpkpv7fpq-uc.a.run.app';
-  const MAX_WAGER_CENTS = 100000;
+  const MAX_WAGER_CENTS = 500000;
   const MAX_BACKGAMMON_POINTS = 3;
   const STORAGE_KEYS = {
     name: 'neonBackgammon.name',
@@ -15,6 +15,7 @@
     boardTheme: 'neonBackgammon.boardTheme',
     checkerTheme: 'neonBackgammon.checkerTheme',
     wagerCents: 'neonBackgammon.wagerCents',
+    layoutVersion: 'neonBackgammon.layoutVersion',
   };
   const query = new URLSearchParams(window.location.search);
   const canvas = document.getElementById('board');
@@ -237,6 +238,7 @@
     },
     pointRects: [],
     drawQueued: false,
+    suppressBoardClickUntil: 0,
     anim: {
       move: null,
       pulses: [],
@@ -365,10 +367,6 @@
       render();
     }
     return ok;
-  }
-
-  function lerp(start, end, amount) {
-    return start + (end - start) * amount;
   }
 
   function roundRectPath(x, y, width, height, radius) {
@@ -851,7 +849,7 @@
       ui.startHint.textContent = `Room ${sanitizeRoomCode(ui.roomInput.value)} is ready to join.`;
       return;
     }
-    ui.startHint.textContent = 'Choose 10, 20, or 50 SIM per point to start a staked bot match immediately.';
+    ui.startHint.textContent = 'Choose 50, 100, 250, or 500 SIM per point for instant solo play. Custom stakes go up to 5,000.';
   }
 
   function audioSupported() {
@@ -1303,12 +1301,17 @@
 
   function setPanelCollapse(which, collapsed) {
     state.panels[which] = collapsed;
+    if (!collapsed && which === 'setupCollapsed') {
+      state.panels.infoCollapsed = true;
+    } else if (!collapsed && which === 'infoCollapsed') {
+      state.panels.setupCollapsed = true;
+    }
     ui.layoutShell.classList.toggle('setup-hidden', state.panels.setupCollapsed);
     ui.layoutShell.classList.toggle('info-hidden', state.panels.infoCollapsed);
     ui.setupColumn.classList.toggle('is-collapsed', state.panels.setupCollapsed);
     ui.infoSidebar.classList.toggle('is-collapsed', state.panels.infoCollapsed);
-    ui.toggleSetupBtn.textContent = state.panels.setupCollapsed ? 'Show setup' : 'Hide setup';
-    ui.toggleSidebarBtn.textContent = state.panels.infoCollapsed ? 'Show info' : 'Hide info';
+    ui.toggleSetupBtn.textContent = state.panels.setupCollapsed ? 'Game setup' : 'Close setup';
+    ui.toggleSidebarBtn.textContent = state.panels.infoCollapsed ? 'Guide' : 'Close guide';
     persistSettings();
     window.setTimeout(syncDiceRestPose, 40);
   }
@@ -2083,22 +2086,26 @@
     if (!state.snapshot) {
       return;
     }
+    const fromCount = move.from === 'bar'
+      ? state.snapshot.bar[player]
+      : Math.abs(state.snapshot.points[move.from]);
     const from = move.from === 'bar'
-      ? barCheckerPos(player, Math.max(0, state.snapshot.bar[player] - 1))
-      : checkerPos(move.from, Math.max(0, Math.abs(state.snapshot.points[move.from]) - 1));
+      ? barCheckerPos(player, fromCount)
+      : checkerPos(move.from, fromCount, fromCount + 1);
     const to = move.to === 'off'
       ? offTargetPos(player)
-      : checkerPos(move.to, Math.abs(state.snapshot.points[move.to]) + 1);
+      : checkerPos(move.to, Math.max(0, Math.abs(state.snapshot.points[move.to]) - 1));
     state.anim.move = {
       owner: player,
       startX: from.x,
       startY: from.y,
       endX: to.x,
       endY: to.y,
+      to: move.to,
       r: from.r,
       startedAt: performance.now(),
-      duration: 430,
-      lift: move.to === 'off' ? 34 : 24,
+      duration: 245,
+      lift: move.to === 'off' ? 22 : 12,
     };
   }
 
@@ -2455,6 +2462,11 @@
         continue;
       }
       for (let stackIndex = 0; stackIndex < count; stackIndex += 1) {
+        const isDraggedChecker = state.drag?.source === index && stackIndex === count - 1;
+        const isMovingChecker = state.anim.move?.to === index && stackIndex === count - 1;
+        if (isDraggedChecker || isMovingChecker) {
+          continue;
+        }
         const point = checkerPos(index, stackIndex);
         drawChecker(point.x, point.y, point.r, owner);
       }
@@ -2469,9 +2481,15 @@
 
     const barX = W / 2;
     for (let index = 0; index < Math.min(state.snapshot.bar[Core.WHITE], 5); index += 1) {
+      if (state.drag?.source === 'bar' && state.snapshot.current === Core.WHITE && index === Math.min(state.snapshot.bar[Core.WHITE], 5) - 1) {
+        continue;
+      }
       drawChecker(barX, H / 2 + 36 + index * 26, 20, Core.WHITE);
     }
     for (let index = 0; index < Math.min(state.snapshot.bar[Core.BLACK], 5); index += 1) {
+      if (state.drag?.source === 'bar' && state.snapshot.current === Core.BLACK && index === Math.min(state.snapshot.bar[Core.BLACK], 5) - 1) {
+        continue;
+      }
       drawChecker(barX, H / 2 - 36 - index * 26, 20, Core.BLACK);
     }
   }
@@ -2530,14 +2548,15 @@
     const raw = (now - move.startedAt) / move.duration;
     if (raw >= 1) {
       state.anim.move = null;
+      drawChecker(move.endX, move.endY, move.r, move.owner);
       return false;
     }
     const time = Math.max(0, Math.min(1, raw));
-    const ease = time < 0.5 ? 4 * time * time * time : 1 - Math.pow(-2 * time + 2, 3) / 2;
+    const ease = 1 - Math.pow(1 - time, 3);
     const arc = Math.sin(ease * Math.PI) * move.lift;
     const x = move.startX + (move.endX - move.startX) * ease;
     const y = move.startY + (move.endY - move.startY) * ease - arc;
-    if (Math.random() < 0.45) {
+    if (Math.random() < 0.16) {
       spawnTrailSpark(x, y, move.owner);
     }
     drawChecker(x, y, move.r, move.owner);
@@ -2603,26 +2622,27 @@
     }
 
     legalDestinations().forEach((entry) => {
+      const isHovered = Boolean(state.drag?.hoverMove && state.drag.hoverMove.to === entry.to);
       let badgeX;
       let badgeY;
       if (entry.to === 'off') {
         const tray = offTargetRect(state.snapshot.current);
         drawLaneHighlight(tray, {
-          fill: 'rgba(131, 214, 255, 0.12)',
-          stroke: 'rgba(131, 214, 255, 0.92)',
-          glow: 'rgba(131, 214, 255, 0.24)',
+          fill: isHovered ? 'rgba(140, 255, 199, 0.28)' : 'rgba(131, 214, 255, 0.12)',
+          stroke: isHovered ? '#8cffc7' : 'rgba(131, 214, 255, 0.92)',
+          glow: isHovered ? 'rgba(140, 255, 199, 0.5)' : 'rgba(131, 214, 255, 0.24)',
           radius: 18,
-          lineWidth: 2.4,
+          lineWidth: isHovered ? 4 : 2.4,
         });
         badgeX = tray.x + tray.w / 2;
         badgeY = tray.y + tray.h / 2;
       } else {
         drawLaneHighlight(laneRectForPoint(entry.to), {
-          fill: 'rgba(255, 210, 105, 0.14)',
-          stroke: 'rgba(255, 210, 105, 0.92)',
-          glow: 'rgba(255, 210, 105, 0.24)',
+          fill: isHovered ? 'rgba(140, 255, 199, 0.27)' : 'rgba(255, 210, 105, 0.14)',
+          stroke: isHovered ? '#8cffc7' : 'rgba(255, 210, 105, 0.92)',
+          glow: isHovered ? 'rgba(140, 255, 199, 0.5)' : 'rgba(255, 210, 105, 0.24)',
           radius: 20,
-          lineWidth: 2.5,
+          lineWidth: isHovered ? 4 : 2.5,
         });
         const anchor = laneLabelAnchor(entry.to);
         badgeX = anchor.x;
@@ -2656,15 +2676,13 @@
     drawSelectionHints();
     const moveActive = drawMoveAnimation();
     if (state.drag) {
-      state.drag.mx = lerp(state.drag.mx, state.drag.targetX, 0.42);
-      state.drag.my = lerp(state.drag.my, state.drag.targetY, 0.42);
-      drawChecker(state.drag.mx, state.drag.my, state.drag.r, controlledSide() || Core.WHITE);
+      ctx.save();
+      ctx.shadowColor = state.drag.hoverMove ? 'rgba(140, 255, 199, 0.82)' : 'rgba(255, 218, 145, 0.58)';
+      ctx.shadowBlur = state.drag.hoverMove ? 26 : 16;
+      drawChecker(state.drag.mx, state.drag.my, state.drag.r * 1.04, state.drag.owner);
+      ctx.restore();
     }
-    const dragActive = Boolean(
-      state.drag &&
-      (Math.abs(state.drag.mx - state.drag.targetX) > 0.45 || Math.abs(state.drag.my - state.drag.targetY) > 0.45)
-    );
-    if (pulseActive || trailActive || moveActive || dragActive) {
+    if (pulseActive || trailActive || moveActive) {
       requestAnimationFrame(draw);
     }
   }
@@ -2752,10 +2770,33 @@
       return false;
     }
     const source = pickSource(mx, my);
-    if (source === null || !applySelectedSource(source)) {
+    if (source === null) {
       return false;
     }
-    state.drag = { source, mx, my, targetX: mx, targetY: my, r: 24 };
+    const quickMoveOnTap = state.selected === source;
+    if (!applySelectedSource(source)) {
+      return false;
+    }
+    const owner = state.snapshot.current;
+    const sourcePos = source === 'bar'
+      ? barCheckerPos(owner, Math.max(0, Math.min(state.snapshot.bar[owner], 5) - 1))
+      : checkerPos(source, Math.max(0, Math.abs(state.snapshot.points[source]) - 1));
+    state.drag = {
+      source,
+      owner,
+      mx: sourcePos.x,
+      my: sourcePos.y,
+      offsetX: sourcePos.x - mx,
+      offsetY: sourcePos.y - my,
+      startPointerX: mx,
+      startPointerY: my,
+      pointerX: mx,
+      pointerY: my,
+      r: sourcePos.r,
+      moved: false,
+      quickMoveOnTap,
+      hoverMove: null,
+    };
     scheduleDraw();
     return true;
   }
@@ -2764,8 +2805,12 @@
     if (!state.drag) {
       return;
     }
-    state.drag.targetX = mx;
-    state.drag.targetY = my;
+    state.drag.pointerX = mx;
+    state.drag.pointerY = my;
+    state.drag.mx = mx + state.drag.offsetX;
+    state.drag.my = my + state.drag.offsetY;
+    state.drag.moved = state.drag.moved || Math.hypot(mx - state.drag.startPointerX, my - state.drag.startPointerY) > 7;
+    state.drag.hoverMove = pickMove(mx, my);
     scheduleDraw();
   }
 
@@ -2773,10 +2818,21 @@
     if (!state.drag) {
       return;
     }
+    const drag = state.drag;
     const move = pickMove(mx, my);
     state.drag = null;
-    if (move) {
+    state.suppressBoardClickUntil = performance.now() + 360;
+    if (drag.moved && move) {
       sendMove(move);
+      return;
+    }
+    if (!drag.moved) {
+      if (drag.quickMoveOnTap) {
+        fastMoveSelectedSource(drag.source);
+      } else {
+        setStatusMessage('Checker selected. Tap it again for a fast move, or drag it to a glowing lane.');
+        scheduleDraw();
+      }
       return;
     }
     setStatusMessage('Drop on a glowing lane to move the checker.');
@@ -2880,6 +2936,9 @@
     });
 
     canvas.addEventListener('click', (event) => {
+      if (performance.now() < state.suppressBoardClickUntil) {
+        return;
+      }
       if (!canAct() || !state.snapshot) {
         return;
       }
@@ -2909,12 +2968,11 @@
     });
 
     canvas.addEventListener('pointerdown', (event) => {
-      if (event.pointerType === 'touch') {
-        event.preventDefault();
-      }
-      canvas.setPointerCapture(event.pointerId);
+      event.preventDefault();
       const { mx, my } = getBoardPos(event);
-      beginDrag(mx, my);
+      if (beginDrag(mx, my)) {
+        canvas.setPointerCapture(event.pointerId);
+      }
     });
     canvas.addEventListener('pointermove', (event) => {
       if (!state.drag) {
@@ -2935,10 +2993,6 @@
     };
     canvas.addEventListener('pointerup', endPointerDrag);
     canvas.addEventListener('pointercancel', () => {
-      cleanupDrag();
-      scheduleDraw();
-    });
-    canvas.addEventListener('pointerleave', () => {
       cleanupDrag();
       scheduleDraw();
     });
@@ -2980,8 +3034,10 @@
     setWagerInputCents(localStorage.getItem(STORAGE_KEYS.wagerCents) || 0);
     const savedSetup = localStorage.getItem(STORAGE_KEYS.setupCollapsed);
     const savedInfo = localStorage.getItem(STORAGE_KEYS.infoCollapsed);
-    state.panels.setupCollapsed = savedSetup === '1';
+    const layoutVersion = localStorage.getItem(STORAGE_KEYS.layoutVersion);
+    state.panels.setupCollapsed = layoutVersion === '2' ? savedSetup !== '0' : true;
     state.panels.infoCollapsed = savedInfo === null ? true : savedInfo === '1';
+    localStorage.setItem(STORAGE_KEYS.layoutVersion, '2');
     state.audio.enabled = audioSupported() && localStorage.getItem(STORAGE_KEYS.soundEnabled) !== '0';
     state.appearance.boardTheme = normalizeBoardTheme(localStorage.getItem(STORAGE_KEYS.boardTheme));
     state.appearance.checkerTheme = normalizeCheckerTheme(localStorage.getItem(STORAGE_KEYS.checkerTheme));
