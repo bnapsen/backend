@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chronofold 2/5 | AP Advantage Player</title>
+    <meta name="description" content="Play Chronofold 2/5, an original time-folding cellular process, on AP Advantage Player.">
+    <link rel="canonical" href="https://bnapsen.com/games/chronofold/">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Chronofold 2/5 | AP Advantage Player">
+    <meta property="og:description" content="Grow a tiny time-folding universe and turn memory into living patterns.">
+    <meta property="og:url" content="https://bnapsen.com/games/chronofold/">
+    <meta property="og:image" content="https://bnapsen.com/assets/chronofold-thumbnail.png">
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            background: #07100f;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: #07100f;
+        }
+
+        body {
+            display: grid;
+            grid-template-rows: 48px minmax(0, 1fr);
+        }
+
+        .game-bar {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            align-items: center;
+            gap: 16px;
+            padding: 0 18px;
+            border-bottom: 1px solid #2a3732;
+            background: #0a1312;
+            color: #e8eee8;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .game-bar strong {
+            color: #dfff4f;
+        }
+
+        .game-bar a {
+            color: #e8eee8;
+            text-decoration-color: #59675f;
+            text-underline-offset: 4px;
+        }
+
+        .game-bar a:last-child {
+            justify-self: end;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: 0;
+            background: #f1f0e9;
+        }
+
+        @media (max-width: 620px) {
+            .game-bar {
+                grid-template-columns: 1fr auto;
+                padding: 0 12px;
+                font-size: 9px;
+            }
+
+            .game-bar strong {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="game-bar" aria-label="Game navigation">
+        <a href="../../">← AP home</a>
+        <strong>Chronofold 2/5</strong>
+        <a href="https://chronofold-25.bnapsen.chatgpt.site/" target="_blank" rel="noreferrer">Full screen ↗</a>
+    </nav>
+    <iframe
+        src="https://chronofold-25.bnapsen.chatgpt.site/"
+        title="Chronofold 2/5 interactive cellular process"
+        loading="eager"
+        allow="clipboard-write"
+    ></iframe>
+</body>
+</html>
